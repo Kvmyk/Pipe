@@ -495,25 +495,27 @@ Przykłady:
         port=args.local_port,
     )
 
-    console.print(f"[dim]Łączę z {args.host} przez SSH...[/dim]")
+    console.print(f"[dim]Laczę z {args.host} przez SSH...[/dim]")
+    console.print("[dim](Jesli pojawi sie monit o haslo SSH, wpisz je ponizej)[/dim]")
 
     try:
         tunnel.start()
     except RuntimeError as exc:
-        console.print(f"[red]❌ {exc}[/red]")
+        console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
     try:
-        # Poczekaj aż tunel będzie gotowy
-        with console.status("[dim]Zestawiam tunel SSH...[/dim]"):
-            ready = tunnel.wait_ready(timeout=15.0)
+        # Czekaj az tunel bedzie gotowy — BEZ spinnera zeby SSH mogl pytac o haslo
+        console.print("[dim]Zestawiam tunel SSH...[/dim]")
+        ready = tunnel.wait_ready(timeout=20.0)
 
         if not ready:
             console.print(
-                "[red]Tunel SSH nie odpowiada (timeout 15s).\n"
+                "[red]Tunel SSH nie odpowiada (timeout 20s).\n"
                 "Sprawdz:\n"
-                "  * czy backend dziala na serwerze: docker logs vps-agent\n"
-                "  * czy port TCP jest otwarty: docker ps (kolumna PORTS powinna pokazac 0.0.0.0:7379)"
+                "  * czy wpisales haslo SSH (jesli bylo wymagane)\n"
+                "  * czy backend dziala na serwerze: docker logs backend_vps-agent_1\n"
+                "  * czy port 7379 jest widoczny: docker ps"
                 "[/red]"
             )
             sys.exit(1)
