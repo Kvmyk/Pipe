@@ -252,7 +252,8 @@ def _print_banner(host: str) -> None:
             f"{ascii_art}\n"
             "[dim]Autonomiczny agent AI do zarządzania serwerem Linux[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-            "[dim]Wpisz [bold cyan]/exit[/bold cyan] lub naciśnij Ctrl+C aby wyjść i wyłączyć tunel[/dim]",
+            "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
+            "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",
             border_style="cyan",
         )
     )
