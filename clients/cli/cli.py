@@ -256,7 +256,8 @@ def _print_banner(host: str) -> None:
 
 
 def _print_response(text: str, status: str) -> None:
-    """Wyświetla odpowiedź agenta z odpowiednim formatowaniem."""
+    """Wyświetla odpowiedź agenta."""
+    text = text.strip()
     if not text:
         return
 
@@ -265,13 +266,9 @@ def _print_response(text: str, status: str) -> None:
     elif status == "confirm" or "⚠️" in text:
         style = "yellow"
     else:
-        style = "green"
+        style = "default"
 
-    try:
-        md = Markdown(text)
-        console.print(md)
-    except Exception:
-        console.print(Text(text, style=style))
+    console.print(text, style=style)
 
 
 async def _handle_responses(
