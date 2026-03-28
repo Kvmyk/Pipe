@@ -258,40 +258,48 @@ def _print_banner(host: str) -> None:
     )
 
 
+def _convert_markdown_to_rich(text: str) -> str:
+    """
+    Konwertuje podstawowy Markdown/MarkdownV2 na tagi Rich Console.
+    Obsługuje: **bold** / *bold*, _italic_, `code`, ```blok```
+    """
+    import re
+    # Kod blokowy najpierw (zanim zepsujemy gwiazdki wewnątrz)
+    text = re.sub(r'```[\w]*\n?(.*?)```', r'[on grey15]\1[/on grey15]', text, flags=re.DOTALL)
+    # Inline code
+    text = re.sub(r'`([^`]+)`', r'[bold yellow]\1[/bold yellow]', text)
+    # Pogrubienie (**text** lub *text* — bo Telegram używa pojedynczej)
+    text = re.sub(r'\*\*(.+?)\*\*', r'[bold]\1[/bold]', text)
+    text = re.sub(r'\*(.+?)\*', r'[bold]\1[/bold]', text)
+    # Kursywa
+    text = re.sub(r'_(.+?)_', r'[italic]\1[/italic]', text)
+    # Escapowane znaki MarkdownV2 (pozbywamy się backslashy przed znakami specjalnymi)
+    text = re.sub(r'\\([^\\])', r'\1', text)
+    return text
+
+
 def _print_response(text: str, status: str) -> None:
-    """Wyświetla odpowiedź agenta w estetycznym formacie."""
+    """Wyświetla odpowiedź agenta w estetycznym formacie terminalowym."""
     text = text.strip()
     if not text:
         return
 
-    # Usunięcie surowych tagów i wstawienie kolorów
+    # Zamiana tagów statusowych na kolorowe oznaczenia Rich
     text = text.replace("[SUKCES]", "✔ [bold green]SUKCES:[/bold green]")
     text = text.replace("[BLAD]", "✖ [bold red]BŁĄD:[/bold red]")
     text = text.replace("[POTWIERDZ]", "⚠ [bold yellow]WYMAGA POTWIERDZENIA:[/bold yellow]")
     text = text.replace("[ODMOWA]", "⨂ [bold red]ODMOWA:[/bold red]")
 
-    # Domyślny styl tła na wypadek czystego tekstu (żeby nie był dennie biały, tylko czytelny wg. konsoli)
-    style = "default"
-    
-    # Render tekstu
-    console.print(text, style=style)
+    # Konwersja podstawowego Markdownu na Rich markup
+    text = _convert_markdown_to_rich(text)
+
+    console.print(text)
 
 
 async def _handle_responses(
     responses: list[dict],
     client: RemoteClient,
 ) -> bool:
-    """
-    Przetwarza odpowiedzi z backendu.
-
-    Returns:
-        True jeśli była operacja wymagająca potwierdzenia.
-    """
-    # DEBUG — wszystkie pakiety z serwera
-    console.print(f"[dim cyan]>>> {len(responses)} pakietow od serwera:[/dim cyan]")
-    for i, r in enumerate(responses):
-        console.print(f"[dim cyan]>>> [{i}] status={r.get('status')} done={r.get('done')} response={repr(r.get('response', '')[:100])}[/dim cyan]")
-
     needs_confirm = False
 
     for resp in responses:
@@ -356,8 +364,25 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() in ("/exit", "exit", "quit", "wyjdź", "koniec"):
+            if user_input.lower() in ("/exit", "exit", "quit", "wyjðź", "koniec"):
                 break
+
+            # Lokalna komenda /status
+            if user_input.lower() == "/status":
+                console.print()
+                console.print("[dim]→ Analizuję stan serwera...[/dim]")
+                status_prompt = (
+                    "Zbierz z serwera dane: Uptime, Obciążenie CPU, Zużycie Pamięci RAM i Wolne miejsce na dysku. "
+                    "Odpowiedz zwięzłą listą w formacie terminalowym, bez tabel i naglinków Markdown. "
+                    "Użyj formatowania *Pogrubienie* dla tytułów sekcji i `wartości` dla liczb."
+                )
+                try:
+                    responses = await client.send_message(status_prompt)
+                    await _handle_responses(responses, client)
+                except Exception as exc:
+                    console.print(f"[red]Błąd: {exc}[/red]")
+                console.print()
+                continue
 
             console.print()
             try:
