@@ -265,6 +265,17 @@ Zmienne srodowiskowe:
         metavar="PORT",
     )
     parser.add_argument(
+        "--ssh-port",
+        type=int,
+        help="Ignorowany — uzytkownik laczy sie bezposrednio przez TCP",
+        metavar="PORT",
+    )
+    parser.add_argument(
+        "--key",
+        help="Ignorowany — uzytkownik laczy sie bezposrednio przez TCP",
+        metavar="PATH",
+    )
+    parser.add_argument(
         "--token",
         default=os.getenv("VPS_TOKEN", ""),
         help="Token autoryzacji (jesli skonfigurowany na serwerze)",
