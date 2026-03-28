@@ -180,7 +180,7 @@ class VPSAgent:
             message = response.choices[0].message
 
             # Dodaj odpowiedź asystenta do historii
-            session.messages.append(message.model_dump(exclude_unset=True))
+            session.messages.append(message.model_dump(exclude_unset=True, exclude_none=True))
 
             # Sprawdź czy LLM chce wywołać narzędzie
             if not message.tool_calls:
