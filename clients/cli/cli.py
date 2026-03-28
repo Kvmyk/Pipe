@@ -63,12 +63,13 @@ STARTUP_STATUS_MESSAGE = (
 
 class SSHTunnel:
     """
-    Zarządza tunelem SSH który forwarduje Unix socket z serwera na lokalny port TCP.
+    Zarządza tunelem SSH który forwarduje TCP port z serwera na lokalny port.
 
     Komenda SSH którą uruchamia:
-        ssh -N -L 7379:/tmp/vps-agent.sock user@host -p 22
+        ssh -N -L 127.0.0.1:7379:127.0.0.1:7379 user@host -p PORT
 
-    To znaczy: lokalny port 7379 → przez SSH → /tmp/vps-agent.sock na serwerze
+    To znaczy: lokalny port 7379 → przez SSH → 127.0.0.1:7379 na serwerze
+    (backend nasłuchuje na 127.0.0.1:7379 — dostępny tylko lokalnie na serwerze)
     """
 
     def __init__(
@@ -76,13 +77,13 @@ class SSHTunnel:
         host: str,
         ssh_port: int = DEFAULT_SSH_PORT,
         local_port: int = DEFAULT_LOCAL_PORT,
-        remote_socket: str = REMOTE_SOCKET,
+        remote_port: int = DEFAULT_LOCAL_PORT,  # port TCP na serwerze
         identity_file: str | None = None,
     ) -> None:
         self.host = host
         self.ssh_port = ssh_port
         self.local_port = local_port
-        self.remote_socket = remote_socket
+        self.remote_port = remote_port
         self.identity_file = identity_file
         self._process: subprocess.Popen | None = None
 
@@ -101,7 +102,7 @@ class SSHTunnel:
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=30",
             "-o", "ServerAliveCountMax=3",
-            "-L", f"127.0.0.1:{self.local_port}:{self.remote_socket}",
+            "-L", f"127.0.0.1:{self.local_port}:127.0.0.1:{self.remote_port}",
             "-p", str(self.ssh_port),
         ]
 
@@ -394,7 +395,7 @@ Przykłady:
   python cli.py --host root@1.2.3.4 --ssh-port 2222
   python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
 
-  # Jeśli masz już własny tunel SSH (np. ssh -L 7379:/tmp/vps-agent.sock ...)
+  # Jesli masz juz wlasny tunel SSH (np. ssh -L 7379:127.0.0.1:7379 ...)
   python cli.py --no-tunnel --local-port 7379
         """,
     )
@@ -422,10 +423,11 @@ Przykłady:
         metavar="PATH",
     )
     ssh_group.add_argument(
-        "--remote-socket",
-        default=os.getenv("VPS_REMOTE_SOCKET", REMOTE_SOCKET),
-        help=f"Ścieżka do Unix socket na serwerze (domyślnie: {REMOTE_SOCKET})",
-        metavar="PATH",
+        "--remote-port",
+        type=int,
+        default=int(os.getenv("VPS_REMOTE_PORT", str(DEFAULT_LOCAL_PORT))),
+        help=f"Port TCP backendu na serwerze (domyslnie: {DEFAULT_LOCAL_PORT})",
+        metavar="PORT",
     )
 
     # ─── Tryb bez tunelu ───────────────────────────────────────────────────
@@ -483,7 +485,7 @@ Przykłady:
         host=args.host,
         ssh_port=args.ssh_port,
         local_port=args.local_port,
-        remote_socket=args.remote_socket,
+        remote_port=args.remote_port,
         identity_file=args.key,
     )
 
@@ -508,11 +510,11 @@ Przykłady:
 
         if not ready:
             console.print(
-                "[red]❌ Tunel SSH nie odpowiada (timeout 15s).\n"
-                "Sprawdź:\n"
-                "  • czy serwer jest dostępny\n"
-                "  • czy backend działa (docker logs vps-agent)\n"
-                f"  • czy socket istnieje: ssh {args.host} 'ls -la {args.remote_socket}'[/red]"
+                "[red]Tunel SSH nie odpowiada (timeout 15s).\n"
+                "Sprawdz:\n"
+                "  * czy backend dziala na serwerze: docker logs vps-agent\n"
+                "  * czy port TCP jest otwarty: docker ps (kolumna PORTS powinna pokazac 0.0.0.0:7379)"
+                "[/red]"
             )
             sys.exit(1)
 
