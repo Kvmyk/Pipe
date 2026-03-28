@@ -17,4 +17,4 @@ COPY clients/telegram/ .
 
 # Telegram uruchamia się nie uprzywilejowany (ale i tak to tylko powiadomienia)
 # Ze względu na Unix Socket lepiej odpalić z roota lub tej samej grupy by łatwo połączyć z plikiem sock stworzonym przez backend
-CMD ["python", "telegram.py"]
+CMD ["python", "bot.py"]
