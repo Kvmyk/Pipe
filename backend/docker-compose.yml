@@ -26,3 +26,17 @@ services:
       - TCP_HOST=0.0.0.0
       - TCP_PORT=7379
     network_mode: bridge
+
+  telegram:
+    build: 
+      context: ..
+      dockerfile: clients/telegram/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - vps-agent
+    volumes:
+      # Podpinamy zmienne środowiskowe do zarządzania tokenem
+      - ../clients/telegram/.env:/app/clients/telegram/.env:ro
+      # Wspólny socket plikowy do gadania z vps-agentem
+      - /tmp:/tmp
+    network_mode: bridge
