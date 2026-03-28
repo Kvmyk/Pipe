@@ -267,7 +267,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return  # Milcz dla nieautoryzowanych
 
     welcome = (
-        "👋 *Witaj w VPS Management Agent\\!*\n\n"
+        "👋 *Witaj, tutaj Pipe\\!*\n\n"
         "Jestem autonomicznym agentem AI do zarządzania Twoim serwerem VPS\\.\n"
         "Komunikuję się po polsku i wykonuję komendy bezpośrednio na serwerze\\.\n\n"
         "*Dostępne komendy:*\n"
