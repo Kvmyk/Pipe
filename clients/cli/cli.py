@@ -290,6 +290,9 @@ Zmienne srodowiskowe:
 
     args = parser.parse_args()
 
+    if args.host and "@" in args.host:
+        args.host = args.host.split("@")[-1]
+
     if not args.host:
         console.print(
             "[red]Brak adresu serwera.[/red]\n\n"
