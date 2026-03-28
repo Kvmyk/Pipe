@@ -11,6 +11,8 @@ services:
       - ~/.vps_agent_audit.log:/app/audit.log
       # Docker socket — by agent mógł zarządzać kontenerami na Mikrusie
       - /var/run/docker.sock:/var/run/docker.sock
+      # GŁÓWNY DYSK HOST (Tylko Odczyt) - Agent nie usunie plików hosta ale może odczytać np. logi
+      - /:/hostfs:ro
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
       # Dostęp z laptopa: ssh -L 7379:127.0.0.1:7379 user@serwer
