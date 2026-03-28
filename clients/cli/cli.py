@@ -281,10 +281,10 @@ async def _handle_responses(
     Returns:
         True jeśli była operacja wymagająca potwierdzenia.
     """
-    # DEBUG — surowe pakiety z serwera
-    for r in responses:
-        if r.get("response"):  # tylko niepuste
-            console.print(f"[dim cyan]>>> RAW: {r}[/dim cyan]")
+    # DEBUG — wszystkie pakiety z serwera
+    console.print(f"[dim cyan]>>> {len(responses)} pakietow od serwera:[/dim cyan]")
+    for i, r in enumerate(responses):
+        console.print(f"[dim cyan]>>> [{i}] status={r.get('status')} done={r.get('done')} response={repr(r.get('response', '')[:100])}[/dim cyan]")
 
     needs_confirm = False
 
