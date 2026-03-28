@@ -61,6 +61,11 @@ STARTUP_STATUS_MESSAGE = (
     "i podsumuj wyniki po polsku."
 )
 
+SERVER_STATUS_MESSAGE = (
+    "Zbierz z serwera dane: Uptime, Obciążenie CPU, Zużycie Pamięci RAM i Wolne miejsce na dysku (najlepiej sprawdź /hostfs albo wewnetrzne info). "
+    "Odpowiedz ZWIĘZŁĄ i elegancką listą zgodną z Twoimi instrukcjami do Telegram MarkdownV2."
+)
+
 
 # ─── MarkdownV2 helper ────────────────────────────────────────────────────────
 
@@ -256,7 +261,7 @@ def _split_message(text: str, max_length: int = 4000) -> list[str]:
 # ─── Handlery komend ─────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/start — przywitanie i status serwera."""
+    """/start — przywitanie bez automatycznego statusu."""
     user = update.effective_user
     if not _is_allowed(user.id if user else None):
         return  # Milcz dla nieautoryzowanych
@@ -266,7 +271,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Jestem autonomicznym agentem AI do zarządzania Twoim serwerem VPS\\.\n"
         "Komunikuję się po polsku i wykonuję komendy bezpośrednio na serwerze\\.\n\n"
         "*Dostępne komendy:*\n"
-        "/start \\- przywitanie i status serwera\n"
+        "/status \\- szybki przegląd obciążenia serwera\n"
         "/historia \\- ostatnie 10 wpisów z audit logu\n\n"
         "Możesz też pisać do mnie bezpośrednio \\— np\\. "
         "_\"ile mam wolnego miejsca na dysku?\"_"
@@ -274,11 +279,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN_V2)
 
-    # Pobierz status serwera
+
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/status — pobiera obciążenie serwera."""
+    user = update.effective_user
+    if not _is_allowed(user.id if user else None):
+        return
+
     client = get_client(user.id)
     try:
-        await update.message.reply_text(escape_markdown("🔄 Pobieram status serwera..."), parse_mode=ParseMode.MARKDOWN_V2)
-        responses = await client.chat(STARTUP_STATUS_MESSAGE)
+        await update.message.reply_text(escape_markdown("🔄 Analizuję obciążenie i stan MIKRUSA..."), parse_mode=ParseMode.MARKDOWN_V2)
+        responses = await client.chat(SERVER_STATUS_MESSAGE)
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await update.message.reply_text(
@@ -406,6 +417,7 @@ def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("historia", cmd_historia))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

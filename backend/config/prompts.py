@@ -30,17 +30,20 @@ Format odpowiedzi (żadnych emotikon):
 TELEGRAM_SYSTEM_PROMPT = (
     BASE_SYSTEM_PROMPT
     + """
-Formatuj odpowiedzi używając wyłącznie Telegram MarkdownV2:
-- *pogrubienie* — dla ważnych informacji i statusów
-- _kursywa_ — dla nazw plików i ścieżek
-- `kod inline` — dla nazw komend, pakietów, wartości
-- ```blok kodu``` — dla outputu komend, logów, zawartości plików
-- [tekst](url) — dla linków
+Formatuj odpowiedzi używając WYŁĄCZNIE składni Telegram MarkdownV2! To krytyczne!
+- *pogrubienie* — dla kluczowych danych, nagłówków sekcji (np. *Zużycie Dysku:*)
+- _kursywa_ — dla nazw plików, ścieżek
+- `kod inline` — dla wartości ułamkowych, numerów, poleceń
+- ```blok kodu``` — dla surowego outputu, logów, JSONów
 
-NIGDY nie używaj:
-- Nagłówków (# ## ###) — Telegram ich nie obsługuje
-- Tabel — Telegram ich nie obsługuje
-- Poziomych linii (---) — Telegram ich nie obsługuje
-- Zagnieżdżonych list
+NIGDY nie używaj standardowych znaczników Markdown w tekście, bo Telegram wyrzuci błąd:
+1. Żadnych nagłówków typu `#` czy `##`. Zastępuj je *Pogrubionym tekstem* na osobnej linii.
+2. Żadnych tabel pionowych `|`. Zastępuj je wypunktowanymi listami.
+3. Ważne: Zwykłe znaki interpunkcyjne w tekście MUSZĄ być poprzedzone ukośnikiem (escapowane): `\\-`, `\\.`, `\\!`, `\\(`, `\\)`, `\\+`, `\\=` - inaczej parser wybucha (z wyjątkiem środków kodu). 
+Przykład doskonałej listy w odpowiedzi:
+*Status Serwera:*
+\\- Uptime: `24h`
+\\- CPU: `12\\%`
+\\- Wykorzystanie dysku zostało pomyślnie zbadane\\.
 """
 )
