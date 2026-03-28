@@ -27,12 +27,9 @@ AUDIT_LOG_PATH: str = os.getenv("AUDIT_LOG_PATH", "/app/audit.log")
 # ─── Socket ─────────────────────────────────────────────────────────────────
 AGENT_SOCKET: str = os.getenv("AGENT_SOCKET", "/tmp/vps-agent.sock")
 
-# TCP — nasłuchiwanie (0.0.0.0 dla bezpośredniego połączenia)
-TCP_HOST: str = os.getenv("TCP_HOST", "0.0.0.0")
+# TCP — nasłuchiwanie dla SSH tunnel z laptopa (TYLKO 127.0.0.1!)
+TCP_HOST: str = os.getenv("TCP_HOST", "127.0.0.1")
 TCP_PORT: int = int(os.getenv("TCP_PORT", "7379"))
-
-# TOKEN — opcjonalne zabezpieczenie (jeśli niepusty, wymaga tokena od klienta)
-AGENT_TOKEN: str = os.getenv("AGENT_TOKEN", "")
 
 # ─── Validation ─────────────────────────────────────────────────────────────
 def validate() -> None:

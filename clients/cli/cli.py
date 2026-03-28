@@ -2,12 +2,22 @@
 CLI — interaktywny REPL do zarządzania zdalnym serwerem VPS przez agenta AI.
 
 Działa NA LAPTOPIE użytkownika.
-Łączy się bezpośrednio przez TCP z backendem na serwerze.
+Łączy się z backendem uruchomionym NA SERWERZE (Mikrus) przez SSH tunnel.
+
+CLI automatycznie zestawia tunel SSH który forwarduje Unix socket z serwera
+do lokalnego portu TCP. Dzięki temu użytkownik nie musi ręcznie konfigurować
+żadnych tuneli.
+
+Schemat połączenia:
+    Laptop → SSH tunnel → Serwer (Mikrus)
+      CLI --------------------→ backend/server.py
+      :7379 (local TCP)       /tmp/vps-agent.sock (remote Unix)
 
 Użycie:
-    python cli.py --host 1.2.3.4
-    python cli.py --host 1.2.3.4 --port 7379
-    python cli.py --host 1.2.3.4 --token moj-sekretny-token
+    python cli.py --host user@mikrus.example.com
+    python cli.py --host root@1.2.3.4 --port 22
+    python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
+    python cli.py --host root@1.2.3.4 --no-tunnel  # jeśli tunnel jest już aktywny
 """
 
 from __future__ import annotations
@@ -16,56 +26,176 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
+import signal
+import subprocess
 import sys
+import time
 import uuid
+from pathlib import Path
 
 try:
     from rich.console import Console
+    from rich.markdown import Markdown
     from rich.panel import Panel
     from rich.prompt import Confirm, Prompt
     from rich.rule import Rule
     from rich.text import Text
+    from rich.spinner import Spinner
+    from rich.live import Live
 except ImportError:
-    print("Blad: zainstaluj zaleznosci: pip install -r requirements.txt")
+    print("Błąd: zainstaluj zależności: pip install -r requirements.txt")
     sys.exit(1)
 
 console = Console()
 
-DEFAULT_PORT: int = 7379
+# ─── Stałe ───────────────────────────────────────────────────────────────────
+DEFAULT_SSH_PORT: int = 22
+DEFAULT_LOCAL_PORT: int = 7379           # lokalny port TCP dla tunelu SSH
+REMOTE_SOCKET: str = "/tmp/vps-agent.sock"  # socket na serwerze
 STARTUP_STATUS_MESSAGE = (
-    "Sprawdz stan serwera: wykonaj hostname && uptime && df -h / && free -h "
+    "Sprawdź stan serwera: wykonaj hostname && uptime && df -h / && free -h "
     "i podsumuj wyniki po polsku."
 )
 
 
-# ─── Klient TCP ───────────────────────────────────────────────────────────────
+# ─── SSH Tunel ────────────────────────────────────────────────────────────────
 
-class AgentClient:
-    """Klient TCP łączący się bezpośrednio z backendem."""
+class SSHTunnel:
+    """
+    Zarządza tunelem SSH który forwarduje TCP port z serwera na lokalny port.
 
-    def __init__(self, host: str, port: int, session_id: str, token: str = "") -> None:
+    Komenda SSH którą uruchamia:
+        ssh -N -L 127.0.0.1:7379:127.0.0.1:7379 user@host -p PORT
+
+    To znaczy: lokalny port 7379 → przez SSH → 127.0.0.1:7379 na serwerze
+    (backend nasłuchuje na 127.0.0.1:7379 — dostępny tylko lokalnie na serwerze)
+    """
+
+    def __init__(
+        self,
+        host: str,
+        ssh_port: int = DEFAULT_SSH_PORT,
+        local_port: int = DEFAULT_LOCAL_PORT,
+        remote_port: int = DEFAULT_LOCAL_PORT,  # port TCP na serwerze
+        identity_file: str | None = None,
+    ) -> None:
+        self.host = host
+        self.ssh_port = ssh_port
+        self.local_port = local_port
+        self.remote_port = remote_port
+        self.identity_file = identity_file
+        self._process: subprocess.Popen | None = None
+
+    def start(self) -> None:
+        """Uruchamia tunel SSH w tle."""
+        if not shutil.which("ssh"):
+            raise RuntimeError(
+                "Brak komendy 'ssh'. "
+                "Zainstaluj OpenSSH client lub użyj --no-tunnel z ręcznym tunelem."
+            )
+
+        cmd = [
+            "ssh",
+            "-N",                           # nie uruchamiaj powłoki zdalnej
+            "-o", "StrictHostKeyChecking=accept-new",  # auto-accept nowych hostów
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=3",
+            "-L", f"127.0.0.1:{self.local_port}:127.0.0.1:{self.remote_port}",
+            "-p", str(self.ssh_port),
+        ]
+
+        if self.identity_file:
+            cmd.extend(["-i", self.identity_file])
+
+        cmd.append(self.host)
+
+        # NIE przekierowujemy stdin — SSH może zapytać o hasło w terminalu
+        self._process = subprocess.Popen(
+            cmd,
+            stdin=None,          # dziedzicz stdin z procesu rodzica (dla hasła)
+            stdout=subprocess.DEVNULL,
+            stderr=None,         # dziedzicz stderr (pokazuje prompt hasła)
+        )
+
+    def wait_ready(self, timeout: float = 10.0) -> bool:
+        """
+        Czeka aż tunel będzie gotowy (port TCP dostępny).
+
+        Returns:
+            True jeśli tunel jest gotowy, False po timeout.
+        """
+        import socket as _socket
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            # Sprawdź czy proces żyje
+            if self._process and self._process.poll() is not None:
+                raise RuntimeError(
+                    f"Tunel SSH zakończył się z kodem {self._process.returncode}.\n"
+                    "Sprawdź adres serwera, port SSH i dane logowania."
+                )
+            # Sprawdź czy port TCP jest już dostępny
+            try:
+                with _socket.create_connection(("127.0.0.1", self.local_port), timeout=1):
+                    return True
+            except (ConnectionRefusedError, OSError):
+                time.sleep(0.3)
+
+        return False
+
+    def stop(self) -> None:
+        """Zatrzymuje tunel SSH."""
+        if self._process and self._process.poll() is None:
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+        self._process = None
+
+    def __enter__(self) -> "SSHTunnel":
+        self.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.stop()
+
+
+# ─── Klient TCP (przez tunel SSH) ────────────────────────────────────────────
+
+class RemoteClient:
+    """
+    Klient TCP łączący się z backendem przez tunel SSH.
+
+    Tunel forwarduje lokalny port TCP → Unix socket na serwerze.
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        host: str = "127.0.0.1",
+        port: int = DEFAULT_LOCAL_PORT,
+    ) -> None:
+        self.session_id = session_id
         self.host = host
         self.port = port
-        self.session_id = session_id
-        self.token = token
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
 
     async def connect(self) -> None:
+        """Nawiązuje połączenie TCP z lokalnym portem tunelu."""
         try:
-            self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port),
-                timeout=10.0
-            )
-        except asyncio.TimeoutError:
-            raise ConnectionError(f"Timeout: nie mozna polaczyc z {self.host}:{self.port}")
+            self._reader, self._writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError:
-            raise ConnectionError(
-                f"Odmowa polaczenia: {self.host}:{self.port}\n"
-                "Sprawdz czy backend dziala i port jest otwarty."
+            raise ConnectionRefusedError(
+                f"Nie można połączyć się z {self.host}:{self.port}.\n"
+                "Sprawdź czy tunel SSH jest aktywny i backend działa na serwerze."
             )
 
     async def disconnect(self) -> None:
+        """Rozłącza się."""
         if self._writer:
             try:
                 self._writer.close()
@@ -76,78 +206,88 @@ class AgentClient:
             self._reader = None
 
     async def send_message(self, message: str) -> list[dict]:
-        return await self._send({"message": message, "session_id": self.session_id, "interface": "cli"})
+        """Wysyła wiadomość i zwraca listę odpowiedzi."""
+        return await self._send(
+            {"message": message, "session_id": self.session_id, "interface": "cli"}
+        )
 
     async def send_confirm(self, confirmed: bool) -> list[dict]:
+        """Wysyła potwierdzenie/odmowę."""
         return await self._send({"confirm": confirmed, "session_id": self.session_id})
 
     async def _send(self, data: dict) -> list[dict]:
+        """Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`."""
         if not self._writer or not self._reader:
-            raise RuntimeError("Brak polaczenia z backendem.")
-
-        if self.token:
-            data["token"] = self.token
+            raise RuntimeError("Brak połączenia z backendem.")
 
         line = json.dumps(data, ensure_ascii=False) + "\n"
         self._writer.write(line.encode("utf-8"))
         await self._writer.drain()
 
         responses: list[dict] = []
-        try:
-            while True:
-                raw = await asyncio.wait_for(self._reader.readline(), timeout=120.0)
-                if not raw:
+        while True:
+            raw = await self._reader.readline()
+            if not raw:
+                break
+            try:
+                response = json.loads(raw.decode("utf-8", errors="replace"))
+                responses.append(response)
+                if response.get("done"):
                     break
-                try:
-                    response = json.loads(raw.decode("utf-8", errors="replace"))
-                    responses.append(response)
-                    if response.get("done"):
-                        break
-                except json.JSONDecodeError:
-                    continue
-        except asyncio.TimeoutError:
-            responses.append({"response": "Timeout: agent nie odpowiedzial w ciagu 120s.", "status": "error", "done": True})
+            except json.JSONDecodeError:
+                continue
 
         return responses
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
 
-def _print_banner(host: str, port: int) -> None:
+def _print_banner(host: str) -> None:
+    """Wyświetla baner startowy z informacją o serwerze."""
     console.print(
         Panel.fit(
             "[bold cyan]VPS Management Agent[/bold cyan]\n"
-            "[dim]Autonomiczny agent AI do zarzadzania serwerem Linux[/dim]\n\n"
-            f"[dim]Polaczono z: [bold white]{host}:{port}[/bold white][/dim]\n"
-            "[dim]Wpisz [bold]exit[/bold] lub nacisnij Ctrl+C aby wyjsc[/dim]",
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux[/dim]\n\n"
+            f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
+            "[dim]Wpisz [bold]exit[/bold] lub naciśnij Ctrl+C aby wyjść[/dim]",
             border_style="cyan",
         )
     )
 
 
 def _print_response(text: str, status: str) -> None:
-    """Wyswietla odpowiedz agenta."""
+    """Wyświetla odpowiedź agenta."""
     text = text.strip()
     if not text:
         return
+
     if status == "error" or "❌" in text or "🚫" in text:
         style = "red"
     elif status == "confirm" or "⚠️" in text:
         style = "yellow"
     else:
         style = "default"
+
     console.print(text, style=style)
 
 
-async def _handle_responses(responses: list[dict], client: AgentClient) -> bool:
-    """Przetwarza odpowiedzi. Zwraca True jesli bylo potwierdzenie."""
+async def _handle_responses(
+    responses: list[dict],
+    client: RemoteClient,
+) -> bool:
+    """
+    Przetwarza odpowiedzi z backendu.
 
-    # DEBUG
-    console.print(f"[dim]>>> {len(responses)} pakietow:[/dim]")
+    Returns:
+        True jeśli była operacja wymagająca potwierdzenia.
+    """
+    # DEBUG — wszystkie pakiety z serwera
+    console.print(f"[dim cyan]>>> {len(responses)} pakietow od serwera:[/dim cyan]")
     for i, r in enumerate(responses):
-        console.print(f"[dim]>>> [{i}] done={r.get('done')} status={r.get('status')} resp={repr(r.get('response','')[:80])}[/dim]")
+        console.print(f"[dim cyan]>>> [{i}] status={r.get('status')} done={r.get('done')} response={repr(r.get('response', '')[:100])}[/dim cyan]")
 
     needs_confirm = False
+
     for resp in responses:
         text = resp.get("response", "")
         status = resp.get("status", "ok")
@@ -160,15 +300,18 @@ async def _handle_responses(responses: list[dict], client: AgentClient) -> bool:
     if needs_confirm:
         console.print()
         try:
-            confirmed = Confirm.ask("[yellow]Czy chcesz wykonac te operacje?[/yellow]", default=False)
+            confirmed = Confirm.ask(
+                "[yellow]Czy chcesz wykonać tę operację?[/yellow]",
+                default=False,
+            )
         except (KeyboardInterrupt, EOFError):
             confirmed = False
             console.print()
 
         if confirmed:
-            console.print("[dim]Operacja zatwierdzona...[/dim]")
+            console.print("[dim]✅ Operacja zatwierdzona — wykonuję...[/dim]")
         else:
-            console.print("[dim]Operacja anulowana.[/dim]")
+            console.print("[dim]❌ Operacja anulowana.[/dim]")
 
         confirm_responses = await client.send_confirm(confirmed)
         await _handle_responses(confirm_responses, client)
@@ -179,14 +322,16 @@ async def _handle_responses(responses: list[dict], client: AgentClient) -> bool:
 
 # ─── Główna pętla REPL ────────────────────────────────────────────────────────
 
-async def run_cli(client: AgentClient, host: str, port: int) -> None:
-    _print_banner(host, port)
+async def run_cli(client: RemoteClient, host: str) -> None:
+    """Główna pętla REPL."""
+    _print_banner(host)
 
+    # Połącz z backendem
     try:
         await client.connect()
-        console.print(f"[dim]Polaczono z {host}:{port}[/dim]")
-    except ConnectionError as exc:
-        console.print(f"[red]{exc}[/red]")
+        console.print(f"[dim]Połączono z agentem na {host}[/dim]")
+    except Exception as exc:
+        console.print(f"[red]❌ Błąd połączenia: {exc}[/red]")
         return
 
     # Status startowy
@@ -196,11 +341,12 @@ async def run_cli(client: AgentClient, host: str, port: int) -> None:
         responses = await client.send_message(STARTUP_STATUS_MESSAGE)
         await _handle_responses(responses, client)
     except Exception as exc:
-        console.print(f"[red]Blad statusu: {exc}[/red]")
+        console.print(f"[red]❌ Błąd podczas pobierania statusu: {exc}[/red]")
+
     console.print(Rule(style="dim"))
     console.print()
 
-    # REPL
+    # Pętla REPL
     try:
         while True:
             try:
@@ -212,7 +358,7 @@ async def run_cli(client: AgentClient, host: str, port: int) -> None:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() in ("exit", "quit", "wyjdz", "koniec"):
+            if user_input.lower() in ("exit", "quit", "wyjdź", "koniec"):
                 break
 
             console.print()
@@ -220,12 +366,15 @@ async def run_cli(client: AgentClient, host: str, port: int) -> None:
                 responses = await client.send_message(user_input)
                 await _handle_responses(responses, client)
             except Exception as exc:
-                console.print(f"[red]Blad: {exc}[/red]")
+                console.print(f"[red]❌ Błąd komunikacji: {exc}[/red]")
+                # Spróbuj ponownie połączyć
                 try:
                     await client.connect()
+                    console.print("[dim]Reconnected.[/dim]")
                 except Exception:
-                    console.print("[red]Nie mozna ponownie polaczyc.[/red]")
+                    console.print("[red]❌ Nie można ponownie połączyć się z backendem.[/red]")
                     break
+
             console.print()
 
     finally:
@@ -236,83 +385,153 @@ async def run_cli(client: AgentClient, host: str, port: int) -> None:
 # ─── Punkt wejścia ────────────────────────────────────────────────────────────
 
 def main() -> None:
+    """Punkt wejścia CLI."""
     parser = argparse.ArgumentParser(
-        description="VPS Management Agent CLI",
+        description="VPS Management Agent — Interfejs CLI (działa na laptopie)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Przyklady:
-  python cli.py --host 1.2.3.4
-  python cli.py --host 1.2.3.4 --port 7379
-  python cli.py --host 1.2.3.4 --token moj-token
+Przykłady:
+  # Połącz przez SSH (automatyczny tunel)
+  python cli.py --host user@mikrus.example.com
+  python cli.py --host root@1.2.3.4
+  python cli.py --host root@1.2.3.4 --ssh-port 2222
+  python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
 
-Zmienne srodowiskowe:
-  VPS_HOST   - adres IP serwera
-  VPS_PORT   - port TCP (domyslnie 7379)
-  VPS_TOKEN  - token autoryzacji
+  # Jesli masz juz wlasny tunel SSH (np. ssh -L 7379:127.0.0.1:7379 ...)
+  python cli.py --no-tunnel --local-port 7379
         """,
     )
-    parser.add_argument(
+
+    # ─── SSH ───────────────────────────────────────────────────────────────
+    ssh_group = parser.add_argument_group("Połączenie SSH (domyślne)")
+    ssh_group.add_argument(
         "--host",
         default=os.getenv("VPS_HOST"),
-        help="Adres IP serwera (np. 1.2.3.4). Mozna tez ustawic VPS_HOST.",
-        metavar="IP",
+        help="Adres serwera: user@host lub host (np. root@mikrus.example.com). "
+             "Można też ustawić przez zmienną środowiskową VPS_HOST.",
+        metavar="USER@HOST",
     )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.getenv("VPS_PORT", str(DEFAULT_PORT))),
-        help=f"Port TCP backendu (domyslnie: {DEFAULT_PORT})",
-        metavar="PORT",
-    )
-    parser.add_argument(
+    ssh_group.add_argument(
         "--ssh-port",
         type=int,
-        help="Ignorowany — uzytkownik laczy sie bezposrednio przez TCP",
+        default=int(os.getenv("VPS_SSH_PORT", str(DEFAULT_SSH_PORT))),
+        help=f"Port SSH serwera (domyślnie: {DEFAULT_SSH_PORT})",
         metavar="PORT",
     )
-    parser.add_argument(
+    ssh_group.add_argument(
         "--key",
-        help="Ignorowany — uzytkownik laczy sie bezposrednio przez TCP",
+        default=os.getenv("VPS_SSH_KEY"),
+        help="Ścieżka do klucza prywatnego SSH (domyślnie: domyślny klucz z ~/.ssh/)",
         metavar="PATH",
     )
-    parser.add_argument(
-        "--token",
-        default=os.getenv("VPS_TOKEN", ""),
-        help="Token autoryzacji (jesli skonfigurowany na serwerze)",
-        metavar="TOKEN",
+    ssh_group.add_argument(
+        "--remote-port",
+        type=int,
+        default=int(os.getenv("VPS_REMOTE_PORT", str(DEFAULT_LOCAL_PORT))),
+        help=f"Port TCP backendu na serwerze (domyslnie: {DEFAULT_LOCAL_PORT})",
+        metavar="PORT",
     )
+
+    # ─── Tryb bez tunelu ───────────────────────────────────────────────────
+    manual_group = parser.add_argument_group("Tryb bez automatycznego tunelu")
+    manual_group.add_argument(
+        "--no-tunnel",
+        action="store_true",
+        help="Nie zestawiaj tunelu SSH — połącz się bezpośrednio z lokalnym portem "
+             "(użyj gdy masz własny tunel lub testujesz lokalnie)",
+    )
+    manual_group.add_argument(
+        "--local-port",
+        type=int,
+        default=int(os.getenv("VPS_LOCAL_PORT", str(DEFAULT_LOCAL_PORT))),
+        help=f"Lokalny port TCP do połączenia (domyślnie: {DEFAULT_LOCAL_PORT})",
+        metavar="PORT",
+    )
+
+    # ─── Sesja ─────────────────────────────────────────────────────────────
     parser.add_argument(
         "--session",
         default=None,
-        help="ID sesji (domyslnie: losowy UUID)",
+        help="ID sesji (domyślnie: losowy UUID)",
         metavar="ID",
     )
 
     args = parser.parse_args()
 
-    if args.host and "@" in args.host:
-        args.host = args.host.split("@")[-1]
+    session_id = args.session or str(uuid.uuid4())
 
+    # ─── Tryb bez tunelu ───────────────────────────────────────────────────
+    if args.no_tunnel:
+        client = RemoteClient(
+            session_id=session_id,
+            host="127.0.0.1",
+            port=args.local_port,
+        )
+        display_host = f"127.0.0.1:{args.local_port} (lokalny tunel)"
+        try:
+            asyncio.run(run_cli(client, display_host))
+        except KeyboardInterrupt:
+            pass
+        return
+
+    # ─── Tryb SSH tunel ────────────────────────────────────────────────────
     if not args.host:
         console.print(
-            "[red]Brak adresu serwera.[/red]\n\n"
-            "Podaj --host IP lub ustaw zmienna VPS_HOST.\n"
-            "[dim]Przyklad: python cli.py --host 1.2.3.4[/dim]"
+            "[red]❌ Brak adresu serwera.[/red]\n\n"
+            "Podaj --host user@twoj-serwer lub ustaw zmienną VPS_HOST.\n\n"
+            "[dim]Przykład: python cli.py --host root@mikrus.example.com[/dim]"
         )
         sys.exit(1)
 
-    session_id = args.session or str(uuid.uuid4())
-    client = AgentClient(
+    tunnel = SSHTunnel(
         host=args.host,
-        port=args.port,
-        session_id=session_id,
-        token=args.token,
+        ssh_port=args.ssh_port,
+        local_port=args.local_port,
+        remote_port=args.remote_port,
+        identity_file=args.key,
     )
 
+    client = RemoteClient(
+        session_id=session_id,
+        host="127.0.0.1",
+        port=args.local_port,
+    )
+
+    console.print(f"[dim]Laczę z {args.host} przez SSH...[/dim]")
+    console.print("[dim](Jesli pojawi sie monit o haslo SSH, wpisz je ponizej)[/dim]")
+
     try:
-        asyncio.run(run_cli(client, args.host, args.port))
+        tunnel.start()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    try:
+        # Czekaj az tunel bedzie gotowy — BEZ spinnera zeby SSH mogl pytac o haslo
+        console.print("[dim]Zestawiam tunel SSH...[/dim]")
+        ready = tunnel.wait_ready(timeout=20.0)
+
+        if not ready:
+            console.print(
+                "[red]Tunel SSH nie odpowiada (timeout 20s).\n"
+                "Sprawdz:\n"
+                "  * czy wpisales haslo SSH (jesli bylo wymagane)\n"
+                "  * czy backend dziala na serwerze: docker logs backend_vps-agent_1\n"
+                "  * czy port 7379 jest widoczny: docker ps"
+                "[/red]"
+            )
+            sys.exit(1)
+
+        asyncio.run(run_cli(client, args.host))
+
+    except RuntimeError as exc:
+        console.print(f"[red]❌ Błąd tunelu SSH: {exc}[/red]")
+        sys.exit(1)
     except KeyboardInterrupt:
         pass
+    finally:
+        console.print("[dim]Zamykam tunel SSH...[/dim]")
+        tunnel.stop()
 
 
 if __name__ == "__main__":
