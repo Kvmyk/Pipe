@@ -240,30 +240,40 @@ class RemoteClient:
 
 def _print_banner(host: str) -> None:
     """Wyświetla baner startowy z informacją o serwerze."""
+    ascii_art = """[bold cyan]
+  ____  ___ ____  _____ 
+ |  _ \\|_ _|  _ \\| ____|
+ | |_) || || |_) |  _|  
+ |  __/ | ||  __/| |___ 
+ |_|   |___|_|   |_____|
+[/bold cyan]"""
     console.print(
         Panel.fit(
-            "[bold cyan]VPS Management Agent[/bold cyan]\n"
+            f"{ascii_art}\n"
             "[dim]Autonomiczny agent AI do zarządzania serwerem Linux[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-            "[dim]Wpisz [bold]exit[/bold] lub naciśnij Ctrl+C aby wyjść[/dim]",
+            "[dim]Wpisz [bold cyan]/exit[/bold cyan] lub naciśnij Ctrl+C aby wyjść i wyłączyć tunel[/dim]",
             border_style="cyan",
         )
     )
 
 
 def _print_response(text: str, status: str) -> None:
-    """Wyświetla odpowiedź agenta."""
+    """Wyświetla odpowiedź agenta w estetycznym formacie."""
     text = text.strip()
     if not text:
         return
 
-    if status == "error" or "[BLAD]" in text or "[ODMOWA]" in text:
-        style = "red"
-    elif status == "confirm" or "[POTWIERDZ]" in text:
-        style = "yellow"
-    else:
-        style = "default"
+    # Usunięcie surowych tagów i wstawienie kolorów
+    text = text.replace("[SUKCES]", "✔ [bold green]SUKCES:[/bold green]")
+    text = text.replace("[BLAD]", "✖ [bold red]BŁĄD:[/bold red]")
+    text = text.replace("[POTWIERDZ]", "⚠ [bold yellow]WYMAGA POTWIERDZENIA:[/bold yellow]")
+    text = text.replace("[ODMOWA]", "⨂ [bold red]ODMOWA:[/bold red]")
 
+    # Domyślny styl tła na wypadek czystego tekstu (żeby nie był dennie biały, tylko czytelny wg. konsoli)
+    style = "default"
+    
+    # Render tekstu
     console.print(text, style=style)
 
 
@@ -305,9 +315,9 @@ async def _handle_responses(
             console.print()
 
         if confirmed:
-            console.print("[dim]✅ Operacja zatwierdzona — wykonuję...[/dim]")
+            console.print("[dim]✔ Operacja zatwierdzona — wykonuję...[/dim]")
         else:
-            console.print("[dim]❌ Operacja anulowana.[/dim]")
+            console.print("[dim]✖ Operacja anulowana.[/dim]")
 
         confirm_responses = await client.send_confirm(confirmed)
         await _handle_responses(confirm_responses, client)
@@ -346,7 +356,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() in ("exit", "quit", "wyjdź", "koniec"):
+            if user_input.lower() in ("/exit", "exit", "quit", "wyjdź", "koniec"):
                 break
 
             console.print()
