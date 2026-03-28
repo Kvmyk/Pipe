@@ -10,8 +10,7 @@ services:
       # Audit log — persystowany na hoście
       - ~/.vps_agent_audit.log:/app/audit.log
     ports:
-      # TCP dla bezpośredniego połączenia — bindowany na 0.0.0.0
-      - "0.0.0.0:7379:7379"
+      - "7379:7379"
     environment:
       - LLM_BASE_URL
       - LLM_API_KEY

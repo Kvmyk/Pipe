@@ -22,4 +22,7 @@ RUN useradd --system --no-create-home --shell /bin/false vpsagent
 USER vpsagent
 
 # Punkt wejścia — python widzi /app, więc "import backend" działa
+# Eksponuj port TCP backendu
+EXPOSE 7379
+
 CMD ["python", "-m", "backend.server"]
