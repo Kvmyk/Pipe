@@ -65,6 +65,12 @@ async def handle_client(
                 await _send(writer, {"response": "", "status": "ok", "done": True})
                 continue
 
+            # Sprawdź token (jeśli ustawiony w settings)
+            token = request.get("token", "")
+            if settings.AGENT_TOKEN and token != settings.AGENT_TOKEN:
+                await _send(writer, {"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True})
+                continue
+
             # Obsłuż wiadomość
             message = request.get("message", "").strip()
             if not message:
