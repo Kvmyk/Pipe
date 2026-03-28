@@ -53,10 +53,6 @@ console = Console()
 DEFAULT_SSH_PORT: int = 22
 DEFAULT_LOCAL_PORT: int = 7379           # lokalny port TCP dla tunelu SSH
 REMOTE_SOCKET: str = "/tmp/vps-agent.sock"  # socket na serwerze
-STARTUP_STATUS_MESSAGE = (
-    "Sprawdź stan serwera: wykonaj hostname && uptime && df -h / && free -h "
-    "i podsumuj wyniki po polsku."
-)
 
 
 # ─── SSH Tunel ────────────────────────────────────────────────────────────────
@@ -334,15 +330,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
         console.print(f"[red]❌ Błąd połączenia: {exc}[/red]")
         return
 
-    # Status startowy
-    console.print()
-    console.print(Rule("[dim]Status serwera[/dim]", style="dim"))
-    try:
-        responses = await client.send_message(STARTUP_STATUS_MESSAGE)
-        await _handle_responses(responses, client)
-    except Exception as exc:
-        console.print(f"[red]❌ Błąd podczas pobierania statusu: {exc}[/red]")
-
+    # Status startowy ukryty na zyczenie
     console.print(Rule(style="dim"))
     console.print()
 
