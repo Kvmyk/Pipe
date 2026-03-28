@@ -19,6 +19,6 @@ services:
       - LLM_MODEL
       - AUDIT_LOG_PATH=/app/audit.log
       - AGENT_SOCKET=/tmp/vps-agent.sock
-      - TCP_HOST=127.0.0.1
+      - TCP_HOST=0.0.0.0
       - TCP_PORT=7379
     network_mode: bridge
