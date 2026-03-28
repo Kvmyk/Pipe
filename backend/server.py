@@ -67,7 +67,8 @@ async def handle_client(
 
             # Sprawdź token (jeśli ustawiony w settings)
             token = request.get("token", "")
-            if settings.AGENT_TOKEN and token != settings.AGENT_TOKEN:
+            expected_token = getattr(settings, "AGENT_TOKEN", None)
+            if expected_token and token != expected_token:
                 await _send(writer, {"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True})
                 continue
 
