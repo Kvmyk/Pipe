@@ -1,6 +1,6 @@
-# install.ps1 — Instaluje skrót "pipe" w PowerShell
+# install.ps1 - Instaluje skrot "pipe" w PowerShell
 # Uruchom raz: .\install.ps1
-# Potem wystarczy wpisać: pipe
+# Potem wystarczy wpisac: pipe
 
 param(
     [string]$VpsHost = "",
@@ -11,28 +11,28 @@ param(
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $CliPath = Join-Path $ScriptDir "clients\cli\cli.py"
 
-# ─── Zapytaj o adres serwera jeśli nie podano ────────────────────────────────
+# Zapytaj o adres serwera jesli nie podano
 if (-not $VpsHost) {
     $VpsHost = Read-Host "Podaj adres serwera (np. root@mikrus.example.com)"
 }
 
 if (-not $VpsHost) {
-    Write-Host "❌ Błąd: adres serwera jest wymagany." -ForegroundColor Red
+    Write-Host "BLAD: adres serwera jest wymagany." -ForegroundColor Red
     exit 1
 }
 
-# ─── Sprawdź czy Python jest dostępny ────────────────────────────────────────
+# Sprawdz czy Python jest dostepny
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "❌ Błąd: Python nie jest zainstalowany lub nie jest w PATH." -ForegroundColor Red
+    Write-Host "BLAD: Python nie jest zainstalowany lub nie jest w PATH." -ForegroundColor Red
     exit 1
 }
 
-# ─── Zainstaluj zależności ───────────────────────────────────────────────────
-Write-Host "📦 Instaluję zależności CLI..." -ForegroundColor Cyan
+# Zainstaluj zaleznosci
+Write-Host "Instaluje zaleznosci CLI..." -ForegroundColor Cyan
 $RequirementsPath = Join-Path $ScriptDir "clients\cli\requirements.txt"
 python -m pip install -r $RequirementsPath --quiet
 
-# ─── Buduj argumenty dla funkcji 'pipe' ──────────────────────────────────────
+# Zbuduj argumenty dla funkcji 'pipe'
 $PipeArgs = "--host `"$VpsHost`""
 if ($SshPort -ne "22") {
     $PipeArgs += " --ssh-port $SshPort"
@@ -41,7 +41,7 @@ if ($SshKey) {
     $PipeArgs += " --key `"$SshKey`""
 }
 
-# ─── Dodaj funkcję do profilu PowerShell ─────────────────────────────────────
+# Przygotuj profil PowerShell
 $ProfileDir = Split-Path -Parent $PROFILE
 if (-not (Test-Path $ProfileDir)) {
     New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
@@ -50,34 +50,46 @@ if (-not (Test-Path $PROFILE)) {
     New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
 
-$FunctionContent = @"
+$Marker = "# --- VPS Management Agent (Pipe) ---"
+$MarkerEnd = "# --- end Pipe ---"
 
-# ─── VPS Management Agent (Pipe) ──────────────────────────────────────────────
+$FunctionBlock = @"
+
+$Marker
 function pipe {
-    python "$CliPath" $PipeArgs @args
+    python "$CliPath" $PipeArgs `$args
 }
+$MarkerEnd
 "@
 
-# Sprawdź czy funkcja już istnieje w profilu
+# Sprawdz czy funkcja juz istnieje - jesli tak, zastap
 $ProfileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
-if ($ProfileContent -and $ProfileContent.Contains("VPS Management Agent (Pipe)")) {
-    # Zastąp istniejący blok
-    $ProfileContent = $ProfileContent -replace "(?s)# ─── VPS Management Agent \(Pipe\).*?^}", ""
-    $ProfileContent = $ProfileContent.TrimEnd()
-    Set-Content $PROFILE ($ProfileContent + $FunctionContent)
-    Write-Host "🔄 Zaktualizowano istniejący skrót 'pipe' w profilu." -ForegroundColor Yellow
+
+if ($ProfileContent -and $ProfileContent.Contains($Marker)) {
+    # Usun stary blok za pomoca linii po linii
+    $lines = Get-Content $PROFILE
+    $newLines = @()
+    $skip = $false
+    foreach ($line in $lines) {
+        if ($line -match [regex]::Escape($Marker)) { $skip = $true }
+        if (-not $skip) { $newLines += $line }
+        if ($skip -and $line -match [regex]::Escape($MarkerEnd)) { $skip = $false }
+    }
+    Set-Content $PROFILE $newLines
+    Add-Content $PROFILE $FunctionBlock
+    Write-Host "Zaktualizowano istniejacy skrot 'pipe' w profilu." -ForegroundColor Yellow
 } else {
-    Add-Content $PROFILE $FunctionContent
-    Write-Host "✅ Dodano skrót 'pipe' do profilu PowerShell." -ForegroundColor Green
+    Add-Content $PROFILE $FunctionBlock
+    Write-Host "Dodano skrot 'pipe' do profilu PowerShell." -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host " Gotowe! Załaduj profil i wpisz 'pipe' aby połączyć się z:" -ForegroundColor Cyan
+Write-Host "=================================================" -ForegroundColor Cyan
+Write-Host " Gotowe! Skrot 'pipe' bedzie laczyc sie z:      " -ForegroundColor Cyan
 Write-Host "   $VpsHost" -ForegroundColor White
 Write-Host ""
-Write-Host " Aby zastosować teraz (bez restartu terminala):" -ForegroundColor Cyan
+Write-Host " Aby zastosowac teraz (bez restartu terminala): " -ForegroundColor Cyan
 Write-Host "   . `$PROFILE" -ForegroundColor Yellow
-Write-Host " Lub po prostu:" -ForegroundColor Cyan
+Write-Host " Potem wpisz:                                   " -ForegroundColor Cyan
 Write-Host "   pipe" -ForegroundColor Yellow
-Write-Host "════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "=================================================" -ForegroundColor Cyan
