@@ -1,0 +1,45 @@
+# Pliki konfiguracyjne — NIE commituj ich do repozytorium
+.env
+*.env
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyc
+.mypy_cache/
+.ruff_cache/
+
+# Środowiska wirtualne
+.venv/
+venv/
+env/
+
+# Unix socket
+*.sock
+
+# Logi
+*.log
+audit.log
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Dystrybucja Python
+dist/
+build/
+*.egg-info/
