@@ -13,12 +13,18 @@ $CliPath = Join-Path $ScriptDir "clients\cli\cli.py"
 
 # Zapytaj o adres serwera jesli nie podano
 if (-not $VpsHost) {
-    $VpsHost = Read-Host "Podaj adres serwera (np. root@mikrus.example.com)"
+    $VpsHost = Read-Host "Podaj adres serwera (np. root@twoj-serwer.mikr.us)"
 }
 
 if (-not $VpsHost) {
     Write-Host "BLAD: adres serwera jest wymagany." -ForegroundColor Red
     exit 1
+}
+
+# Zapytaj o port SSH (Mikrus NIE uzywa portu 22 - sprawdz w panelu mikr.us)
+if ($SshPort -eq "22") {
+    $inputPort = Read-Host "Podaj port SSH (znajdziesz w panelu mikr.us) [domyslnie: 22]"
+    if ($inputPort) { $SshPort = $inputPort }
 }
 
 # Sprawdz czy Python jest dostepny
