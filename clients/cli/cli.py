@@ -257,9 +257,9 @@ def _print_response(text: str, status: str) -> None:
     if not text:
         return
 
-    if status == "error" or "❌" in text or "🚫" in text:
+    if status == "error" or "[BLAD]" in text or "[ODMOWA]" in text:
         style = "red"
-    elif status == "confirm" or "⚠️" in text:
+    elif status == "confirm" or "[POTWIERDZ]" in text:
         style = "yellow"
     else:
         style = "default"
@@ -327,7 +327,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
         await client.connect()
         console.print(f"[dim]Połączono z agentem na {host}[/dim]")
     except Exception as exc:
-        console.print(f"[red]❌ Błąd połączenia: {exc}[/red]")
+        console.print(f"[red]Błąd połączenia: {exc}[/red]")
         return
 
     # Status startowy ukryty na zyczenie
@@ -354,13 +354,13 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 responses = await client.send_message(user_input)
                 await _handle_responses(responses, client)
             except Exception as exc:
-                console.print(f"[red]❌ Błąd komunikacji: {exc}[/red]")
+                console.print(f"[red]Błąd komunikacji: {exc}[/red]")
                 # Spróbuj ponownie połączyć
                 try:
                     await client.connect()
                     console.print("[dim]Reconnected.[/dim]")
                 except Exception:
-                    console.print("[red]❌ Nie można ponownie połączyć się z backendem.[/red]")
+                    console.print("[red]Nie można ponownie połączyć się z backendem.[/red]")
                     break
 
             console.print()
@@ -465,7 +465,7 @@ Przykłady:
     # ─── Tryb SSH tunel ────────────────────────────────────────────────────
     if not args.host:
         console.print(
-            "[red]❌ Brak adresu serwera.[/red]\n\n"
+            "[red]Brak adresu serwera.[/red]\n\n"
             "Podaj --host user@twoj-serwer lub ustaw zmienną VPS_HOST.\n\n"
             "[dim]Przykład: python cli.py --host root@mikrus.example.com[/dim]"
         )
@@ -513,7 +513,7 @@ Przykłady:
         asyncio.run(run_cli(client, args.host))
 
     except RuntimeError as exc:
-        console.print(f"[red]❌ Błąd tunelu SSH: {exc}[/red]")
+        console.print(f"[red]Błąd tunelu SSH: {exc}[/red]")
         sys.exit(1)
     except KeyboardInterrupt:
         pass

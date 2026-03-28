@@ -118,8 +118,7 @@ class VPSAgent:
             async for chunk in self._run_agent_loop(session):
                 yield chunk
         except Exception as exc:
-            error_msg = f"❌ Błąd wewnętrzny agenta: {exc}"
-            yield error_msg
+            yield f"[BLAD] Błąd wykonania: {exc}"
 
     async def confirm(
         self,
@@ -138,7 +137,7 @@ class VPSAgent:
         """
         session = self._sessions.get(session_id)
         if not session or not session.pending_confirmation:
-            yield "⚠️ Brak oczekującej operacji do potwierdzenia."
+            yield "[OSTRZEZENIE] Brak oczekującej operacji do potwierdzenia."
             return
 
         pending = session.pending_confirmation
@@ -165,7 +164,7 @@ class VPSAgent:
             async for chunk in self._run_agent_loop(session):
                 yield chunk
         except Exception as exc:
-            yield f"❌ Błąd po potwierdzeniu: {exc}"
+            yield f"[BLAD] Błąd po potwierdzeniu: {exc}"
 
     # ─── Wewnętrzna pętla agenta ──────────────────────────────────────────────
 
@@ -199,7 +198,7 @@ class VPSAgent:
 
         # Przekroczono limit iteracji
         yield (
-            "⚠️ Agent osiągnął limit iteracji. "
+            "[OSTRZEZENIE] Agent osiągnął limit iteracji. "
             "Spróbuj przeformułować zapytanie lub podziel je na mniejsze kroki."
         )
 
@@ -226,7 +225,7 @@ class VPSAgent:
         try:
             args = json.loads(tool_call.function.arguments)
         except json.JSONDecodeError as exc:
-            yield f"❌ Błąd parsowania argumentów narzędzia: {exc}"
+            yield f"[BLAD] Błąd parsowania argumentów narzędzia: {exc}"
             return
 
         if tool_name == "execute_command":
@@ -277,7 +276,7 @@ class VPSAgent:
         if classification == "forbidden":
             # FORBIDDEN — nie informuj LLM, sam odmów
             await audit.log_blocked(session.interface, command)
-            yield f"🚫 Nie mogę wykonać tej operacji. Komenda `{command}` jest bezwzględnie zakazana ze względów bezpieczeństwa."
+            yield f"[ODMOWA] Wykonanie polecenia `{command}` jest zabronione przez politykę bezpieczeństwa."
             # Dodaj informację do historii jako odmowę systemową
             session.messages.append(
                 {
@@ -296,7 +295,7 @@ class VPSAgent:
                 command=command,
                 classification="confirm",
             )
-            yield f"⚠️ Operacja wymaga potwierdzenia: `{command}`"
+            yield f"[POTWIERDZ] Polecenie `{command}` wymaga potwierdzenia. Wpisz TAK aby wykonać."
             return
 
         # SAFE — wykonaj od razu
@@ -376,7 +375,7 @@ class VPSAgent:
 
         if classification == "forbidden":
             await audit.log_blocked(session.interface, f"write_file({path})")
-            yield f"🚫 Nie mogę zapisać do `{path}`. Ta ścieżka jest chroniona."
+            yield f"[ODMOWA] Nie mogę zapisać do `{path}`. Ta ścieżka jest chroniona."
             session.messages.append(
                 {
                     "role": "tool",
@@ -395,7 +394,7 @@ class VPSAgent:
             file_path=path,
             file_content=content,
         )
-        yield f"⚠️ Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znaków)"
+        yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znaków)"
 
     async def _execute_tool_confirmed(
         self,

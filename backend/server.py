@@ -60,7 +60,7 @@ async def handle_client(
             if "confirm" in request:
                 confirmed: bool = bool(request["confirm"])
                 async for chunk in agent.confirm(session_id, confirmed):
-                    status = "confirm" if "⚠️" in chunk else "ok"
+                    status = "confirm" if "[POTWIERDZ]" in chunk else "ok"
                     await _send(writer, {"response": chunk, "status": status, "done": False})
                 await _send(writer, {"response": "", "status": "ok", "done": True})
                 continue
@@ -82,9 +82,9 @@ async def handle_client(
             chunk_count = 0
             async for chunk in agent.chat(session_id, message, interface):
                 chunk_count += 1
-                if "⚠️" in chunk and "wymaga potwierdzenia" in chunk:
+                if "[POTWIERDZ]" in chunk and "wymaga potwierdzenia" in chunk:
                     status = "confirm"
-                elif "❌" in chunk or "🚫" in chunk:
+                elif "[BLAD]" in chunk or "[ODMOWA]" in chunk:
                     status = "error"
                 else:
                     status = "ok"

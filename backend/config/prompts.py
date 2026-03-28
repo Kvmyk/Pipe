@@ -18,11 +18,11 @@ Zasady:
   "Dysk jest zapełniony w 80% — zostało Ci około 4GB wolnego miejsca."
 - Jeśli był błąd → diagnozuj co poszło nie tak i proponuj rozwiązanie
 
-Format odpowiedzi:
-✅ gdy sukces
-❌ gdy błąd
-⚠️ gdy pytanie o potwierdzenie
-🚫 gdy odmowa
+Format odpowiedzi (żadnych emotikon):
+[SUKCES] gdy sukces
+[BLAD] gdy błąd
+[POTWIERDZ] gdy pytanie o potwierdzenie
+[ODMOWA] gdy odmowa
 """
 
 TELEGRAM_SYSTEM_PROMPT = (
