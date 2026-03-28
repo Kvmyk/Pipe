@@ -181,6 +181,12 @@ def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         text = resp.get("response", "")
         status = resp.get("status", "ok")
         if text:
+            # Uładnianie tagów statusowych dla Telegrama
+            text = text.replace("[SUKCES]", "✅ *SUKCES:*")
+            text = text.replace("[BLAD]", "❌ *BŁĄD:*")
+            text = text.replace("[POTWIERDZ]", "⚠️ *WYMAGA POTWIERDZENIA:*")
+            text = text.replace("[ODMOWA]", "🚫 *ODMOWA:*")
+            
             parts.append(text)
         if status == "confirm":
             needs_confirm = True
