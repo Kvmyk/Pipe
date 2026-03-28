@@ -71,7 +71,10 @@ async def handle_client(
                 await _send(writer, {"response": "Pusta wiadomość.", "status": "error", "done": True})
                 continue
 
+            print(f"[server] Wiadomość od {interface}: {message[:80]}", flush=True)
+            chunk_count = 0
             async for chunk in agent.chat(session_id, message, interface):
+                chunk_count += 1
                 if "⚠️" in chunk and "wymaga potwierdzenia" in chunk:
                     status = "confirm"
                 elif "❌" in chunk or "🚫" in chunk:
@@ -80,6 +83,7 @@ async def handle_client(
                     status = "ok"
                 await _send(writer, {"response": chunk, "status": status, "done": False})
 
+            print(f"[server] Odpowiedź wysłana ({chunk_count} fragmentów)", flush=True)
             await _send(writer, {"response": "", "status": "ok", "done": True})
 
     except ConnectionResetError:

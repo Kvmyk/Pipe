@@ -72,6 +72,7 @@ class VPSAgent:
         self._client = AsyncOpenAI(
             api_key=settings.LLM_API_KEY,
             base_url=settings.LLM_BASE_URL,
+            timeout=60.0,  # max 60s na odpowiedź LLM
         )
         self._executor = LocalExecutor()
         self._sessions: dict[str, Session] = {}
