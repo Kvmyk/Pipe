@@ -11,6 +11,8 @@ services:
       - /:/hostfs
       # Docker socket - aby agent mogl zarzadzac kontenerami!
       - /var/run/docker.sock:/var/run/docker.sock
+      # Klucze SSH do gita
+      - /root/.ssh:/root/.ssh:ro
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
       - "127.0.0.1:7379:7379"
