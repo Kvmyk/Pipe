@@ -1,46 +1,29 @@
-# VPS Management Agent
+# Pipe
 
-Autonomiczny agent AI do zarządzania serwerem VPS (Mikrus). Agent działa **bezpośrednio na serwerze** i wykonuje komendy lokalnie przez subprocess.
-
-```
-Twój laptop
-    ├── cli.py ──[SSH tunnel]──────────────────────┐
-    │              ssh -L 7379:127.0.0.1:7379       │
-    └── Telegram ──────────────────────────────┐   │
-                                               ▼   ▼
-                                         Serwer (Mikrus)
-                                         backend/server.py
-                                         ├── Unix socket: /tmp/vps-agent.sock  ← Telegram bot
-                                         └── TCP 127.0.0.1:7379                ← SSH tunnel z laptopa
-                                                     ↓
-                                         core/agent.py (LLM + tool calling)
-                                                     ↓
-                                         core/executor.py (subprocess — lokalnie)
-                                                     ↓
-                                         system operacyjny Mikrusa
-```
+**v0.1** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
 
-## Quick Start
+## Szybki start
 
-> 📖 Szczegółowa instrukcja krok po kroku: [QUICKSTART.md](./QUICKSTART.md)
+Szczegolowa instrukcja krok po kroku: [docs/quickstart.md](./docs/quickstart.md)
 
-### Scenariusz 1: Postaw backend na serwerze
+### 1. Postaw backend na serwerze
 
 Wykonaj na serwerze (Mikrus):
 
 ```bash
-git clone https://github.com/user/vps-agent
-cd vps-agent/backend
+git clone https://github.com/user/pipe
+cd pipe/backend
 cp .env.example .env
-# Uzupełnij LLM_API_KEY w .env (darmowy: https://aistudio.google.com/)
+# Uzupelnij LLM_API_KEY w .env (darmowy: https://aistudio.google.com/)
 docker-compose up -d
 ```
 
-### Scenariusz 2: Podłącz CLI ze swojego laptopa
+### 2. Podlacz CLI ze swojego laptopa
 
-Na laptopie — skrypt automatycznie doda skrót `pipe` do Twojego terminala:
+Na laptopie -- skrypt automatycznie doda skrot `pipe` do Twojego terminala:
 
 ```powershell
 # Windows
@@ -52,90 +35,89 @@ Na laptopie — skrypt automatycznie doda skrót `pipe` do Twojego terminala:
 bash install.sh
 ```
 
-Od teraz w każdym terminalu wpisujesz:
+Od teraz w kazdym terminalu wpisujesz:
 
 ```
 pipe
 ```
 
-CLI pyta o hasło SSH, łączy się z agentem na serwerze i czeka na Twoje polecenia.
+CLI pyta o haslo SSH, laczy sie z agentem na serwerze i czeka na Twoje polecenia.
 
-### Scenariusz 3: Postaw Telegram bota na serwerze
+### 3. Postaw Telegram bota na serwerze
 
-Telegram bot działa na tym samym serwerze co backend (łączy się przez Unix socket):
+Telegram bot dziala na tym samym serwerze co backend (laczy sie przez Unix socket):
 
 ```bash
 # Na serwerze
-cd vps-agent/clients/telegram
+cd pipe/clients/telegram
 cp .env.example .env
-# Uzupełnij TELEGRAM_BOT_TOKEN i TELEGRAM_ALLOWED_USER_IDS w .env
-pip install -r requirements.txt
-python telegram.py
+# Uzupelnij TELEGRAM_BOT_TOKEN i TELEGRAM_ALLOWED_USER_IDS w .env
 ```
+
+Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w katalogu `backend/`.
 
 ---
 
 ## Architektura
 
-| Komponent | Gdzie to działa | Jak się łączy z backendem |
-|-----------|----------------|--------------------------|
-| `backend/` | **Serwer (Mikrus)** | — to jest backend |
-| `clients/cli/` | **Twój laptop** | SSH tunnel → TCP `127.0.0.1:7379` |
-| `clients/telegram/` | **Serwer (Mikrus)** | Unix socket `/tmp/vps-agent.sock` |
-| `clients/discord/` | — | Placeholder — PR welcome |
-| `clients/webui/` | — | Placeholder — PR welcome |
+| Komponent | Gdzie dziala | Polaczenie z backendem |
+|-----------|--------------|------------------------|
+| `backend/` | Serwer (Mikrus) | -- to jest backend |
+| `clients/cli/` | Twoj laptop | SSH tunnel -> TCP `127.0.0.1:7379` |
+| `clients/telegram/` | Serwer (Mikrus) | Unix socket `/tmp/vps-agent.sock` |
+| `clients/discord/` | -- | Placeholder -- PR welcome |
+| `clients/webui/` | -- | Placeholder -- PR welcome |
 
-**Komunikacja:** prosty protokół JSON (linia po linii):
-- Żądanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli"}`
-- Odpowiedź: `{"response": "tekst", "status": "ok|confirm|error", "done": true}`
+Komunikacja: prosty protokol JSON (linia po linii):
+- Zadanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli"}`
+- Odpowiedz: `{"response": "tekst", "status": "ok|confirm|error", "done": true}`
 
 ---
 
-## Moduły backendu
+## Narzedzia agenta
 
-| Moduł | Opis |
+| Narzedzie | Opis |
+|-----------|------|
+| `execute_command` | Wykonywanie komend shell na serwerze |
+| `read_file` / `write_file` | Odczyt i zapis plikow |
+| `git_command` | Zarzadzanie repozytoriami Git (status, log, diff, commit, push) |
+| `system_stats` | Szczegolowe statystyki systemowe (CPU, RAM, dysk, procesy) |
+| `docker_manage` | Zarzadzanie kontenerami i obrazami Docker |
+| `network_info` | Diagnostyka sieciowa (porty, polaczenia, ping, curl, DNS) |
+| `cron_manage` | Zarzadzanie zadaniami cron |
+
+---
+
+## Moduly backendu
+
+| Modul | Opis |
 |-------|------|
-| `core/agent.py` | Pętla LLM z tool calling, max 10 iteracji |
-| `core/executor.py` | `LocalExecutor` — subprocess z 30s timeoutem |
+| `core/agent.py` | Petla LLM z tool calling, max 10 iteracji |
+| `core/executor.py` | `LocalExecutor` -- subprocess z 30s timeoutem |
 | `core/security.py` | Klasyfikacja komend: `safe` / `confirm` / `forbidden` |
 | `core/audit.py` | Append-only audit log |
-| `core/tools.py` | Definicje narzędzi OpenAI function calling |
+| `core/tools.py` | Definicje narzedzi OpenAI function calling |
 | `config/settings.py` | Konfiguracja z `.env` |
 | `config/prompts.py` | System prompt (niemodyfikowalny) |
 
 ---
 
-## Contributing — jak dodać nowy interfejs
+## Bezpieczenstwo
 
-Każdy klient implementuje ten sam protokół socket JSON:
-
-1. Nawiąż połączenie: `asyncio.open_unix_connection(socket_path)`
-2. Wyślij żądanie (linia JSON + `\n`):
-   ```json
-   {"message": "tekst użytkownika", "session_id": "uuid", "interface": "moj-klient"}
-   ```
-3. Odbieraj odpowiedzi (JSON lines) do czasu gdy `"done": true`
-4. Obsłuż potwierdzenia: gdy `"status": "confirm"`, zapytaj użytkownika i wyślij:
-   ```json
-   {"confirm": true, "session_id": "uuid"}
-   ```
-
-Szczegóły: `clients/discord/README.md`
+- Agent dziala jako dedykowany user bez sudo (`vpsagent`)
+- Trzy poziomy klasyfikacji komend: `safe` -> `confirm` -> `forbidden`
+- Kazda operacja zapisywana do audit logu
+- Zawartosc pliku nigdy nie trafia do audit logu (moze zawierac sekrety)
+- Lista bezwzglednie zakazanych wzorcow (`rm -rf /`, fork bomb, `curl | bash`, itp.)
 
 ---
 
-## Bezpieczeństwo
+## Dokumentacja
 
-- Agent działa jako **dedykowany user bez sudo** (`vpsagent`)
-- Trzy poziomy klasyfikacji komend: `safe` → `confirm` → `forbidden`
-- Każda operacja zapisywana do audit logu
-- Zawartość pliku nigdy nie trafia do audit logu (może zawierać sekrety)
-- Lista bezwzględnie zakazanych wzorców (`rm -rf /`, fork bomb, `curl | bash`, itp.)
-
----
-
-## Linki
-
-- [Backend README](./backend/README.md)
-- [CLI README](./clients/cli/README.md)
-- [Telegram README](./clients/telegram/README.md)
+- [Szybki start](./docs/quickstart.md)
+- [Backend](./docs/backend.md)
+- [CLI](./docs/cli.md)
+- [Telegram](./docs/telegram.md)
+- [Bezpieczenstwo](./docs/security.md)
+- [Protokol komunikacji](./docs/protocol.md)
+- [Historia zmian](./docs/changelog.md)

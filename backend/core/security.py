@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-# ─── Poziom 1: SAFE (wykonaj od razu) ───────────────────────────────────────
+# --- Poziom 1: SAFE (wykonaj od razu) ---
 SAFE_PREFIXES: list[str] = [
     "systemctl status",
     "systemctl restart",
@@ -52,7 +52,13 @@ SAFE_PREFIXES: list[str] = [
     "du\t",
     "docker ps",
     "docker logs",
+    "docker stats",
+    "docker inspect",
+    "docker images",
+    "docker top",
     "docker restart",
+    "docker compose ps",
+    "docker compose logs",
     "docker-compose up",
     "docker-compose down",
     "apt update",
@@ -65,9 +71,25 @@ SAFE_PREFIXES: list[str] = [
     "pwd",
     "date",
     "uname",
+    "nproc",
+    "nslookup",
+    "dig ",
+    "ping ",
+    "curl ",
+    # Git -- operacje odczytujace
+    "git status",
+    "git log",
+    "git diff",
+    "git branch",
+    "git remote",
+    "git show",
+    "git tag",
+    "git -C",
+    # Procinfo
+    "cat /proc/",
 ]
 
-# ─── Poziom 2: CONFIRM (wymagają potwierdzenia) ──────────────────────────────
+# --- Poziom 2: CONFIRM (wymagaja potwierdzenia) ---
 CONFIRM_PATTERNS: list[str] = [
     r".*\/etc\/.*",
     r"chmod\s",
@@ -82,7 +104,7 @@ CONFIRM_PATTERNS: list[str] = [
     r"apt\s+autoremove",
     r"mv\s",
     r"cp\s+-r",
-    r"rm\s",           # rm bez -rf / jest confirm (bezwzględne rf/ jest forbidden)
+    r"rm\s",
     r"kill\s",
     r"pkill\s",
     r"service\s",
@@ -92,8 +114,18 @@ CONFIRM_PATTERNS: list[str] = [
     r"docker\s+stop",
     r"docker\s+rm",
     r"docker\s+rmi",
+    r"docker\s+system\s+prune",
     r"pip\s+install",
     r"pip3\s+install",
+    # Git -- operacje modyfikujace
+    r"git\s+push",
+    r"git\s+commit",
+    r"git\s+checkout",
+    r"git\s+merge",
+    r"git\s+rebase",
+    r"git\s+reset",
+    r"git\s+stash\s+pop",
+    r"git\s+stash\s+drop",
 ]
 
 # ─── Poziom 3: FORBIDDEN (absolutnie zakazane) ──────────────────────────────

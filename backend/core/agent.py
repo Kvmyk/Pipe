@@ -1,14 +1,16 @@
 """
-Agent — pętla LLM z tool calling do zarządzania serwerem VPS.
+Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-Cykl jednej wiadomości:
-  1. Użytkownik wysyła wiadomość
-  2. Agent dodaje do historii i wysyła do LLM
+Pipe v0.1
+
+Cykl jednej wiadomosci:
+  1. Uzytkownik wysyla wiadomosc
+  2. Agent dodaje do historii i wysyla do LLM
   3. LLM odpowiada: tool_call lub text
-  4. tool_call → walidacja security → execute/confirm/forbid
+  4. tool_call -> walidacja security -> execute/confirm/forbid
   5. Wynik wraca do LLM jako tool_result
-  6. LLM formułuje odpowiedź po polsku
-  7. Odpowiedź trafia do użytkownika
+  6. LLM formuluje odpowiedz po polsku
+  7. Odpowiedz trafia do uzytkownika
 """
 
 from __future__ import annotations
@@ -240,9 +242,28 @@ class VPSAgent:
             async for chunk in self._handle_write_file(session, tool_call, args):
                 yield chunk
 
+        elif tool_name == "git_command":
+            async for chunk in self._handle_git_command(session, tool_call, args):
+                yield chunk
+
+        elif tool_name == "system_stats":
+            async for chunk in self._handle_system_stats(session, tool_call, args):
+                yield chunk
+
+        elif tool_name == "docker_manage":
+            async for chunk in self._handle_docker_manage(session, tool_call, args):
+                yield chunk
+
+        elif tool_name == "network_info":
+            async for chunk in self._handle_network_info(session, tool_call, args):
+                yield chunk
+
+        elif tool_name == "cron_manage":
+            async for chunk in self._handle_cron_manage(session, tool_call, args):
+                yield chunk
+
         else:
-            # Nieznane narzędzie
-            result = f"Nieznane narzędzie: {tool_name}"
+            result = f"Nieznane narzedzie: {tool_name}"
             session.messages.append(
                 {
                     "role": "tool",
@@ -251,7 +272,7 @@ class VPSAgent:
                 }
             )
             return
-            yield  # noqa: unreachable — wymagane żeby metoda była async generator
+            yield  # noqa: unreachable
 
     async def _handle_execute_command(
         self,
@@ -394,14 +415,263 @@ class VPSAgent:
             file_path=path,
             file_content=content,
         )
-        yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znaków)"
+        yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znakow)"
+
+    # --- Git ---
+
+    async def _handle_git_command(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Obsluguje narzedzie git_command."""
+        repo_path = args.get("repo_path", "").strip()
+        subcommand = args.get("subcommand", "").strip()
+        needs_confirm = args.get("requires_confirmation", False)
+
+        if not repo_path or not subcommand:
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": "Blad: repo_path i subcommand sa wymagane.",
+            })
+            return
+
+        cmd = f"git -C {repo_path} {subcommand}"
+
+        # Operacje modyfikujace wymagaja potwierdzenia
+        modify_keywords = ["commit", "push", "merge", "rebase", "reset", "checkout", "stash pop", "stash drop"]
+        if needs_confirm or any(kw in subcommand.lower() for kw in modify_keywords):
+            session.pending_confirmation = ConfirmationRequest(
+                tool_call_id=tool_call.id,
+                tool_name="execute_command",
+                command=cmd,
+                classification="confirm",
+            )
+            yield f"[POTWIERDZ] Operacja Git wymaga potwierdzenia: `{cmd}`"
+            return
+
+        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        await audit.log_safe(session.interface, cmd, exit_code)
+        result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
+
+    # --- System Stats ---
+
+    async def _handle_system_stats(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
+        # Zbierz dane z wielu zrodel jednoczesnie
+        stats_cmd = (
+            "echo '=== UPTIME ===' && cat /proc/uptime && "
+            "echo '\n=== LOADAVG ===' && cat /proc/loadavg && "
+            "echo '\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
+            "echo '\n=== CPU ===' && cat /proc/stat | head -5 && "
+            "echo '\n=== CPU_INFO ===' && nproc && "
+            "echo '\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
+            "echo '\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
+        )
+
+        stdout, stderr, exit_code = await self._executor.execute(stats_cmd)
+        await audit.log_safe(session.interface, "system_stats", exit_code)
+        result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
+
+    # --- Docker Management ---
+
+    async def _handle_docker_manage(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Obsluguje operacje Docker."""
+        operation = args.get("operation", "").strip()
+        target = args.get("target", "").strip()
+        options = args.get("options", "").strip()
+        needs_confirm = args.get("requires_confirmation", False)
+
+        op_map = {
+            "ps": "docker ps",
+            "logs": f"docker logs {target}",
+            "inspect": f"docker inspect {target}",
+            "stats": "docker stats --no-stream",
+            "top": f"docker top {target}",
+            "restart": f"docker restart {target}",
+            "stop": f"docker stop {target}",
+            "start": f"docker start {target}",
+            "rm": f"docker rm {target}",
+            "rmi": f"docker rmi {target}",
+            "images": "docker images",
+            "prune": "docker system prune -f",
+            "compose-ps": f"docker compose -f {target} ps" if target else "docker compose ps",
+            "compose-logs": f"docker compose -f {target} logs --tail 50" if target else "docker compose logs --tail 50",
+        }
+
+        cmd = op_map.get(operation)
+        if not cmd:
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": f"Nieznana operacja Docker: {operation}",
+            })
+            return
+
+        if options:
+            cmd = f"{cmd} {options}"
+
+        modify_ops = {"restart", "stop", "start", "rm", "rmi", "prune"}
+        if needs_confirm or operation in modify_ops:
+            session.pending_confirmation = ConfirmationRequest(
+                tool_call_id=tool_call.id,
+                tool_name="execute_command",
+                command=cmd,
+                classification="confirm",
+            )
+            yield f"[POTWIERDZ] Operacja Docker wymaga potwierdzenia: `{cmd}`"
+            return
+
+        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        await audit.log_safe(session.interface, cmd, exit_code)
+        result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
+
+    # --- Network Info ---
+
+    async def _handle_network_info(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Diagnostyka sieciowa."""
+        check_type = args.get("check_type", "").strip()
+        target = args.get("target", "").strip()
+
+        cmd_map = {
+            "ports": "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null",
+            "connections": "ss -tnp 2>/dev/null || netstat -tnp 2>/dev/null",
+            "listeners": "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null",
+            "ping": f"ping -c 4 {target}" if target else "echo 'Blad: target wymagany dla ping'",
+            "curl": f"curl -sS -o /dev/null -w '%{{http_code}} %{{time_total}}s' {target}" if target else "echo 'Blad: target wymagany dla curl'",
+            "dns": f"nslookup {target} 2>/dev/null || dig {target} +short 2>/dev/null" if target else "echo 'Blad: target wymagany dla dns'",
+        }
+
+        cmd = cmd_map.get(check_type)
+        if not cmd:
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": f"Nieznany typ diagnozy: {check_type}",
+            })
+            return
+
+        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        await audit.log_safe(session.interface, f"network_info:{check_type}", exit_code)
+        result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
+
+    # --- Cron Management ---
+
+    async def _handle_cron_manage(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Zarzadzanie zadaniami cron."""
+        operation = args.get("operation", "").strip()
+        schedule = args.get("schedule", "").strip()
+        command = args.get("command", "").strip()
+        needs_confirm = args.get("requires_confirmation", False)
+
+        if operation == "list":
+            cmd = "crontab -l 2>/dev/null || echo 'Brak zadan cron'"
+        elif operation == "check-logs":
+            cmd = "grep -i cron /var/log/syslog 2>/dev/null | tail -20 || journalctl -u cron --no-pager -n 20 2>/dev/null || echo 'Brak logow cron'"
+        elif operation == "add":
+            if not schedule or not command:
+                session.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": "Blad: schedule i command sa wymagane dla operacji 'add'.",
+                })
+                return
+            cmd = f"(crontab -l 2>/dev/null; echo '{schedule} {command}') | crontab -"
+        elif operation == "remove":
+            if not command:
+                session.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": "Blad: command (wzorzec do usuniecia) jest wymagany dla operacji 'remove'.",
+                })
+                return
+            cmd = f"crontab -l 2>/dev/null | grep -v '{command}' | crontab -"
+        else:
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": f"Nieznana operacja cron: {operation}",
+            })
+            return
+
+        modify_ops = {"add", "remove"}
+        if needs_confirm or operation in modify_ops:
+            session.pending_confirmation = ConfirmationRequest(
+                tool_call_id=tool_call.id,
+                tool_name="execute_command",
+                command=cmd,
+                classification="confirm",
+            )
+            yield f"[POTWIERDZ] Operacja cron wymaga potwierdzenia: `{cmd}`"
+            return
+
+        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        await audit.log_safe(session.interface, f"cron:{operation}", exit_code)
+        result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
 
     async def _execute_tool_confirmed(
         self,
         session: Session,
         pending: ConfirmationRequest,
     ) -> str:
-        """Wykonuje potwierdzoną operację i dodaje wynik do historii."""
+        """Wykonuje potwierdzona operacje i dodaje wynik do historii."""
         if pending.tool_name == "execute_command":
             command = pending.command
             stdout, stderr, exit_code = await self._executor.execute(command)
@@ -414,13 +684,13 @@ class VPSAgent:
             try:
                 await self._executor.write_file(path, content)
                 await audit.log_file_write(session.interface, path, 0)
-                result = f"Plik {path} został zapisany pomyślnie."
+                result = f"Plik {path} zostal zapisany pomyslnie."
             except PermissionError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                result = f"Błąd zapisu (brak uprawnień): {exc}"
+                result = f"Blad zapisu (brak uprawnien): {exc}"
             except OSError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                result = f"Błąd zapisu pliku: {exc}"
+                result = f"Blad zapisu pliku: {exc}"
         else:
             result = "Nieznana operacja."
 
@@ -434,19 +704,19 @@ class VPSAgent:
         return result
 
 
-# ─── Globalna instancja agenta ────────────────────────────────────────────────
+# --- Globalna instancja agenta ---
 _agent: VPSAgent | None = None
 
 
 def get_agent() -> VPSAgent:
-    """Zwraca globalną instancję agenta (singleton)."""
+    """Zwraca globalna instancje agenta (singleton)."""
     global _agent
     if _agent is None:
         _agent = VPSAgent()
     return _agent
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# --- Helpers ---
 
 def _format_tool_result(stdout: str, stderr: str, exit_code: int) -> str:
     """Formatuje wynik komendy dla LLM."""

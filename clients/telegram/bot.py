@@ -1,16 +1,19 @@
 """
-Telegram Bot — interfejs Telegram dla VPS Management Agent.
+Telegram Bot -- interfejs Telegram dla Pipe (VPS Management Agent).
 
-Łączy się z backendem przez Unix socket.
-Używa python-telegram-bot w trybie async.
+Laczy sie z backendem przez Unix socket.
+Uzywa python-telegram-bot w trybie async.
+
+Pipe v0.1
 
 Funkcje:
-  - Whitelist użytkowników (TELEGRAM_ALLOWED_USER_IDS)
+  - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)
   - Osobna sesja per user_id
-  - /start — przywitanie i status serwera
-  - /historia — ostatnie 10 wpisów z audit logu
-  - InlineKeyboard dla potwierdzeń (✅ TAK / ❌ NIE)
-  - MarkdownV2 z escape pomocnikiem
+  - /start -- przywitanie
+  - /status -- status serwera
+  - /historia -- ostatnie 10 wpisow z audit logu
+  - InlineKeyboard dla potwierdzen (TAK / NIE)
+  - HTML parse mode (nie MarkdownV2 -- unikanie problemow z escapowaniem)
 
 Konfiguracja w .env (clients/telegram/.env):
   TELEGRAM_BOT_TOKEN=your_bot_token
@@ -21,6 +24,7 @@ Konfiguracja w .env (clients/telegram/.env):
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 import re
@@ -29,7 +33,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Załaduj .env z katalogu bota
+# Zaladuj .env z katalogu bota
 _env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=False)
 
@@ -45,10 +49,10 @@ try:
         filters,
     )
 except ImportError:
-    print("Błąd: zainstaluj zależności: pip install -r requirements.txt")
+    print("Blad: zainstaluj zaleznosci: pip install -r requirements.txt")
     sys.exit(1)
 
-# ─── Konfiguracja ─────────────────────────────────────────────────────────────
+# --- Konfiguracja ---
 BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 _raw_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
 ALLOWED_USER_IDS: set[int] = {
@@ -56,48 +60,58 @@ ALLOWED_USER_IDS: set[int] = {
 }
 AGENT_SOCKET: str = os.getenv("AGENT_SOCKET", "/tmp/vps-agent.sock")
 
-STARTUP_STATUS_MESSAGE = (
-    "Sprawdź stan serwera: wykonaj hostname && uptime && df -h / && free -h "
-    "i podsumuj wyniki po polsku."
-)
-
 SERVER_STATUS_MESSAGE = (
-    "Zbierz z serwera dane: Uptime, Obciążenie CPU, Zużycie Pamięci RAM i Wolne miejsce na dysku (najlepiej sprawdź /hostfs albo wewnetrzne info). "
-    "Odpowiedz ZWIĘZŁĄ i elegancką listą zgodną z Twoimi instrukcjami do Telegram MarkdownV2."
+    "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
+    "Na podstawie wynikow przygotuj zwiezle podsumowanie po polsku: "
+    "uptime, obciazenie CPU (load average i/lub procent), zuzycie RAM (dokladne wartosci "
+    "z /proc/meminfo: MemTotal, MemAvailable, oblicz used = Total - Available), "
+    "wolne miejsce na dysku. Formatuj w HTML dla Telegrama."
 )
 
 
-# ─── MarkdownV2 helper ────────────────────────────────────────────────────────
+# --- HTML helper ---
 
-_MDV2_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
-
-
-def escape_markdown(text: str) -> str:
+def escape_html(text: str) -> str:
     """
-    Escapuje znaki specjalne MarkdownV2 Telegrama.
-
-    Używaj do surowych stringów (np. output komend) przed wklejeniem
-    do odpowiedzi — żeby znaki specjalne nie psuły parsowania.
+    Escapuje znaki specjalne HTML: &, <, >.
+    Uzywa standardowej biblioteki html.escape.
     """
-    return _MDV2_SPECIAL.sub(r"\\\1", text)
+    return html.escape(text, quote=False)
 
 
-def safe_md(text: str) -> str:
-    """Alias dla escape_markdown — dla czytelności kodu."""
-    return escape_markdown(text)
+def _strip_markdown_artifacts(text: str) -> str:
+    """
+    Czysci resztki Markdowna ktore LLM moze omylem wygenerowac.
+    Konwertuje na czytelny tekst z HTML.
+    """
+    # Zamien ```blok``` na <pre>blok</pre>
+    text = re.sub(r'```[\w]*\n?(.*?)```', r'<pre>\1</pre>', text, flags=re.DOTALL)
+    # Zamien `inline` na <code>inline</code>
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+    # Zamien **bold** na <b>bold</b>
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Zamien *bold* na <b>bold</b> (Telegram MarkdownV2 style)
+    text = re.sub(r'\*(.+?)\*', r'<b>\1</b>', text)
+    # Zamien _italic_ na <i>italic</i>
+    text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<i>\1</i>', text)
+    # Usun MarkdownV2 escape backslashe (np. \- \. \! \( \))
+    text = re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!\\])', r'\1', text)
+    # Usun naglowki Markdowna
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    return text
 
 
-# ─── Socket Client ────────────────────────────────────────────────────────────
+# --- Socket Client ---
 
 class TelegramSocketClient:
-    """Klient Unix socket dla Telegram bota — per user_id."""
+    """Klient Unix socket dla Telegram bota -- per user_id."""
 
     def __init__(self, socket_path: str, session_id: str) -> None:
         self.socket_path = socket_path
         self.session_id = session_id
 
     async def _send(self, data: dict) -> list[dict]:
-        """Wysyła żądanie i zbiera odpowiedzi do done=true."""
+        """Wysyla zadanie i zbiera odpowiedzi do done=true."""
         reader, writer = await asyncio.open_unix_connection(self.socket_path)
         try:
             line = json.dumps(data, ensure_ascii=False) + "\n"
@@ -138,13 +152,13 @@ class TelegramSocketClient:
         })
 
 
-# ─── Zarządzanie sesjami ──────────────────────────────────────────────────────
+# --- Zarzadzanie sesjami ---
 
 _clients: dict[int, TelegramSocketClient] = {}
 
 
 def get_client(user_id: int) -> TelegramSocketClient:
-    """Zwraca istniejący klient sesji lub tworzy nowy."""
+    """Zwraca istniejacy klient sesji lub tworzy nowy."""
     if user_id not in _clients:
         _clients[user_id] = TelegramSocketClient(
             socket_path=AGENT_SOCKET,
@@ -153,28 +167,28 @@ def get_client(user_id: int) -> TelegramSocketClient:
     return _clients[user_id]
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# --- Helpers ---
 
 def _is_allowed(user_id: int | None) -> bool:
-    """Sprawdza czy user_id jest na whiteliście."""
+    """Sprawdza czy user_id jest na whiteliscie."""
     if not user_id:
         return False
     return user_id in ALLOWED_USER_IDS
 
 
 def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Tworzy klawiaturę inline z przyciskami TAK/NIE."""
+    """Tworzy klawiature inline z przyciskami TAK/NIE."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ TAK", callback_data=f"confirm:yes:{user_id}"),
-            InlineKeyboardButton("❌ NIE", callback_data=f"confirm:no:{user_id}"),
+            InlineKeyboardButton("TAK", callback_data=f"confirm:yes:{user_id}"),
+            InlineKeyboardButton("NIE", callback_data=f"confirm:no:{user_id}"),
         ]
     ])
 
 
 def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
     """
-    Zbiera tekst odpowiedzi z listy fragmentów.
+    Zbiera tekst odpowiedzi z listy fragmentow.
 
     Returns:
         (text, needs_confirmation)
@@ -186,12 +200,13 @@ def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         text = resp.get("response", "")
         status = resp.get("status", "ok")
         if text:
-            # Uładnianie tagów statusowych dla Telegrama
-            text = text.replace("[SUKCES]", "✅ *SUKCES:*")
-            text = text.replace("[BLAD]", "❌ *BŁĄD:*")
-            text = text.replace("[POTWIERDZ]", "⚠️ *WYMAGA POTWIERDZENIA:*")
-            text = text.replace("[ODMOWA]", "🚫 *ODMOWA:*")
-            
+            # Tagi statusowe -- tylko ODMOWA jest widoczna
+            # [SUKCES] -- usuniety calkowicie
+            text = text.replace("[SUKCES]", "")
+            text = text.replace("[BLAD]", "<b>BLAD:</b>")
+            text = text.replace("[POTWIERDZ]", "<b>WYMAGA POTWIERDZENIA:</b>")
+            text = text.replace("[ODMOWA]", "<b>ODMOWA:</b>")
+
             parts.append(text)
         if status == "confirm":
             needs_confirm = True
@@ -205,13 +220,16 @@ async def _send_response(
     responses: list[dict],
     user_id: int,
 ) -> None:
-    """Wysyła odpowiedź do użytkownika (z obsługą potwierdzeń)."""
+    """Wysyla odpowiedz do uzytkownika (z obsluga potwierdzen)."""
     text, needs_confirm = _collect_response_text(responses)
 
     if not text:
         return
 
-    # Podziel długie wiadomości (Telegram limit: 4096 znaków)
+    # Cleanup: usun potencjalne resztki Markdowna
+    text = _strip_markdown_artifacts(text)
+
+    # Podziel dlugie wiadomosci (Telegram limit: 4096 znakow)
     chunks = _split_message(text)
 
     for i, chunk in enumerate(chunks):
@@ -221,26 +239,27 @@ async def _send_response(
         try:
             await update.effective_message.reply_text(
                 chunk,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
         except Exception:
-            # Fallback — wyślij bez Markdown jeśli parsowanie się nie powiodło
+            # Fallback -- wyslij bez formatowania jesli HTML sie nie sparsuje
             try:
+                # Usun wszystkie tagi HTML i wyslij jako plain text
+                clean_text = re.sub(r'<[^>]+>', '', chunk)
                 await update.effective_message.reply_text(
-                    escape_markdown(chunk),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    clean_text,
                     reply_markup=reply_markup,
                 )
             except Exception:
                 await update.effective_message.reply_text(
-                    chunk,
+                    "Blad formatowania odpowiedzi. Sprobuj ponownie.",
                     reply_markup=reply_markup,
                 )
 
 
 def _split_message(text: str, max_length: int = 4000) -> list[str]:
-    """Dzieli długą wiadomość na kawałki <= max_length znaków."""
+    """Dzieli dluga wiadomosc na kawalki <= max_length znakow."""
     if len(text) <= max_length:
         return [text]
 
@@ -249,7 +268,7 @@ def _split_message(text: str, max_length: int = 4000) -> list[str]:
         if len(text) <= max_length:
             chunks.append(text)
             break
-        # Znajdź ostatni znak nowej linii przed limitem
+        # Znajdz ostatni znak nowej linii przed limitem
         split_at = text.rfind("\n", 0, max_length)
         if split_at <= 0:
             split_at = max_length
@@ -258,66 +277,65 @@ def _split_message(text: str, max_length: int = 4000) -> list[str]:
     return chunks
 
 
-# ─── Handlery komend ─────────────────────────────────────────────────────────
+# --- Handlery komend ---
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/start — przywitanie bez automatycznego statusu."""
+    """/start -- przywitanie bez automatycznego statusu."""
     user = update.effective_user
     if not _is_allowed(user.id if user else None):
         return  # Milcz dla nieautoryzowanych
 
     welcome = (
-        "👋 *Witaj, tutaj Pipe\\!*\n\n"
-        "Jestem autonomicznym agentem AI do zarządzania Twoim serwerem VPS\\.\n"
-        "Komunikuję się po polsku i wykonuję komendy bezpośrednio na serwerze\\.\n\n"
-        "*Dostępne komendy:*\n"
-        "/status \\- szybki przegląd obciążenia serwera\n"
-        "/historia \\- ostatnie 10 wpisów z audit logu\n\n"
-        "Możesz też pisać do mnie bezpośrednio \\— np\\. "
-        "_\"ile mam wolnego miejsca na dysku?\"_"
+        "<b>Witaj, tutaj Pipe.</b>\n\n"
+        "Jestem autonomicznym agentem AI do zarzadzania Twoim serwerem VPS.\n"
+        "Komunikuje sie po polsku i wykonuje komendy bezposrednio na serwerze.\n\n"
+        "<b>Dostepne komendy:</b>\n"
+        "/status - szybki przeglad obciazenia serwera\n"
+        "/historia - ostatnie 10 wpisow z audit logu\n\n"
+        "Mozesz tez pisac do mnie bezposrednio, np. "
+        "<i>\"ile mam wolnego miejsca na dysku?\"</i>"
     )
 
-    await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(welcome, parse_mode=ParseMode.HTML)
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/status — pobiera obciążenie serwera."""
+    """/status -- pobiera obciazenie serwera."""
     user = update.effective_user
     if not _is_allowed(user.id if user else None):
         return
 
     client = get_client(user.id)
     try:
-        await update.message.reply_text(escape_markdown("🔄 Analizuję obciążenie i stan MIKRUSA..."), parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(
+            "Analizuje obciazenie i stan serwera...",
+        )
         responses = await client.chat(SERVER_STATUS_MESSAGE)
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await update.message.reply_text(
-            escape_markdown(f"❌ Błąd połączenia z backendem: {exc}"),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            f"Blad polaczenia z backendem: {escape_html(str(exc))}",
         )
 
 
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/historia — ostatnie 10 wpisów z audit logu."""
+    """/historia -- ostatnie 10 wpisow z audit logu."""
     user = update.effective_user
     if not _is_allowed(user.id if user else None):
         return
 
-    # Pobierz historię przez agenta
     client = get_client(user.id)
     try:
-        responses = await client.chat("Pokaż ostatnie 10 wpisów z audit logu.")
+        responses = await client.chat("Pokaz ostatnie 10 wpisow z audit logu.")
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await update.message.reply_text(
-            escape_markdown(f"❌ Błąd: {exc}"),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            f"Blad: {escape_html(str(exc))}",
         )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Obsługuje dowolną wiadomość tekstową."""
+    """Obsluguje dowolna wiadomosc tekstowa."""
     user = update.effective_user
     if not _is_allowed(user.id if user else None):
         return  # Milcz dla nieautoryzowanych
@@ -328,7 +346,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     client = get_client(user.id)
     try:
-        # Pokaż "pisze..." 
+        # Pokaz "pisze..."
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing",
@@ -337,21 +355,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _send_response(update, context, responses, user.id)
     except FileNotFoundError:
         await update.message.reply_text(
-            escape_markdown(
-                "❌ Backend niedostępny. "
-                "Upewnij się, że vps-agent jest uruchomiony."
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.",
         )
     except Exception as exc:
         await update.message.reply_text(
-            escape_markdown(f"❌ Błąd: {exc}"),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            f"Blad: {escape_html(str(exc))}",
         )
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Obsługuje przyciski inline (potwierdzenia TAK/NIE)."""
+    """Obsluguje przyciski inline (potwierdzenia TAK/NIE)."""
     query = update.callback_query
     await query.answer()
 
@@ -367,52 +380,51 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except ValueError:
         return
 
-    # Tylko oryginalny użytkownik może potwierdzić
+    # Tylko oryginalny uzytkownik moze potwierdzic
     user = update.effective_user
     if not user or user.id != requesting_user_id:
-        await query.answer("⛔ Nie możesz potwierdzać cudzych operacji.", show_alert=True)
+        await query.answer("Nie mozesz potwierdzac cudzych operacji.", show_alert=True)
         return
 
     confirmed = action == "yes"
     client = get_client(user.id)
 
-    # Usuń przyciski z wiadomości
+    # Usun przyciski z wiadomosci
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
 
-    status_text = "✅ Operacja zatwierdzona\\." if confirmed else "❌ Operacja anulowana\\."
-    await query.message.reply_text(status_text, parse_mode=ParseMode.MARKDOWN_V2)
+    status_text = "Operacja zatwierdzona." if confirmed else "Operacja anulowana."
+    await query.message.reply_text(status_text)
 
     try:
         responses = await client.confirm(confirmed)
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await query.message.reply_text(
-            escape_markdown(f"❌ Błąd: {exc}"),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            f"Blad: {escape_html(str(exc))}",
         )
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# --- Main ---
 
 def main() -> None:
-    """Punkt wejścia Telegram bota."""
+    """Punkt wejscia Telegram bota."""
     if not BOT_TOKEN:
-        print("Błąd: TELEGRAM_BOT_TOKEN nie jest ustawiony w .env", file=sys.stderr)
+        print("Blad: TELEGRAM_BOT_TOKEN nie jest ustawiony w .env", file=sys.stderr)
         sys.exit(1)
 
     if not ALLOWED_USER_IDS:
         print(
-            "Ostrzeżenie: TELEGRAM_ALLOWED_USER_IDS jest pusty — "
-            "nikt nie będzie mógł używać bota.",
+            "Ostrzezenie: TELEGRAM_ALLOWED_USER_IDS jest pusty -- "
+            "nikt nie bedzie mogl uzywac bota.",
             file=sys.stderr,
         )
 
-    print(f"[Telegram Bot] Uruchamiam bota...")
-    print(f"[Telegram Bot] Dozwoleni użytkownicy: {ALLOWED_USER_IDS}")
-    print(f"[Telegram Bot] Backend socket: {AGENT_SOCKET}")
+    print(f"[Pipe Telegram] Uruchamiam bota...")
+    print(f"[Pipe Telegram] Dozwoleni uzytkownicy: {ALLOWED_USER_IDS}")
+    print(f"[Pipe Telegram] Backend socket: {AGENT_SOCKET}")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -422,7 +434,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("[Telegram Bot] Gotowy. Ctrl+C aby zatrzymać.")
+    print("[Pipe Telegram] Gotowy. Ctrl+C aby zatrzymac.")
     app.run_polling(drop_pending_updates=True)
 
 

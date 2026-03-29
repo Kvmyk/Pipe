@@ -285,11 +285,12 @@ def _print_response(text: str, status: str) -> None:
     if not text:
         return
 
-    # Zamiana tagów statusowych na kolorowe oznaczenia Rich
-    text = text.replace("[SUKCES]", "✔ [bold green]SUKCES:[/bold green]")
-    text = text.replace("[BLAD]", "✖ [bold red]BŁĄD:[/bold red]")
-    text = text.replace("[POTWIERDZ]", "⚠ [bold yellow]WYMAGA POTWIERDZENIA:[/bold yellow]")
-    text = text.replace("[ODMOWA]", "⨂ [bold red]ODMOWA:[/bold red]")
+    # Zamiana tagow statusowych na kolorowe oznaczenia Rich
+    # [SUKCES] usuniety -- nie wyswietlamy go
+    text = text.replace("[SUKCES]", "")
+    text = text.replace("[BLAD]", "[bold red]BLAD:[/bold red]")
+    text = text.replace("[POTWIERDZ]", "[bold yellow]WYMAGA POTWIERDZENIA:[/bold yellow]")
+    text = text.replace("[ODMOWA]", "[bold red]ODMOWA:[/bold red]")
 
     # Konwersja podstawowego Markdownu na Rich markup
     text = _convert_markdown_to_rich(text)
@@ -371,11 +372,13 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             # Lokalna komenda /status
             if user_input.lower() == "/status":
                 console.print()
-                console.print("[dim]→ Analizuję stan serwera...[/dim]")
+                console.print("[dim]Analizuje stan serwera...[/dim]")
                 status_prompt = (
-                    "Zbierz z serwera dane: Uptime, Obciążenie CPU, Zużycie Pamięci RAM i Wolne miejsce na dysku. "
-                    "Odpowiedz zwięzłą listą w formacie terminalowym, bez tabel i naglinków Markdown. "
-                    "Użyj formatowania *Pogrubienie* dla tytułów sekcji i `wartości` dla liczb."
+                    "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
+                    "Na podstawie wynikow przygotuj zwiezle podsumowanie: uptime, obciazenie CPU "
+                    "(load average), zuzycie RAM (z /proc/meminfo: used = MemTotal - MemAvailable), "
+                    "wolne miejsce na dysku. Odpowiedz zwiezla lista w formacie terminalowym. "
+                    "Uzyj formatowania *Pogrubienie* dla tytulow sekcji i `wartosci` dla liczb."
                 )
                 try:
                     responses = await client.send_message(status_prompt)
