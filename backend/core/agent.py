@@ -523,15 +523,15 @@ class VPSAgent:
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
+        nsenter_cmd = "docker run --rm --privileged --pid=host alpine sh -c 'nsenter -t 1 -m -u -i -n -p --"
         stats_cmd = (
-            "PROC=/proc; [ -d /hostproc ] && PROC=/hostproc; "
-            "echo '=== UPTIME ===' && cat $PROC/uptime && "
-            "echo '\n=== LOADAVG ===' && cat $PROC/loadavg && "
-            "echo '\n=== MEMINFO ===' && cat $PROC/meminfo | head -20 && "
-            "echo '\n=== CPU ===' && cat $PROC/stat | head -5 && "
-            "echo '\n=== CPU_INFO ===' && nproc && "
-            "echo '\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
-            "echo '\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
+            f"{nsenter_cmd} sh -c \\\"echo '=== UPTIME ===' && cat /proc/uptime && "
+            f"echo '\\n=== LOADAVG ===' && cat /proc/loadavg && "
+            f"echo '\\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
+            f"echo '\\n=== CPU ===' && cat /proc/stat | head -5 && "
+            f"echo '\\n=== CPU_INFO ===' && nproc && "
+            f"echo '\\n=== DISK ===' && df -h / 2>/dev/null && "
+            f"echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12\\\"'"
         )
 
         stdout, stderr, exit_code = await self._executor.execute(stats_cmd)
