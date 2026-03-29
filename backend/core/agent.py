@@ -15,6 +15,7 @@ Cykl jednej wiadomosci:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -540,7 +541,7 @@ class VPSAgent:
         tool_call: Any,
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
-        """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
+        """Pobiera szczegolowe sta ."""
         # Mechanizm teleportacji statystyk z hosta (VPS julia) do kontenera
         # Tworzy zadanie cron na hoscie, ktore co minute zrzuca prawdziwe dane do /tmp
         setup_teleport = (
