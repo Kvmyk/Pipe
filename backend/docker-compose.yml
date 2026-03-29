@@ -11,11 +11,6 @@ services:
       - /:/hostfs
       # Docker socket - aby agent mogl zarzadzac kontenerami!
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mapowanie KONKRETNYCH plików statystyk z Twojego VPSa (julii)
-      - /proc/loadavg:/app/host_loadavg:ro
-      - /proc/uptime:/app/host_uptime:ro
-      - /proc/meminfo:/app/host_meminfo:ro
-      - /proc/stat:/app/host_stat:ro
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
       - "127.0.0.1:7379:7379"
