@@ -19,23 +19,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf docker docker.tgz \
     && rm -rf /var/lib/apt/lists/*
 
-# Fake "free" command inside container to override default tool and read /host_cgroup automatically
+# Fake "free" command inside container to override default tool and read Host Daemon + CGroup RSS automatically
 RUN echo '#!/bin/bash\n\
-if [ -f /host_cgroup/memory.current ]; then\n\
-    USED=$(cat /host_cgroup/memory.current)\n\
-    MAX=$(cat /host_cgroup/memory.max)\n\
-elif [ -f /host_cgroup/memory/memory.usage_in_bytes ]; then\n\
-    USED=$(cat /host_cgroup/memory/memory.usage_in_bytes)\n\
-    MAX=$(cat /host_cgroup/memory/memory.limit_in_bytes)\n\
-else\n\
-    exec /usr/bin/free "$@"\n\
-fi\n\
 MB=$(( 1024 * 1024 ))\n\
+TOTAL=$(docker info --format "{{.MemTotal}}" 2>/dev/null)\n\
+if [ -z "$TOTAL" ]; then\n\
+    TOTAL=$(cat /host_cgroup/memory.max 2>/dev/null || cat /host_cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 2147483648)\n\
+fi\n\
+MAX_MB=$(( TOTAL / MB ))\n\
+USED=0\n\
+if [ -f /host_cgroup/memory/memory.stat ]; then\n\
+    USED=$(grep -w total_rss /host_cgroup/memory/memory.stat | awk '"'"'{print $2}'"'"')\n\
+elif [ -f /host_cgroup/memory.stat ]; then\n\
+    USED=$(grep -w anon /host_cgroup/memory.stat | awk '"'"'{print $2}'"'"')\n\
+fi\n\
+if [ -z "$USED" ]; then USED=0; fi\n\
 USED_MB=$(( USED / MB ))\n\
-MAX_MB=$(( MAX / MB ))\n\
 FREE_MB=$(( MAX_MB - USED_MB ))\n\
 echo "               total        used        free      shared  buff/cache   available"\n\
-echo "Mem:           ${MAX_MB}Mi         ${USED_MB}Mi        ${FREE_MB}Mi          0Mi          0Mi         ${FREE_MB}Mi"\n\
+echo "Mem:           ${MAX_MB}M         ${USED_MB}M        ${FREE_MB}M          0M          0M         ${FREE_MB}M"\n\
 echo "Swap:             0B          0B          0B"\n\
 ' > /usr/local/bin/free && chmod +x /usr/local/bin/free
 
