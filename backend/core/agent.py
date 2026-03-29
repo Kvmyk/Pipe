@@ -525,9 +525,7 @@ class VPSAgent:
         """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
         stats_cmd = (
             "echo '=== UPTIME ===' && cat /proc/uptime && "
-            "echo '\\n=== CGROUP VPS MEMORY ===' && "
-            "if [ -f /host_cgroup/memory.current ]; then echo 'USAGE:' $(cat /host_cgroup/memory.current); echo 'LIMIT:' $(cat /host_cgroup/memory.max); "
-            "elif [ -f /host_cgroup/memory/memory.usage_in_bytes ]; then echo 'USAGE:' $(cat /host_cgroup/memory/memory.usage_in_bytes); echo 'LIMIT:' $(cat /host_cgroup/memory/memory.limit_in_bytes); fi && "
+            "echo '\\n=== MEMORY ===' && free -m && "
             "echo '\\n=== LOADAVG ===' && cat /proc/loadavg && "
             "echo '\\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
             "echo '\\n=== CPU ===' && cat /proc/stat | head -5 && "

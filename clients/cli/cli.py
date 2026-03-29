@@ -376,7 +376,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 status_prompt = (
                     "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
                     "Na podstawie wynikow przygotuj zwiezle podsumowanie: uptime, obciazenie CPU "
-                    "(load average), zuzycie RAM (uzyj z proporcji CGROUP VPS MEMORY: wynik w bajtach podziel przez 1024^2 dla MB), "
+                    "(load average), zuzycie RAM (na podstawie sekcji MEMORY z bezposrednich wartosci), "
                     "wolne miejsce na dysku. Odpowiedz zwiezla lista w formacie terminalowym. "
                     "Uzyj formatowania *Pogrubienie* dla tytulow sekcji i `wartosci` dla liczb."
                 )

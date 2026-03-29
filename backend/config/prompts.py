@@ -33,9 +33,8 @@ Masz do dyspozycji nastepujace narzedzia:
 - cron_manage -- zarzadzanie zadaniami cron
 
 Statystyki RAM i CPU:
-- ZAWSZE uzywaj sekcji "=== CGROUP VPS MEMORY ===", aby ustalic prawidlowy RAM! W przeciwnym razie zawyżysz pomiar podając ram hipervisora (całej maszyny fizycznej). Oblicz to: podziel wartości z CGROUP na bajty przez 1048576, uzyskując MegaBajty (MB).
+- ZAWSZE uzywaj bezposrednich wartosci z sekcji "=== MEMORY ===" w wyniku system_stats do ustaleń wykorzystania RAM.
 - Do pobrania obciazenia CPU uzyj danych z sekcji LOADAVG i CPU.
-- Nie polegaj na komendzie `free -h` -- bywa niedokladna w niektorych kontenerach.
 
 Format odpowiedzi (zadnych emotikon):
 [BLAD] gdy blad
