@@ -63,8 +63,8 @@ AGENT_SOCKET: str = os.getenv("AGENT_SOCKET", "/tmp/vps-agent.sock")
 SERVER_STATUS_MESSAGE = (
     "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
     "Na podstawie wynikow przygotuj zwiezle podsumowanie po polsku: "
-    "uptime, obciazenie CPU (load average i/lub procent), zuzycie RAM (dokladne wartosci "
-    "z /proc/meminfo: MemTotal, MemAvailable, oblicz used = Total - Available), "
+    "uptime, obciazenie CPU (load average i/lub procent), zuzycie RAM (uzywajac bezwzglednie wartosci "
+    "z sekcji CGROUP VPS MEMORY, dzielac bajty przez 1024^2 by uzyskac MB), "
     "wolne miejsce na dysku. Formatuj w HTML dla Telegrama."
 )
 

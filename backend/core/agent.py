@@ -523,15 +523,17 @@ class VPSAgent:
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
-        nsenter_cmd = "docker run --rm --privileged --pid=host alpine sh -c 'nsenter -t 1 -m -u -i -n -p --"
         stats_cmd = (
-            f"{nsenter_cmd} sh -c \\\"echo '=== UPTIME ===' && cat /proc/uptime && "
-            f"echo '\\n=== LOADAVG ===' && cat /proc/loadavg && "
-            f"echo '\\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
-            f"echo '\\n=== CPU ===' && cat /proc/stat | head -5 && "
-            f"echo '\\n=== CPU_INFO ===' && nproc && "
-            f"echo '\\n=== DISK ===' && df -h / 2>/dev/null && "
-            f"echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12\\\"'"
+            "echo '=== UPTIME ===' && cat /proc/uptime && "
+            "echo '\\n=== CGROUP VPS MEMORY ===' && "
+            "if [ -f /host_cgroup/memory.current ]; then echo 'USAGE:' $(cat /host_cgroup/memory.current); echo 'LIMIT:' $(cat /host_cgroup/memory.max); "
+            "elif [ -f /host_cgroup/memory/memory.usage_in_bytes ]; then echo 'USAGE:' $(cat /host_cgroup/memory/memory.usage_in_bytes); echo 'LIMIT:' $(cat /host_cgroup/memory/memory.limit_in_bytes); fi && "
+            "echo '\\n=== LOADAVG ===' && cat /proc/loadavg && "
+            "echo '\\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
+            "echo '\\n=== CPU ===' && cat /proc/stat | head -5 && "
+            "echo '\\n=== CPU_INFO ===' && nproc && "
+            "echo '\\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
+            "echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
         )
 
         stdout, stderr, exit_code = await self._executor.execute(stats_cmd)
