@@ -2,8 +2,6 @@ services:
   vps-agent:
     build: .
     restart: unless-stopped
-    pid: host
-    network_mode: host
     volumes:
       # Konfiguracja (tylko do odczytu)
       - ./.env:/app/.env:ro
@@ -13,14 +11,23 @@ services:
       - /:/hostfs
       # Docker socket - aby agent mogl zarzadzac kontenerami!
       - /var/run/docker.sock:/var/run/docker.sock
+      # Mapowanie KONKRETNYCH plików statystyk z Twojego VPSa (julii)
+      - /proc/loadavg:/app/host_loadavg:ro
+      - /proc/uptime:/app/host_uptime:ro
+      - /proc/meminfo:/app/host_meminfo:ro
+      - /proc/stat:/app/host_stat:ro
+    ports:
+      # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
+      - "127.0.0.1:7379:7379"
     environment:
       - LLM_BASE_URL
       - LLM_API_KEY
       - LLM_MODEL
       - AUDIT_LOG_PATH=/app/audit.log
       - AGENT_SOCKET=/tmp/vps-agent.sock
-      - TCP_HOST=127.0.0.1
+      - TCP_HOST=0.0.0.0
       - TCP_PORT=7379
+    network_mode: bridge
 
   telegram:
     build: 

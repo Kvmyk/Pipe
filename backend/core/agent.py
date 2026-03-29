@@ -524,11 +524,10 @@ class VPSAgent:
     ) -> AsyncGenerator[str, None]:
         """Pobiera szczegolowe statystyki systemowe z /proc i narzedzi."""
         stats_cmd = (
-            "echo '=== UPTIME ===' && cat /proc/uptime && "
-            "echo '\\n=== MEMORY ===' && free -m && "
-            "echo '\\n=== LOADAVG ===' && cat /proc/loadavg && "
-            "echo '\\n=== MEMINFO ===' && cat /proc/meminfo | head -20 && "
-            "echo '\\n=== CPU ===' && cat /proc/stat | head -5 && "
+            "echo '=== UPTIME ===' && cat /app/host_uptime && "
+            "echo '\\n=== MEMORY ===' && cat /app/host_meminfo | head -12 && "
+            "echo '\\n=== LOADAVG ===' && cat /app/host_loadavg && "
+            "echo '\\n=== CPU ===' && cat /app/host_stat | head -5 && "
             "echo '\\n=== CPU_INFO ===' && nproc && "
             "echo '\\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
             "echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
