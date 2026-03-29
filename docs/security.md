@@ -7,7 +7,7 @@ Pipe v0.2
 Pipe dziala wewnatrz izolowanego kontenera Docker z ograniczonymi uprawnieniami. Kontener ma dostep do:
 
 - `/var/run/docker.sock` -- zarzadzanie kontenerami na hoscie
-- `/hostfs` (read-only) -- podglad systemu plikow hosta
+- `/hostfs` (read-write) -- pelny dostep i modyfikacja systemu plikow hosta
 - `/tmp` -- wspolny katalog z hostem (Unix socket)
 
 ## Klasyfikacja komend
@@ -68,7 +68,7 @@ Zawartosc plikow (read_file, write_file) nigdy nie trafia do logu -- moze zawier
 ## Izolacja kontenera
 
 Backend agenta dziala w kontenerze Docker z:
-- Read-only montowaniem hosta pod `/hostfs`
+- Read-write montowaniem hosta pod `/hostfs`
 - Brakiem dostepu do sieci hosta (network_mode: bridge)
 - Ograniczonym dostepem do Docker socket (tylko zarzadzanie kontenerami)
 
