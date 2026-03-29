@@ -19,25 +19,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf docker docker.tgz \
     && rm -rf /var/lib/apt/lists/*
 
-# Fake "free" command inside container to override default tool and read Host Daemon + CGroup RSS automatically
+# Fake "free" command inside container to override default tool and read from teleported Host stats
 RUN echo '#!/bin/bash\n\
 MB=$(( 1024 * 1024 ))\n\
-TOTAL=$(docker info --format "{{.MemTotal}}" 2>/dev/null)\n\
-if [ -z "$TOTAL" ]; then\n\
-    TOTAL=$(cat /host_cgroup/memory.max 2>/dev/null || cat /host_cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 2147483648)\n\
-fi\n\
-MAX_MB=$(( TOTAL / MB ))\n\
-USED=0\n\
-if [ -f /host_cgroup/memory/memory.stat ]; then\n\
-    USED=$(grep -w total_rss /host_cgroup/memory/memory.stat | awk '"'"'{print $2}'"'"')\n\
-elif [ -f /host_cgroup/memory.stat ]; then\n\
-    USED=$(grep -w anon /host_cgroup/memory.stat | awk '"'"'{print $2}'"'"')\n\
-fi\n\
-if [ -z "$USED" ]; then USED=0; fi\n\
-USED_MB=$(( USED / MB ))\n\
-FREE_MB=$(( MAX_MB - USED_MB ))\n\
+MEM_FILE="/hostfs/tmp/vps_meminfo"\n\
+if [ ! -f "$MEM_FILE" ]; then MEM_FILE="/proc/meminfo"; fi\n\
+TOTAL_KB=$(grep MemTotal "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
+AVAIL_KB=$(grep MemAvailable "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
+USED_KB=$(( TOTAL_KB - AVAIL_KB ))\n\
+TOTAL_MB=$(( TOTAL_KB / 1024 ))\n\
+USED_MB=$(( USED_KB / 1024 ))\n\
+FREE_MB=$(( AVAIL_KB / 1024 ))\n\
 echo "               total        used        free      shared  buff/cache   available"\n\
-echo "Mem:           ${MAX_MB}M         ${USED_MB}M        ${FREE_MB}M          0M          0M         ${FREE_MB}M"\n\
+echo "Mem:           ${TOTAL_MB}M         ${USED_MB}M        ${FREE_MB}M          0M          0M         ${FREE_MB}M"\n\
 echo "Swap:             0B          0B          0B"\n\
 ' > /usr/local/bin/free && chmod +x /usr/local/bin/free
 

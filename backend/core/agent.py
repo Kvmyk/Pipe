@@ -533,7 +533,8 @@ class VPSAgent:
             "echo '* * * * * root cat /proc/loadavg > /tmp/vps_loadavg && "
             "cat /proc/uptime > /tmp/vps_uptime && "
             "cat /proc/meminfo > /tmp/vps_meminfo && "
-            "cat /proc/stat > /tmp/vps_stat' > /hostfs/etc/cron.d/pipe_stats 2>/dev/null || true"
+            "cat /proc/stat > /tmp/vps_stat && "
+            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipe_stats 2>/dev/null || true"
         )
         
         stats_cmd = (
