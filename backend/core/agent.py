@@ -337,7 +337,9 @@ class VPSAgent:
             return
 
         # SAFE — wykonaj od razu
-        stdout, stderr, exit_code = await self._executor.execute(command)
+        stdout, stderr, exit_code = await self._executor.execute(
+            command, cwd=f"/hostfs{session.cwd}"
+        )
         await audit.log_safe(session.interface, command, exit_code)
 
         result = _format_tool_result(stdout, stderr, exit_code)
@@ -469,7 +471,9 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja Git wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        stdout, stderr, exit_code = await self._executor.execute(
+            cmd, cwd=f"/hostfs{session.cwd}"
+        )
         await audit.log_safe(session.interface, cmd, exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
         session.messages.append({
@@ -608,7 +612,9 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja Docker wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        stdout, stderr, exit_code = await self._executor.execute(
+            cmd, cwd=f"/hostfs{session.cwd}"
+        )
         await audit.log_safe(session.interface, cmd, exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
         session.messages.append({
@@ -649,7 +655,9 @@ class VPSAgent:
             })
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        stdout, stderr, exit_code = await self._executor.execute(
+            cmd, cwd=f"/hostfs{session.cwd}"
+        )
         await audit.log_safe(session.interface, f"network_info:{check_type}", exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
         session.messages.append({
@@ -715,7 +723,9 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja cron wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(cmd)
+        stdout, stderr, exit_code = await self._executor.execute(
+            cmd, cwd=f"/hostfs{session.cwd}"
+        )
         await audit.log_safe(session.interface, f"cron:{operation}", exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
         session.messages.append({
@@ -734,7 +744,9 @@ class VPSAgent:
         """Wykonuje potwierdzona operacje i dodaje wynik do historii."""
         if pending.tool_name == "execute_command":
             command = pending.command
-            stdout, stderr, exit_code = await self._executor.execute(command)
+            stdout, stderr, exit_code = await self._executor.execute(
+                command, cwd=f"/hostfs{session.cwd}"
+            )
             await audit.log_confirmed(session.interface, command, exit_code)
             result = _format_tool_result(stdout, stderr, exit_code)
 

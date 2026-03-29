@@ -16,12 +16,13 @@ class LocalExecutor:
 
     TIMEOUT_SECONDS: int = 30
 
-    async def execute(self, cmd: str) -> tuple[str, str, int]:
+    async def execute(self, cmd: str, cwd: str | None = None) -> tuple[str, str, int]:
         """
-        Wykonuje komendę shell lokalnie.
+        Wykonuje komendę shell lokalnie w określonym katalogu.
 
         Args:
             cmd: Komenda do wykonania.
+            cwd: Katalog roboczy (opcjonalny).
 
         Returns:
             Tuple (stdout, stderr, exit_code).
@@ -31,6 +32,7 @@ class LocalExecutor:
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
             )
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
