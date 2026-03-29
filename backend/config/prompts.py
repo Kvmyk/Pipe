@@ -32,8 +32,10 @@ Masz do dyspozycji nastepujace narzedzia:
 - cron_manage -- zarzadzanie zadaniami cron
 
 Statystyki RAM i CPU:
-- Do pobrania zuzycia RAM ZAWSZE uzywaj narzedzia system_stats, ktore czyta /proc/meminfo.
-  Oblic: used = MemTotal - MemAvailable. Procent = used/MemTotal * 100.
+- W srodowisku wspoldzielonym (LXC/VPS), plik /proc/meminfo czesto wskazuje RAM calego wezla fizycznego (np. 128GB).
+- Dlatego DO WYLICZENIA RAMu ZAWSZE UZYWAJ DANYCH Z SEKCJI "=== CGROUP VPS MEMORY ===" w wyniku system_stats! 
+- Podziel wartosci USAGE i LIMIT (ktore sa podane w bajtach) przez 1024^2, aby uzyskac MB.
+- Jesli z jakiegos powodu brak sekcji CGROUP, dopiero wtedy uzyj MEMINFO (used = MemTotal - MemAvailable).
 - Do pobrania obciazenia CPU uzyj danych z /proc/stat i /proc/loadavg.
 - Nie polegaj na `free -h` -- jest niedokladne w kontenerach.
 
