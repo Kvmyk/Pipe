@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-Pipe v0.1
+Pipe v0.2
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -48,18 +48,31 @@ class ConfirmationRequest:
 
 @dataclass
 class Session:
-    """Stan rozmowy jednej sesji użytkownika."""
+    """Stan rozmowy jednej sesji uzytkownika."""
 
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     interface: str = "cli"
     messages: list[dict[str, Any]] = field(default_factory=list)
     pending_confirmation: ConfirmationRequest | None = None
+    cwd: str = "/"
 
     @property
     def system_prompt(self) -> str:
+        dir_context = (
+            f"\n\n--- NAWIGACJA ---\n"
+            f"Twoj wirtualny katalog roboczy na serwerze to obecnie: {self.cwd}\n"
+            f"(Pamietaj, ze w kontenerze ten katalog znajduje sie pod sciezka /hostfs{self.cwd}).\n"
+            f"1. Jesli uruchamiasz komendy plikowe lokalnie dla tego katalogu, uzyj sciezki /hostfs{self.cwd}.\n"
+            f"2. ZA KAZDYM RAZEM gdy odpisujesz uzytkownikowi, ZAWSZE rozpoczynaj pierwsza linie od "
+            f"tagu reprezentujacego aktualna sciezke, np.: [Katalog: {self.cwd}]\n"
+            f"3. Uzyj narzedzia change_directory, jesli uzytkownik prosi o wejscie/przejscie do innego folderu.\n"
+        )
         if "telegram" in self.interface.lower():
-            return TELEGRAM_SYSTEM_PROMPT
-        return BASE_SYSTEM_PROMPT
+            # W telegramie system_prompt uzywa HTML
+            dir_context = dir_context.replace("[Katalog: ", "<b>[Katalog: ")
+            dir_context = dir_context.replace("]\n", "]</b>\n")
+            return TELEGRAM_SYSTEM_PROMPT + dir_context
+        return BASE_SYSTEM_PROMPT + dir_context
 
 
 class VPSAgent:
@@ -244,6 +257,10 @@ class VPSAgent:
 
         elif tool_name == "git_command":
             async for chunk in self._handle_git_command(session, tool_call, args):
+                yield chunk
+
+        elif tool_name == "change_directory":
+            async for chunk in self._handle_change_directory(session, tool_call, args):
                 yield chunk
 
         elif tool_name == "system_stats":
@@ -455,6 +472,40 @@ class VPSAgent:
         stdout, stderr, exit_code = await self._executor.execute(cmd)
         await audit.log_safe(session.interface, cmd, exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
+        session.messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": result,
+        })
+        return
+        yield  # noqa: unreachable
+
+    # --- Change directory ---
+
+    async def _handle_change_directory(
+        self,
+        session: Session,
+        tool_call: Any,
+        args: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Zmienia wirtualny katalog roboczy agenta."""
+        path = args.get("path", "").strip()
+        if not path:
+            result = "Blad: parameter 'path' jest wymagany."
+        else:
+            # Upewnienie sie ze path jest absolutny w stosunku do hosta (zaczyna sie od /)
+            import os
+            # Zamiana ewentualnego ./ itp.
+            new_cwd = os.path.normpath(os.path.join(session.cwd, path))
+            
+            # Weryfikacja czy istnieje na hostfs
+            hostfs_path = os.path.join("/hostfs", new_cwd.lstrip("/"))
+            if os.path.isdir(hostfs_path):
+                session.cwd = new_cwd
+                result = f"Katalog zmieniony na: {new_cwd}"
+            else:
+                result = f"Blad: Katalog {new_cwd} nie istnieje na serwerze."
+
         session.messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,

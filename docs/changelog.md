@@ -1,5 +1,21 @@
 # Historia zmian -- Pipe
 
+## v0.2 (2026-03-29)
+
+### Nawigacja po serwerze
+- Agent sledzi swoj stan z katalogiem roboczym na hoście (wlasciwosc `cwd` w `Session`)
+- Nowe narzedzie `change_directory` umozliwiajace latwe zmienianie polozenia `/hostfs/...`
+- Automatyczne powiadamianie uzytkownika o aktualnym polozeniu (tag `[Katalog: ...]`)
+
+### Narzedzia systemowe
+- Zainstalowanie w obrazie `git`, `dnsutils`, `iputils-ping` poprawiajace dzialanie `network_info` i `git_command`
+
+### Dokumentacja
+- Przeredagowano README odrzucajac zbedny diagram i dodajac wzmianke o multiplatformowosci (Telegram/Discord/CLI)
+- Uaktualniono w calym repozytorium wersje do v0.2
+
+---
+
 ## v0.1 (2026-03-29)
 
 Pierwsza wersja Pipe -- autonomiczny agent AI do zarzadzania serwerem VPS.

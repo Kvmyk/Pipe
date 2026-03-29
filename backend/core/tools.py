@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.1
+Pipe v0.2
 """
 
 from __future__ import annotations
@@ -85,6 +85,28 @@ TOOLS: list[dict] = [
                     },
                 },
                 "required": ["path", "content", "requires_confirmation"],
+            },
+        },
+    },
+    # --- Nawigacja po katalogach ---
+    {
+        "type": "function",
+        "function": {
+            "name": "change_directory",
+            "description": (
+                "Zmienia wirtualny katalog roboczy na serwerze "
+                "(hostfs). Np. '/home/user'. Uzywaj tego aby pamietac "
+                "w jakim katalogu na serwerze uzytkownik chce pracowac."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Sciezka do katalogu na serwerze, np. '/home/user/my-project'",
+                    },
+                },
+                "required": ["path"],
             },
         },
     },

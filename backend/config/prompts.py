@@ -1,7 +1,7 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.1
+Pipe v0.2
 """
 
 BASE_SYSTEM_PROMPT = """\

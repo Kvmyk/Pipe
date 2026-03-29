@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     net-tools \
     curl \
     ca-certificates \
+    git \
+    dnsutils \
+    iputils-ping \
     && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz -o docker.tgz \
     && tar xzvf docker.tgz docker/docker \
     && mv docker/docker /usr/local/bin/docker \
