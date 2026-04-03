@@ -1,6 +1,6 @@
-# install.ps1 - Instaluje skrot "pipe" w PowerShell
+# install.ps1 - Instaluje skrot "pipeclaw" w PowerShell
 # Uruchom raz: .\install.ps1
-# Potem wystarczy wpisac: pipe
+# Potem wystarczy wpisac: pipeclaw
 
 param(
     [string]$VpsHost = "",
@@ -38,13 +38,13 @@ Write-Host "Instaluje zaleznosci CLI..." -ForegroundColor Cyan
 $RequirementsPath = Join-Path $ScriptDir "clients\cli\requirements.txt"
 python -m pip install -r $RequirementsPath --quiet
 
-# Zbuduj argumenty dla funkcji 'pipe'
-$PipeArgs = "--host `"$VpsHost`""
+# Zbuduj argumenty dla funkcji 'pipeclaw'
+$PipeClawArgs = "--host `"$VpsHost`""
 if ($SshPort -ne "22") {
-    $PipeArgs += " --ssh-port $SshPort"
+    $PipeClawArgs += " --ssh-port $SshPort"
 }
 if ($SshKey) {
-    $PipeArgs += " --key `"$SshKey`""
+    $PipeClawArgs += " --key `"$SshKey`""
 }
 
 # Przygotuj profil PowerShell
@@ -56,14 +56,14 @@ if (-not (Test-Path $PROFILE)) {
     New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
 
-$Marker = "# --- VPS Management Agent (Pipe) ---"
-$MarkerEnd = "# --- end Pipe ---"
+$Marker = "# --- VPS Management Agent (PipeClaw) ---"
+$MarkerEnd = "# --- end PipeClaw ---"
 
 $FunctionBlock = @"
 
 $Marker
-function pipe {
-    python "$CliPath" $PipeArgs `$args
+function pipeclaw {
+    python "$CliPath" $PipeClawArgs `$args
 }
 $MarkerEnd
 "@
@@ -83,19 +83,19 @@ if ($ProfileContent -and $ProfileContent.Contains($Marker)) {
     }
     Set-Content $PROFILE $newLines
     Add-Content $PROFILE $FunctionBlock
-    Write-Host "Zaktualizowano istniejacy skrot 'pipe' w profilu." -ForegroundColor Yellow
+    Write-Host "Zaktualizowano istniejacy skrot 'pipeclaw' w profilu." -ForegroundColor Yellow
 } else {
     Add-Content $PROFILE $FunctionBlock
-    Write-Host "Dodano skrot 'pipe' do profilu PowerShell." -ForegroundColor Green
+    Write-Host "Dodano skrot 'pipeclaw' do profilu PowerShell." -ForegroundColor Green
 }
 
 Write-Host ""
 Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host " Gotowe! Skrot 'pipe' bedzie laczyc sie z:      " -ForegroundColor Cyan
+Write-Host " Gotowe! Skrot 'pipeclaw' bedzie laczyc sie z:      " -ForegroundColor Cyan
 Write-Host "   $VpsHost" -ForegroundColor White
 Write-Host ""
 Write-Host " Aby zastosowac teraz (bez restartu terminala): " -ForegroundColor Cyan
 Write-Host "   . `$PROFILE" -ForegroundColor Yellow
 Write-Host " Potem wpisz:                                   " -ForegroundColor Cyan
-Write-Host "   pipe" -ForegroundColor Yellow
+Write-Host "   pipeclaw" -ForegroundColor Yellow
 Write-Host "=================================================" -ForegroundColor Cyan

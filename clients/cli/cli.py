@@ -241,11 +241,12 @@ class RemoteClient:
 def _print_banner(host: str) -> None:
     """Wyświetla baner startowy z informacją o serwerze."""
     ascii_art = """[bold cyan]
-  ____  ___ ____  _____ 
- |  _ \\|_ _|  _ \\| ____|
- | |_) || || |_) |  _|  
- |  __/ | ||  __/| |___ 
- |_|   |___|_|   |_____|
+  ____  _             ____ _                
+ |  _ \\(_)_ __   ___ / ___| | __ ___      __
+ | |_) | | '_ \\ / _ \\ |   | |/ _` \\ \\ /\\ / /
+ |  __/| | |_) |  __/ |___| | (_| |\\ V  V / 
+ |_|   |_| .__/ \\___|\\____|_|\\__,_| \\_/\\_/  
+         |_|                                
 [/bold cyan]"""
     console.print(
         Panel.fit(

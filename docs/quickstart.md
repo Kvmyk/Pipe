@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.2
+PipeClaw v0.2
 
 ## Wymagania wstepne
 
@@ -14,8 +14,8 @@ Pipe v0.2
 SSH na Mikrusa i wykonaj:
 
 ```bash
-git clone https://github.com/user/pipe
-cd pipe/backend
+git clone https://github.com/user/pipeclaw
+cd pipeclaw/backend
 
 cp .env.example .env
 nano .env   # wpisz swoj LLM_API_KEY (darmowy: https://aistudio.google.com/)
@@ -34,8 +34,8 @@ docker logs vps-agent
 ## Krok 2: Zainstaluj CLI na laptopie
 
 ```bash
-git clone https://github.com/user/pipe
-cd pipe
+git clone https://github.com/user/pipeclaw
+cd pipeclaw
 ```
 
 ### Windows (PowerShell)
@@ -54,15 +54,15 @@ bash install.sh
 
 Skrypt:
 - zainstaluje zaleznosci Python (`rich`)
-- doda funkcje `pipe` do Twojego profilu terminala
-- od teraz wystarczy wpisac `pipe` w dowolnym terminalu
+- doda funkcje `pipeclaw` do Twojego profilu terminala
+- od teraz wystarczy wpisac `pipeclaw` w dowolnym terminalu
 
 ---
 
 ## Krok 3: Polacz sie z agentem
 
 ```
-pipe
+pipeclaw
 ```
 
 CLI automatycznie:
@@ -77,7 +77,7 @@ CLI automatycznie:
 
 ```
 +-------------------------------------------+
-|  PIPE                                     |
+|  PIPECLAW                                     |
 |  Autonomiczny agent AI                    |
 |  Polaczono z: root@mikrus.example.com     |
 +-------------------------------------------+
@@ -109,14 +109,14 @@ Do widzenia!
 
 ---
 
-## Opcje skrotu `pipe`
+## Opcje skrotu `pipeclaw`
 
 Mozesz tez przekazac dodatkowe opcje:
 
 ```bash
-pipe --ssh-port 2222      # niestandardowy port SSH
-pipe --key ~/.ssh/id_rsa  # konkretny klucz SSH
-pipe --session moja-sesja # zachowaj historie sesji
+pipeclaw --ssh-port 2222      # niestandardowy port SSH
+pipeclaw --key ~/.ssh/id_rsa  # konkretny klucz SSH
+pipeclaw --session moja-sesja # zachowaj historie sesji
 ```
 
 ---

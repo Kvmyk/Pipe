@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# install.sh — Instaluje skrót "pipe" w bash/zsh
+# install.sh — Instaluje skrót "pipeclaw" w bash/zsh
 # Uruchom raz: bash install.sh
-# Potem wystarczy wpisać: pipe
+# Potem wystarczy wpisać: pipeclaw
 
 set -e
 
@@ -43,20 +43,20 @@ echo -e "${CYAN}📦 Instaluję zależności CLI...${NC}"
 $PYTHON -m pip install -r "$SCRIPT_DIR/clients/cli/requirements.txt" --quiet
 
 # ─── Buduj alias ─────────────────────────────────────────────────────────────
-PIPE_ARGS="--host \"$VPS_HOST\""
+PIPECLAW_ARGS="--host \"$VPS_HOST\""
 if [ "$SSH_PORT" != "22" ]; then
-    PIPE_ARGS="$PIPE_ARGS --ssh-port $SSH_PORT"
+    PIPECLAW_ARGS="$PIPECLAW_ARGS --ssh-port $SSH_PORT"
 fi
 if [ -n "$SSH_KEY" ]; then
-    PIPE_ARGS="$PIPE_ARGS --key \"$SSH_KEY\""
+    PIPECLAW_ARGS="$PIPECLAW_ARGS --key \"$SSH_KEY\""
 fi
 
 ALIAS_BLOCK="
-# ─── VPS Management Agent (Pipe) ───────────────────────────────────────────
-pipe() {
-    $PYTHON \"$CLI_PATH\" $PIPE_ARGS \"\$@\"
+# ─── VPS Management Agent (PipeClaw) ───────────────────────────────────────────
+pipeclaw() {
+    $PYTHON \"$CLI_PATH\" $PIPECLAW_ARGS \"\$@\"
 }
-# ─── end Pipe ───────────────────────────────────────────────────────────────"
+# ─── end PipeClaw ───────────────────────────────────────────────────────────────"
 
 # ─── Wykryj powłokę i wybierz plik profilu ───────────────────────────────────
 if [ -n "$ZSH_VERSION" ] || [ "$SHELL" = "$(which zsh 2>/dev/null)" ]; then
@@ -67,13 +67,13 @@ else
     RC_FILE="$HOME/.profile"
 fi
 
-echo -e "${CYAN}📝 Dodaję skrót 'pipe' do $RC_FILE...${NC}"
+echo -e "${CYAN}📝 Dodaję skrót 'pipeclaw' do $RC_FILE...${NC}"
 
 # Usuń poprzedni blok (jeśli istnieje)
-if grep -q "VPS Management Agent (Pipe)" "$RC_FILE" 2>/dev/null; then
+if grep -q "VPS Management Agent (PipeClaw)" "$RC_FILE" 2>/dev/null; then
     # Usuń stary blok między znacznikami
-    sed -i.bak '/# ─── VPS Management Agent (Pipe)/,/# ─── end Pipe/d' "$RC_FILE"
-    echo -e "${YELLOW}🔄 Zaktualizowano istniejący skrót 'pipe'.${NC}"
+    sed -i.bak '/# ─── VPS Management Agent (PipeClaw)/,/# ─── end PipeClaw/d' "$RC_FILE"
+    echo -e "${YELLOW}🔄 Zaktualizowano istniejący skrót 'pipeclaw'.${NC}"
 fi
 
 # Dodaj nowy blok
@@ -81,11 +81,11 @@ printf '%s\n' "$ALIAS_BLOCK" >> "$RC_FILE"
 
 echo ""
 echo -e "${CYAN}════════════════════════════════════════════════════${NC}"
-echo -e "${CYAN} Gotowe! Załaduj profil i wpisz 'pipe' aby połączyć się z:${NC}"
+echo -e "${CYAN} Gotowe! Załaduj profil i wpisz 'pipeclaw' aby połączyć się z:${NC}"
 echo -e "${NC}   $VPS_HOST${NC}"
 echo ""
 echo -e "${CYAN} Aby zastosować teraz (w bieżącym terminalu):${NC}"
 echo -e "${YELLOW}   source $RC_FILE${NC}"
 echo -e "${CYAN} W nowym terminalu wystarczy wpisać:${NC}"
-echo -e "${YELLOW}   pipe${NC}"
+echo -e "${YELLOW}   pipeclaw${NC}"
 echo -e "${CYAN}════════════════════════════════════════════════════${NC}"

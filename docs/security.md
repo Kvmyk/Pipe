@@ -1,10 +1,10 @@
-# Bezpieczenstwo -- Pipe
+# Bezpieczenstwo -- PipeClaw
 
-Pipe v0.2
+PipeClaw v0.2
 
 ## Model bezpieczenstwa
 
-Pipe dziala wewnatrz izolowanego kontenera Docker z ograniczonymi uprawnieniami. Kontener ma dostep do:
+PipeClaw dziala wewnatrz izolowanego kontenera Docker z ograniczonymi uprawnieniami. Kontener ma dostep do:
 
 - `/var/run/docker.sock` -- zarzadzanie kontenerami na hoscie
 - `/hostfs` (read-write) -- pelny dostep i modyfikacja systemu plikow hosta

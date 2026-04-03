@@ -1,4 +1,4 @@
-# Historia zmian -- Pipe
+# Historia zmian -- PipeClaw
 
 ## v0.2 (2026-03-29)
 
@@ -18,7 +18,7 @@
 
 ## v0.1 (2026-03-29)
 
-Pierwsza wersja Pipe -- autonomiczny agent AI do zarzadzania serwerem VPS.
+Pierwsza wersja PipeClaw -- autonomiczny agent AI do zarzadzania serwerem VPS.
 
 ### Narzedzia agenta
 

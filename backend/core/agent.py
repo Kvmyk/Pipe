@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-Pipe v0.2
+PipeClaw v0.2
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -103,7 +103,7 @@ class VPSAgent:
             "cat /proc/uptime > /tmp/vps_uptime && "
             "cat /proc/meminfo > /tmp/vps_meminfo && "
             "cat /proc/stat > /tmp/vps_stat && "
-            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipe_stats 2>/dev/null || true"
+            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipeclaw_stats 2>/dev/null || true"
         )
         await self._executor.execute(setup_cmd)
 
@@ -549,7 +549,7 @@ class VPSAgent:
             "cat /proc/uptime > /tmp/vps_uptime && "
             "cat /proc/meminfo > /tmp/vps_meminfo && "
             "cat /proc/stat > /tmp/vps_stat && "
-            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipe_stats 2>/dev/null || true"
+            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipeclaw_stats 2>/dev/null || true"
         )
         
         stats_cmd = (

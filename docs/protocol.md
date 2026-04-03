@@ -1,6 +1,6 @@
-# Protokol komunikacji -- Pipe
+# Protokol komunikacji -- PipeClaw
 
-Pipe v0.2
+PipeClaw v0.2
 
 ## Opis
 
