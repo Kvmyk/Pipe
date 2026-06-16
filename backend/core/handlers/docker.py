@@ -59,7 +59,7 @@ async def handle_docker_manage(
             result += f"\n[STDERR]\n{stderr}"
 
         from backend.core import audit
-        await audit.log_executed(session.interface, full_cmd, exit_code)
+        await audit.log_safe(session.interface, full_cmd, exit_code)
         yield result
     except Exception as exc:
         yield f"[ERROR] Błąd Docker: {exc}"

@@ -61,7 +61,7 @@ async def handle_git_command(
             result += f"\n[STDERR]\n{stderr}"
 
         from backend.core import audit
-        await audit.log_executed(session.interface, git_cmd, exit_code)
+        await audit.log_safe(session.interface, git_cmd, exit_code)
         yield result
     except Exception as exc:
         yield f"[ERROR] Błąd Git: {exc}"
