@@ -55,8 +55,8 @@ services:
         # uptime & loadavg
         cat /hostproc/uptime > /hostfs/tmp/vps_uptime 2>/dev/null || true; \
         cat /hostproc/loadavg > /hostfs/tmp/vps_loadavg 2>/dev/null || true; \
-        # memory
-        free -m > /hostfs/tmp/vps_free 2>/dev/null || true; \
+        # memory: compute from /hostproc/meminfo to reflect host values
+        awk 'BEGIN{mt=0;ma=0;buf=0;cache=0;sh=0} /^MemTotal:/ {mt=$2} /^MemAvailable:/ {ma=$2} /^Buffers:/ {buf=$2} /^Cached:/ {cache=$2} /^Shmem:/ {sh=$2} END{mt_mb=int(mt/1024); ma_mb=int(ma/1024); used_mb=int((mt-ma)/1024); free_mb=int(ma/1024); printf("               total        used        free      shared  buff/cache   available\n"); printf("Mem: %11dM %11dM %8dM %8dM %10dM %10dM\n", mt_mb, used_mb, free_mb, int(sh/1024), int((buf+cache)/1024), ma_mb)}' /hostproc/meminfo > /hostfs/tmp/vps_free 2>/dev/null || true; \
         cp /hostproc/meminfo /hostfs/tmp/vps_meminfo 2>/dev/null || true; \
         # cpu snapshot
         top -bn1 | head -20 > /hostfs/tmp/vps_stats_cpu.txt 2>/dev/null || true; \
@@ -64,13 +64,10 @@ services:
         cp /hostproc/stat /hostfs/tmp/vps_stat 2>/dev/null || true; \
         # disk
         df -h / > /hostfs/tmp/vps_disk 2>/dev/null || true; \
-        # combined friendly status
-        echo "=== UPTIME ===" > /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
-        uptime >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
-        echo "\n=== FREE ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
-        free -m | head -5 >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
-        echo "\n=== DISK ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
-        df -h / | head -5 >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        # combined friendly status: include uptime, vps_free, disk
+        echo "=== UPTIME ===" > /hostfs/tmp/vps_stats.txt 2>/dev/null || true; uptime >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        echo "\n=== FREE ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; cat /hostfs/tmp/vps_free >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        echo "\n=== DISK ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; df -h / | head -5 >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
         sleep 60; \
       done"
     network_mode: bridge
