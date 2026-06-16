@@ -19,11 +19,13 @@ async def handle_read_file(
     """Obsługuje narzędzie read_file."""
     path = args.get("path", "").strip()
     if not path:
+        result = "Błąd: pusta ścieżka"
+        yield result
         session.messages.append(
             {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": "Błąd: pusta ścieżka",
+                "content": result,
             }
         )
         return
@@ -33,11 +35,13 @@ async def handle_read_file(
     if not is_allowed:
         from backend.core import audit
         await audit.log_blocked(session.interface, f"read_file({path}): {reason}")
+        result = f"ODMOWA SYSTEMOWA: {reason}"
+        yield result
         session.messages.append(
             {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": f"ODMOWA SYSTEMOWA: {reason}",
+                "content": result,
             }
         )
         return
@@ -54,6 +58,8 @@ async def handle_read_file(
     except Exception as exc:
         result = f"Błąd odczytu pliku: {exc}"
 
+    # Zwróć wynik narzędzia (yield), a następnie zaktualizuj historię sesji
+    yield result
     session.messages.append(
         {
             "role": "tool",
