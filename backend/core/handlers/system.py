@@ -148,8 +148,7 @@ async def handle_cron_manage(
                 "content": "Błąd: brak cron_entry do dodania",
             })
             return
-        # Wymaga potwierdzenia
-        from backend.core.agent import ConfirmationRequest
+         # Wymaga potwierdzenia
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name="cron_manage",
@@ -160,7 +159,6 @@ async def handle_cron_manage(
         return
     elif action == "remove":
         # Wymaga potwierdzenia
-        from backend.core.agent import ConfirmationRequest
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name="cron_manage",

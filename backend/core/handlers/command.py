@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator
 
 from backend.core.security import classify_command
-from backend.core.session import Session
+from backend.core.session import Session, ConfirmationRequest
 
 
 async def handle_execute_command(
@@ -48,7 +48,6 @@ async def handle_execute_command(
         return
 
     if classification == "confirm":
-        from backend.core.agent import ConfirmationRequest
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name="execute_command",
