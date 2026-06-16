@@ -212,17 +212,19 @@ def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
 
     # Jeśli wiele części odpowiedzi, wybierz najbardziej zwięzłe podsumowanie
     # Preferuj fragmenty zawierające czytelne podsumowanie serwera.
-    if len(parts) > 1:
+    if parts:
+        # Zwróć ostatni fragment, który nie zaczyna się od surowego bloku
+        # typu [MEMORY], [STDOUT], [EXIT CODE], itp. To odpowiada sytuacji
+        # "chcę tylko czytelne podsumowanie" (np. /status).
         for part in reversed(parts):
-            # Szukamy charakterystycznych znaczników podsumowania
-            if (
-                "Podsumowanie statusu serwera" in part
-                or "Status Serwera" in part
-                or part.strip().startswith("[Katalog:")
-            ):
+            txt = part.strip()
+            if not txt.startswith("[") and txt:
                 return part, needs_confirm
 
-    return "\n\n".join(parts), needs_confirm
+        # Jeśli wszystkie fragmenty są surowe, zwróć ostatni fragment
+        return parts[-1], needs_confirm
+
+    return "", needs_confirm
 
 
 async def _send_response(
