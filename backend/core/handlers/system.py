@@ -97,14 +97,40 @@ async def handle_system_stats(
 
     # Domyślnie zwracamy zwięzłe, czytelne podsumowanie serwera
     try:
-        # Uptime + load
-        stdout_uptime, _, ec_uptime = await agent._executor.execute("uptime")
+        # Najpierw spróbuj odczytać prewencyjnie zapisane pliki w /hostfs/tmp
+        # (zapisuje je host-stats sidecar). Jeśli istnieją, użyjemy ich.
+        uptime_path = Path("/hostfs/tmp/vps_stats.txt")
+        free_path = Path("/hostfs/tmp/vps_free")
+        cpu_path = Path("/hostfs/tmp/vps_stats_cpu.txt")
+        disk_path = Path("/hostfs/tmp/vps_disk")
 
-        # Memory
-        stdout_mem, _, ec_mem = await agent._executor.execute("free -m")
+        stdout_uptime = stdout_mem = stdout_disk = ""
+        ec_uptime = ec_mem = ec_disk = 0
 
-        # Disk (root)
-        stdout_disk, _, ec_disk = await agent._executor.execute("df -h /")
+        if uptime_path.exists():
+            combined = uptime_path.read_text(encoding="utf-8", errors="replace")
+            # Rozbij na sekcje: UPTIME / FREE / DISK
+            stdout_uptime = ""
+            stdout_mem = ""
+            stdout_disk = ""
+            for ln in combined.splitlines():
+                if ln.startswith("=== UPTIME ==="):
+                    # następują linie uptime
+                    continue
+            # Prostsze: wykorzystamy cały plik jako stdout_uptime do parsowania
+            stdout_uptime = combined
+        else:
+            stdout_uptime, _, ec_uptime = await agent._executor.execute("uptime")
+
+        if free_path.exists():
+            stdout_mem = free_path.read_text(encoding="utf-8", errors="replace")
+        else:
+            stdout_mem, _, ec_mem = await agent._executor.execute("free -m")
+
+        if disk_path.exists():
+            stdout_disk = disk_path.read_text(encoding="utf-8", errors="replace")
+        else:
+            stdout_disk, _, ec_disk = await agent._executor.execute("df -h /")
 
         # Parsowanie uptime
         uptime_text = ""
