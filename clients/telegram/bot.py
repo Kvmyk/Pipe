@@ -210,6 +210,18 @@ def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         if status == "confirm":
             needs_confirm = True
 
+    # Jeśli wiele części odpowiedzi, wybierz najbardziej zwięzłe podsumowanie
+    # Preferuj fragmenty zawierające czytelne podsumowanie serwera.
+    if len(parts) > 1:
+        for part in reversed(parts):
+            # Szukamy charakterystycznych znaczników podsumowania
+            if (
+                "Podsumowanie statusu serwera" in part
+                or "Status Serwera" in part
+                or part.strip().startswith("[Katalog:")
+            ):
+                return part, needs_confirm
+
     return "\n\n".join(parts), needs_confirm
 
 
