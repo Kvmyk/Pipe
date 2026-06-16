@@ -198,3 +198,62 @@ def classify_file_write(path: str) -> Literal["safe", "confirm", "forbidden"]:
         if path.startswith(fp):
             return "forbidden"
     return "confirm"
+
+
+def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bool, str]:
+    """
+    Waliduje, czy ścieżka znajduje się w dozwolonym workspace'u.
+    
+    Agent ma dostęp TYLKO do /hostfs (zmapowanego na /opt/pipeclaw-workspace na hoście).
+    Wszelkie próby dostępu do systemowych katalogów są blokowane.
+    
+    Args:
+        path: Ścieżka do sprawdzenia (absolutna lub względna).
+        workspace: Katalog workspace (domyślnie /hostfs).
+        
+    Returns:
+        (is_allowed: bool, reason: str)
+    """
+    from pathlib import Path
+    
+    # Ścieżki systemowe, do których dostęp jest zawsze zabroniony
+    FORBIDDEN_SYSTEM_PATHS = [
+        "/etc/",
+        "/boot/",
+        "/dev/",
+        "/proc/",
+        "/sys/",
+        "/root/",
+        "/var/log/",
+        "/var/spool/",
+        "/usr/bin/",
+        "/usr/sbin/",
+        "/bin/",
+        "/sbin/",
+        "/lib/",
+        "/lib64/",
+        "/opt/docker",  # Protekcja Docker daemon
+    ]
+    
+    # Normalizuj ścieżkę
+    try:
+        resolved_path = str(Path(path).resolve())
+    except (ValueError, OSError):
+        return False, f"Nieprawidłowa ścieżka: {path}"
+    
+    # Sprawdź czy ścieżka jest w workspace'ie
+    try:
+        workspace_path = Path(workspace).resolve()
+        abs_path = Path(resolved_path).resolve()
+        
+        # Upewnij się, że ścieżka jest wewnątrz workspace'u
+        abs_path.relative_to(workspace_path)
+    except ValueError:
+        return False, f"Dostęp poza workspace ({workspace}) jest zabroniony dla {path}"
+    
+    # Sprawdź czy ścieżka nie trafia w systemowe katalogi
+    for forbidden in FORBIDDEN_SYSTEM_PATHS:
+        if resolved_path.startswith(forbidden):
+            return False, f"Dostęp do {forbidden} jest zabroniony"
+    
+    return True, "OK"

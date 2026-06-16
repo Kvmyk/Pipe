@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Literal
 
 from openai import AsyncOpenAI
@@ -30,50 +29,20 @@ from backend.core import audit
 from backend.core.executor import LocalExecutor
 from backend.core.security import classify_command, classify_file_write
 from backend.core.tools import TOOLS
+from backend.core.session import Session, ConfirmationRequest
+from backend.core.handlers import (
+    handle_execute_command,
+    handle_read_file,
+    handle_write_file,
+    handle_git_command,
+    handle_docker_manage,
+    handle_change_directory,
+    handle_system_stats,
+    handle_network_info,
+    handle_cron_manage,
+)
 
 MAX_TOOL_ITERATIONS = 10
-
-
-@dataclass
-class ConfirmationRequest:
-    """Zdefiniowany w locie, gdy agent potrzebuje potwierdzenia od użytkownika."""
-
-    tool_call_id: str
-    tool_name: str
-    command: str
-    classification: Literal["confirm"]
-    # Dla write_file — przechowuje ścieżkę i zawartość
-    file_path: str | None = None
-    file_content: str | None = None
-
-
-@dataclass
-class Session:
-    """Stan rozmowy jednej sesji uzytkownika."""
-
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    interface: str = "cli"
-    messages: list[dict[str, Any]] = field(default_factory=list)
-    pending_confirmation: ConfirmationRequest | None = None
-    cwd: str = "/"
-
-    @property
-    def system_prompt(self) -> str:
-        dir_context = (
-            f"\n\n--- NAWIGACJA ---\n"
-            f"Twoj wirtualny katalog roboczy na serwerze to obecnie: {self.cwd}\n"
-            f"(Pamietaj, ze w kontenerze ten katalog znajduje sie pod sciezka /hostfs{self.cwd}).\n"
-            f"1. Jesli uruchamiasz komendy plikowe lokalnie dla tego katalogu, uzyj sciezki /hostfs{self.cwd}.\n"
-            f"2. ZA KAZDYM RAZEM gdy odpisujesz uzytkownikowi, ZAWSZE rozpoczynaj pierwsza linie od "
-            f"tagu reprezentujacego aktualna sciezke, np.: [Katalog: {self.cwd}]\n"
-            f"3. Uzyj narzedzia change_directory, jesli uzytkownik prosi o wejscie/przejscie do innego folderu.\n"
-        )
-        if "telegram" in self.interface.lower():
-            # W telegramie system_prompt uzywa HTML
-            dir_context = dir_context.replace("[Katalog: ", "<b>[Katalog: ")
-            dir_context = dir_context.replace("]\n", "]</b>\n")
-            return TELEGRAM_SYSTEM_PROMPT + dir_context
-        return BASE_SYSTEM_PROMPT + dir_context
 
 
 class VPSAgent:
@@ -258,42 +227,23 @@ class VPSAgent:
             yield f"[BLAD] Błąd parsowania argumentów narzędzia: {exc}"
             return
 
-        if tool_name == "execute_command":
-            async for chunk in self._handle_execute_command(session, tool_call, args):
-                yield chunk
+        # Mapa handlerów — delegowanie do modułu handlers
+        handlers = {
+            "execute_command": handle_execute_command,
+            "read_file": handle_read_file,
+            "write_file": handle_write_file,
+            "git_command": handle_git_command,
+            "change_directory": handle_change_directory,
+            "system_stats": handle_system_stats,
+            "docker_manage": handle_docker_manage,
+            "network_info": handle_network_info,
+            "cron_manage": handle_cron_manage,
+        }
 
-        elif tool_name == "read_file":
-            async for chunk in self._handle_read_file(session, tool_call, args):
+        if tool_name in handlers:
+            handler = handlers[tool_name]
+            async for chunk in handler(self, session, tool_call, args):
                 yield chunk
-
-        elif tool_name == "write_file":
-            async for chunk in self._handle_write_file(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "git_command":
-            async for chunk in self._handle_git_command(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "change_directory":
-            async for chunk in self._handle_change_directory(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "system_stats":
-            async for chunk in self._handle_system_stats(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "docker_manage":
-            async for chunk in self._handle_docker_manage(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "network_info":
-            async for chunk in self._handle_network_info(session, tool_call, args):
-                yield chunk
-
-        elif tool_name == "cron_manage":
-            async for chunk in self._handle_cron_manage(session, tool_call, args):
-                yield chunk
-
         else:
             result = f"Nieznane narzedzie: {tool_name}"
             session.messages.append(
@@ -373,6 +323,8 @@ class VPSAgent:
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Obsługuje narzędzie read_file."""
+        from backend.core.security import validate_workspace_access
+        
         path = args.get("path", "").strip()
         if not path:
             session.messages.append(
@@ -380,6 +332,19 @@ class VPSAgent:
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": "Błąd: pusta ścieżka",
+                }
+            )
+            return
+
+        # Walidacja dostępu do workspace'u
+        is_allowed, reason = validate_workspace_access(path)
+        if not is_allowed:
+            await audit.log_blocked(session.interface, f"read_file({path}): {reason}")
+            session.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"ODMOWA SYSTEMOWA: {reason}",
                 }
             )
             return
@@ -413,6 +378,8 @@ class VPSAgent:
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Obsługuje narzędzie write_file — zawsze wymaga potwierdzenia."""
+        from backend.core.security import validate_workspace_access
+        
         path = args.get("path", "").strip()
         content = args.get("content", "")
 
@@ -422,6 +389,20 @@ class VPSAgent:
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": "Błąd: pusta ścieżka",
+                }
+            )
+            return
+
+        # Walidacja dostępu do workspace'u
+        is_allowed, reason = validate_workspace_access(path)
+        if not is_allowed:
+            await audit.log_blocked(session.interface, f"write_file({path}): {reason}")
+            yield f"[ODMOWA] {reason}"
+            session.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"ODMOWA SYSTEMOWA: {reason}",
                 }
             )
             return

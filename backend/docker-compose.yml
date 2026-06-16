@@ -7,11 +7,12 @@ services:
       - ./.env:/app/.env:ro
       # Unix socket — wspólny z hostem i innymi kontenerami (Telegram bot)
       - /tmp:/tmp
-      # GŁÓWNY DYSK HOST (Pełny dostęp) - Agent może modyfikować pliki hosta
-      - /:/hostfs
+      # DEDYKOWANY WORKSPACE - Agent może operować TYLKO w tym katalogu
+      # Zakładamy, że /opt/pipeclaw-workspace istnieje i jest właściwy
+      - /opt/pipeclaw-workspace:/hostfs
       # Docker socket - aby agent mogl zarzadzac kontenerami!
       - /var/run/docker.sock:/var/run/docker.sock
-      # Klucze SSH do gita
+      # Klucze SSH do gita (tylko do odczytu)
       - /root/.ssh:/root/.ssh:ro
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
