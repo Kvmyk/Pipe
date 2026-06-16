@@ -40,3 +40,22 @@ services:
       # Wspólny socket plikowy do gadania z vps-agentem
       - /tmp:/tmp
     network_mode: bridge
+
+  host-stats:
+    image: alpine:3.18
+    restart: unless-stopped
+    # Ten serwis czyta tylko /proc hosta (do odczytu) i zapisuje wyjscie do workspace
+    # Workspace jest zamontowany na hoście jako /opt/pipeclaw-workspace
+    volumes:
+      - /opt/pipeclaw-workspace:/hostfs
+      - /proc:/hostproc:ro
+    command: >
+      sh -c "mkdir -p /hostfs/tmp; \
+      while true; do \
+        cat /hostproc/loadavg > /hostfs/tmp/vps_loadavg 2>/dev/null || true; \
+        cat /hostproc/uptime > /hostfs/tmp/vps_uptime 2>/dev/null || true; \
+        cp /hostproc/meminfo /hostfs/tmp/vps_meminfo 2>/dev/null || true; \
+        df -h /hostfs > /hostfs/tmp/vps_disk 2>/dev/null || true; \
+        sleep 60; \
+      done"
+    network_mode: bridge
