@@ -52,10 +52,25 @@ services:
     command: >
       sh -c "mkdir -p /hostfs/tmp; \
       while true; do \
-        cat /hostproc/loadavg > /hostfs/tmp/vps_loadavg 2>/dev/null || true; \
+        # uptime & loadavg
         cat /hostproc/uptime > /hostfs/tmp/vps_uptime 2>/dev/null || true; \
+        cat /hostproc/loadavg > /hostfs/tmp/vps_loadavg 2>/dev/null || true; \
+        # memory
+        free -m > /hostfs/tmp/vps_free 2>/dev/null || true; \
         cp /hostproc/meminfo /hostfs/tmp/vps_meminfo 2>/dev/null || true; \
-        df -h /hostfs > /hostfs/tmp/vps_disk 2>/dev/null || true; \
+        # cpu snapshot
+        top -bn1 | head -20 > /hostfs/tmp/vps_stats_cpu.txt 2>/dev/null || true; \
+        # proc/stat
+        cp /hostproc/stat /hostfs/tmp/vps_stat 2>/dev/null || true; \
+        # disk
+        df -h / > /hostfs/tmp/vps_disk 2>/dev/null || true; \
+        # combined friendly status
+        echo "=== UPTIME ===" > /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        uptime >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        echo "\n=== FREE ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        free -m | head -5 >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        echo "\n=== DISK ===" >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
+        df -h / | head -5 >> /hostfs/tmp/vps_stats.txt 2>/dev/null || true; \
         sleep 60; \
       done"
     network_mode: bridge
