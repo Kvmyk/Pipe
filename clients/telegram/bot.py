@@ -213,15 +213,18 @@ def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
     # Jeśli wiele części odpowiedzi, wybierz najbardziej zwięzłe podsumowanie
     # Preferuj fragmenty zawierające czytelne podsumowanie serwera.
     if parts:
-        # Zwróć ostatni fragment, który nie zaczyna się od surowego bloku
-        # typu [MEMORY], [STDOUT], [EXIT CODE], itp. To odpowiada sytuacji
-        # "chcę tylko czytelne podsumowanie" (np. /status).
+        # Jeśli ostatni fragment jest prostym komunikatem o błędzie, zwróć go
+        last = parts[-1].strip()
+        if last.lower().startswith("błąd:") or last.lower().startswith("blad:"):
+            return last, needs_confirm
+
+        # W przeciwnym razie wybierz ostatni fragment który nie zaczyna się od '['
         for part in reversed(parts):
             txt = part.strip()
-            if not txt.startswith("[") and txt:
+            if txt and not txt.startswith("["):
                 return part, needs_confirm
 
-        # Jeśli wszystkie fragmenty są surowe, zwróć ostatni fragment
+        # Fallback: zwróć ostatni fragment
         return parts[-1], needs_confirm
 
     return "", needs_confirm
