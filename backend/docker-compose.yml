@@ -14,6 +14,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Klucze SSH do gita (tylko do odczytu)
       - /root/.ssh:/root/.ssh:ro
+      # Podmontowanie /proc z LXC aby free -m widzialo limit VPSa a nie matki
+      - /proc/meminfo:/proc/meminfo:ro
+      - /proc/uptime:/proc/uptime:ro
+      - /proc/loadavg:/proc/loadavg:ro
+      - /proc/stat:/proc/stat:ro
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
       - "127.0.0.1:7379:7379"
