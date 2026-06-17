@@ -215,24 +215,30 @@ async def handle_system_stats(
                 raw_blocks.append(f"[DISK]\n{stdout_disk}")
 
         # Wyemituj surowe bloki jako pierwsze, potem podsumowanie
+        result_text = ""
         if raw_blocks:
             for block in raw_blocks:
                 yield block
-
-        yield "\n".join(summary_lines)
+                result_text += block + "\n"
+        
+        summary_text = "\n".join(summary_lines)
+        yield summary_text
+        result_text += summary_text
 
     except Exception as exc:
         # Fallback: zwróć surowy output jednej z komend
         try:
             out, _, _ = await agent._executor.execute("free -h")
-            yield f"[MEMORY]\n{out}"
+            result_text = f"[MEMORY]\n{out}"
+            yield result_text
         except Exception as exc2:
-            yield f"Błąd pobrania statystyk: {exc} / {exc2}"
+            result_text = f"Błąd pobrania statystyk: {exc} / {exc2}"
+            yield result_text
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": "Statystyki systemowe pobrane",
+        "content": result_text,
     })
 
 
@@ -261,12 +267,13 @@ async def handle_network_info(
             result += f"\n[EXIT CODE] {exit_code}"
         yield result
     except Exception as exc:
-        yield f"Błąd pobrania info sieciowych: {exc}"
+        result = f"Błąd pobrania info sieciowych: {exc}"
+        yield result
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": f"Info sieciowe {info_type} pobrane",
+        "content": result,
     })
 
 
@@ -319,10 +326,11 @@ async def handle_cron_manage(
             result += f"\n[EXIT CODE] {exit_code}"
         yield result
     except Exception as exc:
-        yield f"Błąd operacji cron: {exc}"
+        result = f"Błąd operacji cron: {exc}"
+        yield result
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": f"Operacja cron {action} wykonana",
+        "content": result,
     })

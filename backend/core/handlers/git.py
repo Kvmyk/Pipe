@@ -64,10 +64,11 @@ async def handle_git_command(
         await audit.log_safe(session.interface, git_cmd, exit_code)
         yield result
     except Exception as exc:
-        yield f"[ERROR] Błąd Git: {exc}"
+        result = f"[ERROR] Błąd Git: {exc}"
+        yield result
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": "Git komenda wykonana",
+        "content": result,
     })

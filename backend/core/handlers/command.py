@@ -68,12 +68,13 @@ async def handle_execute_command(
         await audit.log_safe(session.interface, command, exit_code)
         yield result
     except Exception as exc:
-        yield f"[ERROR] Błąd wykonania: {exc}"
+        result = f"[ERROR] Błąd wykonania: {exc}"
+        yield result
 
     session.messages.append(
         {
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": "Komenda wykonana",
+            "content": result,
         }
     )
