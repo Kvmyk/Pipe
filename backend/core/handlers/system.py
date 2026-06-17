@@ -78,7 +78,8 @@ async def handle_system_stats(
             "disk": "df -h",
             "process": "ps aux | head -20",
         }
-        cmd = commands.get(stat_type, "free -h")
+        base_cmd = commands.get(stat_type, "free -h")
+        cmd = f"docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 sh -c '{base_cmd}'"
         try:
             stdout, stderr, exit_code = await agent._executor.execute(cmd)
             result = f"[{stat_type.upper()}]\n{stdout}"
@@ -97,40 +98,15 @@ async def handle_system_stats(
 
     # Domyślnie zwracamy zwięzłe, czytelne podsumowanie serwera
     try:
-        # Najpierw spróbuj odczytać prewencyjnie zapisane pliki w /hostfs/tmp
-        # (zapisuje je host-stats sidecar). Jeśli istnieją, użyjemy ich.
-        uptime_path = Path("/hostfs/tmp/vps_stats.txt")
-        free_path = Path("/hostfs/tmp/vps_free")
-        cpu_path = Path("/hostfs/tmp/vps_stats_cpu.txt")
-        disk_path = Path("/hostfs/tmp/vps_disk")
+        # Odczytujemy statystyki hosta używając nsenter przez docker socket,
+        # co gwarantuje pominięcie izolacji LXCFS na serwerach typu Mikrus
+        uptime_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 uptime"
+        mem_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 free -m"
+        disk_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 df -h /"
 
-        stdout_uptime = stdout_mem = stdout_disk = ""
-        ec_uptime = ec_mem = ec_disk = 0
-
-        if uptime_path.exists():
-            combined = uptime_path.read_text(encoding="utf-8", errors="replace")
-            # Rozbij na sekcje: UPTIME / FREE / DISK
-            stdout_uptime = ""
-            stdout_mem = ""
-            stdout_disk = ""
-            for ln in combined.splitlines():
-                if ln.startswith("=== UPTIME ==="):
-                    # następują linie uptime
-                    continue
-            # Prostsze: wykorzystamy cały plik jako stdout_uptime do parsowania
-            stdout_uptime = combined
-        else:
-            stdout_uptime, _, ec_uptime = await agent._executor.execute("uptime")
-
-        if free_path.exists():
-            stdout_mem = free_path.read_text(encoding="utf-8", errors="replace")
-        else:
-            stdout_mem, _, ec_mem = await agent._executor.execute("free -m")
-
-        if disk_path.exists():
-            stdout_disk = disk_path.read_text(encoding="utf-8", errors="replace")
-        else:
-            stdout_disk, _, ec_disk = await agent._executor.execute("df -h /")
+        stdout_uptime, _, ec_uptime = await agent._executor.execute(uptime_cmd)
+        stdout_mem, _, ec_mem = await agent._executor.execute(mem_cmd)
+        stdout_disk, _, ec_disk = await agent._executor.execute(disk_cmd)
 
         # Parsowanie uptime
         uptime_text = ""

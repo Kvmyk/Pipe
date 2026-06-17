@@ -66,67 +66,8 @@ class VPSAgent:
         asyncio.create_task(self._initialize_host_access())
 
     async def _initialize_host_access(self):
-        """Ustawia crona na hoscie natychmiast po starcie."""
-        # Safe setup: nie probujemy zapisywac do /hostfs/etc (moze nie byc mountowane).
-        # Zamiast tego tworzymy pakiet pomocniczy w katalogu workspace (/hostfs/pipeclaw_stats)
-        # i wypisujemy instrukcje dla administratora hosta jak zainstalowac cron.
-        try:
-            helper_dir = Path("/hostfs/pipeclaw_stats")
-            helper_dir.mkdir(parents=True, exist_ok=True)
-
-            # Skrypt, ktory nalezy zainstalowac na hoście (np. /usr/local/bin/pipeclaw_stats.sh)
-            script_path = helper_dir / "pipeclaw_stats.sh"
-            # Script writes human-friendly command outputs into the workspace
-            # so the container can read them under /hostfs/tmp.
-            script_content = (
-                "#!/bin/sh\n"
-                "# PipeClaw host stats helper - writes host stats into workspace tmp folder\n"
-                "mkdir -p /opt/pipeclaw-workspace/tmp 2>/dev/null || true\n"
-                "uptime > /opt/pipeclaw-workspace/tmp/vps_uptime 2>/dev/null || true\n"
-                "free -m > /opt/pipeclaw-workspace/tmp/vps_free 2>/dev/null || true\n"
-                "cat /proc/loadavg > /opt/pipeclaw-workspace/tmp/vps_loadavg 2>/dev/null || true\n"
-                "df -h / > /opt/pipeclaw-workspace/tmp/vps_disk 2>/dev/null || true\n"
-                "echo \"=== UPTIME ===\" > /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-                "uptime >> /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-                "echo \"\\n=== FREE ===\" >> /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-                "free -m >> /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-                "echo \"\\n=== DISK ===\" >> /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-                "df -h / | head -5 >> /opt/pipeclaw-workspace/tmp/vps_stats.txt 2>/dev/null || true\n"
-            )
-            script_path.write_text(script_content, encoding="utf-8")
-
-            # Cron file content - in host /etc/cron.d/pipeclaw_stats
-            cron_path = helper_dir / "pipeclaw_stats.cron"
-            cron_content = "* * * * * root /usr/local/bin/pipeclaw_stats.sh\n"
-            cron_path.write_text(cron_content, encoding="utf-8")
-
-            # Install automatically using Docker socket
-            install_cmd = (
-                "docker run --rm "
-                "-v /etc/cron.d:/host_crond "
-                "-v /usr/local/bin:/host_bin "
-                "-v /opt/pipeclaw-workspace/pipeclaw_stats:/host_workspace_stats "
-                "alpine sh -c '"
-                "cp /host_workspace_stats/pipeclaw_stats.sh /host_bin/pipeclaw_stats.sh && "
-                "chmod +x /host_bin/pipeclaw_stats.sh && "
-                "cp /host_workspace_stats/pipeclaw_stats.cron /host_crond/pipeclaw_stats && "
-                "chown root:root /host_crond/pipeclaw_stats && "
-                "/host_bin/pipeclaw_stats.sh"
-                "'"
-            )
-            
-            proc = await asyncio.create_subprocess_shell(
-                install_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode == 0:
-                print("[VPS Agent] Pomyślnie i w pełni automatycznie zainstalowano crona na serwerze matce (VPS)!", flush=True)
-            else:
-                print(f"[VPS Agent] Błąd automatycznej instalacji crona: {stderr.decode()}", flush=True)
-        except Exception as exc:
-            print(f"[VPS Agent] Nie można utworzyć helpera hosta: {exc}", flush=True)
+        """Ustawia dostęp do hosta - obecnie nie wymaga crona dzięki nsenter."""
+        pass
 
     def get_or_create_session(
         self,
