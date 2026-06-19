@@ -158,6 +158,7 @@ _compiled_confirm: list[re.Pattern[str]] = [
 def classify_command(cmd: str) -> Literal["safe", "confirm", "forbidden"]:
     """
     Klasyfikuje komendę shell na jeden z trzech poziomów.
+    Zabezpiecza przed łańcuchowaniem komend (np. ls; rm -rf /).
 
     Args:
         cmd: Komenda do sprawdzenia.
@@ -165,26 +166,63 @@ def classify_command(cmd: str) -> Literal["safe", "confirm", "forbidden"]:
     Returns:
         "forbidden" | "confirm" | "safe"
     """
+    import re
     cmd_stripped = cmd.strip()
 
-    # 1. Najpierw sprawdź FORBIDDEN
+    # 1. Sprawdź FORBIDDEN na całej komendzie (dla patternów z pipe, np. curl | bash)
     for pattern in _compiled_forbidden:
         if pattern.search(cmd_stripped):
             return "forbidden"
 
-    # 2. Potem CONFIRM
-    for pattern in _compiled_confirm:
-        if pattern.search(cmd_stripped):
-            return "confirm"
+    # Podziel komendę według operatorów kontrolnych: ||, &&, |, ;
+    segments = re.split(r'\|\||&&|\||;', cmd)
+    
+    overall_status: Literal["safe", "confirm", "forbidden"] = "safe"
 
-    # 3. Safe prefixes — sprawdź czy komenda zaczyna się od bezpiecznego prefiksu
-    cmd_lower = cmd_stripped.lower()
-    for prefix in SAFE_PREFIXES:
-        if cmd_lower.startswith(prefix.lower()):
-            return "safe"
+    for segment in segments:
+        segment_stripped = segment.strip()
+        if not segment_stripped:
+            continue
 
-    # 4. Domyślnie — wymagaj potwierdzenia
-    return "confirm"
+        segment_status: Literal["safe", "confirm", "forbidden"] = "safe"
+
+        # Ponownie sprawdź FORBIDDEN dla samego segmentu (na wszelki wypadek)
+        for pattern in _compiled_forbidden:
+            if pattern.search(segment_stripped):
+                segment_status = "forbidden"
+                break
+        
+        if segment_status == "safe":
+            # 2. Potem CONFIRM
+            for pattern in _compiled_confirm:
+                if pattern.search(segment_stripped):
+                    segment_status = "confirm"
+                    break
+                    
+        if segment_status == "safe":
+            # 3. Safe prefixes — sprawdź czy komenda zaczyna się od bezpiecznego prefiksu
+            cmd_lower = segment_stripped.lower()
+            is_safe = False
+            for prefix in SAFE_PREFIXES:
+                if cmd_lower.startswith(prefix.lower()):
+                    is_safe = True
+                    break
+            
+            # Jeśli żaden bezpieczny prefix nie pasuje, domyślnie "confirm"
+            if not is_safe:
+                segment_status = "confirm"
+
+        # Zaktualizuj główny status
+        if segment_status == "forbidden":
+            return "forbidden"  # Jeśli jakakolwiek część to forbidden, całość jest forbidden
+        elif segment_status == "confirm":
+            overall_status = "confirm" # Wymaga potwierdzenia, ale jeszcze sprawdzamy resztę (może być forbidden)
+
+    # Domyślnie, pusta komenda zwraca confirm (jak było w testach)
+    if not cmd.strip():
+        return "confirm"
+
+    return overall_status
 
 
 def classify_file_write(path: str) -> Literal["safe", "confirm", "forbidden"]:
@@ -221,39 +259,46 @@ def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bo
     # Ścieżki w workspace'ie, do których dostęp jest zabroniony
     # (ścieżki są względne do /hostfs, więc /hostfs/etc/ blokuje dostęp do /etc na VPS)
     FORBIDDEN_WORKSPACE_PATHS = [
-        "/hostfs/boot/",
-        "/hostfs/dev/",
-        "/hostfs/proc/",
-        "/hostfs/sys/",
-        "/hostfs/var/spool/",
-        "/hostfs/usr/bin/",
-        "/hostfs/usr/sbin/",
-        "/hostfs/bin/",
-        "/hostfs/sbin/",
-        "/hostfs/lib/",
-        "/hostfs/lib64/",
-        "/hostfs/root/.ssh/",       # Protekcja kluczy SSH
+        "/hostfs/boot",
+        "/hostfs/dev",
+        "/hostfs/proc",
+        "/hostfs/sys",
+        "/hostfs/var/spool",
+        "/hostfs/usr/bin",
+        "/hostfs/usr/sbin",
+        "/hostfs/bin",
+        "/hostfs/sbin",
+        "/hostfs/lib",
+        "/hostfs/lib64",
+        "/hostfs/root/.ssh",       # Protekcja kluczy SSH
     ]
     
     # Normalizuj ścieżkę
     try:
-        resolved_path = str(Path(path).resolve())
+        resolved_path = Path(path).resolve()
     except (ValueError, OSError):
         return False, f"Nieprawidłowa ścieżka: {path}"
     
     # Sprawdź czy ścieżka jest w workspace'ie
     try:
         workspace_path = Path(workspace).resolve()
-        abs_path = Path(resolved_path).resolve()
         
         # Upewnij się, że ścieżka jest wewnątrz workspace'u
-        abs_path.relative_to(workspace_path)
+        # workaround dla starszych pythonów bez is_relative_to
+        resolved_path.relative_to(workspace_path)
     except ValueError:
         return False, f"Dostęp poza workspace ({workspace}) jest zabroniony dla {path}"
     
     # Sprawdź czy ścieżka nie trafia w zabronione katalogi
     for forbidden in FORBIDDEN_WORKSPACE_PATHS:
-        if resolved_path.startswith(forbidden):
+        try:
+            resolved_path.relative_to(Path(forbidden).resolve())
+            return False, f"Dostęp do {forbidden.replace('/hostfs', '')} jest zabroniony"
+        except ValueError:
+            pass
+            
+        # Dodatkowy check na equals
+        if resolved_path == Path(forbidden).resolve():
             return False, f"Dostęp do {forbidden.replace('/hostfs', '')} jest zabroniony"
     
     return True, "OK"

@@ -345,26 +345,6 @@ async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         responses = await client.chat("Pokaz ostatnie 10 wpisow z audit logu.")
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
-        await update.message.reply_text(
-            f"Blad: {escape_html(str(exc))}",
-        )
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Obsluguje dowolna wiadomosc tekstowa."""
-    user = update.effective_user
-    if not _is_allowed(user.id if user else None):
-        return  # Milcz dla nieautoryzowanych
-
-    text = update.message.text or ""
-    if not text.strip():
-        return
-
-    client = get_client(user.id)
-    try:
-        # Pokaz "pisze..."
-        await context.bot.send_chat_action(
-            chat_id=update.effective_chat.id,
             action="typing",
         )
         responses = await client.chat(text)

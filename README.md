@@ -104,8 +104,14 @@ Komunikacja: prosty protokol JSON (linia po linii):
 
 ## Bezpieczenstwo
 
+System operuje w oparciu o 3-poziomowa klase bezpieczenstwa:
+- **SAFE** -- komendy read-only (np. `ls`, `df`, `docker ps`) wykonywane bez pytania
+- **CONFIRM** -- komendy modyfikujace (np. `rm`, `git commit`) -- agent wymaga zatwierdzenia przez GUI
+- **FORBIDDEN** -- komendy destruktywne (np. `rm -rf /`, `mkfs`) odrzucane bezwzglednie
+
+**Wazne:** Do pliku `.env` w katalogu `backend/` warto dodac `AGENT_TOKEN=tajny-ciag-znakow`. Jesli tego nie zrobisz, agent dziala na pelnym zaufaniu na interfejsie lokalnym (zabezpieczonym tylko przez SSH).
+
 - Agent dziala jako dedykowany user bez sudo (`vpsagent`)
-- Trzy poziomy klasyfikacji komend: `safe` -> `confirm` -> `forbidden`
 - Kazda operacja zapisywana do audit logu
 - Zawartosc pliku nigdy nie trafia do audit logu (moze zawierac sekrety)
 - Lista bezwzglednie zakazanych wzorcow (`rm -rf /`, fork bomb, `curl | bash`, itp.)

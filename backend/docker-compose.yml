@@ -6,6 +6,8 @@ services:
     volumes:
       # Konfiguracja (tylko do odczytu)
       - ./.env:/app/.env:ro
+      # Dane utrwalane (np. audit log)
+      - ./data:/app/data
       # Unix socket — wspólny z hostem i innymi kontenerami (Telegram bot)
       - /tmp:/tmp
       # Caly system plikow VPS (read-only) — agent moze nawigowac i czytac wszystko
@@ -25,7 +27,7 @@ services:
       - LLM_BASE_URL
       - LLM_API_KEY
       - LLM_MODEL
-      - AUDIT_LOG_PATH=/app/audit.log
+      - AUDIT_LOG_PATH=/app/data/audit.log
       - AGENT_SOCKET=/tmp/vps-agent.sock
       - TCP_HOST=0.0.0.0
       - TCP_PORT=7379

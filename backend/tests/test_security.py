@@ -273,13 +273,23 @@ class TestEdgeCases:
         assert classify_command(cmd) == "safe"
 
     def test_combined_safe_and_dangerous(self):
-        # ls z piping do grep — beginne to się klasyfikuje na poziomie ls
-        cmd = "ls /tmp | grep log"
-        # UWAGA: klasyfikacja nie patrzy na pipe, tylko na pierwszy prefix
-        assert classify_command(cmd) == "safe"
+        # ls z piping do grep - oba bezpieczne
+        assert classify_command("ls /tmp | grep log") == "safe"
+        
+        # ls z piping do groźnej komendy
+        assert classify_command("ls /tmp | rm -rf /") == "forbidden"
+        
+        # bezpieczne + wymagające potwierdzenia
+        assert classify_command("ls /tmp | chmod 777 file.txt") == "confirm"
 
     def test_command_with_semicolon_chain(self):
-        # Chaining komend — klasyfikator patrzy na pierwszy prefix
-        # ale "cat /etc/hostname" trafia do CONFIRM_PATTERNS przez "/etc/"
-        cmd = "cat /etc/hostname; reboot"
-        assert classify_command(cmd) == "confirm"  # /etc/ wzorzec triggeruje confirm
+        assert classify_command("cat /etc/hostname; reboot") == "confirm"
+        assert classify_command("ls; rm file.txt") == "confirm"
+        
+        # W łańcuchu jeśli chociaż jedno to forbidden -> całość jest forbidden
+        assert classify_command("ls; rm -rf /") == "forbidden"
+        
+    def test_command_with_and_or_chain(self):
+        assert classify_command("echo test && ls") == "confirm" # echo wymaga potwierdzenia
+        assert classify_command("ls /tmp || ls /var") == "safe"
+        assert classify_command("pwd && rm -rf /") == "forbidden"

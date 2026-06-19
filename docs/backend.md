@@ -26,6 +26,19 @@ Darmowy klucz Gemini: https://aistudio.google.com/ -> "Get API key"
 
 Domyslnie uzywamy `gemini-2.0-flash` -- szybki, darmowy model z limitem 15 RPM.
 
+### `.env` w katalogu `backend/`
+
+```env
+# URL i klucz API zgodny ze standardem OpenAI
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-twoj-klucz
+LLM_MODEL=gpt-4o
+
+# Zabezpieczenie (Opcjonalne, ale bardzo zalecane)
+# Jesli jest ustawione, chroni interfejs TCP przed nieautoryzowanym dostepem z serwera.
+AGENT_TOKEN=twoj-tajny-token
+```
+
 Mozesz tez uzyc innych providerow (OpenAI-compatible):
 
 ```env
