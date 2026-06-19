@@ -2,6 +2,7 @@ services:
   vps-agent:
     build: .
     restart: unless-stopped
+    pid: host
     volumes:
       # Konfiguracja (tylko do odczytu)
       - ./.env:/app/.env:ro
