@@ -515,23 +515,13 @@ class VPSAgent:
         tool_call: Any,
         args: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
-        """Pobiera szczegolowe sta ."""
-        # Mechanizm teleportacji statystyk z hosta (VPS julia) do kontenera
-        # Tworzy zadanie cron na hoscie, ktore co minute zrzuca prawdziwe dane do /tmp
-        setup_teleport = (
-            "echo '* * * * * root cat /proc/loadavg > /tmp/vps_loadavg && "
-            "cat /proc/uptime > /tmp/vps_uptime && "
-            "cat /proc/meminfo > /tmp/vps_meminfo && "
-            "cat /proc/stat > /tmp/vps_stat && "
-            "chmod 711 /root 2>/dev/null || true' > /hostfs/etc/cron.d/pipeclaw_stats 2>/dev/null || true"
-        )
-        
+        """Pobiera statystyki serwera z /hostproc (zamontowany /proc VPS-a)."""
+        HOSTPROC = "/hostproc"
         stats_cmd = (
-            f"{setup_teleport} && "
-            "echo '=== UPTIME ===' && (cat /hostfs/tmp/vps_uptime 2>/dev/null || cat /proc/uptime) && "
-            "echo '\\n=== MEMORY ===' && (cat /hostfs/tmp/vps_meminfo 2>/dev/null | head -12 || cat /proc/meminfo | head -12) && "
-            "echo '\\n=== LOADAVG ===' && (cat /hostfs/tmp/vps_loadavg 2>/dev/null || cat /proc/loadavg) && "
-            "echo '\\n=== CPU ===' && (cat /hostfs/tmp/vps_stat 2>/dev/null | head -5 || cat /proc/stat | head -5) && "
+            f"echo '=== UPTIME ===' && cat {HOSTPROC}/uptime && "
+            f"echo '\\n=== MEMORY ===' && cat {HOSTPROC}/meminfo | head -12 && "
+            f"echo '\\n=== LOADAVG ===' && cat {HOSTPROC}/loadavg && "
+            f"echo '\\n=== CPU ===' && cat {HOSTPROC}/stat | head -5 && "
             "echo '\\n=== CPU_INFO ===' && nproc && "
             "echo '\\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
             "echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"

@@ -10,6 +10,8 @@ services:
       # DEDYKOWANY WORKSPACE - Agent może operować TYLKO w tym katalogu
       # Zakładamy, że /opt/pipeclaw-workspace istnieje i jest właściwy
       - /opt/pipeclaw-workspace:/hostfs
+      # Proc hosta VPS — aby agent czytał statystyki z poziomu VPS, a nie maszyny fizycznej
+      - /proc:/hostproc:ro
       # Docker socket - aby agent mogl zarzadzac kontenerami!
       - /var/run/docker.sock:/var/run/docker.sock
       # Klucze SSH do gita (tylko do odczytu)

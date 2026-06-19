@@ -66,20 +66,27 @@ async def handle_system_stats(
     tool_call: Any,
     args: dict[str, Any],
 ) -> AsyncGenerator[str, None]:
-    """Obsługuje narzędzie system_stats."""
-    # Jeśli użytkownik poprosił o surowe dane, zwróć zachowanie domyślne
+    """Obsługuje narzędzie system_stats.
+
+    Czyta statystyki bezpośrednio z /hostproc (zamontowany /proc hosta VPS),
+    co gwarantuje dane z poziomu VPS, a nie maszyny fizycznej.
+    """
+    import re
+
+    # Ścieżka do zamontowanego /proc hosta VPS
+    HOSTPROC = "/hostproc"
+
     stat_type = args.get("stat_type", "summary").strip()
 
     # Jeśli wyraźnie proszą o raw, pokaż surowy output z komendy
     if stat_type in ("raw", "memory", "cpu", "disk", "process"):
         commands = {
-            "cpu": "top -bn1 | head -20",
-            "memory": "free -h",
+            "cpu": f"cat {HOSTPROC}/stat | head -5 && echo '---' && cat {HOSTPROC}/loadavg",
+            "memory": f"cat {HOSTPROC}/meminfo | head -12",
             "disk": "df -h",
             "process": "ps aux | head -20",
         }
-        base_cmd = commands.get(stat_type, "free -h")
-        cmd = f"docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 sh -c '{base_cmd}'"
+        cmd = commands.get(stat_type, f"cat {HOSTPROC}/meminfo | head -12")
         try:
             stdout, stderr, exit_code = await agent._executor.execute(cmd)
             result = f"[{stat_type.upper()}]\n{stdout}"
@@ -98,59 +105,61 @@ async def handle_system_stats(
 
     # Domyślnie zwracamy zwięzłe, czytelne podsumowanie serwera
     try:
-        # Odczytujemy statystyki hosta używając nsenter przez docker socket,
-        # co gwarantuje pominięcie izolacji LXCFS na serwerach typu Mikrus
-        uptime_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 uptime"
-        mem_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 free -m"
-        disk_cmd = "docker run --rm --privileged --pid=host alpine:3.18 nsenter -a -t 1 df -h /"
-
-        stdout_uptime, _, ec_uptime = await agent._executor.execute(uptime_cmd)
-        stdout_mem, _, ec_mem = await agent._executor.execute(mem_cmd)
-        stdout_disk, _, ec_disk = await agent._executor.execute(disk_cmd)
-
-        # Parsowanie uptime
+        # --- Uptime + Load Average ---
         uptime_text = ""
         load_avg = ""
         try:
-            # uptime output e.g.: " 23:22:41 up 234 days, 10:53, 0 users, load average: 0.05, 0.03, 0.01"
-            line = stdout_uptime.strip().replace("\n", " ")
-            # wyciągnij fragment 'up ...,' jako uptime
-            import re
-
-            m_up = re.search(r"up\s+([^,]+),", line)
-            if m_up:
-                uptime_text = m_up.group(1).strip()
-            m_load = re.search(r"load average[s]?:\s*([0-9.,\s]+)", line)
-            if m_load:
-                load_avg = m_load.group(1).strip()
+            uptime_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/uptime")
+            uptime_secs = float(uptime_raw.strip().split()[0])
+            days = int(uptime_secs // 86400)
+            hours = int((uptime_secs % 86400) // 3600)
+            mins = int((uptime_secs % 3600) // 60)
+            if days > 0:
+                uptime_text = f"{days} dni, {hours}h {mins}m"
+            elif hours > 0:
+                uptime_text = f"{hours}h {mins}m"
+            else:
+                uptime_text = f"{mins}m"
         except Exception:
-            uptime_text = stdout_uptime.strip()
+            uptime_text = "?"
 
-        # Parsowanie memory
-        mem_total = mem_used = mem_avail = "?"
         try:
-            for ln in stdout_mem.splitlines():
-                if ln.lower().startswith("mem:") or ln.lower().startswith("mem "):
-                    parts = ln.split()
-                    # free -m: Mem: total used free shared buff/cache available
-                    if len(parts) >= 3:
-                        mem_total = parts[1]
-                        mem_used = parts[2]
-                        # available may be at index 6
-                        if len(parts) >= 7:
-                            mem_avail = parts[6]
-                        else:
-                            mem_avail = parts[3]
-                    break
+            loadavg_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/loadavg")
+            parts = loadavg_raw.strip().split()
+            if len(parts) >= 3:
+                load_avg = f"{parts[0]}, {parts[1]}, {parts[2]}"
         except Exception:
             pass
 
-        # Parsowanie disk
+        # --- Pamięć RAM z /hostproc/meminfo ---
+        mem_total = mem_used = mem_avail = "?"
+        try:
+            meminfo_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/meminfo")
+            meminfo = {}
+            for line in meminfo_raw.splitlines():
+                if ":" in line:
+                    key, val = line.split(":", 1)
+                    # Wartość w kB
+                    num_match = re.search(r"(\d+)", val)
+                    if num_match:
+                        meminfo[key.strip()] = int(num_match.group(1))
+
+            total_kb = meminfo.get("MemTotal", 0)
+            avail_kb = meminfo.get("MemAvailable", meminfo.get("MemFree", 0))
+            used_kb = total_kb - avail_kb
+
+            mem_total = str(total_kb // 1024)  # MB
+            mem_used = str(used_kb // 1024)     # MB
+            mem_avail = str(avail_kb // 1024)   # MB
+        except Exception:
+            pass
+
+        # --- Dysk ---
         disk_size = disk_used = disk_avail = disk_usepct = "?"
         try:
+            stdout_disk, _, _ = await agent._executor.execute("df -h /hostfs")
             lines = [l for l in stdout_disk.splitlines() if l.strip()]
             if len(lines) >= 2:
-                # header + line
                 parts = lines[1].split()
                 if len(parts) >= 5:
                     disk_size = parts[1]
@@ -180,31 +189,13 @@ async def handle_system_stats(
         if disk_avail != "?" and disk_size != "?":
             summary_lines.append(f"• Dysk: Pozostało {disk_avail} wolnego miejsca z {disk_size} ({disk_usepct} zajętość)")
 
-        # Jeśli któraś z komend zwróciła błąd, dołącz surowe bloki indywidualnie
-        raw_blocks = []
-        if ec_uptime != 0 or ec_mem != 0 or ec_disk != 0:
-            if stdout_uptime:
-                raw_blocks.append(f"[UPTIME]\n{stdout_uptime}")
-            if stdout_mem:
-                raw_blocks.append(f"[MEMORY]\n{stdout_mem}")
-            if stdout_disk:
-                raw_blocks.append(f"[DISK]\n{stdout_disk}")
-
-        # Wyemituj surowe bloki jako pierwsze, potem podsumowanie
-        result_text = ""
-        if raw_blocks:
-            for block in raw_blocks:
-                yield block
-                result_text += block + "\n"
-        
-        summary_text = "\n".join(summary_lines)
-        yield summary_text
-        result_text += summary_text
+        result_text = "\n".join(summary_lines)
+        yield result_text
 
     except Exception as exc:
-        # Fallback: zwróć surowy output jednej z komend
+        # Fallback: zwróć surowy output meminfo
         try:
-            out, _, _ = await agent._executor.execute("free -h")
+            out, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/meminfo | head -12")
             result_text = f"[MEMORY]\n{out}"
             yield result_text
         except Exception as exc2:

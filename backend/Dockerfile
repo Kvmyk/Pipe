@@ -20,10 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf docker docker.tgz \
     && rm -rf /var/lib/apt/lists/*
 
-# Fake "free" command inside container to override default tool and read from teleported Host stats
+# Fake "free" command inside container — reads from VPS host /proc mounted at /hostproc
 RUN echo '#!/bin/bash\n\
-MB=$(( 1024 * 1024 ))\n\
-MEM_FILE="/hostfs/tmp/vps_meminfo"\n\
+MEM_FILE="/hostproc/meminfo"\n\
 if [ ! -f "$MEM_FILE" ]; then MEM_FILE="/proc/meminfo"; fi\n\
 TOTAL_KB=$(grep MemTotal "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
 AVAIL_KB=$(grep MemAvailable "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
