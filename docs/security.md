@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- PipeClaw
 
-PipeClaw v0.2
+PipeClaw v0.3
 
 ## Model bezpieczenstwa
 

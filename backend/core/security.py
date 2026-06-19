@@ -204,8 +204,10 @@ def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bo
     """
     Waliduje, czy ścieżka znajduje się w dozwolonym workspace'u.
     
-    Agent ma dostęp TYLKO do /hostfs (zmapowanego na /opt/pipeclaw-workspace na hoście).
-    Wszelkie próby dostępu do systemowych katalogów są blokowane.
+    Agent ma dostęp do /hostfs (zmapowanego na / hosta VPS, read-only)
+    z wyjątkiem /hostfs/root/ który jest read-write (overlay mount).
+    Operacje plikowe (read_file, write_file) muszą przechodzić przez /hostfs.
+    Próby dostępu do krytycznych katalogów systemowych są blokowane.
     
     Args:
         path: Ścieżka do sprawdzenia (absolutna lub względna).
@@ -216,23 +218,21 @@ def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bo
     """
     from pathlib import Path
     
-    # Ścieżki systemowe, do których dostęp jest zawsze zabroniony
-    FORBIDDEN_SYSTEM_PATHS = [
-        "/etc/",
-        "/boot/",
-        "/dev/",
-        "/proc/",
-        "/sys/",
-        "/root/",
-        "/var/log/",
-        "/var/spool/",
-        "/usr/bin/",
-        "/usr/sbin/",
-        "/bin/",
-        "/sbin/",
-        "/lib/",
-        "/lib64/",
-        "/opt/docker",  # Protekcja Docker daemon
+    # Ścieżki w workspace'ie, do których dostęp jest zabroniony
+    # (ścieżki są względne do /hostfs, więc /hostfs/etc/ blokuje dostęp do /etc na VPS)
+    FORBIDDEN_WORKSPACE_PATHS = [
+        "/hostfs/boot/",
+        "/hostfs/dev/",
+        "/hostfs/proc/",
+        "/hostfs/sys/",
+        "/hostfs/var/spool/",
+        "/hostfs/usr/bin/",
+        "/hostfs/usr/sbin/",
+        "/hostfs/bin/",
+        "/hostfs/sbin/",
+        "/hostfs/lib/",
+        "/hostfs/lib64/",
+        "/hostfs/root/.ssh/",       # Protekcja kluczy SSH
     ]
     
     # Normalizuj ścieżkę
@@ -251,9 +251,9 @@ def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bo
     except ValueError:
         return False, f"Dostęp poza workspace ({workspace}) jest zabroniony dla {path}"
     
-    # Sprawdź czy ścieżka nie trafia w systemowe katalogi
-    for forbidden in FORBIDDEN_SYSTEM_PATHS:
+    # Sprawdź czy ścieżka nie trafia w zabronione katalogi
+    for forbidden in FORBIDDEN_WORKSPACE_PATHS:
         if resolved_path.startswith(forbidden):
-            return False, f"Dostęp do {forbidden} jest zabroniony"
+            return False, f"Dostęp do {forbidden.replace('/hostfs', '')} jest zabroniony"
     
     return True, "OK"

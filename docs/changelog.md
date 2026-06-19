@@ -1,5 +1,31 @@
 # Historia zmian -- PipeClaw
 
+## v0.3 (2026-06-19)
+
+### Naprawa statystyk systemowych
+
+- Naprawiono krytyczny blad: statystyki systemu (RAM, CPU, uptime, load average) byly odczytywane z maszyny fizycznej hostujucej VPS zamiast z samego VPS-a
+- Usunieto mechanizm `nsenter` ktory uciekal z izolacji LXC VPS-a na maszyne fizyczna
+- Usunieto stary mechanizm "teleportacji" statystyk przez cron do `/tmp/vps_*`
+- Statystyki sa teraz odczytywane bezposrednio z `/hostproc` (zamontowany `/proc` hosta VPS)
+
+### Konfiguracja Docker
+
+- Dodano montowanie `/proc:/hostproc:ro` w docker-compose dla dostepu do procfs hosta VPS
+- Dodano `pid: host` do kontenera vps-agent -- wspoldzielenie PID namespace z VPS-em zapewnia prawidlowe odczyty uptime i loadavg
+- Zaktualizowano fake `free` w Dockerfile aby czytal z `/hostproc/meminfo`
+
+### System prompt
+
+- Zaktualizowano system prompt agenta -- usinieto przestarzale odniesienia do teleportacji statystyk
+- Dodano informacje o nowej architekturze `/hostproc` i `pid: host`
+
+### Dokumentacja
+
+- Uaktualniono w calym repozytorium wersje do v0.3
+
+---
+
 ## v0.2 (2026-03-29)
 
 ### Nawigacja po serwerze

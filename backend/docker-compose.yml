@@ -8,9 +8,10 @@ services:
       - ./.env:/app/.env:ro
       # Unix socket — wspólny z hostem i innymi kontenerami (Telegram bot)
       - /tmp:/tmp
-      # DEDYKOWANY WORKSPACE - Agent może operować TYLKO w tym katalogu
-      # Zakładamy, że /opt/pipeclaw-workspace istnieje i jest właściwy
-      - /opt/pipeclaw-workspace:/hostfs
+      # Caly system plikow VPS (read-only) — agent moze nawigowac i czytac wszystko
+      - /:/hostfs:ro
+      # Katalog domowy — zapis dozwolony (overlay na ro mount powyzej)
+      - /root:/hostfs/root
       # Proc hosta VPS — aby agent czytał statystyki z poziomu VPS, a nie maszyny fizycznej
       - /proc:/hostproc:ro
       # Docker socket - aby agent mogl zarzadzac kontenerami!

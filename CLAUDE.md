@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**PipeClaw v0.2** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS, uses an OpenAI-compatible LLM API (typically Google Gemini), and executes shell commands with a three-tier security classifier.
+**PipeClaw v0.3** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS, uses an OpenAI-compatible LLM API (typically Google Gemini), and executes shell commands with a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**.
 

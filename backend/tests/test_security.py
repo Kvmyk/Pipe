@@ -194,28 +194,37 @@ class TestValidateWorkspaceAccess:
         assert is_allowed is True
         assert reason == "OK"
 
-    def test_system_etc_forbidden(self):
+    def test_hostfs_root_directory_allowed(self):
+        """Katalog /hostfs/root/ jest teraz dozwolony (overlay rw mount)."""
+        is_allowed, reason = validate_workspace_access("/hostfs/root/project/file.py")
+        assert is_allowed is True
+        assert reason == "OK"
+
+    def test_hostfs_etc_allowed_readonly(self):
+        """Katalog /hostfs/etc/ jest dostepny (ro mount, walidacja nie blokuje odczytu)."""
+        is_allowed, reason = validate_workspace_access("/hostfs/etc/nginx/nginx.conf")
+        assert is_allowed is True
+
+    def test_outside_workspace_forbidden(self):
+        """Sciezki bez prefiksu /hostfs sa poza workspace."""
         is_allowed, reason = validate_workspace_access("/etc/passwd")
         assert is_allowed is False
-        assert "workspace" in reason.lower() or "forbidden" in reason.lower()
+        assert "workspace" in reason.lower()
 
     def test_system_boot_forbidden(self):
-        is_allowed, reason = validate_workspace_access("/boot/vmlinuz")
+        is_allowed, reason = validate_workspace_access("/hostfs/boot/vmlinuz")
         assert is_allowed is False
 
-    def test_system_root_forbidden(self):
-        is_allowed, reason = validate_workspace_access("/root/.ssh/key")
-        assert is_allowed is False
-
-    def test_docker_directory_forbidden(self):
-        is_allowed, reason = validate_workspace_access("/opt/docker/config")
+    def test_ssh_keys_forbidden(self):
+        """Klucze SSH sa chronione nawet w dozwolonym /hostfs/root/."""
+        is_allowed, reason = validate_workspace_access("/hostfs/root/.ssh/id_rsa")
         assert is_allowed is False
 
     def test_proc_sys_forbidden(self):
-        is_allowed, reason = validate_workspace_access("/proc/sysrq-trigger")
+        is_allowed, reason = validate_workspace_access("/hostfs/proc/sysrq-trigger")
         assert is_allowed is False
         
-        is_allowed, reason = validate_workspace_access("/sys/kernel/config")
+        is_allowed, reason = validate_workspace_access("/hostfs/sys/kernel/config")
         assert is_allowed is False
 
     def test_custom_workspace_param(self):

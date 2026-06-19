@@ -2,7 +2,7 @@
 
 ## Wprowadzenie
 
-Poniższy dokument przedstawia analizę obecnego stanu projektu "PipeClaw" (v0.2) i zawiera sugestie dotyczące potencjalnych usprawnień. Celem tych propozycji jest zwiększenie bezpieczeństwa, poprawa jakości kodu, ułatwienie dalszego rozwoju oraz wprowadzenie najlepszych praktyk inżynierii oprogramowania. Analiza została przeprowadzona na podstawie przeglądu kodu źródłowego, konfiguracji Docker oraz dokumentacji `AGENTS.md`.
+Poniższy dokument przedstawia analizę obecnego stanu projektu "PipeClaw" (v0.3) i zawiera sugestie dotyczące potencjalnych usprawnień. Celem tych propozycji jest zwiększenie bezpieczeństwa, poprawa jakości kodu, ułatwienie dalszego rozwoju oraz wprowadzenie najlepszych praktyk inżynierii oprogramowania. Analiza została przeprowadzona na podstawie przeglądu kodu źródłowego, konfiguracji Docker oraz dokumentacji `AGENTS.md`.
 
 ## 1. Jakość Kodu i Utrzymanie
 

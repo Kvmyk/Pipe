@@ -2,7 +2,7 @@
 
 ## Domain Knowledge
 
-**PipeClaw** (v0.2) is an autonomous AI agent for VPS/Linux server management that communicates across multiple interfaces — CLI (SSH tunnel), Telegram bot, and Discord (planned). The backend runs on a server and executes commands through an LLM agent with security classification (safe/confirm/forbidden). End users interact via their preferred interface; the system is designed for managing Linux servers with full file I/O, shell execution, Git, Docker, system stats, networking, and cron management. Key integrations: OpenAI-compatible LLM API (Gemini, OpenAI, Groq, Anthropic), Unix socket for same-machine clients, TCP for remote SSH-tunneled access, Docker socket for container management.
+**PipeClaw** (v0.3) is an autonomous AI agent for VPS/Linux server management that communicates across multiple interfaces — CLI (SSH tunnel), Telegram bot, and Discord (planned). The backend runs on a server and executes commands through an LLM agent with security classification (safe/confirm/forbidden). End users interact via their preferred interface; the system is designed for managing Linux servers with full file I/O, shell execution, Git, Docker, system stats, networking, and cron management. Key integrations: OpenAI-compatible LLM API (Gemini, OpenAI, Groq, Anthropic), Unix socket for same-machine clients, TCP for remote SSH-tunneled access, Docker socket for container management.
 
 ## Commands
 
@@ -111,7 +111,7 @@ pipeclaw/
 - **No linting**: Code follows PEP 8 manually (consider Black, ruff, mypy)
 - **No CI/CD**: Consider GitHub Actions workflow for automated testing
 - **Polish language**: Code comments, documentation, and error messages are in Polish to match codebase conventions
-- **v0.2 status**: Early version; Discord and WebUI clients are placeholders
+- **v0.3 status**: Early version; Discord and WebUI clients are placeholders
 - **Known limitation**: Tool calling loop has max 10 iterations (MAX_TOOL_ITERATIONS=10) — prevents infinite loops but may require manual intervention for complex tasks
 - **SSH tunnel dependency**: CLI relies on local SSH binary; will fail on restricted environments
 
