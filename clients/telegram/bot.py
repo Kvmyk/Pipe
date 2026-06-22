@@ -70,13 +70,6 @@ SERVER_STATUS_MESSAGE = (
 
 # --- HTML helper ---
 
-def escape_html(text: str) -> str:
-    """
-    Escapuje znaki specjalne HTML: &, <, >.
-    Uzywa standardowej biblioteki html.escape.
-    """
-    return html.escape(text, quote=False)
-
 
 def _strip_markdown_artifacts(text: str) -> str:
     """
@@ -330,7 +323,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await update.message.reply_text(
-            f"Blad polaczenia z backendem: {escape_html(str(exc))}",
+            f"Blad polaczenia z backendem: {html.escape(str(exc))}",
         )
 
 
@@ -346,7 +339,7 @@ async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await update.message.reply_text(
-            f"Blad: {escape_html(str(exc))}",
+            f"Blad: {html.escape(str(exc))}",
         )
 
 
@@ -385,7 +378,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
     except Exception as exc:
         await update.message.reply_text(
-            f"Blad: {escape_html(str(exc))}",
+            f"Blad: {html.escape(str(exc))}",
         )
 
 
@@ -429,7 +422,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _send_response(update, context, responses, user.id)
     except Exception as exc:
         await query.message.reply_text(
-            f"Blad: {escape_html(str(exc))}",
+            f"Blad: {html.escape(str(exc))}",
         )
 
 

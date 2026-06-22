@@ -26,21 +26,11 @@ from openai.types.chat import ChatCompletion
 from backend.config import settings
 from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT
 from backend.core import audit
-from backend.core.executor import LocalExecutor
+from backend.core import executor
 from backend.core.security import classify_command, classify_file_write
 from backend.core.tools import TOOLS
 from backend.core.session import Session, ConfirmationRequest
-from backend.core.handlers import (
-    handle_execute_command,
-    handle_read_file,
-    handle_write_file,
-    handle_git_command,
-    handle_docker_manage,
-    handle_change_directory,
-    handle_system_stats,
-    handle_network_info,
-    handle_cron_manage,
-)
+import backend.core.handlers as handlers_module
 
 MAX_TOOL_ITERATIONS = 10
 
@@ -59,7 +49,6 @@ class VPSAgent:
             base_url=settings.LLM_BASE_URL,
             timeout=60.0,  # max 60s na odpowiedź LLM
         )
-        self._executor = LocalExecutor()
         self._sessions: dict[str, Session] = {}
         
         # Inicjalne ustawienie teleporterów i uprawnień na hoście
@@ -220,21 +209,10 @@ class VPSAgent:
             yield f"[BLAD] Błąd parsowania argumentów narzędzia: {exc}"
             return
 
-        # Mapa handlerów — delegowanie do modułu handlers
-        handlers = {
-            "execute_command": handle_execute_command,
-            "read_file": handle_read_file,
-            "write_file": handle_write_file,
-            "git_command": handle_git_command,
-            "change_directory": handle_change_directory,
-            "system_stats": handle_system_stats,
-            "docker_manage": handle_docker_manage,
-            "network_info": handle_network_info,
-            "cron_manage": handle_cron_manage,
-        }
+        # Delegowanie do modułu handlers przez getattr
+        handler = getattr(handlers_module, f"handle_{tool_name}", None)
 
-        if tool_name in handlers:
-            handler = handlers[tool_name]
+        if handler:
             async for chunk in handler(self, session, tool_call, args):
                 yield chunk
         else:
@@ -295,7 +273,7 @@ class VPSAgent:
             return
 
         # SAFE — wykonaj od razu
-        stdout, stderr, exit_code = await self._executor.execute(
+        stdout, stderr, exit_code = await executor.execute(
             command, cwd=f"/hostfs{session.cwd}"
         )
         await audit.log_safe(session.interface, command, exit_code)
@@ -343,7 +321,7 @@ class VPSAgent:
             return
 
         try:
-            content = await self._executor.read_file(path)
+            content = await executor.read_file(path)
             await audit.log_file_read(session.interface, path)
             result = content if content else "(plik jest pusty)"
         except FileNotFoundError:
@@ -460,7 +438,7 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja Git wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(
+        stdout, stderr, exit_code = await executor.execute(
             cmd, cwd=f"/hostfs{session.cwd}"
         )
         await audit.log_safe(session.interface, cmd, exit_code)
@@ -527,7 +505,7 @@ class VPSAgent:
             "echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
         )
 
-        stdout, stderr, exit_code = await self._executor.execute(stats_cmd)
+        stdout, stderr, exit_code = await executor.execute(stats_cmd)
         await audit.log_safe(session.interface, "system_stats", exit_code)
         result = _format_tool_result(stdout, stderr, exit_code)
         session.messages.append({
@@ -592,7 +570,7 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja Docker wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(
+        stdout, stderr, exit_code = await executor.execute(
             cmd, cwd=f"/hostfs{session.cwd}"
         )
         await audit.log_safe(session.interface, cmd, exit_code)
@@ -635,7 +613,7 @@ class VPSAgent:
             })
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(
+        stdout, stderr, exit_code = await executor.execute(
             cmd, cwd=f"/hostfs{session.cwd}"
         )
         await audit.log_safe(session.interface, f"network_info:{check_type}", exit_code)
@@ -703,7 +681,7 @@ class VPSAgent:
             yield f"[POTWIERDZ] Operacja cron wymaga potwierdzenia: `{cmd}`"
             return
 
-        stdout, stderr, exit_code = await self._executor.execute(
+        stdout, stderr, exit_code = await executor.execute(
             cmd, cwd=f"/hostfs{session.cwd}"
         )
         await audit.log_safe(session.interface, f"cron:{operation}", exit_code)
@@ -724,7 +702,7 @@ class VPSAgent:
         """Wykonuje potwierdzona operacje i dodaje wynik do historii."""
         if pending.tool_name == "execute_command":
             command = pending.command
-            stdout, stderr, exit_code = await self._executor.execute(
+            stdout, stderr, exit_code = await executor.execute(
                 command, cwd=f"/hostfs{session.cwd}"
             )
             await audit.log_confirmed(session.interface, command, exit_code)
@@ -734,7 +712,7 @@ class VPSAgent:
             path = pending.file_path or ""
             content = pending.file_content or ""
             try:
-                await self._executor.write_file(path, content)
+                await executor.write_file(path, content)
                 await audit.log_file_write(session.interface, path, 0)
                 result = f"Plik {path} zostal zapisany pomyslnie."
             except PermissionError as exc:

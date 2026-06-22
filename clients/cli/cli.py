@@ -260,26 +260,6 @@ def _print_banner(host: str) -> None:
     )
 
 
-def _convert_markdown_to_rich(text: str) -> str:
-    """
-    Konwertuje podstawowy Markdown/MarkdownV2 na tagi Rich Console.
-    Obsługuje: **bold** / *bold*, _italic_, `code`, ```blok```
-    """
-    import re
-    # Kod blokowy najpierw (zanim zepsujemy gwiazdki wewnątrz)
-    text = re.sub(r'```[\w]*\n?(.*?)```', r'[on grey15]\1[/on grey15]', text, flags=re.DOTALL)
-    # Inline code
-    text = re.sub(r'`([^`]+)`', r'[bold yellow]\1[/bold yellow]', text)
-    # Pogrubienie (**text** lub *text* — bo Telegram używa pojedynczej)
-    text = re.sub(r'\*\*(.+?)\*\*', r'[bold]\1[/bold]', text)
-    text = re.sub(r'\*(.+?)\*', r'[bold]\1[/bold]', text)
-    # Kursywa
-    text = re.sub(r'_(.+?)_', r'[italic]\1[/italic]', text)
-    # Escapowane znaki MarkdownV2 (pozbywamy się backslashy przed znakami specjalnymi)
-    text = re.sub(r'\\([^\\])', r'\1', text)
-    return text
-
-
 def _print_response(text: str, status: str) -> None:
     """Wyświetla odpowiedź agenta w estetycznym formacie terminalowym."""
     text = text.strip()
@@ -289,14 +269,11 @@ def _print_response(text: str, status: str) -> None:
     # Zamiana tagow statusowych na kolorowe oznaczenia Rich
     # [SUKCES] usuniety -- nie wyswietlamy go
     text = text.replace("[SUKCES]", "")
-    text = text.replace("[BLAD]", "[bold red]BLAD:[/bold red]")
-    text = text.replace("[POTWIERDZ]", "[bold yellow]WYMAGA POTWIERDZENIA:[/bold yellow]")
-    text = text.replace("[ODMOWA]", "[bold red]ODMOWA:[/bold red]")
+    text = text.replace("[BLAD]", "**BŁĄD:**")
+    text = text.replace("[POTWIERDZ]", "**WYMAGA POTWIERDZENIA:**")
+    text = text.replace("[ODMOWA]", "**ODMOWA:**")
 
-    # Konwersja podstawowego Markdownu na Rich markup
-    text = _convert_markdown_to_rich(text)
-
-    console.print(text)
+    console.print(Markdown(text))
 
 
 async def _handle_responses(

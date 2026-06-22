@@ -280,25 +280,14 @@ def validate_workspace_access(path: str, workspace: str = "/hostfs") -> tuple[bo
         return False, f"Nieprawidłowa ścieżka: {path}"
     
     # Sprawdź czy ścieżka jest w workspace'ie
-    try:
-        workspace_path = Path(workspace).resolve()
-        
-        # Upewnij się, że ścieżka jest wewnątrz workspace'u
-        # workaround dla starszych pythonów bez is_relative_to
-        resolved_path.relative_to(workspace_path)
-    except ValueError:
+    workspace_path = Path(workspace).resolve()
+    if not resolved_path.is_relative_to(workspace_path):
         return False, f"Dostęp poza workspace ({workspace}) jest zabroniony dla {path}"
     
     # Sprawdź czy ścieżka nie trafia w zabronione katalogi
     for forbidden in FORBIDDEN_WORKSPACE_PATHS:
-        try:
-            resolved_path.relative_to(Path(forbidden).resolve())
-            return False, f"Dostęp do {forbidden.replace('/hostfs', '')} jest zabroniony"
-        except ValueError:
-            pass
-            
-        # Dodatkowy check na equals
-        if resolved_path == Path(forbidden).resolve():
+        forbidden_path = Path(forbidden).resolve()
+        if resolved_path.is_relative_to(forbidden_path):
             return False, f"Dostęp do {forbidden.replace('/hostfs', '')} jest zabroniony"
     
     return True, "OK"
