@@ -27,6 +27,7 @@ services:
       - LLM_BASE_URL
       - LLM_API_KEY
       - LLM_MODEL
+      - AGENT_TOKEN
       - AUDIT_LOG_PATH=/app/data/audit.log
       - AGENT_SOCKET=/tmp/vps-agent.sock
       - TCP_HOST=0.0.0.0
@@ -45,6 +46,8 @@ services:
       - ../clients/telegram/.env:/app/clients/telegram/.env:ro
       # Wspólny socket plikowy do gadania z vps-agentem
       - /tmp:/tmp
+    environment:
+      - AGENT_TOKEN
     network_mode: bridge
 
 

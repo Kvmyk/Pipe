@@ -2,9 +2,9 @@
 Testy dla modułu executor.py — wykonywanie komend i operacje na plikach.
 
 Pokrywają:
-  - LocalExecutor.execute() — uruchamianie komend shell
-  - LocalExecutor.read_file() — odczyt pliku
-  - LocalExecutor.write_file() — zapis pliku
+  - executor.execute() — uruchamianie komend shell
+  - executor.read_file() — odczyt pliku
+  - executor.write_file() — zapis pliku
   - Timeout, stderr, exit codes
   - Obsługa błędów
 """
@@ -14,13 +14,13 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from backend.core.executor import LocalExecutor
+from backend.core import executor as executor_module
 
 
 @pytest.fixture
 def executor():
-    """Fixture zwracający instancję LocalExecutor."""
-    return LocalExecutor()
+    """Fixture zwracający moduł executora (API jest modułowe, nie klasowe)."""
+    return executor_module
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def temp_dir():
 
 
 class TestExecuteCommand:
-    """Testy dla LocalExecutor.execute()."""
+    """Testy dla executor.execute()."""
 
     @pytest.mark.asyncio
     async def test_simple_command(self, executor):
@@ -88,7 +88,7 @@ class TestExecuteCommand:
         cmd = "exit /b 0" if sys.platform == "win32" else "true"
         stdout, stderr, exit_code = await executor.execute(cmd)
         assert exit_code == 0
-        # LocalExecutor zwraca "Komenda wykonana bez outputu" jeśli brak output
+        # executor.execute() zwraca "Komenda wykonana bez outputu" jeśli brak output
         # lub może być pusty stdout
 
     @pytest.mark.asyncio
@@ -96,13 +96,15 @@ class TestExecuteCommand:
         """Test komendy, która nie istnieje."""
         import sys
         stdout, stderr, exit_code = await executor.execute("this_command_does_not_exist_12345")
-        # Exit code może być różny na Windows (1) vs Unix (127)
-        assert exit_code != 0  # Komenda powinna niebyć znaleziona
-        assert "nie znaleziona" in stderr.lower() or exit_code == 1
+        # Komenda idzie przez powloke, wiec to shell zglasza blad:
+        # exit 127 + komunikat "command not found" na stderr (Unix), 1 na Windows.
+        assert exit_code != 0
+        assert exit_code in (1, 127)
+        assert "not found" in stderr.lower() or "nie znaleziona" in stderr.lower()
 
 
 class TestReadFile:
-    """Testy dla LocalExecutor.read_file()."""
+    """Testy dla executor.read_file()."""
 
     @pytest.mark.asyncio
     async def test_read_existing_file(self, executor, temp_dir):
@@ -156,7 +158,7 @@ class TestReadFile:
 
 
 class TestWriteFile:
-    """Testy dla LocalExecutor.write_file()."""
+    """Testy dla executor.write_file()."""
 
     @pytest.mark.asyncio
     async def test_write_new_file(self, executor, temp_dir):

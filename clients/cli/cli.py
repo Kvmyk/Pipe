@@ -173,10 +173,12 @@ class RemoteClient:
         session_id: str,
         host: str = "127.0.0.1",
         port: int = DEFAULT_LOCAL_PORT,
+        token: str = "",
     ) -> None:
         self.session_id = session_id
         self.host = host
         self.port = port
+        self.token = token
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
 
@@ -216,6 +218,9 @@ class RemoteClient:
         if not self._writer or not self._reader:
             raise RuntimeError("Brak połączenia z backendem.")
 
+        if self.token:
+            data = {**data, "token": self.token}
+
         line = json.dumps(data, ensure_ascii=False) + "\n"
         self._writer.write(line.encode("utf-8"))
         await self._writer.drain()
@@ -251,7 +256,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.3[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.4.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
             "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",
@@ -455,6 +460,13 @@ Przykłady:
 
     # ─── Sesja ─────────────────────────────────────────────────────────────
     parser.add_argument(
+        "--token",
+        default=os.getenv("AGENT_TOKEN", ""),
+        help="Token autoryzacji backendu (jesli AGENT_TOKEN jest ustawiony w .env serwera). "
+             "Mozna tez ustawic przez zmienna srodowiskowa AGENT_TOKEN.",
+        metavar="TOKEN",
+    )
+    parser.add_argument(
         "--session",
         default=None,
         help="ID sesji (domyślnie: losowy UUID)",
@@ -471,6 +483,7 @@ Przykłady:
             session_id=session_id,
             host="127.0.0.1",
             port=args.local_port,
+            token=args.token,
         )
         display_host = f"127.0.0.1:{args.local_port} (lokalny tunel)"
         try:
@@ -500,6 +513,7 @@ Przykłady:
         session_id=session_id,
         host="127.0.0.1",
         port=args.local_port,
+        token=args.token,
     )
 
     console.print(f"[dim]Laczę z {args.host} przez SSH...[/dim]")

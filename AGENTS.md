@@ -111,7 +111,7 @@ pipeclaw/
 - **No linting**: Code follows PEP 8 manually (consider Black, ruff, mypy)
 - **No CI/CD**: Consider GitHub Actions workflow for automated testing
 - **Polish language**: Code comments, documentation, and error messages are in Polish to match codebase conventions
-- **v0.3 status**: Early version; Discord and WebUI clients are placeholders
+- **v0.4.0 status**: Early version; Discord and WebUI clients are placeholders
 - **Known limitation**: Tool calling loop has max 10 iterations (MAX_TOOL_ITERATIONS=10) — prevents infinite loops but may require manual intervention for complex tasks
 - **SSH tunnel dependency**: CLI relies on local SSH binary; will fail on restricted environments
 

@@ -1,6 +1,6 @@
 # PipeClaw
 
-**v0.3** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.4.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
@@ -69,7 +69,7 @@ Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w
 | `clients/webui/` | -- | Placeholder -- PR welcome |
 
 Komunikacja: prosty protokol JSON (linia po linii):
-- Zadanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli"}`
+- Zadanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli", "token": "..."}` (`token` tylko gdy `AGENT_TOKEN` jest ustawiony)
 - Odpowiedz: `{"response": "tekst", "status": "ok|confirm|error", "done": true}`
 
 ---
@@ -93,7 +93,9 @@ Komunikacja: prosty protokol JSON (linia po linii):
 | Modul | Opis |
 |-------|------|
 | `core/agent.py` | Petla LLM z tool calling, max 10 iteracji |
-| `core/executor.py` | `LocalExecutor` -- subprocess z 30s timeoutem |
+| `core/handlers/` | Implementacje narzedzi -- po jednym module na obszar |
+| `core/session.py` | Sesja uzytkownika (historia, `cwd`, oczekujace potwierdzenie) |
+| `core/executor.py` | `execute` / `read_file` / `write_file` -- subprocess z 30s timeoutem |
 | `core/security.py` | Klasyfikacja komend: `safe` / `confirm` / `forbidden` |
 | `core/audit.py` | Append-only audit log |
 | `core/tools.py` | Definicje narzedzi OpenAI function calling |
@@ -109,7 +111,7 @@ System operuje w oparciu o 3-poziomowa klase bezpieczenstwa:
 - **CONFIRM** -- komendy modyfikujace (np. `rm`, `git commit`) -- agent wymaga zatwierdzenia przez GUI
 - **FORBIDDEN** -- komendy destruktywne (np. `rm -rf /`, `mkfs`) odrzucane bezwzglednie
 
-**Wazne:** Do pliku `.env` w katalogu `backend/` warto dodac `AGENT_TOKEN=tajny-ciag-znakow`. Jesli tego nie zrobisz, agent dziala na pelnym zaufaniu na interfejsie lokalnym (zabezpieczonym tylko przez SSH).
+**Wazne:** Do pliku `.env` w katalogu `backend/` warto dodac `AGENT_TOKEN=tajny-ciag-znakow`. Wtedy kazde zadanie -- lacznie z potwierdzeniem operacji -- musi zawierac ten token; ten sam ciag podaj CLI (`--token` lub zmienna `AGENT_TOKEN`) oraz botowi Telegrama (`AGENT_TOKEN` w `clients/telegram/.env`). Jesli tego nie zrobisz, agent dziala na pelnym zaufaniu na interfejsie lokalnym (zabezpieczonym tylko przez SSH).
 
 - Agent dziala jako dedykowany user bez sudo (`vpsagent`)
 - Kazda operacja zapisywana do audit logu

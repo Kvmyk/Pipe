@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from backend.core import executor
 from backend.core.security import classify_file_write, validate_workspace_access
 from backend.core.session import Session, ConfirmationRequest
 
@@ -47,7 +48,7 @@ async def handle_read_file(
         return
 
     try:
-        content = await agent._executor.read_file(path)
+        content = await executor.read_file(path)
         from backend.core import audit
         await audit.log_file_read(session.interface, path)
         result = content if content else "(plik jest pusty)"

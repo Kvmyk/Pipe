@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
 
@@ -53,7 +54,7 @@ async def handle_docker_manage(
 
     # Safe — wykonaj
     try:
-        stdout, stderr, exit_code = await agent._executor.execute(full_cmd)
+        stdout, stderr, exit_code = await executor.execute(full_cmd)
         result = f"[STDOUT]\n{stdout}\n[EXIT CODE]\n{exit_code}"
         if stderr:
             result += f"\n[STDERR]\n{stderr}"

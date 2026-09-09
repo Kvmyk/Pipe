@@ -1,6 +1,6 @@
 # Backend -- PipeClaw
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 Backend agenta VPS. Dziala bezposrednio na serwerze (Mikrus) i wystawia lokalny Unix socket dla klientow.
 
@@ -35,7 +35,11 @@ LLM_API_KEY=sk-twoj-klucz
 LLM_MODEL=gpt-4o
 
 # Zabezpieczenie (Opcjonalne, ale bardzo zalecane)
-# Jesli jest ustawione, chroni interfejs TCP przed nieautoryzowanym dostepem z serwera.
+# Jesli jest ustawione, kazde zadanie -- takze potwierdzenie operacji -- musi zawierac
+# ten token. Chroni socket i interfejs TCP przed innymi procesami na serwerze.
+# Ten sam token podaj klientom: CLI przez --token (lub zmienna AGENT_TOKEN),
+# botowi Telegrama przez AGENT_TOKEN w clients/telegram/.env.
+# Puste = brak wymogu tokenu.
 AGENT_TOKEN=twoj-tajny-token
 ```
 

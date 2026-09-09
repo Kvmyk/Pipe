@@ -1,6 +1,6 @@
 # Protokol komunikacji -- PipeClaw
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 ## Opis
 
@@ -18,7 +18,8 @@ Komunikacja odbywa sie przez prosty protokol JSON lines (jedna linia JSON = jedn
 {
   "message": "tekst wiadomosci",
   "session_id": "uuid-per-uzytkownik",
-  "interface": "cli|telegram:user_id|discord:user_id"
+  "interface": "cli|telegram:user_id|discord:user_id",
+  "token": "tajny-token"
 }
 ```
 
@@ -27,7 +28,8 @@ Komunikacja odbywa sie przez prosty protokol JSON lines (jedna linia JSON = jedn
 ```json
 {
   "confirm": true,
-  "session_id": "uuid-per-uzytkownik"
+  "session_id": "uuid-per-uzytkownik",
+  "token": "tajny-token"
 }
 ```
 
@@ -42,6 +44,19 @@ Komunikacja odbywa sie przez prosty protokol JSON lines (jedna linia JSON = jedn
 ```
 
 Serwer wysyla wiele linii JSON (streaming). Ostatnia linia ma `"done": true`.
+
+### Autoryzacja tokenem
+
+Pole `token` jest wymagane tylko wtedy, gdy w `backend/.env` ustawiono `AGENT_TOKEN`.
+Gdy `AGENT_TOKEN` jest pusty, pole mozna pominac i backend przyjmuje kazde zadanie.
+
+Token jest sprawdzany dla **kazdego** typu zadania -- rowniez dla potwierdzen
+(`confirm`), zeby nieuwierzytelniony klient nie mogl zatwierdzic operacji
+oczekujacej w cudzej sesji. Przy blednym tokenie backend odpowiada:
+
+```json
+{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": true}
+```
 
 ## Stany odpowiedzi
 

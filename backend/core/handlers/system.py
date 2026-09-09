@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator
 from pathlib import Path
 
+from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
 
@@ -88,7 +89,7 @@ async def handle_system_stats(
         }
         cmd = commands.get(stat_type, f"cat {HOSTPROC}/meminfo | head -12")
         try:
-            stdout, stderr, exit_code = await agent._executor.execute(cmd)
+            stdout, stderr, exit_code = await executor.execute(cmd)
             result = f"[{stat_type.upper()}]\n{stdout}"
             if exit_code != 0:
                 result += f"\n[EXIT CODE] {exit_code}"
@@ -109,7 +110,7 @@ async def handle_system_stats(
         uptime_text = ""
         load_avg = ""
         try:
-            uptime_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/uptime")
+            uptime_raw, _, _ = await executor.execute(f"cat {HOSTPROC}/uptime")
             uptime_secs = float(uptime_raw.strip().split()[0])
             days = int(uptime_secs // 86400)
             hours = int((uptime_secs % 86400) // 3600)
@@ -124,7 +125,7 @@ async def handle_system_stats(
             uptime_text = "?"
 
         try:
-            loadavg_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/loadavg")
+            loadavg_raw, _, _ = await executor.execute(f"cat {HOSTPROC}/loadavg")
             parts = loadavg_raw.strip().split()
             if len(parts) >= 3:
                 load_avg = f"{parts[0]}, {parts[1]}, {parts[2]}"
@@ -134,7 +135,7 @@ async def handle_system_stats(
         # --- Pamięć RAM z /hostproc/meminfo ---
         mem_total = mem_used = mem_avail = "?"
         try:
-            meminfo_raw, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/meminfo")
+            meminfo_raw, _, _ = await executor.execute(f"cat {HOSTPROC}/meminfo")
             meminfo = {}
             for line in meminfo_raw.splitlines():
                 if ":" in line:
@@ -157,7 +158,7 @@ async def handle_system_stats(
         # --- Dysk ---
         disk_size = disk_used = disk_avail = disk_usepct = "?"
         try:
-            stdout_disk, _, _ = await agent._executor.execute("df -h /hostfs")
+            stdout_disk, _, _ = await executor.execute("df -h /hostfs")
             lines = [l for l in stdout_disk.splitlines() if l.strip()]
             if len(lines) >= 2:
                 parts = lines[1].split()
@@ -195,7 +196,7 @@ async def handle_system_stats(
     except Exception as exc:
         # Fallback: zwróć surowy output meminfo
         try:
-            out, _, _ = await agent._executor.execute(f"cat {HOSTPROC}/meminfo | head -12")
+            out, _, _ = await executor.execute(f"cat {HOSTPROC}/meminfo | head -12")
             result_text = f"[MEMORY]\n{out}"
             yield result_text
         except Exception as exc2:
@@ -228,7 +229,7 @@ async def handle_network_info(
     cmd = commands.get(info_type, "ip addr show")
 
     try:
-        stdout, stderr, exit_code = await agent._executor.execute(cmd)
+        stdout, stderr, exit_code = await executor.execute(cmd)
         result = f"[{info_type.upper()}]\n{stdout}"
         if exit_code != 0:
             result += f"\n[EXIT CODE] {exit_code}"
@@ -287,7 +288,7 @@ async def handle_cron_manage(
         cmd = "crontab -l"
 
     try:
-        stdout, stderr, exit_code = await agent._executor.execute(cmd)
+        stdout, stderr, exit_code = await executor.execute(cmd)
         result = f"[CRON]\n{stdout}"
         if exit_code != 0:
             result += f"\n[EXIT CODE] {exit_code}"

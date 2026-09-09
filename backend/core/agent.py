@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -700,15 +700,7 @@ class VPSAgent:
         pending: ConfirmationRequest,
     ) -> str:
         """Wykonuje potwierdzona operacje i dodaje wynik do historii."""
-        if pending.tool_name == "execute_command":
-            command = pending.command
-            stdout, stderr, exit_code = await executor.execute(
-                command, cwd=f"/hostfs{session.cwd}"
-            )
-            await audit.log_confirmed(session.interface, command, exit_code)
-            result = _format_tool_result(stdout, stderr, exit_code)
-
-        elif pending.tool_name == "write_file":
+        if pending.tool_name == "write_file":
             path = pending.file_path or ""
             content = pending.file_content or ""
             try:
@@ -721,8 +713,16 @@ class VPSAgent:
             except OSError as exc:
                 await audit.log_file_write(session.interface, path, 1)
                 result = f"Blad zapisu pliku: {exc}"
+
         else:
-            result = "Nieznana operacja."
+            # Kazde inne narzedzie (execute_command, git_command, docker_manage,
+            # cron_manage...) przechowuje w ConfirmationRequest gotowa komende shell.
+            command = pending.command
+            stdout, stderr, exit_code = await executor.execute(
+                command, cwd=f"/hostfs{session.cwd}"
+            )
+            await audit.log_confirmed(session.interface, command, exit_code)
+            result = _format_tool_result(stdout, stderr, exit_code)
 
         session.messages.append(
             {

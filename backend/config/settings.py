@@ -22,6 +22,10 @@ LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
 
 # ─── Security / Audit ───────────────────────────────────────────────────────
+# Opcjonalny token autoryzacji. Jesli pusty — serwer nie wymaga tokenu
+# (dostep chroniony wylacznie przez tunel SSH / uprawnienia do socketu).
+AGENT_TOKEN: str = os.getenv("AGENT_TOKEN", "")
+
 AUDIT_LOG_PATH: str = os.getenv("AUDIT_LOG_PATH", "/app/audit.log")
 
 # ─── Socket ─────────────────────────────────────────────────────────────────

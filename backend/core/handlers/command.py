@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
 
@@ -59,7 +60,7 @@ async def handle_execute_command(
 
     # Safe — wykonaj natychmiast
     try:
-        stdout, stderr, exit_code = await agent._executor.execute(command, cwd=session.cwd)
+        stdout, stderr, exit_code = await executor.execute(command, cwd=f"/hostfs{session.cwd}")
         result = f"[STDOUT]\n{stdout}\n[EXIT CODE]\n{exit_code}"
         if stderr:
             result += f"\n[STDERR]\n{stderr}"

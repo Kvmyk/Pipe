@@ -1,6 +1,6 @@
 # Telegram Bot -- PipeClaw
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -55,6 +55,10 @@ Edytuj `.env`:
 TELEGRAM_BOT_TOKEN=1234567890:ABCxyz...
 TELEGRAM_ALLOWED_USER_IDS=123456789
 AGENT_SOCKET=/tmp/vps-agent.sock
+
+# Musi byc identyczny z AGENT_TOKEN w backend/.env.
+# Zostaw pusty, jesli backend nie wymaga tokenu.
+AGENT_TOKEN=
 ```
 
 Mozesz dodac wiele ID oddzielonych przecinkami: `123456789,987654321`

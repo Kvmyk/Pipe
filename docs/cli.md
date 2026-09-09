@@ -1,6 +1,6 @@
 # CLI -- PipeClaw
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -67,6 +67,7 @@ python cli.py --no-tunnel --local-port 7379
 | Zmienna | Opis | Domyslnie |
 |---------|------|-----------|
 | `VPS_HOST` | Adres serwera (`user@host`) | -- |
+| `AGENT_TOKEN` | Token autoryzacji backendu (rownowazny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN` | -- |
 | `VPS_SSH_PORT` | Port SSH | `22` |
 | `VPS_SSH_KEY` | Sciezka do klucza prywatnego | domyslny klucz |
 | `VPS_LOCAL_PORT` | Lokalny port tunelu | `7379` |

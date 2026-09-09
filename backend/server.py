@@ -10,8 +10,9 @@ Dostęp z laptopa odbywa się przez tunel SSH:
     ssh -L 7379:127.0.0.1:7379 user@serwer
 
 Protokół JSON (linia po linii):
-  Żądanie:  {"message": "tekst", "session_id": "uuid", "interface": "cli|telegram:123"}
-  Żądanie:  {"confirm": true|false, "session_id": "uuid"}
+  Żądanie:  {"message": "tekst", "session_id": "uuid", "interface": "cli|telegram:123", "token": "..."}
+  Żądanie:  {"confirm": true|false, "session_id": "uuid", "token": "..."}
+  (pole "token" wymagane tylko gdy AGENT_TOKEN jest ustawiony w .env)
   Odpowiedź: {"response": "tekst", "status": "ok|confirm|error", "done": true|false}
 
 Każda wiadomość może generować wiele odpowiedzi (streaming przez JSON lines).
@@ -56,6 +57,13 @@ async def handle_client(
             session_id = request.get("session_id", "default")
             interface = request.get("interface", "cli")
 
+            # Sprawdź token (jeśli ustawiony) — PRZED jakąkolwiek akcją,
+            # zeby nieuwierzytelniony klient nie mogl zatwierdzic oczekujacej operacji.
+            expected_token = settings.AGENT_TOKEN
+            if expected_token and request.get("token", "") != expected_token:
+                await _send(writer, {"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True})
+                continue
+
             # Obsłuż potwierdzenie
             if "confirm" in request:
                 confirmed: bool = bool(request["confirm"])
@@ -63,13 +71,6 @@ async def handle_client(
                     status = "confirm" if "[POTWIERDZ]" in chunk else "ok"
                     await _send(writer, {"response": chunk, "status": status, "done": False})
                 await _send(writer, {"response": "", "status": "ok", "done": True})
-                continue
-
-            # Sprawdź token (jeśli ustawiony w settings)
-            token = request.get("token", "")
-            expected_token = getattr(settings, "AGENT_TOKEN", None)
-            if expected_token and token != expected_token:
-                await _send(writer, {"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True})
                 continue
 
             # Obsłuż wiadomość

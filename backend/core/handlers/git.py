@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
 
@@ -55,7 +56,7 @@ async def handle_git_command(
 
     # Safe — wykonaj
     try:
-        stdout, stderr, exit_code = await agent._executor.execute(git_cmd, cwd=repo_path)
+        stdout, stderr, exit_code = await executor.execute(git_cmd, cwd=f"/hostfs{session.cwd}")
         result = f"[STDOUT]\n{stdout}\n[EXIT CODE]\n{exit_code}"
         if stderr:
             result += f"\n[STDERR]\n{stderr}"

@@ -1,5 +1,42 @@
 # Historia zmian -- PipeClaw
 
+## v0.4.0 (2026-09-09)
+
+### Naprawa tool callingu
+
+- Naprawiono krytyczny blad: handlery w `backend/core/handlers/` odwolywaly sie do nieistniejacego `agent._executor`, przez co **kazde** wywolanie narzedzia przez LLM konczylo sie bledem. Handlery korzystaja teraz bezposrednio z modulu `backend.core.executor`
+- Przywrocono prefiks `/hostfs` przy katalogu roboczym komend i operacji Git -- po refaktorze komendy uruchamialy sie w sciezce kontenera zamiast w sciezce hosta VPS
+- Potwierdzone operacje `git_command`, `docker_manage` i `cron_manage` nie koncza sie juz komunikatem "Nieznana operacja" -- `_execute_tool_confirmed` obsluguje kazde narzedzie przechowujace gotowa komende shell
+
+### Autoryzacja tokenem
+
+- `AGENT_TOKEN` faktycznie dziala: brakowalo definicji w `config/settings.py`, wiec dotychczasowa kontrola tokenu byla martwa
+- Token jest sprawdzany przed kazda akcja, takze przed potwierdzeniem operacji -- wczesniej nieuwierzytelniony klient mogl zatwierdzic komende oczekujaca w cudzej sesji
+- CLI przyjmuje token przez `--token` lub zmienna `AGENT_TOKEN`
+- Bot Telegrama przyjmuje token przez `AGENT_TOKEN` w `clients/telegram/.env`
+- `AGENT_TOKEN` przekazywany jest do obu serwisow w `docker-compose.yml`
+
+### Wersjonowanie
+
+- Dodano plik `VERSION` w korzeniu repo jako jedyne zrodlo prawdy o wersji
+- Dodano `scripts/bump_version.py` -- podbija wersje we wszystkich miejscach, gdzie byla wpisana na sztywno
+- Ujednolicono format wersji do `X.Y.Z` (`v0.3` -> `v0.3.0`)
+- Dodano skill `/ship` (`.claude/skills/ship/SKILL.md`) opisujacy proces wydania: wersja, changelog, dokumentacja, testy, commit, push
+
+### Testy
+
+- Naprawiono `backend/tests/test_executor.py`, ktory importowal nieistniejaca klase `LocalExecutor` i blokowal zbieranie calego zestawu testow
+- Poprawiono bledna asercje w tescie nieistniejacej komendy (powloka zwraca 127 i "command not found")
+- Caly zestaw: 94 testy przechodza
+
+### Dokumentacja
+
+- Przepisano `CLAUDE.md`: poprawiono opis protokolu JSON, dodano opis `core/handlers/`, `core/session.py`, konwencji `/hostfs` oraz kontraktu handlerow
+- Uzupelniono `docs/protocol.md`, `docs/backend.md`, `docs/cli.md`, `docs/telegram.md` i `README.md` o autoryzacje tokenem
+- Poprawiono tabele modulow w `README.md` (`core/executor.py` nie zawiera klasy `LocalExecutor`)
+
+---
+
 ## v0.3 (2026-06-19)
 
 ### Naprawa statystyk systemowych

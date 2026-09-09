@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla PipeClaw (VPS Management Agent).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-PipeClaw v0.3
+PipeClaw v0.4.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)
@@ -59,6 +59,9 @@ ALLOWED_USER_IDS: set[int] = {
     int(uid.strip()) for uid in _raw_ids.split(",") if uid.strip().isdigit()
 }
 AGENT_SOCKET: str = os.getenv("AGENT_SOCKET", "/tmp/vps-agent.sock")
+# Token autoryzacji backendu — musi byc zgodny z AGENT_TOKEN w backend/.env.
+# Pusty = backend nie wymaga tokenu.
+AGENT_TOKEN: str = os.getenv("AGENT_TOKEN", "")
 
 SERVER_STATUS_MESSAGE = (
     "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
@@ -98,12 +101,16 @@ def _strip_markdown_artifacts(text: str) -> str:
 class TelegramSocketClient:
     """Klient Unix socket dla Telegram bota -- per user_id."""
 
-    def __init__(self, socket_path: str, session_id: str) -> None:
+    def __init__(self, socket_path: str, session_id: str, token: str = "") -> None:
         self.socket_path = socket_path
         self.session_id = session_id
+        self.token = token
 
     async def _send(self, data: dict) -> list[dict]:
         """Wysyla zadanie i zbiera odpowiedzi do done=true."""
+        if self.token:
+            data = {**data, "token": self.token}
+
         reader, writer = await asyncio.open_unix_connection(self.socket_path)
         try:
             line = json.dumps(data, ensure_ascii=False) + "\n"
@@ -155,6 +162,7 @@ def get_client(user_id: int) -> TelegramSocketClient:
         _clients[user_id] = TelegramSocketClient(
             socket_path=AGENT_SOCKET,
             session_id=str(user_id),
+            token=AGENT_TOKEN,
         )
     return _clients[user_id]
 
