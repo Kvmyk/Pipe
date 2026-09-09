@@ -71,6 +71,7 @@ Every handler has the same signature and contract:
 async def handle_x(agent, session, tool_call, args) -> AsyncGenerator[str, None]
 ```
 - Yielded strings stream to the **user**; the tool result for the **LLM** is appended by the handler itself to `session.messages` as `{"role": "tool", "tool_call_id": ..., "content": ...}`. Every path must append exactly one such entry, or the next LLM call fails on an unanswered tool call.
+- Only yield protocol messages (`[POTWIERDZ]`, `[ODMOWA]`). Never yield raw command output — the system prompt tells the model to interpret rather than echo it, so yielding it too shows the user the same thing twice.
 - A handler that yields nothing still has to be an async generator — the codebase uses a trailing unreachable `yield` after `return` for this.
 - Setting `session.pending_confirmation` aborts the loop; `server.py` sends `status: "confirm"` and waits for the client's confirm frame.
 
@@ -115,5 +116,4 @@ The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump
 ## Known inconsistencies to be aware of
 
 - `agent.py` still carries the pre-refactor `VPSAgent._handle_*` methods (~500 lines). Dispatch no longer reaches them — they are dead code kept for reference; prefer `core/handlers/` when changing tool behaviour.
-- Handlers in `core/handlers/` `yield` the raw tool result (STDOUT/exit code) to the user as well as appending it for the LLM; the legacy methods in `agent.py` only appended it. Net effect: users see raw command output that the system prompt tells the LLM not to echo.
 - `AGENTS.md` is stale in places (claims there is no test suite, points at `agent.py:_handle_*` as the handler pattern).

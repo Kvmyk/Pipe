@@ -67,10 +67,8 @@ async def handle_execute_command(
         
         from backend.core import audit
         await audit.log_safe(session.interface, command, exit_code)
-        yield result
     except Exception as exc:
         result = f"[ERROR] Błąd wykonania: {exc}"
-        yield result
 
     session.messages.append(
         {

@@ -50,15 +50,17 @@ async def handle_change_directory(
 
         # Zmień katalog sesji
         session.cwd = str(path.resolve())
-        yield f"Katalog zmieniony na: {session.cwd}"
+        result = f"Katalog zmieniony na: {session.cwd}"
     except Exception as exc:
-        yield f"Błąd zmiany katalogu: {exc}"
+        result = f"Błąd zmiany katalogu: {exc}"
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": "Katalog zmieniony",
+        "content": result,
     })
+    return
+    yield  # noqa: unreachable — wymagane, by funkcja byla async generatorem
 
 
 async def handle_system_stats(
@@ -93,14 +95,13 @@ async def handle_system_stats(
             result = f"[{stat_type.upper()}]\n{stdout}"
             if exit_code != 0:
                 result += f"\n[EXIT CODE] {exit_code}"
-            yield result
         except Exception as exc:
-            yield f"Błąd pobrania statystyk: {exc}"
+            result = f"Błąd pobrania statystyk: {exc}"
 
         session.messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": f"Statystyki {stat_type} pobrane",
+            "content": result,
         })
         return
 
@@ -191,23 +192,22 @@ async def handle_system_stats(
             summary_lines.append(f"• Dysk: Pozostało {disk_avail} wolnego miejsca z {disk_size} ({disk_usepct} zajętość)")
 
         result_text = "\n".join(summary_lines)
-        yield result_text
 
     except Exception as exc:
         # Fallback: zwróć surowy output meminfo
         try:
             out, _, _ = await executor.execute(f"cat {HOSTPROC}/meminfo | head -12")
             result_text = f"[MEMORY]\n{out}"
-            yield result_text
         except Exception as exc2:
             result_text = f"Błąd pobrania statystyk: {exc} / {exc2}"
-            yield result_text
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
         "content": result_text,
     })
+    return
+    yield  # noqa: unreachable — wymagane, by funkcja byla async generatorem
 
 
 async def handle_network_info(
@@ -233,16 +233,16 @@ async def handle_network_info(
         result = f"[{info_type.upper()}]\n{stdout}"
         if exit_code != 0:
             result += f"\n[EXIT CODE] {exit_code}"
-        yield result
     except Exception as exc:
         result = f"Błąd pobrania info sieciowych: {exc}"
-        yield result
 
     session.messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
         "content": result,
     })
+    return
+    yield  # noqa: unreachable — wymagane, by funkcja byla async generatorem
 
 
 async def handle_cron_manage(
@@ -292,10 +292,8 @@ async def handle_cron_manage(
         result = f"[CRON]\n{stdout}"
         if exit_code != 0:
             result += f"\n[EXIT CODE] {exit_code}"
-        yield result
     except Exception as exc:
         result = f"Błąd operacji cron: {exc}"
-        yield result
 
     session.messages.append({
         "role": "tool",

@@ -1,6 +1,6 @@
 # Backend -- PipeClaw
 
-PipeClaw v0.4.0
+PipeClaw v0.4.1
 
 Backend agenta VPS. Dziala bezposrednio na serwerze (Mikrus) i wystawia lokalny Unix socket dla klientow.
 

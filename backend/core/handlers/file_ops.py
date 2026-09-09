@@ -21,7 +21,6 @@ async def handle_read_file(
     path = args.get("path", "").strip()
     if not path:
         result = "Błąd: pusta ścieżka"
-        yield result
         session.messages.append(
             {
                 "role": "tool",
@@ -37,7 +36,7 @@ async def handle_read_file(
         from backend.core import audit
         await audit.log_blocked(session.interface, f"read_file({path}): {reason}")
         result = f"ODMOWA SYSTEMOWA: {reason}"
-        yield result
+        yield f"[ODMOWA] {reason}"
         session.messages.append(
             {
                 "role": "tool",
@@ -59,8 +58,8 @@ async def handle_read_file(
     except Exception as exc:
         result = f"Błąd odczytu pliku: {exc}"
 
-    # Zwróć wynik narzędzia (yield), a następnie zaktualizuj historię sesji
-    yield result
+    # Wynik trafia wylacznie do LLM — uzytkownik dostaje odpowiedz sformulowana
+    # przez model, a nie surowa tresc pliku.
     session.messages.append(
         {
             "role": "tool",

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla PipeClaw (VPS Management Agent).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-PipeClaw v0.4.0
+PipeClaw v0.4.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)

@@ -1,6 +1,6 @@
 # Telegram Bot -- PipeClaw
 
-PipeClaw v0.4.0
+PipeClaw v0.4.1
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 

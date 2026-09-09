@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-PipeClaw v0.4.0
+PipeClaw v0.4.1
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc

@@ -1,5 +1,20 @@
 # Historia zmian -- PipeClaw
 
+## v0.4.1 (2026-09-09)
+
+### Odpowiedzi agenta
+
+- Handlery narzedzi nie wysylaja juz do uzytkownika surowego outputu komend. Wczesniej ten sam wynik trafial dwa razy: raz jako surowy STDOUT z kodem wyjscia, raz jako odpowiedz sformulowana przez model -- mimo ze system prompt wprost zabrania modelowi zwracania surowego outputu
+- Do uzytkownika trafiaja teraz wylacznie komunikaty protokolu (`[POTWIERDZ]`, `[ODMOWA]`) oraz odpowiedz modelu; pelny wynik komendy nadal dostaje model
+- Odmowa dostepu w `read_file` jest zglaszana uzytkownikowi w formacie `[ODMOWA]`, spojnie z `write_file`
+
+### Poprawki
+
+- `system_stats` dla konkretnego typu statystyki (`cpu`, `memory`, `disk`, `process`) przekazywal modelowi jedynie komunikat "Statystyki pobrane" bez danych -- model dostaje teraz faktyczny odczyt
+- `change_directory` nie raportuje juz "Katalog zmieniony" po nieudanej zmianie katalogu; do modelu trafia rzeczywisty wynik operacji
+
+---
+
 ## v0.4.0 (2026-09-09)
 
 ### Naprawa tool callingu
