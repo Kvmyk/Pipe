@@ -246,17 +246,17 @@ class RemoteClient:
 def _print_banner(host: str) -> None:
     """Wyświetla baner startowy z informacją o serwerze."""
     ascii_art = """[bold cyan]
-  ____  _             ____ _                
- |  _ \\(_)_ __   ___ / ___| | __ ___      __
- | |_) | | '_ \\ / _ \\ |   | |/ _` \\ \\ /\\ / /
- |  __/| | |_) |  __/ |___| | (_| |\\ V  V / 
- |_|   |_| .__/ \\___|\\____|_|\\__,_| \\_/\\_/  
-         |_|                                
+  ____  _            
+ |  _ \\(_)_ __   ___ 
+ | |_) | | '_ \\ / _ \\
+ |  __/| | |_) |  __/
+ |_|   |_| .__/ \\___|
+         |_|         
 [/bold cyan]"""
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.5.1[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.6.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
             "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",

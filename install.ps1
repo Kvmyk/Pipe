@@ -1,6 +1,6 @@
-# install.ps1 - Instaluje skrot "pipeclaw" w PowerShell
+# install.ps1 - Instaluje skrot "pipe" w PowerShell
 # Uruchom raz: .\install.ps1
-# Potem wystarczy wpisac: pipeclaw
+# Potem wystarczy wpisac: pipe
 
 param(
     [string]$VpsHost = "",
@@ -38,13 +38,13 @@ Write-Host "Instaluje zaleznosci CLI..." -ForegroundColor Cyan
 $RequirementsPath = Join-Path $ScriptDir "clients\cli\requirements.txt"
 python -m pip install -r $RequirementsPath --quiet
 
-# Zbuduj argumenty dla funkcji 'pipeclaw'
-$PipeClawArgs = "--host `"$VpsHost`""
+# Zbuduj argumenty dla funkcji 'pipe'
+$PipeArgs = "--host `"$VpsHost`""
 if ($SshPort -ne "22") {
-    $PipeClawArgs += " --ssh-port $SshPort"
+    $PipeArgs += " --ssh-port $SshPort"
 }
 if ($SshKey) {
-    $PipeClawArgs += " --key `"$SshKey`""
+    $PipeArgs += " --key `"$SshKey`""
 }
 
 # Przygotuj profil PowerShell
@@ -56,14 +56,18 @@ if (-not (Test-Path $PROFILE)) {
     New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
 
-$Marker = "# --- VPS Management Agent (PipeClaw) ---"
-$MarkerEnd = "# --- end PipeClaw ---"
+$Marker = "# --- VPS Management Agent (Pipe) ---"
+$MarkerEnd = "# --- end Pipe ---"
+# Przedrostki lapia tez blok ze starsza nazwa komendy — ponowna instalacja
+# zastepuje go, zamiast zostawiac dwie funkcje w profilu.
+$MarkerPrefix = "^" + [regex]::Escape("# --- VPS Management Agent (Pipe")
+$MarkerEndPrefix = "^" + [regex]::Escape("# --- end Pipe")
 
 $FunctionBlock = @"
 
 $Marker
-function pipeclaw {
-    python "$CliPath" $PipeClawArgs `$args
+function pipe {
+    python "$CliPath" $PipeArgs `$args
 }
 $MarkerEnd
 "@
@@ -71,31 +75,31 @@ $MarkerEnd
 # Sprawdz czy funkcja juz istnieje - jesli tak, zastap
 $ProfileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
 
-if ($ProfileContent -and $ProfileContent.Contains($Marker)) {
+if ($ProfileContent -and ($ProfileContent -split "`r?`n" | Where-Object { $_ -match $MarkerPrefix })) {
     # Usun stary blok za pomoca linii po linii
     $lines = Get-Content $PROFILE
     $newLines = @()
     $skip = $false
     foreach ($line in $lines) {
-        if ($line -match [regex]::Escape($Marker)) { $skip = $true }
+        if ($line -match $MarkerPrefix) { $skip = $true }
         if (-not $skip) { $newLines += $line }
-        if ($skip -and $line -match [regex]::Escape($MarkerEnd)) { $skip = $false }
+        if ($skip -and $line -match $MarkerEndPrefix) { $skip = $false }
     }
     Set-Content $PROFILE $newLines
     Add-Content $PROFILE $FunctionBlock
-    Write-Host "Zaktualizowano istniejacy skrot 'pipeclaw' w profilu." -ForegroundColor Yellow
+    Write-Host "Zaktualizowano istniejacy skrot 'pipe' w profilu." -ForegroundColor Yellow
 } else {
     Add-Content $PROFILE $FunctionBlock
-    Write-Host "Dodano skrot 'pipeclaw' do profilu PowerShell." -ForegroundColor Green
+    Write-Host "Dodano skrot 'pipe' do profilu PowerShell." -ForegroundColor Green
 }
 
 Write-Host ""
 Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host " Gotowe! Skrot 'pipeclaw' bedzie laczyc sie z:      " -ForegroundColor Cyan
+Write-Host " Gotowe! Skrot 'pipe' bedzie laczyc sie z:      " -ForegroundColor Cyan
 Write-Host "   $VpsHost" -ForegroundColor White
 Write-Host ""
 Write-Host " Aby zastosowac teraz (bez restartu terminala): " -ForegroundColor Cyan
 Write-Host "   . `$PROFILE" -ForegroundColor Yellow
 Write-Host " Potem wpisz:                                   " -ForegroundColor Cyan
-Write-Host "   pipeclaw" -ForegroundColor Yellow
+Write-Host "   pipe" -ForegroundColor Yellow
 Write-Host "=================================================" -ForegroundColor Cyan

@@ -1,8 +1,8 @@
-# Propozycje Usprawnień dla Projektu "PipeClaw"
+# Propozycje Usprawnień dla Projektu "Pipe"
 
 ## Wprowadzenie
 
-Poniższy dokument przedstawia analizę obecnego stanu projektu "PipeClaw" (v0.3) i zawiera sugestie dotyczące potencjalnych usprawnień. Celem tych propozycji jest zwiększenie bezpieczeństwa, poprawa jakości kodu, ułatwienie dalszego rozwoju oraz wprowadzenie najlepszych praktyk inżynierii oprogramowania. Analiza została przeprowadzona na podstawie przeglądu kodu źródłowego, konfiguracji Docker oraz dokumentacji `AGENTS.md`.
+Poniższy dokument przedstawia analizę obecnego stanu projektu "Pipe" (v0.3) i zawiera sugestie dotyczące potencjalnych usprawnień. Celem tych propozycji jest zwiększenie bezpieczeństwa, poprawa jakości kodu, ułatwienie dalszego rozwoju oraz wprowadzenie najlepszych praktyk inżynierii oprogramowania. Analiza została przeprowadzona na podstawie przeglądu kodu źródłowego, konfiguracji Docker oraz dokumentacji `AGENTS.md`.
 
 ## 1. Jakość Kodu i Utrzymanie
 
@@ -24,13 +24,13 @@ Obecnie kod jest pisany i formatowany manualnie, co w dłuższej perspektywie mo
 
 ## 2. Bezpieczeństwo
 
-Projekt "PipeClaw" operuje z bardzo wysokimi uprawnieniami, co stanowi znaczące ryzyko bezpieczeństwa. Konfiguracja `docker-compose.yml` jest tego najlepszym dowodem.
+Projekt "Pipe" operuje z bardzo wysokimi uprawnieniami, co stanowi znaczące ryzyko bezpieczeństwa. Konfiguracja `docker-compose.yml` jest tego najlepszym dowodem.
 
 ### Sugestie:
 
 *   **Ograniczenie dostępu do systemu plików (Zasada Najmniejszych Uprawnień):**
     *   **Problem:** Montowanie całego głównego systemu plików hosta (`/:/hostfs`) daje agentowi nieograniczony dostęp do każdego pliku na serwerze. Przypadkowy lub złośliwie spreparowany prompt może doprowadzić do usunięcia krytycznych danych systemowych.
-    *   **Rozwiązanie:** Zamiast montować cały system plików, należy stworzyć na hoście dedykowany katalog roboczy (np. `/opt/pipeclaw_workspace`) i montować tylko ten katalog do kontenera (`/opt/pipeclaw_workspace:/hostfs`). Domyślnie agent powinien móc operować tylko w tej przestrzeni. Dostęp do plików poza tym katalogiem powinien być zablokowany lub wymagać dodatkowego, jawnego potwierdzenia od użytkownika na poziomie interfejsu.
+    *   **Rozwiązanie:** Zamiast montować cały system plików, należy stworzyć na hoście dedykowany katalog roboczy (np. `/opt/pipe_workspace`) i montować tylko ten katalog do kontenera (`/opt/pipe_workspace:/hostfs`). Domyślnie agent powinien móc operować tylko w tej przestrzeni. Dostęp do plików poza tym katalogiem powinien być zablokowany lub wymagać dodatkowego, jawnego potwierdzenia od użytkownika na poziomie interfejsu.
 
 *   **Zarządzanie dostępem do Docker Socket:**
     *   **Problem:** Podobnie jak w przypadku systemu plików, montowanie `docker.sock` daje agentowi pełną kontrolę nad demonem Dockera na hoście, włącznie z możliwością tworzenia, usuwania i modyfikowania dowolnych kontenerów.
@@ -70,4 +70,4 @@ Automatyzacja procesów budowania, testowania i wdrażania jest kluczowa dla szy
 
 ## Podsumowanie
 
-Projekt "PipeClaw" ma solidne fundamenty i duży potencjał. Wprowadzenie powyższych usprawnień, ze szczególnym naciskiem na **bezpieczeństwo** i **automatyzację testów**, pozwoli na jego dalszy, dynamiczny rozwój w sposób bardziej kontrolowany i przewidywalny. Rekomenduje się rozpoczęcie prac od kwestii o najwyższym priorytecie: ograniczenia dostępu do systemu plików hosta oraz wprowadzenia podstawowego zestawu testów.
+Projekt "Pipe" ma solidne fundamenty i duży potencjał. Wprowadzenie powyższych usprawnień, ze szczególnym naciskiem na **bezpieczeństwo** i **automatyzację testów**, pozwoli na jego dalszy, dynamiczny rozwój w sposób bardziej kontrolowany i przewidywalny. Rekomenduje się rozpoczęcie prac od kwestii o najwyższym priorytecie: ograniczenia dostępu do systemu plików hosta oraz wprowadzenia podstawowego zestawu testów.

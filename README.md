@@ -1,6 +1,6 @@
-# PipeClaw
+# Pipe
 
-**v0.5.1** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.6.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
@@ -14,8 +14,8 @@ Szczegolowa instrukcja krok po kroku: [docs/quickstart.md](./docs/quickstart.md)
 Wykonaj na serwerze (Mikrus):
 
 ```bash
-git clone https://github.com/user/pipeclaw
-cd pipeclaw
+git clone https://github.com/user/pipe
+cd pipe
 python3 -m backend.configure   # kreator: provider, klucz API, model, test
 cd backend
 docker-compose up -d
@@ -26,7 +26,7 @@ tool calling. Nie wymaga instalowania zadnych pakietow. Szczegoly: [docs/backend
 
 ### 2. Podlacz CLI ze swojego laptopa
 
-Na laptopie -- skrypt automatycznie doda skrot `pipeclaw` do Twojego terminala:
+Na laptopie -- skrypt automatycznie doda skrot `pipe` do Twojego terminala:
 
 ```powershell
 # Windows
@@ -41,7 +41,7 @@ bash install.sh
 Od teraz w kazdym terminalu wpisujesz:
 
 ```
-pipeclaw
+pipe
 ```
 
 CLI pyta o haslo SSH, laczy sie z agentem na serwerze i czeka na Twoje polecenia.
@@ -52,7 +52,7 @@ Telegram bot dziala na tym samym serwerze co backend (laczy sie przez Unix socke
 
 ```bash
 # Na serwerze
-cd pipeclaw/clients/telegram
+cd pipe/clients/telegram
 cp .env.example .env
 # Uzupelnij TELEGRAM_BOT_TOKEN i TELEGRAM_ALLOWED_USER_IDS w .env
 ```

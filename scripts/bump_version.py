@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Podbija wersje PipeClaw w calym repozytorium.
+Podbija wersje Pipe w calym repozytorium.
 
 Zrodlem prawdy jest plik VERSION w korzeniu repo. Skrypt czyta z niego
 aktualna wersje, wylicza nowa i podmienia ja we wszystkich miejscach,
@@ -27,20 +27,20 @@ VERSION_FILE = ROOT / "VERSION"
 # grupe nazwana (?P<ver>...) obejmujaca sam numer wersji.
 PATTERNS: list[tuple[str, str]] = [
     ("README.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
-    ("CLAUDE.md", r"\*\*PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
+    ("CLAUDE.md", r"\*\*Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
     ("AGENTS.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?) status\*\*"),
-    ("docs/backend.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("docs/cli.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("docs/telegram.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("docs/security.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("docs/protocol.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("docs/quickstart.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("clients/discord/README.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("backend/core/agent.py", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("backend/core/tools.py", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("backend/config/prompts.py", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/backend.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/cli.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/telegram.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/security.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/protocol.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("docs/quickstart.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("clients/discord/README.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("backend/core/agent.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("backend/core/tools.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("backend/config/prompts.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/config/prompts.py", r"Wersja oprogramowania: (?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("clients/telegram/bot.py", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
+    ("clients/telegram/bot.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("clients/cli/cli.py", r"\| v(?P<ver>\d+\.\d+(?:\.\d+)?)\[/dim\]"),
 ]
 

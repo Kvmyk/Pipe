@@ -1,8 +1,8 @@
 # Discord Client -- Coming Soon
 
-PipeClaw v0.5.1
+Pipe v0.6.0
 
-Klient Discord dla PipeClaw. Status: Placeholder -- Pull Requests mile widziane.
+Klient Discord dla Pipe. Status: Placeholder -- Pull Requests mile widziane.
 
 ## Jak zaimplementowac nowy klient
 

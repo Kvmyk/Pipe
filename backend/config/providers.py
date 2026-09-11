@@ -15,7 +15,7 @@ Skad sie bierze konfiguracja (od najwyzszego priorytetu):
 Wlasni providerzy: plik JSON wskazany przez LLM_PROVIDERS_FILE
 (domyslnie backend/data/providers.json). Wpis o id wbudowanego providera
 nadpisuje wbudowany preset — mozna tak poprawic nieaktualny adres bez
-czekania na nowa wersje PipeClaw.
+czekania na nowa wersje Pipe.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ class LLMConfig:
 # ─── Wbudowani providerzy ───────────────────────────────────────────────────
 # Adresy i modele zweryfikowane w dokumentacji providerow (wrzesien 2026).
 # Modele domyslne to tylko punkt startowy — kreator pobiera aktualna liste
-# z endpointu /models, wiec nowe modele sa widoczne bez aktualizacji PipeClaw.
+# z endpointu /models, wiec nowe modele sa widoczne bez aktualizacji Pipe.
 BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     Provider(
         id="gemini",

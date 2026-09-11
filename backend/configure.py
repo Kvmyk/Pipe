@@ -1,5 +1,5 @@
 """
-Kreator konfiguracji providera LLM dla PipeClaw.
+Kreator konfiguracji providera LLM dla Pipe.
 
 Uruchom z katalogu glownego repozytorium:
 
@@ -140,7 +140,7 @@ def _request(url: str, api_key: str, payload: dict[str, Any] | None = None) -> A
         headers={
             "Authorization": f"Bearer {api_key or NO_KEY_PLACEHOLDER}",
             "Content-Type": "application/json",
-            "User-Agent": "PipeClaw-configure",
+            "User-Agent": "Pipe-configure",
         },
     )
     try:
@@ -327,7 +327,7 @@ def choose_model(provider: Provider, api_key: str) -> str:
 
 
 def run_wizard() -> int:
-    print("PipeClaw — konfiguracja providera LLM")
+    print("Pipe — konfiguracja providera LLM")
     print("=" * 40)
 
     current = read_env_file()
@@ -453,7 +453,7 @@ def run_providers() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python3 -m backend.configure",
-        description="Kreator konfiguracji providera LLM dla PipeClaw.",
+        description="Kreator konfiguracji providera LLM dla Pipe.",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="sprawdz obecna konfiguracje (lista modeli + test tool callingu)")

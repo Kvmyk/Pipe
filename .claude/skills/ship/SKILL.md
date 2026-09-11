@@ -1,9 +1,9 @@
 ---
 name: ship
-description: Wydaje zmiany w PipeClaw — podbija wersje wedlug wagi zmiany, aktualizuje changelog i dokumentacje, commituje i pushuje. Uzyj gdy uzytkownik mowi "ship", "wydaj", "zacommituj i wypchnij", "wypusc wersje" albo konczy prace nad zmiana i chce ja oddac do repo.
+description: Wydaje zmiany w Pipe — podbija wersje wedlug wagi zmiany, aktualizuje changelog i dokumentacje, commituje i pushuje. Uzyj gdy uzytkownik mowi "ship", "wydaj", "zacommituj i wypchnij", "wypusc wersje" albo konczy prace nad zmiana i chce ja oddac do repo.
 ---
 
-# /ship — wydanie zmian PipeClaw
+# /ship — wydanie zmian Pipe
 
 Kolejnosc jest scisla: **wersja → dokumentacja → testy → commit → push**.
 Nigdy nie commituj przed podbiciem wersji i uzupelnieniem changelogu.

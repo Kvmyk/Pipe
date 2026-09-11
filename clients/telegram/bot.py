@@ -1,10 +1,10 @@
 """
-Telegram Bot -- interfejs Telegram dla PipeClaw (VPS Management Agent).
+Telegram Bot -- interfejs Telegram dla Pipe (VPS Management Agent).
 
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-PipeClaw v0.5.1
+Pipe v0.6.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)
@@ -214,7 +214,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return  # Milcz dla nieautoryzowanych
 
     welcome = (
-        "<b>Witaj, tutaj PipeClaw.</b>\n\n"
+        "<b>Witaj, tutaj Pipe.</b>\n\n"
         "Jestem autonomicznym agentem AI do zarzadzania Twoim serwerem VPS.\n"
         "Komunikuje sie po polsku i wykonuje komendy bezposrednio na serwerze.\n\n"
         "<b>Dostepne komendy:</b>\n"
@@ -293,7 +293,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _send_response(update, context, responses, user.id)
     except FileNotFoundError:
         await update.message.reply_text(
-            "Backend niedostepny. Upewnij sie, ze PipeClaw jest uruchomiony.",
+            "Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.",
         )
     except Exception as exc:
         await update.message.reply_text(
@@ -360,9 +360,9 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    print(f"[PipeClaw Telegram] Uruchamiam bota...")
-    print(f"[PipeClaw Telegram] Dozwoleni uzytkownicy: {ALLOWED_USER_IDS}")
-    print(f"[PipeClaw Telegram] Backend socket: {AGENT_SOCKET}")
+    print(f"[Pipe Telegram] Uruchamiam bota...")
+    print(f"[Pipe Telegram] Dozwoleni uzytkownicy: {ALLOWED_USER_IDS}")
+    print(f"[Pipe Telegram] Backend socket: {AGENT_SOCKET}")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -372,7 +372,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("[PipeClaw Telegram] Gotowy. Ctrl+C aby zatrzymac.")
+    print("[Pipe Telegram] Gotowy. Ctrl+C aby zatrzymac.")
     app.run_polling(drop_pending_updates=True)
 
 

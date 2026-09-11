@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**PipeClaw v0.5.1** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
+**Pipe v0.6.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -26,7 +26,7 @@ cd backend && docker-compose up -d
 docker-compose logs -f vps-agent    # or: -f telegram
 ```
 
-CLI install (client machine): `.\install.ps1` (Windows) or `bash install.sh` (Linux/macOS), then `pipeclaw`.
+CLI install (client machine): `.\install.ps1` (Windows) or `bash install.sh` (Linux/macOS), then `pipe`.
 
 There is no linter, formatter, or CI configured; tests are run manually.
 

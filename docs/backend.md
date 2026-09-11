@@ -1,6 +1,6 @@
-# Backend -- PipeClaw
+# Backend -- Pipe
 
-PipeClaw v0.5.1
+Pipe v0.6.0
 
 Backend agenta VPS. Dziala bezposrednio na serwerze (Mikrus) i wystawia lokalny Unix socket dla klientow.
 
@@ -22,7 +22,7 @@ python3 -m backend.configure
 
 Kreator:
 1. pokaze liste providerow i zapyta o klucz API (z linkiem, gdzie go zdobyc),
-2. pobierze **aktualna** liste modeli prosto z API providera -- nowe modele sa widoczne od razu, bez aktualizacji PipeClaw,
+2. pobierze **aktualna** liste modeli prosto z API providera -- nowe modele sa widoczne od razu, bez aktualizacji Pipe,
 3. sprawdzi na zywo, czy wybrany model obsluguje tool calling (bez tego agent nie wykona zadnej komendy),
 4. zapisze `backend/.env` (utworzy go z `.env.example`, jesli nie istnieje; uprawnienia `600`).
 
@@ -107,7 +107,7 @@ Mozesz tez edytowac ten plik recznie:
 ```
 
 Wpis o `id` wbudowanego providera nadpisuje go -- tak poprawisz nieaktualny adres bez czekania na nowa
-wersje PipeClaw. Katalog `backend/data/` jest zamontowany w kontenerze, wiec zmiany nie wymagaja przebudowy
+wersje Pipe. Katalog `backend/data/` jest zamontowany w kontenerze, wiec zmiany nie wymagaja przebudowy
 obrazu -- wystarczy `docker-compose restart vps-agent`.
 
 ### Ollama (modele lokalne)

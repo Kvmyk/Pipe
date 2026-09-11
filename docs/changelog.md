@@ -1,4 +1,18 @@
-# Historia zmian -- PipeClaw
+# Historia zmian -- Pipe
+
+## v0.6.0 (2026-09-11)
+
+### Zmiana nazwy
+
+- Projekt nazywa sie teraz **Pipe** -- nowa nazwa jest w dokumentacji, komunikatach, prompcie systemowym agenta, bocie Telegrama, kreatorze konfiguracji i banerze CLI
+- Komenda CLI to teraz `pipe`. Instalatory (`install.sh`, `install.ps1`) przy ponownym uruchomieniu zastepuja w profilu powloki blok z poprzednia nazwa komendy, zamiast dopisywac drugi. Kto nie uruchomi instalatora ponownie, zachowa dzialajaca poprzednia komende
+- Agent przedstawia sie teraz jako Pipe
+
+### Dokumentacja
+
+- Wyrownano ramke przykladowej sesji w `docs/quickstart.md`
+
+---
 
 ## v0.5.1 (2026-09-11)
 
@@ -28,7 +42,7 @@
 
 - Dodano kreator konfiguracji `python3 -m backend.configure`: wybor providera, klucz API, lista modeli pobierana na zywo z API providera i test tool callingu przed zapisaniem `.env`. Kreator nie wymaga instalowania zadnych pakietow
 - Dodano 14 wbudowanych providerow: Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Groq, DeepSeek, Mistral, xAI Grok, Z.ai (GLM), Moonshot Kimi, Together AI, Cerebras, Fireworks i lokalna Ollama
-- Wlasnego providera (dowolny endpoint zgodny z OpenAI: vLLM, LM Studio, LiteLLM, proxy firmowe) mozna dodac kreatorem -- trafia do `backend/data/providers.json`. Wpis o id wbudowanego providera nadpisuje go, wiec nieaktualny adres da sie poprawic bez nowej wersji PipeClaw
+- Wlasnego providera (dowolny endpoint zgodny z OpenAI: vLLM, LM Studio, LiteLLM, proxy firmowe) mozna dodac kreatorem -- trafia do `backend/data/providers.json`. Wpis o id wbudowanego providera nadpisuje go, wiec nieaktualny adres da sie poprawic bez nowej wersji Pipe
 - Nowe zmienne: `LLM_PROVIDER`, `LLM_REASONING_EFFORT`, `LLM_TIMEOUT`. Klucz mozna tez podac przez zmienna providera, np. `OPENAI_API_KEY` albo `GEMINI_API_KEY`
 - Dodano tryby `--check` (test obecnej konfiguracji), `--models` (aktualne modele) i `--providers`
 
@@ -147,7 +161,7 @@
 
 ## v0.1 (2026-03-29)
 
-Pierwsza wersja PipeClaw -- autonomiczny agent AI do zarzadzania serwerem VPS.
+Pierwsza wersja Pipe -- autonomiczny agent AI do zarzadzania serwerem VPS.
 
 ### Narzedzia agenta
 
