@@ -63,6 +63,7 @@ Nastepnie sprawdz, czy zmiana nie unieważnila innych dokumentow, i popraw te, k
 | protokol JSON, `server.py` | `docs/protocol.md`, sekcja protokolu w `README.md`, `CLAUDE.md` |
 | `security.py`, klasyfikacja komend | `docs/security.md`, sekcja bezpieczenstwa w `README.md` |
 | narzedzia agenta (`tools.py`, `handlers/`) | tabela narzedzi w `README.md`, lista narzedzi w `config/prompts.py`, `CLAUDE.md` |
+| providerzy LLM (`config/providers.py`, `configure.py`) | tabela providerow w `docs/backend.md`, sekcja providerow w `README.md`, `backend/.env.example`, `CLAUDE.md` |
 | zmienne `.env`, `docker-compose.yml` | `backend/.env.example`, `docs/backend.md`, `docs/quickstart.md`, `CLAUDE.md` |
 | CLI (`clients/cli/`) | `docs/cli.md`, `clients/cli/README.md` |
 | Telegram (`clients/telegram/`) | `docs/telegram.md`, `clients/telegram/.env.example` |

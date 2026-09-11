@@ -9,17 +9,26 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from backend.config.providers import LLMConfig, ProviderConfigError, resolve_llm_config
+
 # Załaduj .env z katalogu backendu (lub nadrzędnego)
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=False)
 
 # ─── LLM ────────────────────────────────────────────────────────────────────
-LLM_BASE_URL: str = os.getenv(
-    "LLM_BASE_URL",
-    "https://generativelanguage.googleapis.com/v1beta/openai/",
-)
-LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+# Provider, adres, klucz i model wylicza backend/config/providers.py
+# (LLM_PROVIDER + opcjonalne nadpisania LLM_BASE_URL / LLM_MODEL / LLM_API_KEY).
+# Blad konfiguracji nie przerywa importu — zglasza go dopiero validate().
+try:
+    LLM: LLMConfig | None = resolve_llm_config(os.environ)
+    _LLM_ERROR: str | None = None
+except ProviderConfigError as exc:
+    LLM = None
+    _LLM_ERROR = str(exc)
+
+LLM_BASE_URL: str = LLM.base_url if LLM else ""
+LLM_API_KEY: str = LLM.api_key if LLM else ""
+LLM_MODEL: str = LLM.model if LLM else ""
 
 # ─── Security / Audit ───────────────────────────────────────────────────────
 # Opcjonalny token autoryzacji. Jesli pusty — serwer nie wymaga tokenu
@@ -38,8 +47,11 @@ TCP_PORT: int = int(os.getenv("TCP_PORT", "7379"))
 # ─── Validation ─────────────────────────────────────────────────────────────
 def validate() -> None:
     """Rzuca ValueError jeśli brakuje wymaganych ustawień."""
-    if not LLM_API_KEY:
+    if LLM is None:
+        raise ValueError(_LLM_ERROR)
+    if LLM.requires_key and not LLM.api_key:
         raise ValueError(
-            "LLM_API_KEY nie jest ustawiony. "
-            "Uzupełnij plik .env (skopiuj z .env.example)."
+            f"Brak klucza API dla providera {LLM.provider_name}. "
+            "Uruchom kreator z katalogu repozytorium: python3 -m backend.configure "
+            "(albo ustaw LLM_API_KEY w backend/.env)."
         )

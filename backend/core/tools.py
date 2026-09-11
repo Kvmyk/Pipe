@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-PipeClaw v0.4.1
+PipeClaw v0.5.0
 """
 
 from __future__ import annotations

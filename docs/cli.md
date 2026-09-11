@@ -1,6 +1,6 @@
 # CLI -- PipeClaw
 
-PipeClaw v0.4.1
+PipeClaw v0.5.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 

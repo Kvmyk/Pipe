@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-PipeClaw v0.4.1
+PipeClaw v0.5.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -24,6 +24,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from backend.config import settings
+from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
 from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT
 from backend.core import audit
 from backend.core import executor
@@ -44,10 +45,11 @@ class VPSAgent:
     """
 
     def __init__(self) -> None:
+        llm = settings.LLM
         self._client = AsyncOpenAI(
-            api_key=settings.LLM_API_KEY,
-            base_url=settings.LLM_BASE_URL,
-            timeout=60.0,  # max 60s na odpowiedź LLM
+            api_key=llm.api_key or NO_KEY_PLACEHOLDER,
+            base_url=llm.base_url,
+            timeout=llm.timeout,  # modele rozumujace potrafia odpowiadac dluzej niz minute
         )
         self._sessions: dict[str, Session] = {}
         
@@ -189,11 +191,38 @@ class VPSAgent:
             {"role": "system", "content": session.system_prompt},
             *session.messages,
         ]
+        # tool_choice pomijamy celowo: "auto" jest i tak domyslne, gdy podano
+        # tools, a czesc providerow (np. Ollama) nie obsluguje tego parametru.
+        # reasoning_effort idzie przez extra_body, zeby dzialal na kazdej
+        # wersji SDK; providerzy, ktorzy go nie znaja, ignoruja pole.
+        extra_body: dict[str, Any] = {}
+        if settings.LLM.reasoning_effort:
+            extra_body["reasoning_effort"] = settings.LLM.reasoning_effort
         return await self._client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=settings.LLM.model,
             messages=messages,
             tools=TOOLS,
-            tool_choice="auto",
+            extra_body=extra_body or None,
+        )
+
+    async def verify_model(self) -> str | None:
+        """
+        Sprawdza, czy skonfigurowany model jest na liscie providera.
+        Zwraca tresc ostrzezenia albo None. Nigdy nie rzuca wyjatku.
+        """
+        llm = settings.LLM
+        try:
+            page = await asyncio.wait_for(self._client.models.list(), timeout=15)
+            available = chat_model_ids([m.model_dump() for m in page.data])
+        except Exception as exc:
+            return f"Nie udalo sie pobrac listy modeli od {llm.provider_name} ({exc}) — pomijam weryfikacje modelu."
+
+        if not available or model_available(llm.model, available):
+            return None
+        return (
+            f"Model {llm.model!r} nie wystepuje na liscie modeli {llm.provider_name} — "
+            f"mogl zostac wycofany. Najnowsze dostepne: {', '.join(available[:5])}. "
+            "Zmien model: python3 -m backend.configure"
         )
 
     async def _handle_tool_call(

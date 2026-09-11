@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-PipeClaw v0.4.1
+PipeClaw v0.5.0
 
 ## Wymagania wstepne
 
@@ -15,11 +15,19 @@ SSH na Mikrusa i wykonaj:
 
 ```bash
 git clone https://github.com/user/pipeclaw
-cd pipeclaw/backend
+cd pipeclaw
 
-cp .env.example .env
-nano .env   # wpisz swoj LLM_API_KEY (darmowy: https://aistudio.google.com/)
+python3 -m backend.configure
+```
 
+Kreator zapyta o providera LLM i klucz API, pobierze aktualna liste modeli, sprawdzi, czy wybrany model
+obsluguje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
+darmowy klucz wygenerujesz na https://aistudio.google.com/apikey
+
+Potem:
+
+```bash
+cd backend
 docker-compose up -d
 ```
 
@@ -125,6 +133,8 @@ pipeclaw --session moja-sesja # zachowaj historie sesji
 
 | Problem | Rozwiazanie |
 |---------|-------------|
+| Agent nie odpowiada / blad modelu | `python3 -m backend.configure --check` -- sprawdzi klucz, model i tool calling |
+| W logach "Model ... nie wystepuje na liscie" | Model zostal wycofany -- wybierz nowy: `python3 -m backend.configure` |
 | Tunel SSH nie odpowiada | Sprawdz czy backend dziala: `docker logs vps-agent` na serwerze |
 | Brak komendy 'ssh' | Windows: zainstaluj OpenSSH Client (Ustawienia -> Aplikacje -> Funkcje opcjonalne) |
 | SSH pyta o haslo przy kazdym uruchomieniu | Dodaj klucz SSH: `ssh-copy-id user@serwer` |

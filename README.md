@@ -1,6 +1,6 @@
 # PipeClaw
 
-**v0.4.1** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.5.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
@@ -15,11 +15,14 @@ Wykonaj na serwerze (Mikrus):
 
 ```bash
 git clone https://github.com/user/pipeclaw
-cd pipeclaw/backend
-cp .env.example .env
-# Uzupelnij LLM_API_KEY w .env (darmowy: https://aistudio.google.com/)
+cd pipeclaw
+python3 -m backend.configure   # kreator: provider, klucz API, model, test
+cd backend
 docker-compose up -d
 ```
+
+Kreator pobiera aktualna liste modeli prosto od providera i sprawdza, czy wybrany model obsluguje
+tool calling. Nie wymaga instalowania zadnych pakietow. Szczegoly: [docs/backend.md](./docs/backend.md)
 
 ### 2. Podlacz CLI ze swojego laptopa
 
@@ -88,6 +91,18 @@ Komunikacja: prosty protokol JSON (linia po linii):
 
 ---
 
+## Providerzy LLM
+
+Dowolny endpoint zgodny z OpenAI. Wbudowane presety: **Google Gemini** (domyslny, darmowy tier),
+**OpenAI**, **Anthropic Claude**, **OpenRouter**, **Groq**, **DeepSeek**, **Mistral**, **xAI Grok**,
+**Z.ai (GLM)**, **Moonshot Kimi**, **Together AI**, **Cerebras**, **Fireworks** i lokalna **Ollama**.
+
+Wlasnego providera (vLLM, LM Studio, LiteLLM, proxy firmowe...) dodasz kreatorem -- opcja **Inny**.
+Lista modeli nie jest wpisana na sztywno: kreator i backend pobieraja ja na zywo z API providera,
+a przy starcie backend ostrzega, jesli skonfigurowany model zostal wycofany.
+
+---
+
 ## Moduly backendu
 
 | Modul | Opis |
@@ -100,6 +115,8 @@ Komunikacja: prosty protokol JSON (linia po linii):
 | `core/audit.py` | Append-only audit log |
 | `core/tools.py` | Definicje narzedzi OpenAI function calling |
 | `config/settings.py` | Konfiguracja z `.env` |
+| `config/providers.py` | Presety providerow LLM, wlasni providerzy, filtrowanie list modeli |
+| `configure.py` | Kreator konfiguracji providera (`python3 -m backend.configure`) |
 | `config/prompts.py` | System prompt (niemodyfikowalny) |
 
 ---

@@ -1,5 +1,34 @@
 # Historia zmian -- PipeClaw
 
+## v0.5.0 (2026-09-11)
+
+### Providerzy LLM
+
+- Dodano kreator konfiguracji `python3 -m backend.configure`: wybor providera, klucz API, lista modeli pobierana na zywo z API providera i test tool callingu przed zapisaniem `.env`. Kreator nie wymaga instalowania zadnych pakietow
+- Dodano 14 wbudowanych providerow: Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Groq, DeepSeek, Mistral, xAI Grok, Z.ai (GLM), Moonshot Kimi, Together AI, Cerebras, Fireworks i lokalna Ollama
+- Wlasnego providera (dowolny endpoint zgodny z OpenAI: vLLM, LM Studio, LiteLLM, proxy firmowe) mozna dodac kreatorem -- trafia do `backend/data/providers.json`. Wpis o id wbudowanego providera nadpisuje go, wiec nieaktualny adres da sie poprawic bez nowej wersji PipeClaw
+- Nowe zmienne: `LLM_PROVIDER`, `LLM_REASONING_EFFORT`, `LLM_TIMEOUT`. Klucz mozna tez podac przez zmienna providera, np. `OPENAI_API_KEY` albo `GEMINI_API_KEY`
+- Dodano tryby `--check` (test obecnej konfiguracji), `--models` (aktualne modele) i `--providers`
+
+### Aktualne modele
+
+- Zmieniono domyslny model z `gemini-2.0-flash` na `gemini-3.8-flash`. Google wylaczyl `gemini-2.0-flash`, przez co swieza instalacja z domyslnym `.env` nie dzialala
+- Backend przy starcie sprawdza w tle, czy skonfigurowany model jest nadal dostepny u providera, i wypisuje w logach ostrzezenie z propozycjami, jesli zostal wycofany
+- Podniesiono domyslny limit czasu odpowiedzi LLM z 60 do 120 sekund -- modele rozumujace potrafia odpowiadac dluzej
+
+### Zgodnosc
+
+- Stare pliki `.env` (tylko `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`) dzialaja dalej -- provider jest rozpoznawany po adresie. Jesli masz w nim `LLM_MODEL=gemini-2.0-flash`, uruchom `python3 -m backend.configure`
+- Agent nie wysyla juz parametru `tool_choice` -- przy podanych narzedziach i tak domyslnie jest `auto`, a czesc providerow (np. Ollama) go nie obsluguje
+- W `docker-compose.yml` dodano `host.docker.internal` (dostep do Ollamy na hoscie) i przekazywanie nowych zmiennych
+
+### Dokumentacja i testy
+
+- Przepisano sekcje providerow w `docs/backend.md`; instalacja w `README.md` i `docs/quickstart.md` zaczyna sie od kreatora
+- Dodano 57 testow (rejestr providerow, rozwiazywanie konfiguracji, kreator); lacznie 151
+
+---
+
 ## v0.4.1 (2026-09-09)
 
 ### Odpowiedzi agenta

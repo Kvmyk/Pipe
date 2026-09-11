@@ -27,6 +27,7 @@ VERSION_FILE = ROOT / "VERSION"
 # grupe nazwana (?P<ver>...) obejmujaca sam numer wersji.
 PATTERNS: list[tuple[str, str]] = [
     ("README.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
+    ("CLAUDE.md", r"\*\*PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
     ("AGENTS.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?) status\*\*"),
     ("docs/backend.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/cli.md", r"PipeClaw v(?P<ver>\d+\.\d+(?:\.\d+)?)"),

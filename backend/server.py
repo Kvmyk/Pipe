@@ -116,6 +116,12 @@ async def _send(writer: asyncio.StreamWriter, data: dict) -> None:
     await writer.drain()
 
 
+async def _report_model_status() -> None:
+    warning = await get_agent().verify_model()
+    if warning:
+        print(f"[VPS Agent] [OSTRZEZENIE] {warning}", flush=True)
+
+
 async def main() -> None:
     """Punkt wejścia serwera."""
     try:
@@ -148,9 +154,14 @@ async def main() -> None:
 
     print(f"[VPS Agent] Unix socket : {socket_path}", flush=True)
     print(f"[VPS Agent] TCP         : {tcp_host}:{tcp_port} (tylko localhost — użyj SSH tunnel)", flush=True)
-    print(f"[VPS Agent] Model       : {settings.LLM_MODEL}", flush=True)
+    print(f"[VPS Agent] Provider    : {settings.LLM.provider_name} ({settings.LLM.base_url})", flush=True)
+    print(f"[VPS Agent] Model       : {settings.LLM.model}", flush=True)
     print(f"[VPS Agent] Audit log   : {settings.AUDIT_LOG_PATH}", flush=True)
     print(f"[VPS Agent] Serwer gotowy. Ctrl+C aby zatrzymać.", flush=True)
+
+    # Weryfikacja modelu w tle — nie blokuje startu, a wycofany model
+    # (np. po latach bez aktualizacji .env) od razu widac w logach.
+    asyncio.create_task(_report_model_status())
 
     async with unix_server, tcp_server:
         await asyncio.gather(
