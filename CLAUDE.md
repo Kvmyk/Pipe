@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**PipeClaw v0.5.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
+**PipeClaw v0.5.1** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -61,6 +61,7 @@ Telegram bot (same host) --Unix /tmp/vps-agent.sock ─┤
 | `backend/config/prompts.py` | `BASE_SYSTEM_PROMPT` + `TELEGRAM_SYSTEM_PROMPT` (Telegram variant mandates HTML, not Markdown) |
 | `clients/cli/cli.py` | Spawns/manages the SSH tunnel, then a `rich` REPL |
 | `clients/telegram/bot.py` | Unix-socket client, per-`user_id` session, inline TAK/NIE confirm keyboard, user-ID whitelist |
+| `clients/telegram/tg_format.py` | Backend text → Telegram HTML: code spans kept literal, everything outside allowed tags escaped. No `telegram` import, so it is tested from `backend/tests/` |
 
 ### Tool dispatch
 
@@ -74,6 +75,7 @@ async def handle_x(agent, session, tool_call, args) -> AsyncGenerator[str, None]
 ```
 - Yielded strings stream to the **user**; the tool result for the **LLM** is appended by the handler itself to `session.messages` as `{"role": "tool", "tool_call_id": ..., "content": ...}`. Every path must append exactly one such entry, or the next LLM call fails on an unanswered tool call.
 - Only yield protocol messages (`[POTWIERDZ]`, `[ODMOWA]`). Never yield raw command output — the system prompt tells the model to interpret rather than echo it, so yielding it too shows the user the same thing twice.
+- Wrap any command or path shown in a protocol message with `as_code()` (`backend/core/text.py`), never with literal backticks. It picks a fence longer than any backtick run inside and uses a block for multi-line text, so both clients (CLI via `rich.Markdown`, Telegram via `tg_format`) render the value exactly. For a confirmation, show exactly the string stored in `ConfirmationRequest.command` — that is what runs after TAK.
 - A handler that yields nothing still has to be an async generator — the codebase uses a trailing unreachable `yield` after `return` for this.
 - Setting `session.pending_confirmation` aborts the loop; `server.py` sends `status: "confirm"` and waits for the client's confirm frame.
 
@@ -126,4 +128,5 @@ The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump
 ## Known inconsistencies to be aware of
 
 - `agent.py` still carries the pre-refactor `VPSAgent._handle_*` methods (~500 lines). Dispatch no longer reaches them — they are dead code kept for reference; prefer `core/handlers/` when changing tool behaviour.
+- `cron_manage` is non-functional: the schema in `tools.py` sends `operation` / `schedule` / `command`, but the handler reads `action` / `cron_entry`, so every call falls through to `crontab -l`. The Docker image also has no `crontab` binary, and the host's cron is not reachable from the container. The add/remove branches build entry-scoped, `shlex`-quoted commands; they must never go back to `crontab -r`.
 - `AGENTS.md` is stale in places (claims there is no test suite, points at `agent.py:_handle_*` as the handler pattern).

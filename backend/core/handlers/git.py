@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator
 from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
+from backend.core.text import as_code
 
 
 async def handle_git_command(
@@ -36,7 +37,7 @@ async def handle_git_command(
     if classification == "forbidden":
         from backend.core import audit
         await audit.log_blocked(session.interface, f"git_command({git_cmd})")
-        yield f"[ODMOWA] Komenda git `{git_cmd}` jest zabroniona."
+        yield f"[ODMOWA] Komenda git {as_code(git_cmd)} jest zabroniona."
         session.messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
@@ -51,7 +52,7 @@ async def handle_git_command(
             command=git_cmd,
             classification="confirm",
         )
-        yield f"[POTWIERDZ] Git operacja wymaga potwierdzenia: `{git_cmd}`"
+        yield f"[POTWIERDZ] Git operacja wymaga potwierdzenia: {as_code(git_cmd)}"
         return
 
     # Safe — wykonaj

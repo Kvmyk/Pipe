@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator
 from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
+from backend.core.text import as_code
 
 
 async def handle_execute_command(
@@ -38,7 +39,7 @@ async def handle_execute_command(
     if classification == "forbidden":
         from backend.core import audit
         await audit.log_blocked(session.interface, f"execute_command({command})")
-        yield f"[ODMOWA] Komenda `{command}` jest zabroniona."
+        yield f"[ODMOWA] Komenda {as_code(command)} jest zabroniona."
         session.messages.append(
             {
                 "role": "tool",
@@ -55,7 +56,7 @@ async def handle_execute_command(
             command=command,
             classification="confirm",
         )
-        yield f"[POTWIERDZ] Operacja wymaga potwierdzenia: `{command}`"
+        yield f"[POTWIERDZ] Operacja wymaga potwierdzenia: {as_code(command)}"
         return
 
     # Safe — wykonaj natychmiast

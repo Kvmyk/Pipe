@@ -256,7 +256,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.5.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.5.1[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
             "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla PipeClaw (VPS Management Agent).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-PipeClaw v0.5.0
+PipeClaw v0.5.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)
@@ -13,7 +13,7 @@ Funkcje:
   - /status -- status serwera
   - /historia -- ostatnie 10 wpisow z audit logu
   - InlineKeyboard dla potwierdzen (TAK / NIE)
-  - HTML parse mode (nie MarkdownV2 -- unikanie problemow z escapowaniem)
+  - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
 
 Konfiguracja w .env (clients/telegram/.env):
   TELEGRAM_BOT_TOKEN=your_bot_token
@@ -27,7 +27,6 @@ import asyncio
 import html
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -52,6 +51,8 @@ except ImportError:
     print("Blad: zainstaluj zaleznosci: pip install -r requirements.txt")
     sys.exit(1)
 
+from tg_format import collect_response_text, split_message, to_plain_text, to_telegram_html
+
 # --- Konfiguracja ---
 BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 _raw_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
@@ -69,31 +70,6 @@ SERVER_STATUS_MESSAGE = (
     "uptime, obciazenie CPU (load average i/lub procent), zuzycie RAM (na podstawie sekcji MEMORY "
     "korzystajac np. z outputu free -m), wolne miejsce na dysku. Formatuj w HTML dla Telegrama."
 )
-
-
-# --- HTML helper ---
-
-
-def _strip_markdown_artifacts(text: str) -> str:
-    """
-    Czysci resztki Markdowna ktore LLM moze omylem wygenerowac.
-    Konwertuje na czytelny tekst z HTML.
-    """
-    # Zamien ```blok``` na <pre>blok</pre>
-    text = re.sub(r'```[\w]*\n?(.*?)```', r'<pre>\1</pre>', text, flags=re.DOTALL)
-    # Zamien `inline` na <code>inline</code>
-    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
-    # Zamien **bold** na <b>bold</b>
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    # Zamien *bold* na <b>bold</b> (Telegram MarkdownV2 style)
-    text = re.sub(r'\*(.+?)\*', r'<b>\1</b>', text)
-    # Zamien _italic_ na <i>italic</i>
-    text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<i>\1</i>', text)
-    # Usun MarkdownV2 escape backslashe (np. \- \. \! \( \))
-    text = re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!\\])', r'\1', text)
-    # Usun naglowki Markdowna
-    text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
-    return text
 
 
 # --- Socket Client ---
@@ -186,51 +162,6 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def _collect_response_text(responses: list[dict]) -> tuple[str, bool]:
-    """
-    Zbiera tekst odpowiedzi z listy fragmentow.
-
-    Returns:
-        (text, needs_confirmation)
-    """
-    parts: list[str] = []
-    needs_confirm = False
-
-    for resp in responses:
-        text = resp.get("response", "")
-        status = resp.get("status", "ok")
-        if text:
-            # Tagi statusowe -- tylko ODMOWA jest widoczna
-            # [SUKCES] -- usuniety calkowicie
-            text = text.replace("[SUKCES]", "")
-            text = text.replace("[BLAD]", "<b>BLAD:</b>")
-            text = text.replace("[POTWIERDZ]", "<b>WYMAGA POTWIERDZENIA:</b>")
-            text = text.replace("[ODMOWA]", "<b>ODMOWA:</b>")
-
-            parts.append(text)
-        if status == "confirm":
-            needs_confirm = True
-
-    # Jeśli wiele części odpowiedzi, wybierz najbardziej zwięzłe podsumowanie
-    # Preferuj fragmenty zawierające czytelne podsumowanie serwera.
-    if parts:
-        # Jeśli ostatni fragment jest prostym komunikatem o błędzie, zwróć go
-        last = parts[-1].strip()
-        if last.lower().startswith("błąd:") or last.lower().startswith("blad:"):
-            return last, needs_confirm
-
-        # W przeciwnym razie wybierz ostatni fragment który nie zaczyna się od '['
-        for part in reversed(parts):
-            txt = part.strip()
-            if txt and not txt.startswith("["):
-                return part, needs_confirm
-
-        # Fallback: zwróć ostatni fragment
-        return parts[-1], needs_confirm
-
-    return "", needs_confirm
-
-
 async def _send_response(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -238,16 +169,16 @@ async def _send_response(
     user_id: int,
 ) -> None:
     """Wysyla odpowiedz do uzytkownika (z obsluga potwierdzen)."""
-    text, needs_confirm = _collect_response_text(responses)
+    text, needs_confirm = collect_response_text(responses)
 
     if not text:
         return
 
-    # Cleanup: usun potencjalne resztki Markdowna
-    text = _strip_markdown_artifacts(text)
+    # HTML Telegrama: resztki Markdowna -> tagi, komendy w backtickach doslownie
+    text = to_telegram_html(text)
 
     # Podziel dlugie wiadomosci (Telegram limit: 4096 znakow)
-    chunks = _split_message(text)
+    chunks = split_message(text)
 
     for i, chunk in enumerate(chunks):
         is_last = i == len(chunks) - 1
@@ -262,10 +193,9 @@ async def _send_response(
         except Exception:
             # Fallback -- wyslij bez formatowania jesli HTML sie nie sparsuje
             try:
-                # Usun wszystkie tagi HTML i wyslij jako plain text
-                clean_text = re.sub(r'<[^>]+>', '', chunk)
+                # Usun tagi i rozwin encje — tekst komendy zostaje nienaruszony
                 await update.effective_message.reply_text(
-                    clean_text,
+                    to_plain_text(chunk),
                     reply_markup=reply_markup,
                 )
             except Exception:
@@ -273,25 +203,6 @@ async def _send_response(
                     "Blad formatowania odpowiedzi. Sprobuj ponownie.",
                     reply_markup=reply_markup,
                 )
-
-
-def _split_message(text: str, max_length: int = 4000) -> list[str]:
-    """Dzieli dluga wiadomosc na kawalki <= max_length znakow."""
-    if len(text) <= max_length:
-        return [text]
-
-    chunks: list[str] = []
-    while text:
-        if len(text) <= max_length:
-            chunks.append(text)
-            break
-        # Znajdz ostatni znak nowej linii przed limitem
-        split_at = text.rfind("\n", 0, max_length)
-        if split_at <= 0:
-            split_at = max_length
-        chunks.append(text[:split_at])
-        text = text[split_at:].lstrip("\n")
-    return chunks
 
 
 # --- Handlery komend ---

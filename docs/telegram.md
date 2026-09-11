@@ -1,6 +1,6 @@
 # Telegram Bot -- PipeClaw
 
-PipeClaw v0.5.0
+PipeClaw v0.5.1
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -22,6 +22,8 @@ Obslugiwane tagi HTML:
 - `<u>podkreslenie</u>` -- jesli potrzebne
 
 Bot automatycznie konwertuje resztki Markdowna (jesli LLM je wygeneruje) na odpowiadajace tagi HTML.
+
+Tekst w backtickach -- w tym komendy w potwierdzeniach -- jest pokazywany doslownie, bez konwersji Markdowna. Przed kliknieciem TAK widzisz wiec dokladnie te komende, ktora zostanie wykonana (lacznie z `*`, `_`, `\\`, `<`, `&` i backtickami). Znaki `<`, `>` i `&` poza tagami sa escapowane automatycznie, wiec Telegram nie odrzuca wiadomosci. Kod formatowania: `clients/telegram/tg_format.py`.
 
 ## Wymagania
 

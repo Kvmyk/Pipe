@@ -1,5 +1,27 @@
 # Historia zmian -- PipeClaw
 
+## v0.5.1 (2026-09-11)
+
+### Potwierdzenia operacji
+
+- Naprawiono blad: w Telegramie potwierdzenie moglo pokazywac inna komende niz ta, ktora zostanie wykonana. Gwiazdki, podkreslniki i backslashe byly zamieniane na formatowanie (`rm /var/log/*.gz /tmp/*.old` wyswietlalo sie jako `rm /var/log/.gz /tmp/.old`), a komenda z `<` byla ucinana (`mysql produkcja < drop_all.sql` wyswietlalo sie jako `mysql produkcja`)
+- Komendy w potwierdzeniach i odmowach sa pokazywane znak w znak -- w Telegramie i w CLI -- takze gdy zawieraja backticki (np. podstawienie komendy) albo kilka linii
+- Potwierdzenie operacji Docker pokazuje pelna komende `docker ...`, ktora zostanie wykonana
+- Bot wysyla poprawny HTML Telegrama: `<`, `>` i `&` poza tagami sa escapowane, wiec wiadomosc nie jest odrzucana
+- Tryb awaryjny (zwykly tekst) usuwa juz tylko prawdziwe tagi, a nie wszystko miedzy `<` a `>`
+
+### Cron
+
+- Usunieto niebezpieczna sciezke w `cron_manage`: "usuniecie wpisu" zapisywalo do wykonania `crontab -r`, czyli wyczyszczenie calego crontaba, a od v0.4.0 taka komenda byla wykonywana po zatwierdzeniu. W praktyce sciezka byla nieosiagalna (patrz ograniczenie nizej). Usuwanie dotyczy teraz wylacznie wskazanej linii, dodawanie dopisuje wpis do istniejacego crontaba, wpis jest bezpiecznie cytowany, a zabronione polecenia w nim sa odrzucane
+- Znane ograniczenie: `cron_manage` nadal nie dziala -- handler czyta inne nazwy parametrow niz te, ktore wysyla model, a obraz Dockera nie zawiera programu `crontab`
+
+### Wewnetrzne
+
+- Formatowanie odpowiedzi dla Telegrama wydzielono do `clients/telegram/tg_format.py` (testowalne bez biblioteki Telegrama)
+- Dodano 82 testy (formatowanie w Telegramie i CLI, cron); lacznie 233
+
+---
+
 ## v0.5.0 (2026-09-11)
 
 ### Providerzy LLM

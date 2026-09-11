@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator
 from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
+from backend.core.text import as_code
 
 
 async def handle_docker_manage(
@@ -34,7 +35,7 @@ async def handle_docker_manage(
     if classification == "forbidden":
         from backend.core import audit
         await audit.log_blocked(session.interface, f"docker_manage({full_cmd})")
-        yield f"[ODMOWA] Komenda docker `{docker_cmd}` jest zabroniona."
+        yield f"[ODMOWA] Komenda docker {as_code(docker_cmd)} jest zabroniona."
         session.messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
@@ -49,7 +50,7 @@ async def handle_docker_manage(
             command=full_cmd,
             classification="confirm",
         )
-        yield f"[POTWIERDZ] Operacja docker wymaga potwierdzenia: `{docker_cmd}`"
+        yield f"[POTWIERDZ] Operacja docker wymaga potwierdzenia: {as_code(full_cmd)}"
         return
 
     # Safe — wykonaj

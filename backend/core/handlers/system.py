@@ -5,11 +5,13 @@ Handler dla operacji systemowych (change_directory, system_stats, network_info, 
 from __future__ import annotations
 
 from typing import Any, AsyncGenerator
+import shlex
 from pathlib import Path
 
 from backend.core import executor
 from backend.core.security import classify_command
 from backend.core.session import Session, ConfirmationRequest
+from backend.core.text import as_code
 
 
 async def handle_change_directory(
@@ -265,24 +267,45 @@ async def handle_cron_manage(
                 "content": "Błąd: brak cron_entry do dodania",
             })
             return
-         # Wymaga potwierdzenia
+        # Po potwierdzeniu _execute_tool_confirmed wykona dokladnie te komende,
+        # wiec musi byc poprawna i pokazana uzytkownikowi znak w znak.
+        # printf zamiast echo — echo w sh interpretuje backslashe.
+        cmd = f"{{ crontab -l 2>/dev/null; printf '%s\\n' {shlex.quote(cron_entry)}; }} | crontab -"
+        if classify_command(cmd) == "forbidden":
+            from backend.core import audit
+            await audit.log_blocked(session.interface, f"cron_manage(add: {cron_entry})")
+            yield f"[ODMOWA] Wpis cron {as_code(cron_entry)} zawiera zabronione polecenie."
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": "ODMOWA SYSTEMOWA: Wpis cron zawiera zakazana operacje.",
+            })
+            return
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name="cron_manage",
-            command=f"crontab -e (add: {cron_entry})",
+            command=cmd,
             classification="confirm",
         )
-        yield f"[POTWIERDZ] Dodanie wpisu cron wymaga potwierdzenia: {cron_entry}"
+        yield f"[POTWIERDZ] Dodanie wpisu cron wymaga potwierdzenia: {as_code(cmd)}"
         return
     elif action == "remove":
-        # Wymaga potwierdzenia
+        if not cron_entry:
+            session.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": "Błąd: podaj cron_entry — dokladna linie crontaba do usuniecia",
+            })
+            return
+        # Usuwa wylacznie linie identyczne z cron_entry — nigdy calego crontaba.
+        cmd = f"crontab -l | grep -vxF -- {shlex.quote(cron_entry)} | crontab -"
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name="cron_manage",
-            command=f"crontab -r",
+            command=cmd,
             classification="confirm",
         )
-        yield f"[POTWIERDZ] Usunięcie wpisu cron wymaga potwierdzenia"
+        yield f"[POTWIERDZ] Usunięcie wpisu cron wymaga potwierdzenia: {as_code(cmd)}"
         return
     else:
         cmd = "crontab -l"

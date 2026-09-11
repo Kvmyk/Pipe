@@ -1,6 +1,6 @@
 # PipeClaw
 
-**v0.5.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.5.1** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---

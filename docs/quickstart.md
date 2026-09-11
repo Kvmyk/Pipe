@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-PipeClaw v0.5.0
+PipeClaw v0.5.1
 
 ## Wymagania wstepne
 

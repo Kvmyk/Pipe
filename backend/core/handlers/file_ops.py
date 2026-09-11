@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator
 from backend.core import executor
 from backend.core.security import classify_file_write, validate_workspace_access
 from backend.core.session import Session, ConfirmationRequest
+from backend.core.text import as_code
 
 
 async def handle_read_file(
@@ -109,7 +110,7 @@ async def handle_write_file(
     if classification == "forbidden":
         from backend.core import audit
         await audit.log_blocked(session.interface, f"write_file({path})")
-        yield f"[ODMOWA] Nie mogę zapisać do `{path}`. Ta ścieżka jest chroniona."
+        yield f"[ODMOWA] Nie mogę zapisać do {as_code(path)}. Ta ścieżka jest chroniona."
         session.messages.append(
             {
                 "role": "tool",
@@ -128,4 +129,4 @@ async def handle_write_file(
         file_path=path,
         file_content=content,
     )
-    yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znakow)"
+    yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: {as_code(path)} ({len(content)} znakow)"
