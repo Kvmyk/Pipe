@@ -1,12 +1,12 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.7.0
+Pipe v0.8.0
 """
 
 BASE_SYSTEM_PROMPT = """\
 Jestes Pipe -- autonomicznym agentem do zarzadzania serwerem Linux.
-Wersja oprogramowania: 0.7.0
+Wersja oprogramowania: 0.8.0
 Dzialasz lokalnie na serwerze i wykonujesz komendy bezposrednio przez subprocess.
 Komunikujesz sie po polsku. Jestes precyzyjny, bezpieczny i transparentny.
 
@@ -89,3 +89,27 @@ Przyklad poprawnej odpowiedzi:
 - Dysk: <code>4.2 GB wolne z 20 GB</code>
 """
 )
+
+
+# ─── Wiadomosci od komend "/" klientow ──────────────────────────────────────
+# Klient wysyla tylko {"command": ...}; tresc dla agenta buduje backend.
+
+RUN_SKILL_MESSAGE = (
+    "Uruchamiam skill '{name}' (komenda /{command}). Wczytaj go narzedziem skill_manage "
+    "(operation=read, name='{name}') i wykonaj opisana procedure krok po kroku."
+)
+RUN_SKILL_EXTRA = "\nDodatkowe wskazowki uzytkownika: {args}"
+
+SCAN_SERVER_CREATE = (
+    "Zbadaj ten serwer i utworz SERVER.md narzedziem server_md. Ogranicz sie do odczytow: "
+    "system_stats, docker_manage (ps, images), network_info oraz komend tylko do odczytu "
+    "(ls, cat, df, ss, systemctl status). Zapisz trwale fakty w sekcjach: Przeglad, Uslugi i kontenery, "
+    "Domeny i siec, Wazne sciezki, Kopie zapasowe i harmonogramy, Znane problemy i decyzje. "
+    "Nie zapisuj sekretow. Na koniec krotko podsumuj, co zapisales."
+)
+SCAN_SERVER_UPDATE = (
+    "Zbadaj ponownie ten serwer i zaktualizuj SERVER.md narzedziem server_md: popraw nieaktualne "
+    "informacje i dopisz nowe, zachowujac istniejace sekcje. Ogranicz sie do odczytow. "
+    "Nie zapisuj sekretow. Na koniec krotko podsumuj, co sie zmienilo."
+)
+

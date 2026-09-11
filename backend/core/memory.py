@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -196,13 +196,16 @@ def list_skills() -> list[Skill]:
     for entry in sorted(root.iterdir()):
         path = entry / "SKILL.md"
         if entry.is_dir() and _SKILL_NAME.match(entry.name) and path.is_file():
-            skills.append(parse_skill(path.read_text(encoding="utf-8"), entry.name))
+            # Nazwa kanoniczna to nazwa katalogu (zwalidowana) — naglowek mogl byc edytowany recznie.
+            skills.append(replace(parse_skill(path.read_text(encoding="utf-8"), entry.name), name=entry.name))
     return skills
 
 
 def read_skill(name: str) -> Skill | None:
     path = _skill_file(name)
-    return parse_skill(path.read_text(encoding="utf-8"), path.parent.name) if path.is_file() else None
+    if not path.is_file():
+        return None
+    return replace(parse_skill(path.read_text(encoding="utf-8"), path.parent.name), name=path.parent.name)
 
 
 def save_skill(name: str, description: str, content: str) -> bool:
@@ -235,6 +238,48 @@ def delete_skill(name: str) -> bool:
     except OSError:
         pass  # katalog niepusty — zostawiamy, nie usuwamy cudzych plikow
     return True
+
+
+# ─── Komendy "/" dla skilli ─────────────────────────────────────────────────
+
+# Komendy wbudowane w klientow. Skill o takiej nazwie nie dostaje wlasnej
+# komendy — jest dostepny przez /skille albo zwykly tekst.
+RESERVED_COMMANDS = frozenset({"start", "status", "server", "skille", "historia", "pomoc", "help", "exit"})
+MAX_COMMAND_CHARS = 32  # limit Telegrama
+
+
+def command_name(skill_name: str) -> str:
+    """Komenda '/' dla skilla. Telegram dopuszcza tylko [a-z0-9_], do 32 znakow."""
+    return re.sub(r"[^a-z0-9_]", "_", skill_name.lower().replace("-", "_"))[:MAX_COMMAND_CHARS]
+
+
+def skill_commands(skills: list[Skill] | None = None) -> list[dict[str, str]]:
+    """
+    Skille z przypisanymi komendami: [{name, description, command}].
+    `command` jest pusty, gdy nazwa jest zarezerwowana albo po skroceniu do
+    32 znakow koliduje z wczesniejszym skillem (wygrywa pierwszy alfabetycznie).
+    """
+    used = set(RESERVED_COMMANDS)
+    result: list[dict[str, str]] = []
+    for skill in list_skills() if skills is None else skills:
+        command = command_name(skill.name)
+        if command in used:
+            command = ""
+        else:
+            used.add(command)
+        result.append({"name": skill.name, "description": skill.description, "command": command})
+    return result
+
+
+def find_skill_command(token: str, skills: list[dict[str, str]] | None = None) -> dict[str, str] | None:
+    """Odszukuje skill po nazwie ('odnow-certyfikat') albo komendzie ('odnow_certyfikat', '/odnow_certyfikat')."""
+    token = token.strip().lstrip("/").lower()
+    if not token:
+        return None
+    for entry in skill_commands() if skills is None else skills:
+        if token == entry["name"] or (entry["command"] and token == entry["command"]):
+            return entry
+    return None
 
 
 # ─── Kontekst do system promptu ─────────────────────────────────────────────

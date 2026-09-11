@@ -1,5 +1,32 @@
 # Historia zmian -- Pipe
 
+## v0.8.0 (2026-09-11)
+
+### Komendy "/" w Telegramie i CLI
+
+- Dodano `/server`: pokazuje SERVER.md, a gdy go nie ma -- agent bada serwer i tworzy plik. `/server aktualizuj` bada serwer ponownie
+- Dodano `/skille` (lista skilli) i `/pomoc` (lista komend)
+- Kazdy skill ma wlasna komende, np. `/odnow_certyfikat`; do komendy mozna dopisac wskazowki (`/odnow_certyfikat tylko dla example.com`). W CLI dziala tez forma z myslnikiem
+- Telegram: bot sam ustawia menu podpowiedzi po wpisaniu `/` i odswieza je po kazdej wiadomosci, wiec nowy skill pojawia sie w menu od razu. Menu jest ustawiane osobno dla czatu kazdego dozwolonego uzytkownika -- osoby spoza listy nie widza nazw ani opisow skilli
+- Telegram: na nieznana komende bot odpowiada podpowiedzia (wczesniej milczal)
+- CLI: tekst zaczynajacy sie od `/`, ktory nie jest komenda (np. `/var/log jest pelny?`), nadal trafia do agenta jak zwykla wiadomosc
+
+### Protokol
+
+- Nowy typ zadania `{"command": ...}`: `list_skills`, `server_md`, `scan_server`, `run_skill`. Zmiana jest addytywna -- dotychczasowe klienty dzialaja bez zmian. Tresc wiadomosci dla agenta buduje backend, nie klient
+
+### Poprawki
+
+- Nazwa skilla to zawsze nazwa jego katalogu -- reczna edycja naglowka w SKILL.md nie psuje juz komendy ani odczytu
+
+### Dokumentacja
+
+- Opisano komendy w `docs/telegram.md` i `docs/cli.md`, nowy typ zadania w `docs/protocol.md`
+- Dodano instrukcje korzystania z CLI bezposrednio na serwerze (`--no-tunnel`)
+- Dodano 35 testow (komendy w backendzie i klientach); lacznie 332
+
+---
+
 ## v0.7.0 (2026-09-11)
 
 ### Pamiec agenta

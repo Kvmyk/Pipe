@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.7.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
+**Pipe v0.8.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -62,7 +62,7 @@ Telegram bot (same host) --Unix /tmp/vps-agent.sock ─┤
 | `backend/config/prompts.py` | `BASE_SYSTEM_PROMPT` + `TELEGRAM_SYSTEM_PROMPT` (Telegram variant mandates HTML, not Markdown) |
 | `clients/cli/cli.py` | Spawns/manages the SSH tunnel, then a `rich` REPL |
 | `clients/telegram/bot.py` | Unix-socket client, per-`user_id` session, inline TAK/NIE confirm keyboard, user-ID whitelist |
-| `clients/telegram/tg_format.py` | Backend text → Telegram HTML: code spans kept literal, everything outside allowed tags escaped. No `telegram` import, so it is tested from `backend/tests/` |
+| `clients/telegram/tg_format.py` | Slash-command helpers (parse, menu, skill list) and backend text → Telegram HTML: code spans kept literal, everything outside allowed tags escaped. No `telegram` import, so it is tested from `backend/tests/` |
 
 ### Tool dispatch
 
@@ -105,9 +105,12 @@ The container mounts the host root at `/hostfs` (read-only) with `/root` re-moun
 ```
 client → server   {"message": "...", "session_id": "<uuid>", "interface": "cli" | "telegram:<user_id>", "token": "..."}
 client → server   {"confirm": true|false, "session_id": "<uuid>"}
+client → server   {"command": "list_skills" | "server_md" | "scan_server" | "run_skill", "session_id": "<uuid>", "name"?: "...", "args"?: "..."}
 server → client   {"response": "...", "status": "ok" | "confirm" | "error", "done": false}   × N
 server → client   {"response": "", "status": "ok", "done": true}
 ```
+Command requests back the clients' slash commands: `list_skills` / `server_md` reply with a single `done` frame carrying `data`; `scan_server` / `run_skill` stream like a message. The text sent to the agent is built server-side from `prompts.py` (`SCAN_SERVER_*`, `RUN_SKILL_*`) — clients never compose prompts, and they have no filesystem access to `DATA_DIR`. Skill → slash-command names come from `memory.skill_commands()` (Telegram rules: `[a-z0-9_]`, ≤32 chars, builtins reserved, first alphabetically wins a truncation collision). The bot sets its `/` menu per allowed chat (`BotCommandScopeChat`), never globally, so skill descriptions don't leak to strangers, and refreshes it after every update.
+
 `token` is required only when `AGENT_TOKEN` is set in `backend/.env`; it is checked for **every** request type, including `confirm`. `server.py` derives `status` by **string-matching the chunk text** (`[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`), so those literal tags in handler output and in `prompts.py` are load-bearing protocol, not cosmetics — clients key their confirm UI off the resulting `status`.
 
 ### Security model

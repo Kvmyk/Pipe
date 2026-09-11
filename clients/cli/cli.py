@@ -43,6 +43,7 @@ try:
     from rich.text import Text
     from rich.spinner import Spinner
     from rich.live import Live
+    from rich.markup import escape
 except ImportError:
     print("Błąd: zainstaluj zależności: pip install -r requirements.txt")
     sys.exit(1)
@@ -213,6 +214,10 @@ class RemoteClient:
         """Wysyła potwierdzenie/odmowę."""
         return await self._send({"confirm": confirmed, "session_id": self.session_id})
 
+    async def send_command(self, command: str, **fields) -> list[dict]:
+        """Zadanie {"command": ...}: list_skills, server_md, scan_server, run_skill."""
+        return await self._send({"command": command, "session_id": self.session_id, "interface": "cli", **fields})
+
     async def _send(self, data: dict) -> list[dict]:
         """Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`."""
         if not self._writer or not self._reader:
@@ -256,10 +261,11 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.7.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.8.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-            "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
-            "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",
+            "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/server[/bold cyan]  "
+            "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
+            "[bold cyan]/exit[/bold cyan][/dim]",
             border_style="cyan",
         )
     )
@@ -319,6 +325,73 @@ async def _handle_responses(
     return False
 
 
+# ─── Komendy "/" ──────────────────────────────────────────────────────────────
+
+SCAN_WORDS = ("aktualizuj", "odswiez", "odśwież", "skanuj")
+
+HELP_TEXT = """**Komendy**
+
+- `/status` — stan serwera
+- `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
+- `/skille` — zapisane procedury; każda ma własną komendę, np. `/odnow_certyfikat`
+- `/pomoc` — ta lista
+- `/exit` — wyjście
+
+Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
+
+
+def _response_data(responses: list[dict]) -> dict:
+    """Pole 'data' z odpowiedzi na zadanie {"command": ...}; błąd backendu -> RuntimeError."""
+    for resp in reversed(responses):
+        if "data" in resp:
+            return resp["data"]
+    error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or "brak danych"
+    raise RuntimeError(error)
+
+
+async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
+    """
+    Komendy /server, /skille, /pomoc i skille. Zwraca False, gdy to nie jest
+    komenda — wtedy tekst idzie do agenta jak zwykła wiadomość (np. '/var/log jest pełny?').
+    """
+    head, _, args = user_input.partition(" ")
+    name, args = head[1:].lower(), args.strip()
+
+    if name == "server":
+        content = "" if args.lower() in SCAN_WORDS else _response_data(await client.send_command("server_md")).get("content", "")
+        if content.strip():
+            console.print(Markdown(content))
+            console.print("[dim]/server aktualizuj — zbadaj serwer ponownie[/dim]")
+        else:
+            console.print("[dim]" + ("Badam serwer i aktualizuję SERVER.md..." if args.lower() in SCAN_WORDS
+                                     else "SERVER.md jeszcze nie istnieje. Badam serwer i tworzę go...") + "[/dim]")
+            await _handle_responses(await client.send_command("scan_server"), client)
+        return True
+
+    if name in ("pomoc", "help"):
+        console.print(Markdown(HELP_TEXT))
+        return True
+
+    if not name:
+        return False
+    skills = _response_data(await client.send_command("list_skills")).get("skills", [])
+
+    if name == "skille":
+        if not skills:
+            console.print('Brak zapisanych skilli. Po wykonaniu wieloetapowej procedury poproś: "zapisz to jako skill".')
+        for skill in skills:
+            label = f"/{skill['command']}" if skill["command"] else f"{skill['name']} (bez komendy)"
+            console.print(f"  [bold cyan]{escape(label)}[/bold cyan] — {escape(skill['description'])}")
+        return True
+
+    entry = next((s for s in skills if name == s["name"] or (s["command"] and name == s["command"])), None)
+    if entry is None:
+        return False
+    console.print(f"[dim]Uruchamiam skill {escape(entry['name'])}...[/dim]")
+    await _handle_responses(await client.send_command("run_skill", name=entry["name"], args=args), client)
+    return True
+
+
 # ─── Główna pętla REPL ────────────────────────────────────────────────────────
 
 async def run_cli(client: RemoteClient, host: str) -> None:
@@ -370,6 +443,18 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                     console.print(f"[red]Błąd: {exc}[/red]")
                 console.print()
                 continue
+
+            # /server, /skille, /pomoc i skille jako komendy
+            if user_input.startswith("/"):
+                console.print()
+                try:
+                    handled = await _handle_slash(user_input, client)
+                except Exception as exc:
+                    console.print(f"[red]Błąd: {escape(str(exc))}[/red]")
+                    handled = True
+                if handled:
+                    console.print()
+                    continue
 
             console.print()
             try:

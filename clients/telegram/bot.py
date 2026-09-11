@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (VPS Management Agent).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)
@@ -12,6 +12,9 @@ Funkcje:
   - /start -- przywitanie
   - /status -- status serwera
   - /historia -- ostatnie 10 wpisow z audit logu
+  - /server -- SERVER.md (tworzy go, jesli nie istnieje; /server aktualizuj -- skan od nowa)
+  - /skille, /pomoc -- lista skilli i komend; kazdy skill ma wlasna komende /<nazwa>
+  - Menu '/' ustawiane per czat dozwolonego uzytkownika (opisy skilli nie wyciekaja do obcych)
   - InlineKeyboard dla potwierdzen (TAK / NIE)
   - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
 
@@ -37,7 +40,7 @@ _env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=False)
 
 try:
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+    from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
     from telegram.constants import ParseMode
     from telegram.ext import (
         Application,
@@ -45,13 +48,25 @@ try:
         CommandHandler,
         ContextTypes,
         MessageHandler,
+        TypeHandler,
         filters,
     )
 except ImportError:
     print("Blad: zainstaluj zaleznosci: pip install -r requirements.txt")
     sys.exit(1)
 
-from tg_format import collect_response_text, split_message, to_plain_text, to_telegram_html
+from tg_format import (
+    SCAN_WORDS,
+    build_menu,
+    collect_response_text,
+    format_help,
+    format_skill_list,
+    parse_command,
+    response_data,
+    split_message,
+    to_plain_text,
+    to_telegram_html,
+)
 
 # --- Konfiguracja ---
 BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -125,6 +140,21 @@ class TelegramSocketClient:
             "confirm": confirmed,
             "session_id": self.session_id,
         })
+
+    async def command(self, command: str, **fields) -> list[dict]:
+        """Zadanie {"command": ...}: list_skills, server_md, scan_server, run_skill."""
+        return await self._send({
+            "command": command,
+            "session_id": self.session_id,
+            "interface": f"telegram:{self.session_id}",
+            **fields,
+        })
+
+    async def list_skills(self) -> list[dict]:
+        return response_data(await self.command("list_skills")).get("skills", [])
+
+    async def server_md(self) -> str:
+        return response_data(await self.command("server_md")).get("content", "")
 
 
 # --- Zarzadzanie sesjami ---
@@ -219,7 +249,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Komunikuje sie po polsku i wykonuje komendy bezposrednio na serwerze.\n\n"
         "<b>Dostepne komendy:</b>\n"
         "/status - szybki przeglad obciazenia serwera\n"
-        "/historia - ostatnie 10 wpisow z audit logu\n\n"
+        "/server - co wiem o serwerze (SERVER.md)\n"
+        "/skille - zapisane procedury; kazda ma wlasna komende\n"
+        "/historia - ostatnie 10 wpisow z audit logu\n"
+        "/pomoc - lista komend\n\n"
         "Mozesz tez pisac do mnie bezposrednio, np. "
         "<i>\"ile mam wolnego miejsca na dysku?\"</i>"
     )
@@ -345,6 +378,118 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 
+# --- Komendy pamieci agenta ---
+
+async def _reply_html(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    """Wysyla gotowy tekst ta sama sciezka co odpowiedzi agenta (HTML, dzielenie, fallback)."""
+    await _send_response(update, context, [{"response": text, "status": "ok"}], update.effective_user.id)
+
+
+async def cmd_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/server -- pokazuje SERVER.md; gdy go nie ma albo z 'aktualizuj' -- zleca skan serwera."""
+    user = update.effective_user
+    if not _is_allowed(user.id if user else None):
+        return
+
+    client = get_client(user.id)
+    mode = " ".join(context.args or []).strip().lower()
+    try:
+        content = "" if mode in SCAN_WORDS else await client.server_md()
+        if content.strip():
+            await _reply_html(update, context, "<b>SERVER.md</b>\n\n" + content +
+                              "\n\n<i>/server aktualizuj -- zbadaj serwer ponownie</i>")
+            return
+        await update.message.reply_text(
+            "Badam serwer i aktualizuje SERVER.md..." if mode in SCAN_WORDS
+            else "SERVER.md jeszcze nie istnieje. Badam serwer i tworze go..."
+        )
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        await _send_response(update, context, await client.command("scan_server"), user.id)
+    except FileNotFoundError:
+        await update.message.reply_text("Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.")
+    except Exception as exc:
+        await update.message.reply_text(f"Blad: {html.escape(str(exc))}")
+
+
+async def cmd_skille(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/skille -- lista zapisanych skilli z ich komendami."""
+    user = update.effective_user
+    if not _is_allowed(user.id if user else None):
+        return
+    try:
+        await _reply_html(update, context, format_skill_list(await get_client(user.id).list_skills()))
+    except Exception as exc:
+        await update.message.reply_text(f"Blad: {html.escape(str(exc))}")
+
+
+async def cmd_pomoc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pomoc -- lista komend."""
+    user = update.effective_user
+    if not _is_allowed(user.id if user else None):
+        return
+    try:
+        skills = await get_client(user.id).list_skills()
+    except Exception:
+        skills = []
+    await _reply_html(update, context, format_help(skills))
+
+
+async def handle_other_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Pozostale komendy: skill uruchamiany wlasna komenda albo podpowiedz dla nieznanej."""
+    user = update.effective_user
+    if not _is_allowed(user.id if user else None):
+        return
+
+    name, args = parse_command(update.message.text or "")
+    client = get_client(user.id)
+    try:
+        entry = next((s for s in await client.list_skills() if s.get("command") == name), None)
+        if entry is None:
+            await update.message.reply_text(
+                f"Nieznana komenda /{html.escape(name)}. Lista komend: /pomoc, skille: /skille"
+            )
+            return
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        responses = await client.command("run_skill", name=entry["name"], args=args)
+        await _send_response(update, context, responses, user.id)
+    except FileNotFoundError:
+        await update.message.reply_text("Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.")
+    except Exception as exc:
+        await update.message.reply_text(f"Blad: {html.escape(str(exc))}")
+
+
+# --- Menu "/" ---
+
+_menu_cache: dict[int, list[tuple[str, str]]] = {}
+
+
+async def refresh_menu(bot, user_id: int) -> None:
+    """
+    Ustawia menu '/' dla czatu jednego dozwolonego uzytkownika. Zakres czatu,
+    nie globalny -- inaczej opisy skilli widzialby kazdy, kto otworzy bota.
+    """
+    try:
+        menu = build_menu(await get_client(user_id).list_skills())
+        if _menu_cache.get(user_id) == menu:
+            return
+        await bot.set_my_commands([BotCommand(c, d) for c, d in menu], scope=BotCommandScopeChat(user_id))
+        _menu_cache[user_id] = menu
+    except Exception as exc:
+        print(f"[Pipe Telegram] Nie ustawiono menu dla {user_id}: {exc}", flush=True)
+
+
+async def refresh_menu_after_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Po kazdej obsluzonej wiadomosci -- nowy skill pojawia sie w menu od razu."""
+    user = update.effective_user
+    if user and _is_allowed(user.id):
+        await refresh_menu(context.bot, user.id)
+
+
+async def _post_init(app: Application) -> None:
+    for user_id in ALLOWED_USER_IDS:
+        await refresh_menu(app.bot, user_id)
+
+
 # --- Main ---
 
 def main() -> None:
@@ -364,13 +509,20 @@ def main() -> None:
     print(f"[Pipe Telegram] Dozwoleni uzytkownicy: {ALLOWED_USER_IDS}")
     print(f"[Pipe Telegram] Backend socket: {AGENT_SOCKET}")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("historia", cmd_historia))
+    app.add_handler(CommandHandler("server", cmd_server))
+    app.add_handler(CommandHandler("skille", cmd_skille))
+    app.add_handler(CommandHandler(["pomoc", "help"], cmd_pomoc))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Po wbudowanych -- skille jako komendy i odpowiedz na nieznana komende
+    app.add_handler(MessageHandler(filters.COMMAND, handle_other_command))
+    # Grupa 1 dziala po obsludze kazdej wiadomosci
+    app.add_handler(TypeHandler(Update, refresh_menu_after_update), group=1)
 
     print("[Pipe Telegram] Gotowy. Ctrl+C aby zatrzymac.")
     app.run_polling(drop_pending_updates=True)

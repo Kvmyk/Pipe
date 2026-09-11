@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 ## Opis
 
@@ -32,6 +32,32 @@ Komunikacja odbywa sie przez prosty protokol JSON lines (jedna linia JSON = jedn
   "token": "tajny-token"
 }
 ```
+
+### Zadanie -- komenda klienta
+
+Komendy `/server`, `/skille` i skille uruchamiane wlasna komenda (Telegram, CLI) wysylaja:
+
+```json
+{
+  "command": "run_skill",
+  "session_id": "uuid-per-uzytkownik",
+  "interface": "cli",
+  "name": "odnow_certyfikat",
+  "args": "tylko dla example.com",
+  "token": "tajny-token"
+}
+```
+
+| `command` | Dodatkowe pola | Odpowiedz |
+|---|---|---|
+| `list_skills` | -- | jedna linia z `"data": {"skills": [{"name", "description", "command"}]}` |
+| `server_md` | -- | jedna linia z `"data": {"content": "..."}` (pusty, gdy SERVER.md nie istnieje) |
+| `scan_server` | -- | streaming jak zwykla wiadomosc: agent bada serwer i tworzy albo aktualizuje SERVER.md |
+| `run_skill` | `name` (nazwa albo komenda skilla), opcjonalnie `args` | streaming jak zwykla wiadomosc |
+
+Tresc wiadomosci dla agenta (`scan_server`, `run_skill`) buduje backend -- klient wysyla tylko komende.
+Pole `command` skilla to nazwa zgodna z zasadami Telegrama (male litery, cyfry, `_`, do 32 znakow). Jest puste,
+gdy nazwa skilla jest zarezerwowana (`status`, `server`, `skille`, ...) albo po skroceniu koliduje z innym skillem.
 
 ### Odpowiedz
 

@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.7.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.8.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
@@ -74,6 +74,7 @@ Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w
 Komunikacja: prosty protokol JSON (linia po linii):
 - Zadanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli", "token": "..."}` (`token` tylko gdy `AGENT_TOKEN` jest ustawiony)
 - Odpowiedz: `{"response": "tekst", "status": "ok|confirm|error", "done": true}`
+- Komendy klientow (`/server`, `/skille`, skille): `{"command": "list_skills|server_md|scan_server|run_skill", ...}` -- szczegoly w [docs/protocol.md](./docs/protocol.md)
 
 ---
 
@@ -98,6 +99,8 @@ Komunikacja: prosty protokol JSON (linia po linii):
 Agent prowadzi wlasne notatki o serwerze w **`SERVER.md`** -- cos jak `AGENTS.md`, ale dla serwera: system, uslugi, kontenery, domeny, wazne sciezki i Twoje decyzje. Plik jest dolaczany do kazdej rozmowy, wiec agent nie musi za kazdym razem poznawac serwera od nowa.
 
 Po wykonaniu wieloetapowej procedury (np. wdrozenia aplikacji) agent moze zapisac ja jako **skill** i uzyc ponownie. Mozesz tez po prostu poprosic: *"zapisz to jako skill"*.
+
+W Telegramie i w CLI: `/server` pokazuje SERVER.md (a gdy go nie ma -- zleca agentowi zbadanie serwera, `/server aktualizuj` bada go ponownie), `/skille` listuje skille, a kazdy skill ma wlasna komende, np. `/odnow_certyfikat`. Do komendy mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com`.
 
 Oba rodzaje plikow leza na serwerze w `backend/data/` (poza gitem) -- mozesz je czytac i edytowac recznie. Szczegoly: [docs/backend.md](./docs/backend.md#pamiec-agenta-servermd-i-skille)
 

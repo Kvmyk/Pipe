@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -87,3 +87,31 @@ python cli.py --no-tunnel --local-port 7379
 ```
 
 Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
+
+## Komendy
+
+| Komenda | Dzialanie |
+|---|---|
+| `/status` | Stan serwera |
+| `/server` | Pokazuje SERVER.md; gdy go nie ma -- agent bada serwer i tworzy plik |
+| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md |
+| `/skille` | Lista zapisanych skilli z ich komendami |
+| `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazowkami |
+| `/pomoc` | Lista komend |
+| `/exit` | Wyjscie |
+
+Tekst zaczynajacy sie od `/`, ktory nie jest komenda (np. `/var/log jest pelny?`), trafia do agenta jak zwykla wiadomosc.
+
+## Uruchomienie bezposrednio na serwerze
+
+Po zalogowaniu przez SSH na serwer mozesz rozmawiac z agentem bez tunelu -- backend wystawia port `7379`
+na `127.0.0.1` serwera:
+
+```bash
+pip install -r clients/cli/requirements.txt   # jednorazowo
+python3 clients/cli/cli.py --no-tunnel        # + --token ..., jesli ustawiles AGENT_TOKEN
+```
+
+`install.sh` buduje skrot z tunelem SSH, wiec na samym serwerze wygodniej dodac alias recznie, np.
+`alias pipe='python3 ~/Pipe/clients/cli/cli.py --no-tunnel'`. Pamiec agenta (SERVER.md, skille) jest wspolna
+dla wszystkich klientow -- to, co agent zapisze w Telegramie, widac w terminalu i odwrotnie.

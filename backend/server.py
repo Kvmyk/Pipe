@@ -12,6 +12,7 @@ Dostęp z laptopa odbywa się przez tunel SSH:
 Protokół JSON (linia po linii):
   Żądanie:  {"message": "tekst", "session_id": "uuid", "interface": "cli|telegram:123", "token": "..."}
   Żądanie:  {"confirm": true|false, "session_id": "uuid", "token": "..."}
+  Żądanie:  {"command": "list_skills|server_md|scan_server|run_skill", "session_id": "uuid", ...}
   (pole "token" wymagane tylko gdy AGENT_TOKEN jest ustawiony w .env)
   Odpowiedź: {"response": "tekst", "status": "ok|confirm|error", "done": true|false}
 
@@ -28,6 +29,8 @@ import sys
 from pathlib import Path
 
 from backend.config import settings
+from backend.config.prompts import RUN_SKILL_EXTRA, RUN_SKILL_MESSAGE, SCAN_SERVER_CREATE, SCAN_SERVER_UPDATE
+from backend.core import memory
 from backend.core.agent import get_agent
 
 
@@ -73,26 +76,18 @@ async def handle_client(
                 await _send(writer, {"response": "", "status": "ok", "done": True})
                 continue
 
+            # Komendy klientow: /server, /skille, skille jako komendy
+            if "command" in request:
+                await _handle_command(writer, agent, request, session_id, interface)
+                continue
+
             # Obsłuż wiadomość
             message = request.get("message", "").strip()
             if not message:
                 await _send(writer, {"response": "Pusta wiadomość.", "status": "error", "done": True})
                 continue
 
-            print(f"[server] Wiadomość od {interface}: {message[:80]}", flush=True)
-            chunk_count = 0
-            async for chunk in agent.chat(session_id, message, interface):
-                chunk_count += 1
-                if "[POTWIERDZ]" in chunk and "wymaga potwierdzenia" in chunk:
-                    status = "confirm"
-                elif "[BLAD]" in chunk or "[ODMOWA]" in chunk:
-                    status = "error"
-                else:
-                    status = "ok"
-                await _send(writer, {"response": chunk, "status": status, "done": False})
-
-            print(f"[server] Odpowiedź wysłana ({chunk_count} fragmentów)", flush=True)
-            await _send(writer, {"response": "", "status": "ok", "done": True})
+            await _stream_chat(writer, agent, session_id, message, interface)
 
     except ConnectionResetError:
         pass
@@ -107,6 +102,58 @@ async def handle_client(
             await writer.wait_closed()
         except Exception:
             pass
+
+
+async def _stream_chat(writer, agent, session_id: str, message: str, interface: str) -> None:
+    """Przekazuje wiadomosc agentowi i streamuje odpowiedz (JSON lines, ostatnia z done=true)."""
+    print(f"[server] Wiadomość od {interface}: {message[:80]}", flush=True)
+    chunk_count = 0
+    async for chunk in agent.chat(session_id, message, interface):
+        chunk_count += 1
+        if "[POTWIERDZ]" in chunk and "wymaga potwierdzenia" in chunk:
+            status = "confirm"
+        elif "[BLAD]" in chunk or "[ODMOWA]" in chunk:
+            status = "error"
+        else:
+            status = "ok"
+        await _send(writer, {"response": chunk, "status": status, "done": False})
+
+    print(f"[server] Odpowiedź wysłana ({chunk_count} fragmentów)", flush=True)
+    await _send(writer, {"response": "", "status": "ok", "done": True})
+
+
+async def _handle_command(writer, agent, request: dict, session_id: str, interface: str) -> None:
+    """
+    Komendy klientow. list_skills i server_md zwracaja dane w polu "data"
+    (bez udzialu LLM); scan_server i run_skill wysylaja agentowi wiadomosc
+    zbudowana tutaj — klient nie sklada promptow.
+    """
+    command = str(request.get("command", "")).strip()
+    try:
+        if command == "list_skills":
+            await _send(writer, {"response": "", "status": "ok", "done": True,
+                                 "data": {"skills": memory.skill_commands()}})
+        elif command == "server_md":
+            await _send(writer, {"response": "", "status": "ok", "done": True,
+                                 "data": {"content": memory.read_server_md()}})
+        elif command == "scan_server":
+            message = SCAN_SERVER_UPDATE if memory.read_server_md().strip() else SCAN_SERVER_CREATE
+            await _stream_chat(writer, agent, session_id, message, interface)
+        elif command == "run_skill":
+            entry = memory.find_skill_command(str(request.get("name", "")))
+            if entry is None:
+                await _send(writer, {"response": f"[BLAD] Nie ma skilla {request.get('name', '')!r}. Lista: /skille",
+                                     "status": "error", "done": True})
+                return
+            message = RUN_SKILL_MESSAGE.format(name=entry["name"], command=entry["command"] or entry["name"])
+            args = str(request.get("args", "")).strip()
+            if args:
+                message += RUN_SKILL_EXTRA.format(args=args)
+            await _stream_chat(writer, agent, session_id, message, interface)
+        else:
+            await _send(writer, {"response": f"[BLAD] Nieznana komenda: {command!r}", "status": "error", "done": True})
+    except OSError as exc:
+        await _send(writer, {"response": f"[BLAD] Blad odczytu pamieci agenta: {exc}", "status": "error", "done": True})
 
 
 async def _send(writer: asyncio.StreamWriter, data: dict) -> None:

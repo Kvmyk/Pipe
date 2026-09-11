@@ -152,3 +152,79 @@ def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]
         chunks.append(text[:split_at])
         text = text[split_at:].lstrip("\n")
     return chunks
+
+
+# ─── Komendy "/" ────────────────────────────────────────────────────────────
+
+# Komendy wbudowane w menu Telegrama, w kolejnosci wyswietlania.
+BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("status", "Szybki przeglad obciazenia serwera"),
+    ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
+    ("skille", "Lista zapisanych skilli"),
+    ("historia", "Ostatnie wpisy z audit logu"),
+    ("pomoc", "Lista komend"),
+)
+MAX_MENU_COMMANDS = 100        # limit Telegrama
+MAX_COMMAND_DESCRIPTION = 256  # limit Telegrama
+
+SCAN_WORDS = frozenset({"aktualizuj", "odswiez", "odśwież", "skanuj"})
+
+
+def parse_command(text: str) -> tuple[str, str]:
+    """'/deploy_app@PipeBot na produkcji' -> ('deploy_app', 'na produkcji')."""
+    parts = text.strip().split(maxsplit=1)
+    if not parts:
+        return "", ""
+    name = parts[0].lstrip("/").split("@", 1)[0].lower()
+    return name, parts[1].strip() if len(parts) > 1 else ""
+
+
+def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
+    """Menu '/' Telegrama: komendy wbudowane, potem skille, ktore maja komende."""
+    menu = list(BUILTIN_COMMANDS)
+    for skill in skills:
+        if skill.get("command"):
+            description = " ".join((skill.get("description") or "").split()) or "Skill"
+            menu.append((skill["command"], description[:MAX_COMMAND_DESCRIPTION]))
+    return menu[:MAX_MENU_COMMANDS]
+
+
+def format_skill_list(skills: list[dict]) -> str:
+    """Lista skilli jako HTML Telegrama."""
+    if not skills:
+        return ("Brak zapisanych skilli. Po wykonaniu wieloetapowej procedury popros: "
+                "<i>\"zapisz to jako skill\"</i>.")
+    lines = ["<b>Skille</b>"]
+    for skill in skills:
+        description = html.escape(skill.get("description") or "")
+        if skill.get("command"):
+            lines.append(f"• /{skill['command']} — {description}")
+        else:
+            name = html.escape(skill["name"])
+            lines.append(f"• <code>{name}</code> — {description} "
+                         f"<i>(bez komendy — napisz: uruchom skill {name})</i>")
+    example = next((s["command"] for s in skills if s.get("command")), None)
+    if example:
+        lines.append(f"\nDo komendy mozesz dopisac wskazowki, np. <code>/{example} tylko dla example.com</code>")
+    return "\n".join(lines)
+
+
+def format_help(skills: list[dict]) -> str:
+    """Pomoc (/pomoc) jako HTML Telegrama."""
+    lines = ["<b>Komendy</b>"]
+    lines += [f"/{command} — {html.escape(description)}" for command, description in BUILTIN_COMMANDS]
+    with_command = [s for s in skills if s.get("command")]
+    if with_command:
+        lines.append(f"\n<b>Skille ({len(with_command)})</b> — kazdy ma wlasna komende, pelna lista: /skille")
+    lines.append("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>")
+    return "\n".join(lines)
+
+
+def response_data(responses: list[dict]) -> dict:
+    """Pole 'data' z odpowiedzi na zadanie {"command": ...}; blad backendu -> RuntimeError."""
+    for resp in reversed(responses):
+        if "data" in resp:
+            return resp["data"]
+    error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or "brak danych"
+    raise RuntimeError(error)
+

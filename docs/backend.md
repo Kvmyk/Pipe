@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 Backend agenta VPS. Dziala bezposrednio na serwerze i wystawia lokalny Unix socket dla klientow.
 
@@ -164,6 +164,11 @@ description: Odnowienie certyfikatu TLS dla nginx
 W system prompcie jest tylko lista skilli (nazwa i opis). Pelna tresc agent wczytuje narzedziem `skill_manage`,
 gdy zadanie pasuje do opisu -- dzieki temu wiele skilli nie zapycha kontekstu. Agent tworzy skill po wykonaniu
 wieloetapowej procedury, ktora sie powtorzy, albo na Twoja prosbe.
+
+Kazdy skill ma tez wlasna komende w Telegramie i CLI: myslniki zamieniaja sie na `_`, a nazwa jest skracana
+do 32 znakow (limit Telegrama), np. `odnow-certyfikat` -> `/odnow_certyfikat`. Skill o nazwie zajetej przez
+komende wbudowana (`status`, `server`, `skille`, ...) nie dostaje komendy -- uruchomisz go przez `/skille`
+albo zwyklym tekstem.
 
 ### Bezpieczenstwo pamieci
 

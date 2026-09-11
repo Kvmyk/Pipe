@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -93,3 +93,22 @@ Mozesz tez pisac bezposrednio, np.:
 ## Bezpieczenstwo
 
 Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia. Dzieki temu nie ujawnia swojego istnienia nieautoryzowanym osobom.
+
+## Komendy
+
+| Komenda | Dzialanie |
+|---|---|
+| `/status` | Szybki przeglad obciazenia serwera |
+| `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |
+| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md |
+| `/skille` | Lista zapisanych skilli z ich komendami |
+| `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |
+| `/historia` | Ostatnie wpisy z audit logu |
+| `/pomoc` | Lista komend |
+
+Menu podpowiedzi po wpisaniu `/` bot ustawia sam przy starcie i odswieza po kazdej wiadomosci -- nowy skill
+pojawia sie w menu od razu. Menu jest ustawiane osobno dla czatu kazdego uzytkownika z
+`TELEGRAM_ALLOWED_USER_IDS`, a nie globalnie, wiec osoby spoza listy nie widza nazw ani opisow skilli.
+Jesli nie widzisz menu, napisz do bota cokolwiek (Telegram pozwala ustawic menu dopiero po rozpoczeciu czatu).
+
+Na nieznana komende bot odpowiada podpowiedzia zamiast milczec.

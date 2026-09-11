@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.7.0
+Pipe v0.8.0
 """
 
 from __future__ import annotations

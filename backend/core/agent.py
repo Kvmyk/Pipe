@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
 
-Pipe v0.7.0
+Pipe v0.8.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc

@@ -16,7 +16,19 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "telegram"))
 
 from backend.core.text import as_code  # noqa: E402
-from tg_format import collect_response_text, split_message, to_plain_text, to_telegram_html  # noqa: E402
+from tg_format import (  # noqa: E402
+    BUILTIN_COMMANDS,
+    MAX_MENU_COMMANDS,
+    build_menu,
+    collect_response_text,
+    format_help,
+    format_skill_list,
+    parse_command,
+    response_data,
+    split_message,
+    to_plain_text,
+    to_telegram_html,
+)
 
 TELEGRAM_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a",
                  "span", "tg-spoiler", "tg-emoji", "blockquote"}
@@ -204,3 +216,76 @@ class TestSplitMessage:
         chunks = split_message(text, max_length=100)
         assert all(len(c) <= 100 for c in chunks)
         assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
+
+
+SKILLS = [
+    {"name": "odnow-certyfikat", "description": "Odnowienie TLS dla <nginx>", "command": "odnow_certyfikat"},
+    {"name": "status", "description": "Zarezerwowana nazwa", "command": ""},
+]
+
+
+class TestParseCommand:
+
+    @pytest.mark.parametrize("text,expected", [
+        ("/server", ("server", "")),
+        ("/server aktualizuj", ("server", "aktualizuj")),
+        ("/Deploy_App@PipeBot  na produkcji ", ("deploy_app", "na produkcji")),
+        ("/odnow_certyfikat tylko dla\nexample.com", ("odnow_certyfikat", "tylko dla\nexample.com")),
+        ("", ("", "")),
+    ])
+    def test_parse(self, text, expected):
+        assert parse_command(text) == expected
+
+
+class TestBuildMenu:
+
+    def test_builtins_first_then_skills_with_command(self):
+        menu = build_menu(SKILLS)
+        assert menu[:len(BUILTIN_COMMANDS)] == list(BUILTIN_COMMANDS)
+        assert menu[len(BUILTIN_COMMANDS):] == [("odnow_certyfikat", "Odnowienie TLS dla <nginx>")]
+
+    def test_limits(self):
+        many = [{"name": f"s{i}", "description": "x" * 400, "command": f"s{i}"} for i in range(200)]
+        menu = build_menu(many)
+        assert len(menu) == MAX_MENU_COMMANDS
+        assert all(len(description) <= 256 for _, description in menu)
+
+    def test_empty_description_gets_fallback(self):
+        assert build_menu([{"name": "a", "description": " ", "command": "a"}])[-1] == ("a", "Skill")
+
+
+class TestSkillListAndHelp:
+
+    def test_skill_list_is_valid_html_with_commands(self):
+        text = format_skill_list(SKILLS)
+        assert "/odnow_certyfikat" in text
+        assert "&lt;nginx&gt;" in text  # opis escapowany
+        assert "uruchom skill status" in text  # skill bez komendy
+        assert_valid_telegram_html(text)
+
+    def test_empty_skill_list(self):
+        assert "Brak zapisanych skilli" in format_skill_list([])
+
+    def test_help_lists_builtins_and_skill_count(self):
+        text = format_help(SKILLS)
+        assert all(f"/{command}" in text for command, _ in BUILTIN_COMMANDS)
+        assert "Skille (1)" in text
+        assert_valid_telegram_html(text)
+
+    def test_server_md_through_bot_formatting(self):
+        """cmd_server wysyla '<b>SERVER.md</b>' + surowy Markdown przez te sama sciezke co odpowiedzi."""
+        text, _ = collect_response_text([{"response": "<b>SERVER.md</b>\n\n## Uslugi\n- nginx <443> & certbot", "status": "ok"}])
+        result = to_telegram_html(text)
+        assert "<b>Uslugi</b>" in result and "&lt;443&gt; &amp; certbot" in result
+        assert_valid_telegram_html(result)
+
+
+class TestResponseData:
+
+    def test_returns_data(self):
+        assert response_data([{"response": "", "status": "ok", "done": True, "data": {"skills": []}}]) == {"skills": []}
+
+    def test_backend_error_raises(self):
+        with pytest.raises(RuntimeError, match="token"):
+            response_data([{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True}])
+
