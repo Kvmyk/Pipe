@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.6.0
+Pipe v0.7.0
 
 ## Model bezpieczenstwa
 
@@ -64,6 +64,20 @@ Kazda operacja jest zapisywana do append-only audit logu:
 ```
 
 Zawartosc plikow (read_file, write_file) nigdy nie trafia do logu -- moze zawierac sekrety.
+
+## Pamiec agenta (SERVER.md i skille)
+
+Agent zapisuje notatki o serwerze (`SERVER.md`) i procedury (skille) w `backend/data/`. Zapis nie wymaga
+potwierdzenia, bo nie zmienia serwera, ale:
+
+- kazdy zapis jest w audit logu (sciezka, bez tresci),
+- tresc pamieci jest w prompcie oznaczona jako dane, nie polecenia, i nie zmienia klasyfikacji komend ani wymogu
+  potwierdzen -- skill z komenda `rm` nadal wymaga TAK,
+- zapis oczywistych sekretow jest odrzucany, bo `SERVER.md` trafia do providera LLM z kazdym zapytaniem.
+
+Pamiec moze zostac "zatruta": jesli agent przeczyta na serwerze plik z wstrzyknietymi instrukcjami i zapisze je
+jako fakt, beda one wracac w kolejnych rozmowach. Dlatego warto od czasu do czasu przejrzec `backend/data/SERVER.md`
+i `backend/data/skills/`.
 
 ## Izolacja kontenera
 

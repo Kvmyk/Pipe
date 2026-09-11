@@ -36,6 +36,7 @@ class Session:
     def system_prompt(self) -> str:
         """Generuje system prompt dla LLM w zależności od interfejsu."""
         from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT
+        from backend.core.memory import prompt_context
         
         dir_context = (
             f"\n\n--- NAWIGACJA ---\n"
@@ -50,6 +51,6 @@ class Session:
             # W telegramie system_prompt uzywa HTML
             dir_context = dir_context.replace("[Katalog: ", "<b>[Katalog: ")
             dir_context = dir_context.replace("]", "]</b>")
-            return TELEGRAM_SYSTEM_PROMPT + dir_context
-        return BASE_SYSTEM_PROMPT + dir_context
+            return TELEGRAM_SYSTEM_PROMPT + dir_context + prompt_context()
+        return BASE_SYSTEM_PROMPT + dir_context + prompt_context()
 

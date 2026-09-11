@@ -1,5 +1,23 @@
 # Historia zmian -- Pipe
 
+## v0.7.0 (2026-09-11)
+
+### Pamiec agenta
+
+- Agent prowadzi wlasny `SERVER.md` -- notatki o serwerze (system, uslugi, kontenery, domeny, porty, wazne sciezki, decyzje uzytkownika), dolaczane do kazdej rozmowy. Nowe narzedzie `server_md`: odczyt, aktualizacja jednej sekcji i zapis calosci
+- Agent moze tworzyc wlasne skille -- zapisane procedury wielokrotnego uzytku w formacie Agent Skills (`skills/<nazwa>/SKILL.md`). W prompcie jest tylko lista skilli, a tresc agent wczytuje, gdy zadanie pasuje do opisu. Nowe narzedzie `skill_manage`: lista, odczyt, zapis i usuwanie
+- Pamiec lezy na serwerze w `backend/data/` (w kontenerze `/app/data`, zmienna `DATA_DIR`) i przetrwa restart oraz przebudowe obrazu. Katalog dodano do `.gitignore`
+- Zapis do pamieci nie wymaga potwierdzenia, ale trafia do audit logu (sama sciezka, bez tresci). Zapis wygladajacy na sekret (klucz prywatny, klucz API, token, `DB_PASSWORD=...`) jest odrzucany, bo `SERVER.md` jest wysylany do providera LLM z kazdym zapytaniem
+- Pamiec jest w prompcie oznaczona jako dane, nie polecenia -- nie zmienia klasyfikacji komend ani wymogu potwierdzen
+
+### Dokumentacja
+
+- Usunieto wzmianki o konkretnym dostawcy VPS -- dokumentacja, przyklady i instalatory mowia teraz po prostu o serwerze (przykladowy adres: `serwer.example.com`)
+- Opisano pamiec agenta w `README.md`, `docs/backend.md` i `docs/security.md`
+- Dodano 64 testy (pamiec agenta, kazde narzedzie ma handler); lacznie 297
+
+---
+
 ## v0.6.0 (2026-09-11)
 
 ### Zmiana nazwy

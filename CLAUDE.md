@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.6.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
+**Pipe v0.7.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -52,10 +52,11 @@ Telegram bot (same host) --Unix /tmp/vps-agent.sock ─┤
 | `backend/server.py` | Serves Unix socket + TCP concurrently; maps chunk text → protocol `status`; optional token check |
 | `backend/core/agent.py` | `VPSAgent`: session store, `chat()`, `confirm()`, `_run_agent_loop()`, `_execute_tool_confirmed()` |
 | `backend/core/session.py` | `Session` (history, `cwd`, `pending_confirmation`) and `ConfirmationRequest` dataclasses; `Session.system_prompt` builds the per-interface prompt |
+| `backend/core/memory.py` | Agent memory in `DATA_DIR`: `SERVER.md` (read/write/`update_section`), skills (`skills/<name>/SKILL.md`), secret guard, `prompt_context()` |
 | `backend/core/handlers/` | Tool implementations, one module per domain; `__init__.py` re-exports `handle_<tool_name>` |
 | `backend/core/security.py` | `classify_command()`, `classify_file_write()`, `validate_workspace_access()` |
 | `backend/core/executor.py` | Module-level `execute()`, `read_file()`, `write_file()` — not a class |
-| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 9 tools |
+| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 11 tools |
 | `backend/config/providers.py` | Provider presets, user providers file, `resolve_llm_config()`, model-list filtering — **stdlib only** |
 | `backend/configure.py` | Interactive setup wizard (`python3 -m backend.configure`, also `--check` / `--models` / `--providers`) — **stdlib only** |
 | `backend/config/prompts.py` | `BASE_SYSTEM_PROMPT` + `TELEGRAM_SYSTEM_PROMPT` (Telegram variant mandates HTML, not Markdown) |
@@ -65,7 +66,7 @@ Telegram bot (same host) --Unix /tmp/vps-agent.sock ─┤
 
 ### Tool dispatch
 
-Nine tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`.
+Eleven tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`, `server_md`, `skill_manage`.
 
 `_handle_tool_call()` dispatches by name reflection: `getattr(handlers_module, f"handle_{tool_name}")`. **Adding a tool means three edits:** a schema in `core/tools.py`, a `handle_<name>` async generator in `core/handlers/`, and its export in `core/handlers/__init__.py`. Name the function exactly `handle_<tool_name>` or dispatch silently falls through to "Nieznane narzedzie".
 
@@ -86,6 +87,10 @@ Every provider is reached through the OpenAI Chat Completions API via one `Async
 Model lists are never hardcoded: the wizard and `VPSAgent.verify_model()` (run in the background at server start) fetch `GET /models` and filter it with `chat_model_ids()` — drops non-chat models by ID markers, honours OpenRouter-style `supported_parameters`, newest first. When adding a provider, prefer relying on this over pinning model names.
 
 `providers.py` and `configure.py` must stay **stdlib-only** — the wizard runs on a bare server before `pip install`/Docker. `_call_llm` deliberately sends no `tool_choice` (it is the default with `tools`, and some providers such as Ollama don't accept it) and passes `LLM_REASONING_EFFORT` through `extra_body` so it works on any SDK version.
+
+### Agent memory (SERVER.md, skills)
+
+`Session.system_prompt` appends `memory.prompt_context()` on every LLM call: the whole `SERVER.md` (capped at 12k chars) plus a name + description index of skills. Skill bodies are loaded only through `skill_manage` read (progressive disclosure). Files live in `DATA_DIR` (container `/app/data`, host `backend/data/`, gitignored). Writes go through the `server_md` / `skill_manage` handlers, need no confirmation (they don't touch the host), are audited by path only, and are rejected by `memory.find_secret()` when they look like credentials — `SERVER.md` is sent to the provider with every request. Memory is framed in the prompt as data, not instructions, and never bypasses `classify_command()`. Keep `memory.py` free of `settings` imports so it stays testable via the `DATA_DIR` env var.
 
 ### Confirmation round-trip
 
@@ -113,7 +118,7 @@ File **contents** are deliberately never written to the audit log (they may hold
 
 ## Environment
 
-`backend/.env` is written by `python3 -m backend.configure` (or copied from `backend/.env.example`): `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL` / `LLM_REASONING_EFFORT` / `LLM_TIMEOUT`, then `AGENT_TOKEN`, `AUDIT_LOG_PATH`, `AGENT_SOCKET`, `TCP_HOST`, `TCP_PORT`. `settings` never raises at import; `settings.validate()` fails fast on an unknown provider, a missing model, or a missing key for a provider that requires one. `AGENT_TOKEN` is optional and empty means no auth.
+`backend/.env` is written by `python3 -m backend.configure` (or copied from `backend/.env.example`): `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL` / `LLM_REASONING_EFFORT` / `LLM_TIMEOUT`, then `AGENT_TOKEN`, `AUDIT_LOG_PATH`, `AGENT_SOCKET`, `TCP_HOST`, `TCP_PORT`, `DATA_DIR` (agent memory; compose sets `/app/data`). `settings` never raises at import; `settings.validate()` fails fast on an unknown provider, a missing model, or a missing key for a provider that requires one. `AGENT_TOKEN` is optional and empty means no auth.
 
 Telegram needs `clients/telegram/.env` with `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` and — if the backend sets one — a matching `AGENT_TOKEN`. The CLI takes the same value via `--token` or the `AGENT_TOKEN` env var.
 

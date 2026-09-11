@@ -1,7 +1,7 @@
 """
 Executor — wykonywanie komend lokalnie na serwerze przez subprocess.
 
-Agent działa bezpośrednio NA serwerze (Mikrus), więc nie ma SSH.
+Agent działa bezpośrednio NA serwerze, więc nie ma SSH.
 Wszystkie komendy są wykonywane lokalnie przez asyncio.create_subprocess_shell().
 """
 

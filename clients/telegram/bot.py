@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (VPS Management Agent).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.6.0
+Pipe v0.7.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS)

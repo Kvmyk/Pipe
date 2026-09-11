@@ -2,19 +2,19 @@
 CLI — interaktywny REPL do zarządzania zdalnym serwerem VPS przez agenta AI.
 
 Działa NA LAPTOPIE użytkownika.
-Łączy się z backendem uruchomionym NA SERWERZE (Mikrus) przez SSH tunnel.
+Łączy się z backendem uruchomionym NA SERWERZE przez SSH tunnel.
 
 CLI automatycznie zestawia tunel SSH który forwarduje Unix socket z serwera
 do lokalnego portu TCP. Dzięki temu użytkownik nie musi ręcznie konfigurować
 żadnych tuneli.
 
 Schemat połączenia:
-    Laptop → SSH tunnel → Serwer (Mikrus)
+    Laptop → SSH tunnel → Serwer
       CLI --------------------→ backend/server.py
       :7379 (local TCP)       /tmp/vps-agent.sock (remote Unix)
 
 Użycie:
-    python cli.py --host user@mikrus.example.com
+    python cli.py --host user@serwer.example.com
     python cli.py --host root@1.2.3.4 --port 22
     python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
     python cli.py --host root@1.2.3.4 --no-tunnel  # jeśli tunnel jest już aktywny
@@ -256,7 +256,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.6.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.7.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan] [dim]— stan serwera[/dim]  "
             "[bold cyan]/exit[/bold cyan] [dim]— wyjście[/dim][/dim]",
@@ -402,7 +402,7 @@ def main() -> None:
         epilog="""
 Przykłady:
   # Połącz przez SSH (automatyczny tunel)
-  python cli.py --host user@mikrus.example.com
+  python cli.py --host user@serwer.example.com
   python cli.py --host root@1.2.3.4
   python cli.py --host root@1.2.3.4 --ssh-port 2222
   python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
@@ -417,7 +417,7 @@ Przykłady:
     ssh_group.add_argument(
         "--host",
         default=os.getenv("VPS_HOST"),
-        help="Adres serwera: user@host lub host (np. root@mikrus.example.com). "
+        help="Adres serwera: user@host lub host (np. root@serwer.example.com). "
              "Można też ustawić przez zmienną środowiskową VPS_HOST.",
         metavar="USER@HOST",
     )
@@ -497,7 +497,7 @@ Przykłady:
         console.print(
             "[red]Brak adresu serwera.[/red]\n\n"
             "Podaj --host user@twoj-serwer lub ustaw zmienną VPS_HOST.\n\n"
-            "[dim]Przykład: python cli.py --host root@mikrus.example.com[/dim]"
+            "[dim]Przykład: python cli.py --host root@serwer.example.com[/dim]"
         )
         sys.exit(1)
 

@@ -13,7 +13,7 @@ $CliPath = Join-Path $ScriptDir "clients\cli\cli.py"
 
 # Zapytaj o adres serwera jesli nie podano
 if (-not $VpsHost) {
-    $VpsHost = Read-Host "Podaj adres serwera (np. root@twoj-serwer.mikr.us)"
+    $VpsHost = Read-Host "Podaj adres serwera (np. root@serwer.example.com)"
 }
 
 if (-not $VpsHost) {
@@ -21,9 +21,9 @@ if (-not $VpsHost) {
     exit 1
 }
 
-# Zapytaj o port SSH (Mikrus NIE uzywa portu 22 - sprawdz w panelu mikr.us)
+# Zapytaj o port SSH (czesc dostawcow serwerow nie uzywa portu 22)
 if ($SshPort -eq "22") {
-    $inputPort = Read-Host "Podaj port SSH (znajdziesz w panelu mikr.us) [domyslnie: 22]"
+    $inputPort = Read-Host "Podaj port SSH (znajdziesz w panelu dostawcy serwera) [domyslnie: 22]"
     if ($inputPort) { $SshPort = $inputPort }
 }
 

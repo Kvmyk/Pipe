@@ -35,6 +35,8 @@ services:
       - LLM_TIMEOUT
       # Wlasni providerzy dodani kreatorem (backend/data/providers.json na hoscie)
       - LLM_PROVIDERS_FILE=/app/data/providers.json
+      # Pamiec agenta: SERVER.md i skille (backend/data na hoscie)
+      - DATA_DIR=/app/data
       - AGENT_TOKEN
       - AUDIT_LOG_PATH=/app/data/audit.log
       - AGENT_SOCKET=/tmp/vps-agent.sock

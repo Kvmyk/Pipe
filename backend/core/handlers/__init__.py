@@ -8,6 +8,7 @@ from .command import handle_execute_command
 from .file_ops import handle_read_file, handle_write_file
 from .git import handle_git_command
 from .docker import handle_docker_manage
+from .memory import handle_server_md, handle_skill_manage
 from .system import (
     handle_change_directory,
     handle_system_stats,
@@ -25,4 +26,6 @@ __all__ = [
     "handle_system_stats",
     "handle_network_info",
     "handle_cron_manage",
+    "handle_server_md",
+    "handle_skill_manage",
 ]

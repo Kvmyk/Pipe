@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # ─── Zapytaj o adres serwera ─────────────────────────────────────────────────
 VPS_HOST="${1:-}"
 if [ -z "$VPS_HOST" ]; then
-    printf "${CYAN}Podaj adres serwera (np. root@mikrus.example.com): ${NC}"
+    printf "${CYAN}Podaj adres serwera (np. root@serwer.example.com): ${NC}"
     read -r VPS_HOST
 fi
 

@@ -44,3 +44,6 @@ dist/
 build/
 *.egg-info/
 nul
+
+# Dane agenta na serwerze: SERVER.md, skille, audit log, wlasni providerzy
+backend/data/

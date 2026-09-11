@@ -1,8 +1,8 @@
 # Backend -- Pipe
 
-Pipe v0.6.0
+Pipe v0.7.0
 
-Backend agenta VPS. Dziala bezposrednio na serwerze (Mikrus) i wystawia lokalny Unix socket dla klientow.
+Backend agenta VPS. Dziala bezposrednio na serwerze i wystawia lokalny Unix socket dla klientow.
 
 ## Wymagania
 
@@ -127,6 +127,53 @@ Model musi obslugiwac tool calling -- kreator to sprawdzi.
 # Puste = brak wymogu tokenu.
 AGENT_TOKEN=twoj-tajny-token
 ```
+
+## Pamiec agenta: SERVER.md i skille
+
+Agent ma dwa rodzaje trwalej pamieci. Oba leza na hoscie w `backend/data/` (w kontenerze `/app/data`,
+zmienna `DATA_DIR`), przetrwaja restart i przebudowe obrazu i nie trafiaja do gita.
+
+### SERVER.md
+
+Notatki agenta o serwerze -- jak `AGENTS.md`, ale dla serwera. Agent aktualizuje je sam (narzedzie `server_md`),
+gdy pozna trwaly fakt: uslugi, kontenery, domeny, porty, wazne sciezki, Twoje decyzje. Caly plik jest dolaczany
+do system promptu kazdej rozmowy (do 12 000 znakow; sam plik moze miec do 20 000).
+
+Na start mozesz poprosic: *"zbadaj serwer i utworz SERVER.md"*. Plik mozesz tez edytowac recznie:
+`backend/data/SERVER.md`.
+
+### Skille
+
+Zapisane procedury wielokrotnego uzytku, w formacie Agent Skills:
+
+```
+backend/data/skills/<nazwa>/SKILL.md
+```
+
+```markdown
+---
+name: odnow-certyfikat
+description: Odnowienie certyfikatu TLS dla nginx
+---
+
+1. `certbot renew`
+2. `nginx -t && systemctl reload nginx`
+3. Sprawdz date waznosci certyfikatu.
+```
+
+W system prompcie jest tylko lista skilli (nazwa i opis). Pelna tresc agent wczytuje narzedziem `skill_manage`,
+gdy zadanie pasuje do opisu -- dzieki temu wiele skilli nie zapycha kontekstu. Agent tworzy skill po wykonaniu
+wieloetapowej procedury, ktora sie powtorzy, albo na Twoja prosbe.
+
+### Bezpieczenstwo pamieci
+
+- Zapis do pamieci nie wymaga potwierdzenia -- nie zmienia serwera, tylko notatki agenta. Kazdy zapis trafia do
+  audit logu (sama sciezka, bez tresci).
+- Skille i SERVER.md nie omijaja zasad bezpieczenstwa: kazda komenda z nich nadal przechodzi klasyfikacje
+  i wymog potwierdzenia.
+- SERVER.md jest wysylany do providera LLM z kazdym zapytaniem, dlatego zapis oczywistych sekretow (klucze
+  prywatne, klucze API, tokeny, `haslo=...`) jest odrzucany. Agent zapisuje, *gdzie* sekret jest przechowywany,
+  a nie sam sekret.
 
 ## Uruchomienie
 

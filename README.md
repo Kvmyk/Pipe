@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.6.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
+**v0.7.0** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
 System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
 
 ---
@@ -11,7 +11,7 @@ Szczegolowa instrukcja krok po kroku: [docs/quickstart.md](./docs/quickstart.md)
 
 ### 1. Postaw backend na serwerze
 
-Wykonaj na serwerze (Mikrus):
+Wykonaj na serwerze:
 
 ```bash
 git clone https://github.com/user/pipe
@@ -65,9 +65,9 @@ Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w
 
 | Komponent | Gdzie dziala | Polaczenie z backendem |
 |-----------|--------------|------------------------|
-| `backend/` | Serwer (Mikrus) | -- to jest backend |
+| `backend/` | Serwer | -- to jest backend |
 | `clients/cli/` | Twoj laptop | SSH tunnel -> TCP `127.0.0.1:7379` |
-| `clients/telegram/` | Serwer (Mikrus) | Unix socket `/tmp/vps-agent.sock` |
+| `clients/telegram/` | Serwer | Unix socket `/tmp/vps-agent.sock` |
 | `clients/discord/` | -- | Placeholder -- PR welcome |
 | `clients/webui/` | -- | Placeholder -- PR welcome |
 
@@ -88,6 +88,18 @@ Komunikacja: prosty protokol JSON (linia po linii):
 | `docker_manage` | Zarzadzanie kontenerami i obrazami Docker |
 | `network_info` | Diagnostyka sieciowa (porty, polaczenia, ping, curl, DNS) |
 | `cron_manage` | Zarzadzanie zadaniami cron |
+| `server_md` | Trwala pamiec agenta o serwerze (`SERVER.md`) |
+| `skill_manage` | Zapisane procedury wielokrotnego uzytku (skille) |
+
+---
+
+## Pamiec agenta
+
+Agent prowadzi wlasne notatki o serwerze w **`SERVER.md`** -- cos jak `AGENTS.md`, ale dla serwera: system, uslugi, kontenery, domeny, wazne sciezki i Twoje decyzje. Plik jest dolaczany do kazdej rozmowy, wiec agent nie musi za kazdym razem poznawac serwera od nowa.
+
+Po wykonaniu wieloetapowej procedury (np. wdrozenia aplikacji) agent moze zapisac ja jako **skill** i uzyc ponownie. Mozesz tez po prostu poprosic: *"zapisz to jako skill"*.
+
+Oba rodzaje plikow leza na serwerze w `backend/data/` (poza gitem) -- mozesz je czytac i edytowac recznie. Szczegoly: [docs/backend.md](./docs/backend.md#pamiec-agenta-servermd-i-skille)
 
 ---
 

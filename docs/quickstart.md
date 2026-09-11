@@ -1,17 +1,17 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.6.0
+Pipe v0.7.0
 
 ## Wymagania wstepne
 
-1. **Na serwerze (Mikrus)** -- uruchomiony backend agenta
+1. **Na serwerze** -- uruchomiony backend agenta
 2. **Na laptopie** -- Python 3.11+ i dostep do SSH
 
 ---
 
 ## Krok 1: Uruchom backend na serwerze
 
-SSH na Mikrusa i wykonaj:
+Zaloguj sie przez SSH na serwer i wykonaj:
 
 ```bash
 git clone https://github.com/user/pipe
@@ -50,14 +50,14 @@ cd pipe
 
 ```powershell
 .\install.ps1
-# Skrypt zapyta o adres serwera: np. root@mikrus.example.com
+# Skrypt zapyta o adres serwera: np. root@serwer.example.com
 ```
 
 ### Linux / macOS (bash/zsh)
 
 ```bash
 bash install.sh
-# Skrypt zapyta o adres serwera: np. root@mikrus.example.com
+# Skrypt zapyta o adres serwera: np. root@serwer.example.com
 ```
 
 Skrypt:
@@ -87,12 +87,12 @@ CLI automatycznie:
 +-------------------------------------------+
 |  PIPE                                     |
 |  Autonomiczny agent AI                    |
-|  Polaczono z: root@mikrus.example.com     |
+|  Polaczono z: root@serwer.example.com     |
 +-------------------------------------------+
 
 -------------- Status serwera ---------------
 
-Serwer mikrus17, dzialajacy 3 dni 7 godzin.
+Serwer serwer17, dzialajacy 3 dni 7 godzin.
 Dysk: 4.2 GB wolne z 20 GB (79% zajete)
 RAM:  1.1 GB wolne z 2 GB
 

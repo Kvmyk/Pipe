@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.6.0
+Pipe v0.7.0
 """
 
 from __future__ import annotations
@@ -296,6 +296,74 @@ TOOLS: list[dict] = [
                     },
                 },
                 "required": ["operation", "requires_confirmation"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "server_md",
+            "description": (
+                "Twoja trwala pamiec o tym serwerze: plik SERVER.md, dolaczany do kazdej rozmowy. "
+                "Zapisuj trwale fakty: system, uslugi, kontenery, domeny, porty, wazne sciezki, "
+                "decyzje uzytkownika. NIGDY nie zapisuj sekretow (hasel, kluczy, tokenow). "
+                "Operacje: read; update_section (zastap albo dodaj jedna sekcje '## ...' — preferowane); "
+                "write (zastap caly plik)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["read", "update_section", "write"],
+                        "description": "Operacja na SERVER.md.",
+                    },
+                    "section": {
+                        "type": "string",
+                        "description": "Tytul sekcji bez '##' (dla update_section), np. 'Uslugi i kontenery'.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown: tresc sekcji (update_section) albo calego pliku (write).",
+                    },
+                },
+                "required": ["operation"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill_manage",
+            "description": (
+                "Skille to zapisane przez Ciebie procedury wielokrotnego uzytku (np. wdrozenie aplikacji, "
+                "odnowienie certyfikatu, czyszczenie logow). Lista skilli jest w system prompcie — "
+                "zanim wykonasz zadanie pasujace do opisu, wczytaj skill (read). Zapisz skill (save), gdy "
+                "wykonasz wieloetapowa procedure, ktora sie powtorzy, albo gdy uzytkownik o to poprosi. "
+                "Skill nie omija zasad bezpieczenstwa — komendy nadal wymagaja potwierdzenia."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["list", "read", "save", "delete"],
+                        "description": "Operacja na skillach.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Nazwa skilla: male litery, cyfry i myslniki, np. 'odnow-certyfikat'.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Dla save: jedno zdanie — kiedy uzyc tego skilla.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Dla save: Markdown z krokami, komendami i sposobem weryfikacji.",
+                    },
+                },
+                "required": ["operation"],
             },
         },
     },

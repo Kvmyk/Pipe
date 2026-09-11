@@ -1,10 +1,10 @@
 # CLI -- Pipe
 
-Pipe v0.6.0
+Pipe v0.7.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
-Dziala na Twoim laptopie -- laczy sie zdalnie z backendem uruchomionym na Mikrusie przez automatyczny tunel SSH.
+Dziala na Twoim laptopie -- laczy sie zdalnie z backendem uruchomionym na serwerze przez automatyczny tunel SSH.
 
 ## Jak to dziala
 
@@ -15,7 +15,7 @@ Twoj laptop
           |       ssh -L 7379:127.0.0.1:7379 user@serwer
           +-- laczy sie przez tunel z agentem na serwerze
                         |
-              serwer (Mikrus) -- backend/server.py
+              serwer -- backend/server.py
                         |
               /tmp/vps-agent.sock + 127.0.0.1:7379 (tylko localhost)
 ```
@@ -26,7 +26,7 @@ CLI automatycznie zestawia tunel SSH -- nie musisz nic robic recznie.
 
 - Python 3.11+
 - `ssh` dostepny w terminalu (`which ssh`)
-- Konto SSH na serwerze Mikrus
+- Konto SSH na serwerze
 - Dzialajacy backend na serwerze (`docker-compose up -d` w katalogu `backend/`)
 
 ## Instalacja
@@ -39,16 +39,16 @@ pip install -r requirements.txt
 
 ```bash
 # Podstawowe -- podaj adres serwera
-python cli.py --host root@mikrus.example.com
+python cli.py --host root@serwer.example.com
 
 # Niestandardowy port SSH
 python cli.py --host root@1.2.3.4 --ssh-port 2222
 
 # Klucz SSH (jesli nie masz domyslnego w ~/.ssh/)
-python cli.py --host root@1.2.3.4 --key ~/.ssh/id_mikrus
+python cli.py --host root@1.2.3.4 --key ~/.ssh/id_serwer
 
 # Zmienna srodowiskowa zamiast flagi (wygodne do codziennego uzycia)
-export VPS_HOST=root@mikrus.example.com
+export VPS_HOST=root@serwer.example.com
 python cli.py
 ```
 
@@ -56,7 +56,7 @@ python cli.py
 
 ```bash
 # Recznie zestawiasz tunel w tle
-ssh -N -L 7379:127.0.0.1:7379 root@mikrus.example.com &
+ssh -N -L 7379:127.0.0.1:7379 root@serwer.example.com &
 
 # CLI z wylaczonym auto-tunnel
 python cli.py --no-tunnel --local-port 7379
