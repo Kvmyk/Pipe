@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.8.0** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
+**Pipe v0.8.1** — an autonomous LLM-powered agent for Linux VPS server management. Users interact via CLI (SSH tunnel), Telegram bot, or planned Discord/WebUI clients. The backend runs on a VPS inside Docker, uses an OpenAI-compatible LLM API (default: Google Gemini), and executes shell commands behind a three-tier security classifier.
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -98,7 +98,7 @@ Model lists are never hardcoded: the wizard and `VPSAgent.verify_model()` (run i
 
 ### `/hostfs` path convention
 
-The container mounts the host root at `/hostfs` (read-only) with `/root` re-mounted read-write over it. `Session.cwd` holds the **host-side** path (starts at `/`); the prompt instructs the LLM to prefix it with `/hostfs` for file work, and `agent.py` runs commands with `cwd=f"/hostfs{session.cwd}"`. `validate_workspace_access()` resolves a path and rejects anything outside `/hostfs` or inside the blocklist (`/hostfs/boot`, `/proc`, `/sys`, `/usr/bin`, `/hostfs/root/.ssh`, …). Host `/proc` is separately mounted at `/hostproc`, and `system_stats` reads from there so figures describe the VPS, not the container; the Dockerfile also ships a shim `/usr/local/bin/free` backed by `/hostproc/meminfo`.
+The container mounts the host root at `/hostfs` (read-only) with `/root` re-mounted read-write over it. `Session.cwd` holds the **host-side** path (starts at `/`); the prompt instructs the LLM to prefix it with `/hostfs` for file work, and `agent.py` runs commands with `cwd=f"/hostfs{session.cwd}"`. `change_directory` normalises input through `host_path()` (accepts host, `/hostfs`-prefixed and relative paths) so `cwd` never contains `/hostfs` — a doubled prefix breaks every later command. The container has its own network namespace, so `ss`/`ip` describe the container; `network_info` reads host sockets from `/hostproc/1/net/*` (PID 1 is host init under `pid: host`). `Session.system_prompt` puts the cwd block **last** so provider prefix caching survives directory changes. `validate_workspace_access()` resolves a path and rejects anything outside `/hostfs` or inside the blocklist (`/hostfs/boot`, `/proc`, `/sys`, `/usr/bin`, `/hostfs/root/.ssh`, …). Host `/proc` is separately mounted at `/hostproc`, and `system_stats` reads from there so figures describe the VPS, not the container; the Dockerfile also ships a shim `/usr/local/bin/free` backed by `/hostproc/meminfo`.
 
 ### Wire protocol (JSON lines, one object per line, both transports)
 

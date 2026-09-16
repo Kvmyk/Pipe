@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.8.0
+Pipe v0.8.1
 """
 
 from __future__ import annotations
@@ -240,9 +240,8 @@ TOOLS: list[dict] = [
                         "enum": ["ports", "connections", "listeners", "ping", "curl", "dns"],
                         "description": (
                             "Typ diagnozy: "
-                            "ports -- otwarte porty (ss -tlnp), "
-                            "connections -- aktywne polaczenia (ss -tnp), "
-                            "listeners -- nasluchujace uslugi (ss -tlnp), "
+                            "ports / listeners -- nasluchujace porty TCP/UDP hosta VPS, "
+                            "connections -- zestawione polaczenia TCP hosta VPS, "
                             "ping -- test dostepnosci hosta, "
                             "curl -- test HTTP endpointu, "
                             "dns -- rozwiazywanie nazw DNS."

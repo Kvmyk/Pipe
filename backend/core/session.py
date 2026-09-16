@@ -51,6 +51,8 @@ class Session:
             # W telegramie system_prompt uzywa HTML
             dir_context = dir_context.replace("[Katalog: ", "<b>[Katalog: ")
             dir_context = dir_context.replace("]", "]</b>")
-            return TELEGRAM_SYSTEM_PROMPT + dir_context + prompt_context()
-        return BASE_SYSTEM_PROMPT + dir_context + prompt_context()
+            return TELEGRAM_SYSTEM_PROMPT + prompt_context() + dir_context
+        # Katalog roboczy na koncu: zmienia sie najczesciej, a providerzy cache'uja
+        # najdluzszy niezmieniony prefiks promptu (prompt caching).
+        return BASE_SYSTEM_PROMPT + prompt_context() + dir_context
 

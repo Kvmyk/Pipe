@@ -1,5 +1,17 @@
 # Historia zmian -- Pipe
 
+## v0.8.1 (2026-09-16)
+
+### Poprawki
+
+- Po zmianie katalogu (`change_directory`) komendy, git i docker znowu dzialaja. Wczesniej podanie sciezki z `/hostfs` zapisywalo ja podwojnie (`/hostfs/hostfs/...`) i kazda kolejna komenda padala, a zwykla sciezka hosta byla odrzucana jako nieistniejaca. Teraz dzialaja sciezki hosta, sciezki z `/hostfs` i sciezki wzgledne, a zablokowane katalogi (np. `/root/.ssh`) sa odrzucane
+- `network_info` wreszcie dziala: wczesniej kazde wywolanie konczylo sie `ip addr show` kontenera. Porty i polaczenia pochodza teraz z sieci hosta VPS (`/hostproc/1/net`), a `ping`, `curl` i `dns` korzystaja z podanego celu
+- `/server` (skan serwera) opisuje host, a nie kontener agenta: agent czyta konfiguracje z `/hostfs/etc`, porty hosta, dysk `/hostfs` i procesy hosta, a w SERVER.md zapisuje sciezki bez prefiksu `/hostfs`
+
+### Wydajnosc
+
+- Katalog roboczy trafia na koniec system promptu, wiec zmiana katalogu nie uniewaznia cache promptu u providera (SERVER.md i reguly pozostaja wspolnym prefiksem)
+
 ## v0.8.0 (2026-09-11)
 
 ### Komendy "/" w Telegramie i CLI

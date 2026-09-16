@@ -5,13 +5,74 @@ Handler dla operacji systemowych (change_directory, system_stats, network_info, 
 from __future__ import annotations
 
 from typing import Any, AsyncGenerator
+import ipaddress
+import os
 import shlex
-from pathlib import Path
 
 from backend.core import executor
-from backend.core.security import classify_command
+from backend.core.security import classify_command, validate_workspace_access
 from backend.core.session import Session, ConfirmationRequest
 from backend.core.text import as_code
+
+
+HOSTPROC = "/hostproc"
+
+
+def host_path(path: str, cwd: str) -> str:
+    """
+    Zamienia ścieżkę podaną przez model na ścieżkę po stronie hosta.
+
+    Akceptuje ścieżkę hosta (`/var/www`), kontenera (`/hostfs/var/www`)
+    i względną (liczoną od `cwd`). Wynik zawsze zaczyna się od `/`
+    i nigdy od `/hostfs` — tak jak `Session.cwd`.
+    """
+    joined = os.path.normpath(os.path.join(cwd, path))
+    if joined == "/hostfs" or joined.startswith("/hostfs/"):
+        joined = joined[len("/hostfs"):] or "/"
+    return "/" + joined.lstrip("/")
+
+
+_TCP_LISTEN = "0A"
+_TCP_ESTABLISHED = "01"
+
+
+def _decode_addr(hex_addr: str) -> str:
+    """Dekoduje `ADRES:PORT` z /proc/net/{tcp,udp}[6] (adres w kolejnosci hosta)."""
+    addr, port = hex_addr.split(":")
+    raw = bytes.fromhex(addr)
+    if len(raw) == 4:
+        ip = ".".join(str(b) for b in reversed(raw))
+    else:
+        # IPv6: cztery 32-bitowe slowa, kazde w kolejnosci little-endian
+        words = b"".join(raw[i:i + 4][::-1] for i in range(0, 16, 4))
+        ip = f"[{ipaddress.IPv6Address(words).compressed}]"
+    return f"{ip}:{int(port, 16)}"
+
+
+def parse_proc_net(text: str, proto: str, established: bool = False) -> list[str]:
+    """
+    Zwraca gniazda z pliku /proc/<pid>/net/<proto> jako czytelne linie.
+
+    Domyslnie nasluchujace (TCP LISTEN, kazde UDP), a z `established=True`
+    zestawione polaczenia TCP.
+    """
+    out = []
+    for line in text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        local, remote, state = fields[1], fields[2], fields[3]
+        if proto.startswith("tcp"):
+            wanted = _TCP_ESTABLISHED if established else _TCP_LISTEN
+            if state != wanted:
+                continue
+        elif established:
+            continue
+        entry = f"{proto:<5} {_decode_addr(local)}"
+        if established:
+            entry += f" -> {_decode_addr(remote)}"
+        out.append(entry)
+    return out
 
 
 async def handle_change_directory(
@@ -21,9 +82,9 @@ async def handle_change_directory(
     args: dict[str, Any],
 ) -> AsyncGenerator[str, None]:
     """Obsługuje narzędzie change_directory."""
-    new_cwd = args.get("path", "").strip()
+    raw = args.get("path", "").strip()
 
-    if not new_cwd:
+    if not raw:
         session.messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
@@ -31,30 +92,16 @@ async def handle_change_directory(
         })
         return
 
-    try:
-        # Sprawdź czy katalog istnieje
-        path = Path(new_cwd)
-        if not path.exists():
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Błąd: katalog nie istnieje: {new_cwd}",
-            })
-            return
-
-        if not path.is_dir():
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Błąd: ścieżka nie jest katalogiem: {new_cwd}",
-            })
-            return
-
-        # Zmień katalog sesji
-        session.cwd = str(path.resolve())
-        result = f"Katalog zmieniony na: {session.cwd}"
-    except Exception as exc:
-        result = f"Błąd zmiany katalogu: {exc}"
+    new_cwd = host_path(raw, session.cwd)
+    container_path = f"/hostfs{new_cwd}"
+    allowed, reason = validate_workspace_access(container_path)
+    if not allowed:
+        result = f"Błąd: {reason}"
+    elif not os.path.isdir(container_path):
+        result = f"Błąd: katalog nie istnieje na serwerze: {new_cwd}"
+    else:
+        session.cwd = new_cwd
+        result = f"Katalog zmieniony na: {new_cwd}"
 
     session.messages.append({
         "role": "tool",
@@ -79,7 +126,6 @@ async def handle_system_stats(
     import re
 
     # Ścieżka do zamontowanego /proc hosta VPS
-    HOSTPROC = "/hostproc"
 
     stat_type = args.get("stat_type", "summary").strip()
 
@@ -219,22 +265,41 @@ async def handle_network_info(
     args: dict[str, Any],
 ) -> AsyncGenerator[str, None]:
     """Obsługuje narzędzie network_info."""
-    info_type = args.get("info_type", "interfaces").strip()
-
-    commands = {
-        "interfaces": "ip addr show",
-        "routes": "ip route show",
-        "connections": "ss -tuln",
-        "dns": "cat /etc/resolv.conf",
-    }
-
-    cmd = commands.get(info_type, "ip addr show")
+    check_type = str(args.get("check_type", "listeners")).strip()
+    target = str(args.get("target", "")).strip()
 
     try:
-        stdout, stderr, exit_code = await executor.execute(cmd)
-        result = f"[{info_type.upper()}]\n{stdout}"
-        if exit_code != 0:
-            result += f"\n[EXIT CODE] {exit_code}"
+        if check_type in ("ports", "listeners", "connections"):
+            # Kontener ma wlasny namespace sieciowy, wiec `ss` pokazalby tylko jego.
+            # Przy `pid: host` PID 1 to init hosta — jego /proc/1/net to siec VPS-a.
+            established = check_type == "connections"
+            lines = []
+            for proto in ("tcp", "tcp6", "udp", "udp6"):
+                if established and proto.startswith("udp"):
+                    continue
+                try:
+                    with open(f"{HOSTPROC}/1/net/{proto}") as fh:
+                        lines += parse_proc_net(fh.read(), proto, established)
+                except OSError:
+                    continue
+            label = "POLACZENIA HOSTA" if established else "NASLUCHUJACE PORTY HOSTA"
+            result = f"[{label}]\n" + ("\n".join(sorted(set(lines))) or "(brak)")
+        elif check_type in ("ping", "curl", "dns"):
+            if not target:
+                result = f"Błąd: {check_type} wymaga parametru target"
+            else:
+                quoted = shlex.quote(target)
+                cmd = {
+                    "ping": f"ping -c 3 -W 2 {quoted}",
+                    "curl": f"curl -sS -o /dev/null -m 10 -w 'HTTP %{{http_code}} w %{{time_total}}s\\n' {quoted}",
+                    "dns": f"getent ahosts {quoted}",
+                }[check_type]
+                stdout, stderr, exit_code = await executor.execute(cmd)
+                result = f"[{check_type.upper()}] {cmd}\n{stdout}{stderr}"
+                if exit_code != 0:
+                    result += f"\n[EXIT CODE] {exit_code}"
+        else:
+            result = f"Błąd: nieznany check_type: {check_type}"
     except Exception as exc:
         result = f"Błąd pobrania info sieciowych: {exc}"
 

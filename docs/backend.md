@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.8.0
+Pipe v0.8.1
 
 Backend agenta VPS. Dziala bezposrednio na serwerze i wystawia lokalny Unix socket dla klientow.
 
