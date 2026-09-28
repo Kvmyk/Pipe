@@ -1,0 +1,12 @@
+# Bot Telegram jako sidecar: laczy sie z backendem przez Unix socket we wspolnym emptyDir.
+# Obraz: docker build -t REJESTR/pipe-telegram:TAG -f clients/telegram/Dockerfile .
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: telegram-sidecar.yaml
+images:
+  - name: pipe-telegram
+    newName: pipe-telegram
+    newTag: latest

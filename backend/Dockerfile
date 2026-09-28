@@ -4,7 +4,15 @@ FROM python:3.11-slim
 # Dzięki temu "from backend.config import settings" działa poprawnie
 WORKDIR /app
 
-# Zainstaluj zależności systemowe (pobieramy oficjalny statyczny plik dockera, gwarancja braku objętości pakietu docker.io)
+# Obraz wieloarchitekturowy: docker buildx build --platform linux/amd64,linux/arm64 ...
+# (VPS-y ARM: Hetzner CAX, Oracle Ampere, AWS Graviton, Raspberry Pi)
+ARG TARGETARCH
+ARG DOCKER_VERSION=27.5.1
+# kubectl dla trybu kubernetes i celow-klastrow; "stable" = najnowsza wersja w chwili budowania
+ARG INSTALL_KUBECTL=1
+ARG KUBECTL_VERSION=stable
+
+# Narzędzia systemowe + statyczny klient Dockera (bez demona) + opcjonalnie kubectl
 RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     net-tools \
@@ -14,26 +22,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     dnsutils \
     iputils-ping \
-    && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz -o docker.tgz \
-    && tar xzvf docker.tgz docker/docker \
+    && ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$ARCH" in amd64) DARCH=x86_64 ;; arm64) DARCH=aarch64 ;; *) DARCH="$ARCH" ;; esac \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${DARCH}/docker-${DOCKER_VERSION}.tgz" -o docker.tgz \
+    && tar xzf docker.tgz docker/docker \
     && mv docker/docker /usr/local/bin/docker \
     && rm -rf docker docker.tgz \
+    && if [ "$INSTALL_KUBECTL" = "1" ]; then \
+         V="$KUBECTL_VERSION"; [ "$V" = "stable" ] && V="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"; \
+         curl -fsSL "https://dl.k8s.io/release/${V}/bin/linux/${ARCH}/kubectl" -o /usr/local/bin/kubectl \
+         && chmod +x /usr/local/bin/kubectl; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
-# Fake "free" command inside container — reads from VPS host /proc mounted at /hostproc
-RUN echo '#!/bin/bash\n\
-MEM_FILE="/hostproc/meminfo"\n\
-if [ ! -f "$MEM_FILE" ]; then MEM_FILE="/proc/meminfo"; fi\n\
-TOTAL_KB=$(grep MemTotal "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
-AVAIL_KB=$(grep MemAvailable "$MEM_FILE" | awk '"'"'{print $2}'"'"')\n\
-USED_KB=$(( TOTAL_KB - AVAIL_KB ))\n\
-TOTAL_MB=$(( TOTAL_KB / 1024 ))\n\
-USED_MB=$(( USED_KB / 1024 ))\n\
-FREE_MB=$(( AVAIL_KB / 1024 ))\n\
-echo "               total        used        free      shared  buff/cache   available"\n\
-echo "Mem:           ${TOTAL_MB}M         ${USED_MB}M        ${FREE_MB}M          0M          0M         ${FREE_MB}M"\n\
-echo "Swap:             0B          0B          0B"\n\
-' > /usr/local/bin/free && chmod +x /usr/local/bin/free
+# "free" w kontenerze pokazuje RAM hosta — czyta /proc hosta (HOST_PROC, domyślnie /hostproc)
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'MEM_FILE="${HOST_PROC:-/hostproc}/meminfo"' \
+    '[ -f "$MEM_FILE" ] || MEM_FILE=/proc/meminfo' \
+    'awk '"'"'/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} /^SwapTotal:/{st=$2} /^SwapFree:/{sf=$2} END {' \
+    '  printf "               total        used        free      shared  buff/cache   available\n";' \
+    '  printf "Mem:     %10dM %10dM %10dM %10dM %10dM %10dM\n", t/1024, (t-a)/1024, a/1024, 0, 0, a/1024;' \
+    '  printf "Swap:    %10dM %10dM %10dM\n", st/1024, (st-sf)/1024, sf/1024 }'"'"' "$MEM_FILE"' \
+    > /usr/local/bin/free && chmod +x /usr/local/bin/free
 
 # Skopiuj i zainstaluj zależności Pythona
 COPY requirements.txt .
@@ -42,7 +53,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Skopiuj kod backendu do /app/backend/ (żeby paczka "backend" była widoczna)
 COPY . ./backend/
 
-# Usuwamy vpsagent, żeby agent mógł bez problemu łączyć się z /var/run/docker.sock jako root wewnątrz kontenera.
-# USER vpsagent - usunięto dla kompatybilności z docker.sock
-# Punkt wejścia — python widzi /app, więc "import backend" działa
+# Działa jako root w kontenerze: potrzebny dostęp do /var/run/docker.sock i /hostfs/root.
+ENV PYTHONUNBUFFERED=1
+EXPOSE 7379
+HEALTHCHECK --interval=60s --timeout=5s --start-period=20s \
+    CMD python -c "import socket; socket.create_connection(('127.0.0.1', 7379), 3).close()" || exit 1
 CMD ["python", "-m", "backend.server"]

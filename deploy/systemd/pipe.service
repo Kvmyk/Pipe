@@ -1,0 +1,21 @@
+# Pipe — backend w trybie native (bez Dockera). Instalacja: scripts/install-server.sh --mode native
+# (@PIPE_DIR@ zastepuje skrypt instalacyjny, np. /opt/pipe)
+[Unit]
+Description=Pipe — agent AI do zarzadzania serwerem
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PIPE_DIR@
+Environment=PIPE_RUNTIME=native
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PIPE_DIR@/.venv/bin/python -m backend.server
+Restart=on-failure
+RestartSec=5
+# Agent zarzadza serwerem, wiec dziala jako root. Granice wyznacza klasyfikator
+# komend i potwierdzenia, nie uprawnienia procesu — patrz docs/security.md.
+User=root
+
+[Install]
+WantedBy=multi-user.target

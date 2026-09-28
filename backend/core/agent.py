@@ -1,196 +1,205 @@
 """
-Agent -- petla LLM z tool calling do zarzadzania serwerem VPS.
+Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.8.1
+Pipe v0.9.1
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
-  2. Agent dodaje do historii i wysyla do LLM
-  3. LLM odpowiada: tool_call lub text
-  4. tool_call -> walidacja security -> execute/confirm/forbid
-  5. Wynik wraca do LLM jako tool_result
-  6. LLM formuluje odpowiedz po polsku
-  7. Odpowiedz trafia do uzytkownika
+  2. Agent dodaje ja do historii i wysyla do LLM
+  3. LLM odpowiada: tool_call albo tekst
+  4. tool_call -> handler (core/handlers) -> klasyfikacja -> wykonanie/potwierdzenie/odmowa
+  5. Wynik (po redakcji sekretow) wraca do LLM jako tool_result
+  6. LLM formuluje odpowiedz po polsku, ktora trafia do uzytkownika
+
+Petla yielduje zdarzenia (core/events.py): tekst, zalaczniki (diagramy)
+i statusy posrednie (workery). Te sama petle -- z innym zestawem narzedzi
+i promptem -- uruchamiaja workery (core/workers.py).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import uuid
-from typing import Any, AsyncGenerator, Literal
+from typing import Any, AsyncGenerator
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
-from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT
-from backend.core import audit
-from backend.core import executor
-from backend.core.security import classify_command, classify_file_write
+from backend.core import audit, executor, memory, runtime
+from backend.core.events import Event
+from backend.core.session import ConfirmationRequest, Session
 from backend.core.tools import TOOLS
-from backend.core.session import Session, ConfirmationRequest
 import backend.core.handlers as handlers_module
 
-MAX_TOOL_ITERATIONS = 10
+# Wynik jednego narzedzia dla modelu — dluzszy jest przycinany (poczatek + koniec).
+MAX_TOOL_RESULT_CHARS = 24_000
+# Historia sesji — starsze tury sa odcinane na granicy wiadomosci uzytkownika.
+MAX_HISTORY_MESSAGES = 120
+
+SKIPPED_FOR_CONFIRMATION = (
+    "NIE WYKONANO: poprzednie narzedzie czeka na potwierdzenie uzytkownika. "
+    "Jesli to wywolanie jest nadal potrzebne, powtorz je po jego decyzji."
+)
+INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
+ABANDONED_CONFIRMATION = (
+    "Uzytkownik nie potwierdzil tej operacji -- zamiast odpowiedziec TAK/NIE napisal nowa wiadomosc. "
+    "Operacja NIE zostala wykonana."
+)
 
 
 class VPSAgent:
     """
-    Autonomiczny agent AI do zarządzania serwerem VPS.
+    Autonomiczny agent AI do zarzadzania serwerami.
 
-    Utrzymuje sesje rozmów i obsługuje pętlę LLM z tool calling.
-    Jeden egzemplarz może obsługiwać wiele sesji równocześnie.
+    Utrzymuje sesje rozmow i obsluguje petle LLM z tool calling.
+    Jeden egzemplarz obsluguje wiele sesji rownoczesnie.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, client: Any = None) -> None:
         llm = settings.LLM
-        self._client = AsyncOpenAI(
+        self._client = client or AsyncOpenAI(
             api_key=llm.api_key or NO_KEY_PLACEHOLDER,
             base_url=llm.base_url,
             timeout=llm.timeout,  # modele rozumujace potrafia odpowiadac dluzej niz minute
         )
         self._sessions: dict[str, Session] = {}
-        
-        # Inicjalne ustawienie teleporterów i uprawnień na hoście
-        asyncio.create_task(self._initialize_host_access())
+        from backend.core.vibe import VibeLearner
+        self.vibe = VibeLearner(self)
 
-    async def _initialize_host_access(self):
-        """Ustawia dostęp do hosta - obecnie nie wymaga crona dzięki nsenter."""
-        pass
+    # ─── Sesje ──────────────────────────────────────────────────────────────
 
-    def get_or_create_session(
-        self,
-        session_id: str,
-        interface: str = "cli",
-    ) -> Session:
-        """Zwraca istniejącą sesję lub tworzy nową."""
+    def get_or_create_session(self, session_id: str, interface: str = "cli") -> Session:
+        """Zwraca istniejaca sesje lub tworzy nowa."""
         if session_id not in self._sessions:
-            self._sessions[session_id] = Session(
-                session_id=session_id,
-                interface=interface,
-            )
+            self._sessions[session_id] = Session(session_id=session_id, interface=interface)
         return self._sessions[session_id]
 
     def delete_session(self, session_id: str) -> None:
-        """Usuwa sesję (np. po rozłączeniu klienta)."""
+        """Usuwa sesje (np. po rozlaczeniu klienta)."""
         self._sessions.pop(session_id, None)
+
+    # ─── API dla serwera ────────────────────────────────────────────────────
 
     async def chat(
         self,
         session_id: str,
         user_message: str,
         interface: str = "cli",
-    ) -> AsyncGenerator[str, None]:
+        *,
+        generated: bool = False,
+    ) -> AsyncGenerator[Event, None]:
         """
-        Przetwarza wiadomość użytkownika i zwraca odpowiedź jako generator.
+        Przetwarza wiadomosc uzytkownika i strumieniuje zdarzenia odpowiedzi.
+        Nie rzuca wyjatkow — bledy wracaja jako tekst [BLAD].
 
-        Yields:
-            Fragmenty odpowiedzi agenta (tekst w języku polskim).
-
-        Raises:
-            Nie rzuca wyjątków — błędy są logowane i zwracane jako odpowiedzi.
+        `generated=True` — tresc zbudowal backend (skan, /status, skill), nie
+        uzytkownik; nie uczy VIBE.
         """
         session = self.get_or_create_session(session_id, interface)
 
-        # Dodaj wiadomość użytkownika do historii
-        session.messages.append({"role": "user", "content": user_message})
+        # Nowa wiadomosc zamiast TAK/NIE: operacja przepada, a wywolanie narzedzia
+        # dostaje odpowiedz — inaczej provider odrzuci historie z nieodpowiedzianym tool_call.
+        if session.pending_confirmation:
+            pending = session.pending_confirmation
+            session.pending_confirmation = None
+            session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
+                                     "content": ABANDONED_CONFIRMATION})
+
+        _repair_history(session)
+        message: dict[str, Any] = {"role": "user", "content": user_message}
+        if generated:
+            message["pipe_generated"] = True
+        session.messages.append(message)
+        _trim_history(session)
+        self.vibe.observe(session)
 
         try:
-            async for chunk in self._run_agent_loop(session):
-                yield chunk
+            async for event in self.run_loop(session):
+                yield event
         except Exception as exc:
-            yield f"[BLAD] Błąd wykonania: {exc}"
+            yield f"[BLAD] Blad wykonania: {exc}"
 
-    async def confirm(
-        self,
-        session_id: str,
-        confirmed: bool,
-    ) -> AsyncGenerator[str, None]:
-        """
-        Obsługuje potwierdzenie lub odmowę użytkownika dla oczekującej operacji.
-
-        Args:
-            session_id: ID sesji.
-            confirmed: True = TAK, False = NIE.
-
-        Yields:
-            Fragmenty odpowiedzi agenta.
-        """
+    async def confirm(self, session_id: str, confirmed: bool) -> AsyncGenerator[Event, None]:
+        """Obsluguje TAK/NIE dla oczekujacej operacji i kontynuuje petle."""
         session = self._sessions.get(session_id)
         if not session or not session.pending_confirmation:
-            yield "[OSTRZEZENIE] Brak oczekującej operacji do potwierdzenia."
+            yield "[OSTRZEZENIE] Brak oczekujacej operacji do potwierdzenia."
             return
 
         pending = session.pending_confirmation
         session.pending_confirmation = None
 
         if confirmed:
-            # Wykonaj operację
-            result_content = await self._execute_tool_confirmed(
-                session, pending
-            )
+            await self._execute_tool_confirmed(session, pending)
         else:
-            # Użytkownik odmówił — poinformuj LLM
-            result_content = "Użytkownik odmówił wykonania tej operacji."
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": pending.tool_call_id,
-                    "content": result_content,
-                }
-            )
+            session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
+                                     "content": "Uzytkownik odmowil wykonania tej operacji."})
 
-        # Kontynuuj pętlę LLM
         try:
-            async for chunk in self._run_agent_loop(session):
-                yield chunk
+            async for event in self.run_loop(session):
+                yield event
         except Exception as exc:
-            yield f"[BLAD] Błąd po potwierdzeniu: {exc}"
+            yield f"[BLAD] Blad po potwierdzeniu: {exc}"
 
-    # ─── Wewnętrzna pętla agenta ──────────────────────────────────────────────
+    # ─── Petla ──────────────────────────────────────────────────────────────
 
-    async def _run_agent_loop(
+    async def run_loop(
         self,
         session: Session,
-    ) -> AsyncGenerator[str, None]:
-        """Pętla LLM z tool calling. Maksymalnie MAX_TOOL_ITERATIONS iteracji."""
-
-        for iteration in range(MAX_TOOL_ITERATIONS):
-            response = await self._call_llm(session)
+        *,
+        system_prompt: str | None = None,
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        max_iterations: int | None = None,
+        dispatch: Any = None,
+    ) -> AsyncGenerator[Event, None]:
+        """
+        Petla LLM z tool calling. Parametry pozwalaja uruchomic ja dla workera:
+        wlasny prompt, zestaw narzedzi, model i funkcja dispatch(session, tool_call, args).
+        """
+        iterations = max_iterations or settings.AGENT_MAX_ITERATIONS
+        for _ in range(iterations):
+            response = await self.call_llm(
+                system_prompt if system_prompt is not None else session.system_prompt,
+                session.messages,
+                tools=TOOLS if tools is None else tools,
+                model=model,
+            )
             message = response.choices[0].message
-
-            # Dodaj odpowiedź asystenta do historii
             session.messages.append(message.model_dump(exclude_unset=True, exclude_none=True))
 
-            # Sprawdź czy LLM chce wywołać narzędzie
             if not message.tool_calls:
-                # LLM odpowiedział bezpośrednio — koniec pętli
                 yield message.content or ""
                 return
 
-            # Obsłuż każde wywołanie narzędzia
             for tool_call in message.tool_calls:
-                async for chunk in self._handle_tool_call(session, tool_call):
-                    yield chunk
-
-                # Jeśli oczekujemy na potwierdzenie — przerwij pętlę
                 if session.pending_confirmation:
-                    return
+                    # Kazde wywolanie musi dostac odpowiedz, nawet gdy nie zostalo wykonane.
+                    session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                             "content": SKIPPED_FOR_CONFIRMATION})
+                    continue
+                async for event in self._handle_tool_call(session, tool_call, dispatch):
+                    yield event
 
-        # Przekroczono limit iteracji
+            if session.pending_confirmation:
+                return
+
         yield (
-            "[OSTRZEZENIE] Agent osiągnął limit iteracji. "
-            "Spróbuj przeformułować zapytanie lub podziel je na mniejsze kroki."
+            "[OSTRZEZENIE] Agent osiagnal limit krokow. "
+            "Napisz \"kontynuuj\", zebym dokonczyl, albo podziel zadanie na mniejsze kroki."
         )
 
-    async def _call_llm(self, session: Session) -> ChatCompletion:
-        """Wysyła historię sesji do LLM i zwraca odpowiedź."""
-        messages = [
-            {"role": "system", "content": session.system_prompt},
-            *session.messages,
-        ]
+    async def call_llm(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict] | None = None,
+        model: str | None = None,
+    ) -> ChatCompletion:
+        """Wysyla historie do LLM i zwraca odpowiedz."""
         # tool_choice pomijamy celowo: "auto" jest i tak domyslne, gdy podano
         # tools, a czesc providerow (np. Ollama) nie obsluguje tego parametru.
         # reasoning_effort idzie przez extra_body, zeby dzialal na kazdej
@@ -198,12 +207,21 @@ class VPSAgent:
         extra_body: dict[str, Any] = {}
         if settings.LLM.reasoning_effort:
             extra_body["reasoning_effort"] = settings.LLM.reasoning_effort
-        return await self._client.chat.completions.create(
-            model=settings.LLM.model,
-            messages=messages,
-            tools=TOOLS,
-            extra_body=extra_body or None,
-        )
+        # Klucze pipe_* to metadane Pipe — providerzy odrzucaja nieznane pola wiadomosci.
+        clean = [{k: v for k, v in m.items() if not k.startswith("pipe_")} for m in messages]
+        kwargs: dict[str, Any] = {
+            "model": model or settings.LLM.model,
+            "messages": [{"role": "system", "content": system_prompt}, *clean],
+            "extra_body": extra_body or None,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return await self._client.chat.completions.create(**kwargs)
+
+    async def complete(self, system_prompt: str, user_message: str, model: str | None = None) -> str:
+        """Jedno zapytanie bez narzedzi (np. aktualizacja VIBE). Zwraca tekst."""
+        response = await self.call_llm(system_prompt, [{"role": "user", "content": user_message}], model=model)
+        return response.choices[0].message.content or ""
 
     async def verify_model(self) -> str | None:
         """
@@ -225,542 +243,148 @@ class VPSAgent:
             "Zmien model: python3 -m backend.configure"
         )
 
-    async def _handle_tool_call(
-        self,
-        session: Session,
-        tool_call: Any,
-    ) -> AsyncGenerator[str, None]:
-        """Obsługuje pojedyncze wywołanie narzędzia przez LLM."""
-        tool_name = tool_call.function.name
+    # ─── Narzedzia ──────────────────────────────────────────────────────────
+
+    async def _handle_tool_call(self, session: Session, tool_call: Any, dispatch: Any = None) -> AsyncGenerator[Event, None]:
+        """Obsluguje jedno wywolanie narzedzia i porzadkuje jego wynik dla modelu."""
+        before = len(session.messages)
         try:
-            args = json.loads(tool_call.function.arguments)
+            args = json.loads(tool_call.function.arguments or "{}")
+            if not isinstance(args, dict):
+                raise json.JSONDecodeError("argumenty nie sa obiektem", "", 0)
         except json.JSONDecodeError as exc:
-            yield f"[BLAD] Błąd parsowania argumentów narzędzia: {exc}"
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                     "content": f"Blad: argumenty narzedzia nie sa poprawnym JSON-em ({exc})."})
             return
 
-        # Delegowanie do modułu handlers przez getattr
-        handler = getattr(handlers_module, f"handle_{tool_name}", None)
-
-        if handler:
-            async for chunk in handler(self, session, tool_call, args):
-                yield chunk
+        if dispatch is not None:
+            handler = lambda s, tc, a: dispatch(s, tc, a)  # noqa: E731
         else:
-            result = f"Nieznane narzedzie: {tool_name}"
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
-                }
-            )
-            return
-            yield  # noqa: unreachable
+            found = getattr(handlers_module, f"handle_{tool_call.function.name}", None)
+            handler = (lambda s, tc, a: found(self, s, tc, a)) if found else None
 
-    async def _handle_execute_command(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Obsługuje narzędzie execute_command."""
-        command = args.get("command", "").strip()
-        if not command:
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Błąd: pusta komenda",
-                }
-            )
-            return
-
-        classification = classify_command(command)
-
-        if classification == "forbidden":
-            # FORBIDDEN — nie informuj LLM, sam odmów
-            await audit.log_blocked(session.interface, command)
-            yield f"[ODMOWA] Wykonanie polecenia `{command}` jest zabronione przez politykę bezpieczeństwa."
-            # Dodaj informację do historii jako odmowę systemową
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "ODMOWA SYSTEMOWA: Komenda jest na liście zakazanych operacji.",
-                }
-            )
-            return
-
-        if classification == "confirm":
-            # CONFIRM — poproś użytkownika o potwierdzenie
-            session.pending_confirmation = ConfirmationRequest(
-                tool_call_id=tool_call.id,
-                tool_name="execute_command",
-                command=command,
-                classification="confirm",
-            )
-            yield f"[POTWIERDZ] Polecenie `{command}` wymaga potwierdzenia. Wpisz TAK aby wykonać."
-            return
-
-        # SAFE — wykonaj od razu
-        stdout, stderr, exit_code = await executor.execute(
-            command, cwd=f"/hostfs{session.cwd}"
-        )
-        await audit.log_safe(session.interface, command, exit_code)
-
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            }
-        )
-
-    async def _handle_read_file(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Obsługuje narzędzie read_file."""
-        from backend.core.security import validate_workspace_access
-        
-        path = args.get("path", "").strip()
-        if not path:
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Błąd: pusta ścieżka",
-                }
-            )
-            return
-
-        # Walidacja dostępu do workspace'u
-        is_allowed, reason = validate_workspace_access(path)
-        if not is_allowed:
-            await audit.log_blocked(session.interface, f"read_file({path}): {reason}")
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": f"ODMOWA SYSTEMOWA: {reason}",
-                }
-            )
+        if handler is None:
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                     "content": f"Nieznane narzedzie: {tool_call.function.name}"})
             return
 
         try:
-            content = await executor.read_file(path)
-            await audit.log_file_read(session.interface, path)
-            result = content if content else "(plik jest pusty)"
-        except FileNotFoundError:
-            result = f"Błąd: plik nie istnieje: {path}"
-        except PermissionError:
-            result = f"Błąd: brak uprawnień do odczytu: {path}"
-        except Exception as exc:
-            result = f"Błąd odczytu pliku: {exc}"
+            async for event in handler(session, tool_call, args):
+                yield event
+        except Exception as exc:  # blad handlera nie moze zostawic wywolania bez odpowiedzi
+            if not _answered(session, tool_call.id, before) and session.pending_confirmation is None:
+                session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                         "content": f"Blad narzedzia: {exc}"})
+            yield f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}"
 
-        session.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            }
-        )
-        # read_file nie emituje chunków — LLM dostanie wynik i sformułuje odpowiedź
-        return
-        yield  # noqa: unreachable — wymagane żeby metoda była async generator
+        if not _answered(session, tool_call.id, before) and (
+            session.pending_confirmation is None or session.pending_confirmation.tool_call_id != tool_call.id
+        ):
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                     "content": "Narzedzie nie zwrocilo wyniku."})
+        _sanitize_new_results(session, before)
 
-    async def _handle_write_file(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Obsługuje narzędzie write_file — zawsze wymaga potwierdzenia."""
-        from backend.core.security import validate_workspace_access
-        
-        path = args.get("path", "").strip()
-        content = args.get("content", "")
+    async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> str:
+        """
+        Wykonuje zatwierdzona operacje i dopisuje wynik do historii.
 
-        if not path:
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Błąd: pusta ścieżka",
-                }
-            )
-            return
+        Handler nie jest wywolywany ponownie: `action` (operacje na rejestrach Pipe)
+        jest wywolywana wprost, write_file odtwarza sciezke i tresc, a kazde inne
+        narzedzie przechowuje w ConfirmationRequest gotowa komende shell.
+        """
+        before = len(session.messages)
+        from backend.core.handlers.common import format_result
 
-        # Walidacja dostępu do workspace'u
-        is_allowed, reason = validate_workspace_access(path)
-        if not is_allowed:
-            await audit.log_blocked(session.interface, f"write_file({path}): {reason}")
-            yield f"[ODMOWA] {reason}"
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": f"ODMOWA SYSTEMOWA: {reason}",
-                }
-            )
-            return
-
-        classification = classify_file_write(path)
-
-        if classification == "forbidden":
-            await audit.log_blocked(session.interface, f"write_file({path})")
-            yield f"[ODMOWA] Nie mogę zapisać do `{path}`. Ta ścieżka jest chroniona."
-            session.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "ODMOWA SYSTEMOWA: Zapis do tej ścieżki jest zakazany.",
-                }
-            )
-            return
-
-        # Write file zawsze wymaga potwierdzenia
-        session.pending_confirmation = ConfirmationRequest(
-            tool_call_id=tool_call.id,
-            tool_name="write_file",
-            command=f"write_file(path={path}, content=<{len(content)} znaków>)",
-            classification="confirm",
-            file_path=path,
-            file_content=content,
-        )
-        yield f"[POTWIERDZ] Operacja zapisu wymaga potwierdzenia: `{path}` ({len(content)} znakow)"
-
-    # --- Git ---
-
-    async def _handle_git_command(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Obsluguje narzedzie git_command."""
-        repo_path = args.get("repo_path", "").strip()
-        subcommand = args.get("subcommand", "").strip()
-        needs_confirm = args.get("requires_confirmation", False)
-
-        if not repo_path or not subcommand:
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": "Blad: repo_path i subcommand sa wymagane.",
-            })
-            return
-
-        cmd = f"git -C {repo_path} {subcommand}"
-
-        # Operacje modyfikujace wymagaja potwierdzenia
-        modify_keywords = ["commit", "push", "merge", "rebase", "reset", "checkout", "stash pop", "stash drop"]
-        if needs_confirm or any(kw in subcommand.lower() for kw in modify_keywords):
-            session.pending_confirmation = ConfirmationRequest(
-                tool_call_id=tool_call.id,
-                tool_name="execute_command",
-                command=cmd,
-                classification="confirm",
-            )
-            yield f"[POTWIERDZ] Operacja Git wymaga potwierdzenia: `{cmd}`"
-            return
-
-        stdout, stderr, exit_code = await executor.execute(
-            cmd, cwd=f"/hostfs{session.cwd}"
-        )
-        await audit.log_safe(session.interface, cmd, exit_code)
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    # --- Change directory ---
-
-    async def _handle_change_directory(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Zmienia wirtualny katalog roboczy agenta."""
-        path = args.get("path", "").strip()
-        if not path:
-            result = "Blad: parameter 'path' jest wymagany."
-        else:
-            # Upewnienie sie ze path jest absolutny w stosunku do hosta (zaczyna sie od /)
-            import os
-            # Zamiana ewentualnego ./ itp.
-            new_cwd = os.path.normpath(os.path.join(session.cwd, path))
-            
-            # Weryfikacja czy istnieje na hostfs
-            hostfs_path = os.path.join("/hostfs", new_cwd.lstrip("/"))
-            if os.path.isdir(hostfs_path):
-                session.cwd = new_cwd
-                result = f"Katalog zmieniony na: {new_cwd}"
-            else:
-                result = f"Blad: Katalog {new_cwd} nie istnieje na serwerze."
-
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    # --- System Stats ---
-
-    async def _handle_system_stats(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Pobiera statystyki serwera z /hostproc (zamontowany /proc VPS-a)."""
-        HOSTPROC = "/hostproc"
-        stats_cmd = (
-            f"echo '=== UPTIME ===' && cat {HOSTPROC}/uptime && "
-            f"echo '\\n=== MEMORY ===' && cat {HOSTPROC}/meminfo | head -12 && "
-            f"echo '\\n=== LOADAVG ===' && cat {HOSTPROC}/loadavg && "
-            f"echo '\\n=== CPU ===' && cat {HOSTPROC}/stat | head -5 && "
-            "echo '\\n=== CPU_INFO ===' && nproc && "
-            "echo '\\n=== DISK ===' && df -h / /hostfs 2>/dev/null && "
-            "echo '\\n=== TOP_PROCS ===' && ps aux --sort=-%cpu | head -12"
-        )
-
-        stdout, stderr, exit_code = await executor.execute(stats_cmd)
-        await audit.log_safe(session.interface, "system_stats", exit_code)
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    # --- Docker Management ---
-
-    async def _handle_docker_manage(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Obsluguje operacje Docker."""
-        operation = args.get("operation", "").strip()
-        target = args.get("target", "").strip()
-        options = args.get("options", "").strip()
-        needs_confirm = args.get("requires_confirmation", False)
-
-        op_map = {
-            "ps": "docker ps",
-            "logs": f"docker logs {target}",
-            "inspect": f"docker inspect {target}",
-            "stats": "docker stats --no-stream",
-            "top": f"docker top {target}",
-            "restart": f"docker restart {target}",
-            "stop": f"docker stop {target}",
-            "start": f"docker start {target}",
-            "rm": f"docker rm {target}",
-            "rmi": f"docker rmi {target}",
-            "images": "docker images",
-            "prune": "docker system prune -f",
-            "compose-ps": f"docker compose -f {target} ps" if target else "docker compose ps",
-            "compose-logs": f"docker compose -f {target} logs --tail 50" if target else "docker compose logs --tail 50",
-        }
-
-        cmd = op_map.get(operation)
-        if not cmd:
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Nieznana operacja Docker: {operation}",
-            })
-            return
-
-        if options:
-            cmd = f"{cmd} {options}"
-
-        modify_ops = {"restart", "stop", "start", "rm", "rmi", "prune"}
-        if needs_confirm or operation in modify_ops:
-            session.pending_confirmation = ConfirmationRequest(
-                tool_call_id=tool_call.id,
-                tool_name="execute_command",
-                command=cmd,
-                classification="confirm",
-            )
-            yield f"[POTWIERDZ] Operacja Docker wymaga potwierdzenia: `{cmd}`"
-            return
-
-        stdout, stderr, exit_code = await executor.execute(
-            cmd, cwd=f"/hostfs{session.cwd}"
-        )
-        await audit.log_safe(session.interface, cmd, exit_code)
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    # --- Network Info ---
-
-    async def _handle_network_info(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Diagnostyka sieciowa."""
-        check_type = args.get("check_type", "").strip()
-        target = args.get("target", "").strip()
-
-        cmd_map = {
-            "ports": "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null",
-            "connections": "ss -tnp 2>/dev/null || netstat -tnp 2>/dev/null",
-            "listeners": "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null",
-            "ping": f"ping -c 4 {target}" if target else "echo 'Blad: target wymagany dla ping'",
-            "curl": f"curl -sS -o /dev/null -w '%{{http_code}} %{{time_total}}s' {target}" if target else "echo 'Blad: target wymagany dla curl'",
-            "dns": f"nslookup {target} 2>/dev/null || dig {target} +short 2>/dev/null" if target else "echo 'Blad: target wymagany dla dns'",
-        }
-
-        cmd = cmd_map.get(check_type)
-        if not cmd:
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Nieznany typ diagnozy: {check_type}",
-            })
-            return
-
-        stdout, stderr, exit_code = await executor.execute(
-            cmd, cwd=f"/hostfs{session.cwd}"
-        )
-        await audit.log_safe(session.interface, f"network_info:{check_type}", exit_code)
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    # --- Cron Management ---
-
-    async def _handle_cron_manage(
-        self,
-        session: Session,
-        tool_call: Any,
-        args: dict[str, Any],
-    ) -> AsyncGenerator[str, None]:
-        """Zarzadzanie zadaniami cron."""
-        operation = args.get("operation", "").strip()
-        schedule = args.get("schedule", "").strip()
-        command = args.get("command", "").strip()
-        needs_confirm = args.get("requires_confirmation", False)
-
-        if operation == "list":
-            cmd = "crontab -l 2>/dev/null || echo 'Brak zadan cron'"
-        elif operation == "check-logs":
-            cmd = "grep -i cron /var/log/syslog 2>/dev/null | tail -20 || journalctl -u cron --no-pager -n 20 2>/dev/null || echo 'Brak logow cron'"
-        elif operation == "add":
-            if not schedule or not command:
-                session.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Blad: schedule i command sa wymagane dla operacji 'add'.",
-                })
-                return
-            cmd = f"(crontab -l 2>/dev/null; echo '{schedule} {command}') | crontab -"
-        elif operation == "remove":
-            if not command:
-                session.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Blad: command (wzorzec do usuniecia) jest wymagany dla operacji 'remove'.",
-                })
-                return
-            cmd = f"crontab -l 2>/dev/null | grep -v '{command}' | crontab -"
-        else:
-            session.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": f"Nieznana operacja cron: {operation}",
-            })
-            return
-
-        modify_ops = {"add", "remove"}
-        if needs_confirm or operation in modify_ops:
-            session.pending_confirmation = ConfirmationRequest(
-                tool_call_id=tool_call.id,
-                tool_name="execute_command",
-                command=cmd,
-                classification="confirm",
-            )
-            yield f"[POTWIERDZ] Operacja cron wymaga potwierdzenia: `{cmd}`"
-            return
-
-        stdout, stderr, exit_code = await executor.execute(
-            cmd, cwd=f"/hostfs{session.cwd}"
-        )
-        await audit.log_safe(session.interface, f"cron:{operation}", exit_code)
-        result = _format_tool_result(stdout, stderr, exit_code)
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        })
-        return
-        yield  # noqa: unreachable
-
-    async def _execute_tool_confirmed(
-        self,
-        session: Session,
-        pending: ConfirmationRequest,
-    ) -> str:
-        """Wykonuje potwierdzona operacje i dodaje wynik do historii."""
-        if pending.tool_name == "write_file":
-            path = pending.file_path or ""
-            content = pending.file_content or ""
+        if pending.action is not None:
             try:
-                await executor.write_file(path, content)
+                result = await pending.action()
+                await audit.log_confirmed(session.interface, pending.command, 0)
+            except Exception as exc:
+                await audit.log_confirmed(session.interface, pending.command, 1)
+                result = f"Blad: {exc}"
+        elif pending.tool_name == "write_file":
+            path = pending.file_path or ""
+            try:
+                await executor.write_file(path, pending.file_content or "")
                 await audit.log_file_write(session.interface, path, 0)
-                result = f"Plik {path} zostal zapisany pomyslnie."
+                result = f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie."
             except PermissionError as exc:
                 await audit.log_file_write(session.interface, path, 1)
                 result = f"Blad zapisu (brak uprawnien): {exc}"
             except OSError as exc:
                 await audit.log_file_write(session.interface, path, 1)
                 result = f"Blad zapisu pliku: {exc}"
-
         else:
-            # Kazde inne narzedzie (execute_command, git_command, docker_manage,
-            # cron_manage...) przechowuje w ConfirmationRequest gotowa komende shell.
-            command = pending.command
             stdout, stderr, exit_code = await executor.execute(
-                command, cwd=f"/hostfs{session.cwd}"
+                pending.command,
+                cwd=runtime.to_local(session.cwd),
+                timeout=settings.CONFIRMED_COMMAND_TIMEOUT,
             )
-            await audit.log_confirmed(session.interface, command, exit_code)
-            result = _format_tool_result(stdout, stderr, exit_code)
+            await audit.log_confirmed(session.interface, pending.command, exit_code)
+            result = format_result(stdout, stderr, exit_code)
 
-        session.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": pending.tool_call_id,
-                "content": result,
-            }
-        )
+        session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id, "content": result})
+        _sanitize_new_results(session, before)
         return result
+
+
+# ─── Pomocnicze ─────────────────────────────────────────────────────────────
+
+def _answered(session: Session, tool_call_id: str, since: int) -> bool:
+    return any(m.get("role") == "tool" and m.get("tool_call_id") == tool_call_id for m in session.messages[since:])
+
+
+def _repair_history(session: Session) -> None:
+    """
+    Domyka wywolania narzedzi bez odpowiedzi — zostaja, gdy klient rozlaczy sie
+    w trakcie petli (generator zostaje zamkniety w polowie handlera).
+    """
+    for index in range(len(session.messages) - 1, -1, -1):
+        message = session.messages[index]
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            answered = {m.get("tool_call_id") for m in session.messages[index + 1:] if m.get("role") == "tool"}
+            for call in message["tool_calls"]:
+                if call.get("id") not in answered:
+                    session.messages.append({"role": "tool", "tool_call_id": call["id"], "content": INTERRUPTED_TOOL})
+            return
+        if message.get("role") == "user":
+            return
+
+
+def truncate_result(text: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
+    """Przycina dlugi wynik, zostawiajac poczatek i koniec (bledy sa zwykle na koncu)."""
+    if len(text) <= limit:
+        return text
+    head = limit * 2 // 3
+    tail = limit - head
+    return f"{text[:head]}\n\n[... pominieto {len(text) - limit} znakow ...]\n\n{text[-tail:]}"
+
+
+def _sanitize_new_results(session: Session, since: int) -> None:
+    """Redakcja sekretow i przycinanie wynikow narzedzi dopisanych od indeksu `since`."""
+    for message in session.messages[since:]:
+        if message.get("role") != "tool" or not isinstance(message.get("content"), str):
+            continue
+        content = message["content"]
+        if settings.REDACT_SECRETS:
+            content, count = memory.redact_secrets(content)
+            if count:
+                content += f"\n[System: ukryto {count} sekret(ow) przed wyslaniem do modelu.]"
+        message["content"] = truncate_result(content)
+
+
+def _trim_history(session: Session, limit: int = MAX_HISTORY_MESSAGES) -> None:
+    """
+    Odcina najstarsze tury, gdy historia jest za dluga. Ciecie zawsze na
+    wiadomosci uzytkownika — para tool_call/tool_result nie moze zostac rozdzielona.
+    """
+    if len(session.messages) <= limit:
+        return
+    cut = len(session.messages) - limit
+    for index in range(cut, len(session.messages)):
+        if session.messages[index].get("role") == "user":
+            del session.messages[:index]
+            return
 
 
 # --- Globalna instancja agenta ---
@@ -773,16 +397,3 @@ def get_agent() -> VPSAgent:
     if _agent is None:
         _agent = VPSAgent()
     return _agent
-
-
-# --- Helpers ---
-
-def _format_tool_result(stdout: str, stderr: str, exit_code: int) -> str:
-    """Formatuje wynik komendy dla LLM."""
-    parts: list[str] = []
-    if stdout.strip():
-        parts.append(f"STDOUT:\n{stdout.strip()}")
-    if stderr.strip():
-        parts.append(f"STDERR:\n{stderr.strip()}")
-    parts.append(f"EXIT CODE: {exit_code}")
-    return "\n".join(parts)

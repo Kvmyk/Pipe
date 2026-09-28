@@ -1,32 +1,46 @@
 # Pipe
 
-**v0.8.1** -- Autonomiczny agent AI do zarzadzania serwerem VPS. 
-System zostal zaprojektowany z mysla o dzialaniu na wielu platformach -- mozesz komunikowac sie z serwerem uzywajac dedykowanego CLI, bezposrednio przez bota na Telegramie, a wkrotce takze przez Discorda dzieki ujednoliconemu protokolowi zadan.
+**v0.9.1** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+
+Pipe dziala na serwerze na stale: zna go (SERVER.md, mapa katalogow), czuwa nad nim i odzywa sie pierwszy,
+gdy cos sie psuje. Rozmawiasz z nim z terminala (CLI przez tunel SSH) albo z telefonu (Telegram) -- po polsku.
+Kazda komenda przechodzi przez klasyfikator bezpieczenstwa w kodzie, a nie w prompcie: odczyty wykonuja sie
+od razu, zmiany czekaja na Twoje TAK, operacje destrukcyjne sa odrzucane.
+
+---
+
+## Czym rozni sie od Claude Code, Codex czy Hermes Agent
+
+Tamte narzedzia to ogolni agenci do kodu albo "do wszystkiego". Pipe jest agentem **operacyjnym**:
+
+| | Pipe |
+|---|---|
+| **Pisze pierwszy** | Czuwanie co 2 min sprawdza dyski, RAM, obciazenie, kontenery w petli restartow i **nowe publiczne porty**. Alert przychodzi na Telegram z przyciskiem *Zbadaj*. Bez LLM, bez kosztow. |
+| **Widzi architekture** | `/mapa` rysuje diagram tego, co stoi na serwerze: domeny -> reverse proxy -> kontenery -> bazy, projekty compose, porty wystawione na swiat. Na Telegramie przychodzi jako obraz, w CLI jako PNG + podglad w terminalu. |
+| **Zarzadza flota** | Zdalne serwery (SSH), kontenery i klastry Kubernetes to *cele*. Agent wysyla na nie **workerow** -- pod-agentow, ktorzy rownolegle badaja kazdy cel i raportuja mu, a nie Tobie. Nic nie instaluje sie po drugiej stronie. |
+| **Bezpieczenstwo w kodzie** | Klasyfikator fail-closed (nieznana komenda = pytanie), potwierdzenie pokazuje dokladnie to, co sie wykona, workery wykonuja tylko odczyty. Sekrety z plikow (`.env`, klucze) sa **redagowane, zanim trafia do providera LLM**. |
+| **Pamieta serwer, nie repo** | `SERVER.md` (fakty o serwerze), `DIRECTORY` (gdzie leza repozytoria, aplikacje, konfiguracje, backupy), skille (procedury) i **VIBE** -- agent z czasem uczy sie, jak lubisz rozmawiac. |
+| **Dziala na tanim modelu** | Dowolny endpoint zgodny z OpenAI: Gemini (darmowy tier), OpenRouter, Groq, DeepSeek, lokalna Ollama... Workery moga uzywac tanszego modelu. |
+| **Stawiasz go wszedzie** | Docker na VPS, natywnie z systemd, w Kubernetesie (kustomize), cloud-init dla kazdej chmury. Obraz amd64 i arm64. |
 
 ---
 
 ## Szybki start
 
-Szczegolowa instrukcja krok po kroku: [docs/quickstart.md](./docs/quickstart.md)
-
 ### 1. Postaw backend na serwerze
 
-Wykonaj na serwerze:
-
 ```bash
-git clone https://github.com/user/pipe
-cd pipe
-python3 -m backend.configure   # kreator: provider, klucz API, model, test
-cd backend
-docker-compose up -d
+git clone https://github.com/user/pipe && cd pipe
+sudo bash scripts/install-server.sh             # Docker; kreator pyta o providera i klucz
+# albo: sudo bash scripts/install-server.sh --mode native   (bez Dockera, systemd)
 ```
 
 Kreator pobiera aktualna liste modeli prosto od providera i sprawdza, czy wybrany model obsluguje
-tool calling. Nie wymaga instalowania zadnych pakietow. Szczegoly: [docs/backend.md](./docs/backend.md)
+tool calling. Bez pytan (automatyzacja): `LLM_PROVIDER=gemini LLM_API_KEY=... bash scripts/install-server.sh -y`.
+Nowy serwer w chmurze: [deploy/cloud-init/user-data.yaml](./deploy/cloud-init/user-data.yaml).
+Kubernetes: [deploy/kubernetes](./deploy/kubernetes/README.md). Wszystkie tryby: [docs/deploy.md](./docs/deploy.md).
 
 ### 2. Podlacz CLI ze swojego laptopa
-
-Na laptopie -- skrypt automatycznie doda skrot `pipe` do Twojego terminala:
 
 ```powershell
 # Windows
@@ -38,26 +52,28 @@ Na laptopie -- skrypt automatycznie doda skrot `pipe` do Twojego terminala:
 bash install.sh
 ```
 
-Od teraz w kazdym terminalu wpisujesz:
+Od teraz w kazdym terminalu wpisujesz `pipe`. CLI zestawia tunel SSH i laczy sie z agentem.
 
-```
-pipe
-```
-
-CLI pyta o haslo SSH, laczy sie z agentem na serwerze i czeka na Twoje polecenia.
-
-### 3. Postaw Telegram bota na serwerze
-
-Telegram bot dziala na tym samym serwerze co backend (laczy sie przez Unix socket):
+### 3. Telegram (opcjonalnie, polecane -- tu przychodza alerty)
 
 ```bash
-# Na serwerze
 cd pipe/clients/telegram
-cp .env.example .env
-# Uzupelnij TELEGRAM_BOT_TOKEN i TELEGRAM_ALLOWED_USER_IDS w .env
+cp .env.example .env    # TELEGRAM_BOT_TOKEN i TELEGRAM_ALLOWED_USER_IDS
+sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 ```
 
-Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w katalogu `backend/`.
+---
+
+## Co mozesz napisac
+
+- *"pokaz mi architekture serwera"* -- diagram jako obraz; *"narysuj, jak zapytanie trafia do sklepu"* -- wlasny diagram agenta
+- *"dlaczego sklep dziala wolno?"* -- diagnoza: logi, zasoby, kontenery
+- *"dodaj serwer 10.0.0.5 jako web-2 (ssh, root)"*, potem *"sprawdz dyski i aktualizacje na wszystkich serwerach"* -- workery rownolegle
+- *"codziennie o 7 sprawdzaj backupy i waznosc certyfikatow, pisz tylko jak cos jest nie tak"* -- rutyna
+- *"gdzie lezy repozytorium bloga?"* -- odpowiedz z DIRECTORY
+- *"odpowiadaj krocej i bez wstepow"* -- zapisze to w VIBE
+
+Komendy w obu klientach: `/status` `/mapa` `/server` `/katalogi` `/skille` `/alerty` `/rutyny` `/cele` `/vibe` `/historia` `/pomoc`.
 
 ---
 
@@ -65,16 +81,21 @@ Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d` w
 
 | Komponent | Gdzie dziala | Polaczenie z backendem |
 |-----------|--------------|------------------------|
-| `backend/` | Serwer | -- to jest backend |
-| `clients/cli/` | Twoj laptop | SSH tunnel -> TCP `127.0.0.1:7379` |
-| `clients/telegram/` | Serwer | Unix socket `/tmp/vps-agent.sock` |
-| `clients/discord/` | -- | Placeholder -- PR welcome |
-| `clients/webui/` | -- | Placeholder -- PR welcome |
+| `backend/` | Serwer (Docker / systemd / Kubernetes) | -- to jest backend |
+| `clients/cli/` | Twoj laptop | tunel SSH -> TCP `127.0.0.1:7379` (albo `kubectl port-forward`) |
+| `clients/telegram/` | Serwer | Unix socket |
+| `clients/discord/`, `clients/webui/` | -- | Placeholder -- PR welcome |
 
-Komunikacja: prosty protokol JSON (linia po linii):
-- Zadanie: `{"message": "tekst", "session_id": "uuid", "interface": "cli", "token": "..."}` (`token` tylko gdy `AGENT_TOKEN` jest ustawiony)
-- Odpowiedz: `{"response": "tekst", "status": "ok|confirm|error", "done": true}`
-- Komendy klientow (`/server`, `/skille`, skille): `{"command": "list_skills|server_md|scan_server|run_skill", ...}` -- szczegoly w [docs/protocol.md](./docs/protocol.md)
+```
+CLI / Telegram ──JSON lines──> server.py ──> agent (petla LLM + narzedzia)
+                                  │              ├─ handlers ─> security (safe/confirm/forbidden) ─> executor
+                                  │              ├─ workery ─> cele: ssh / docker exec / kubectl
+                                  │              └─ diagram ─> infra (odkrycie) ─> Mermaid ─> PNG
+                                  └── czuwanie + rutyny ──(subscribe)──> alerty na Telegram
+```
+
+Protokol: JSON lines, ramki z tekstem, zalacznikami (diagramy PNG), postepem workerow i zdarzeniami
+czuwania -- [docs/protocol.md](./docs/protocol.md).
 
 ---
 
@@ -82,80 +103,52 @@ Komunikacja: prosty protokol JSON (linia po linii):
 
 | Narzedzie | Opis |
 |-----------|------|
-| `execute_command` | Wykonywanie komend shell na serwerze |
-| `read_file` / `write_file` | Odczyt i zapis plikow |
-| `git_command` | Zarzadzanie repozytoriami Git (status, log, diff, commit, push) |
-| `system_stats` | Szczegolowe statystyki systemowe (CPU, RAM, dysk, procesy) |
-| `docker_manage` | Zarzadzanie kontenerami i obrazami Docker |
-| `network_info` | Diagnostyka sieciowa (porty, polaczenia, ping, curl, DNS) |
-| `cron_manage` | Zarzadzanie zadaniami cron |
-| `server_md` | Trwala pamiec agenta o serwerze (`SERVER.md`) |
-| `skill_manage` | Zapisane procedury wielokrotnego uzytku (skille) |
+| `execute_command` | Komenda shell na serwerze (przez klasyfikator) |
+| `read_file` / `write_file` | Odczyt (sekrety redagowane) i zapis plikow (zawsze z potwierdzeniem) |
+| `change_directory` | Katalog roboczy |
+| `git_command` | Git: status, log, diff (od razu); pull, commit, push (z potwierdzeniem) |
+| `system_stats` | CPU, RAM, dyski, procesy -- z `/proc` hosta |
+| `docker_manage` | Kontenery, obrazy, projekty compose |
+| `network_info` | Porty hosta (z oznaczeniem publicznych), polaczenia, ping, curl, DNS |
+| `cron_manage` | Cron hosta |
+| `diagram` | Mapa infrastruktury albo wlasny diagram Mermaid -> obraz dla uzytkownika |
+| `target_manage` / `remote_exec` | Zdalne cele (SSH, kontenery, Kubernetes) i komendy na nich |
+| `delegate` | Workery: rownolegli pod-agenci, tylko odczyty, raport dla agenta |
+| `routine_manage` | Zadania wedlug harmonogramu z raportem na Telegram |
+| `server_md` / `directory` / `skill_manage` / `vibe` | Pamiec agenta |
 
 ---
 
 ## Pamiec agenta
 
-Agent prowadzi wlasne notatki o serwerze w **`SERVER.md`** -- cos jak `AGENTS.md`, ale dla serwera: system, uslugi, kontenery, domeny, wazne sciezki i Twoje decyzje. Plik jest dolaczany do kazdej rozmowy, wiec agent nie musi za kazdym razem poznawac serwera od nowa.
+Wszystko lezy w `backend/data/` na serwerze (poza gitem, mozna edytowac recznie):
 
-Po wykonaniu wieloetapowej procedury (np. wdrozenia aplikacji) agent moze zapisac ja jako **skill** i uzyc ponownie. Mozesz tez po prostu poprosic: *"zapisz to jako skill"*.
-
-W Telegramie i w CLI: `/server` pokazuje SERVER.md (a gdy go nie ma -- zleca agentowi zbadanie serwera, `/server aktualizuj` bada go ponownie), `/skille` listuje skille, a kazdy skill ma wlasna komende, np. `/odnow_certyfikat`. Do komendy mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com`.
-
-Oba rodzaje plikow leza na serwerze w `backend/data/` (poza gitem) -- mozesz je czytac i edytowac recznie. Szczegoly: [docs/backend.md](./docs/backend.md#pamiec-agenta-servermd-i-skille)
-
----
-
-## Providerzy LLM
-
-Dowolny endpoint zgodny z OpenAI. Wbudowane presety: **Google Gemini** (domyslny, darmowy tier),
-**OpenAI**, **Anthropic Claude**, **OpenRouter**, **Groq**, **DeepSeek**, **Mistral**, **xAI Grok**,
-**Z.ai (GLM)**, **Moonshot Kimi**, **Together AI**, **Cerebras**, **Fireworks** i lokalna **Ollama**.
-
-Wlasnego providera (vLLM, LM Studio, LiteLLM, proxy firmowe...) dodasz kreatorem -- opcja **Inny**.
-Lista modeli nie jest wpisana na sztywno: kreator i backend pobieraja ja na zywo z API providera,
-a przy starcie backend ostrzega, jesli skonfigurowany model zostal wycofany.
-
----
-
-## Moduly backendu
-
-| Modul | Opis |
-|-------|------|
-| `core/agent.py` | Petla LLM z tool calling, max 10 iteracji |
-| `core/handlers/` | Implementacje narzedzi -- po jednym module na obszar |
-| `core/session.py` | Sesja uzytkownika (historia, `cwd`, oczekujace potwierdzenie) |
-| `core/executor.py` | `execute` / `read_file` / `write_file` -- subprocess z 30s timeoutem |
-| `core/security.py` | Klasyfikacja komend: `safe` / `confirm` / `forbidden` |
-| `core/audit.py` | Append-only audit log |
-| `core/tools.py` | Definicje narzedzi OpenAI function calling |
-| `config/settings.py` | Konfiguracja z `.env` |
-| `config/providers.py` | Presety providerow LLM, wlasni providerzy, filtrowanie list modeli |
-| `configure.py` | Kreator konfiguracji providera (`python3 -m backend.configure`) |
-| `config/prompts.py` | System prompt (niemodyfikowalny) |
+- **SERVER.md** -- fakty o serwerze: uslugi, domeny, decyzje. W prompcie kazdej rozmowy.
+- **DIRECTORY** (`directory.json`) -- mapa miejsc: repozytoria (z remote i galezia), katalogi aplikacji, projekty compose, konfiguracje, dane, logi, backupy. Skan sam znajduje repozytoria i projekty compose.
+- **Skille** (`skills/<nazwa>/SKILL.md`) -- procedury; kazdy skill ma wlasna komende `/nazwa`.
+- **VIBE** (`vibe/<uzytkownik>.md`) -- jak z Toba rozmawiac. Aktualizuje sie w tle co kilka wiadomosci; `/vibe` pokazuje, `/vibe reset` czysci.
+- **Cele, rutyny** (`targets.json`, `routines.json`) i audit log.
 
 ---
 
 ## Bezpieczenstwo
 
-System operuje w oparciu o 3-poziomowa klase bezpieczenstwa:
-- **SAFE** -- komendy read-only (np. `ls`, `df`, `docker ps`) wykonywane bez pytania
-- **CONFIRM** -- komendy modyfikujace (np. `rm`, `git commit`) -- agent wymaga zatwierdzenia przez GUI
-- **FORBIDDEN** -- komendy destruktywne (np. `rm -rf /`, `mkfs`) odrzucane bezwzglednie
+- **Klasyfikator fail-closed** -- `safe` tylko dla rozpoznanych odczytow (tokenowo: `ss` to nie `ssh`), przekierowania, `$(...)`, flagi typu `find -delete` czy `curl -o` -> pytanie o zgode.
+- **Potwierdzenie pokazuje dokladnie to, co sie wykona** -- takze dla komend na zdalnych celach.
+- **Redakcja sekretow** -- klucze API, tokeny, hasla i klucze prywatne w wynikach narzedzi sa zastepowane `[ZREDAGOWANO]` przed wyslaniem do LLM; agent nie moze nadpisac pliku z zredagowana trescia.
+- **Workery i rutyny tylko czytaja** -- zmiany wracaja jako propozycje do zatwierdzenia.
+- **Audit log** kazdej operacji (bez tresci plikow). `AGENT_TOKEN` chroni socket i port.
 
-**Wazne:** Do pliku `.env` w katalogu `backend/` warto dodac `AGENT_TOKEN=tajny-ciag-znakow`. Wtedy kazde zadanie -- lacznie z potwierdzeniem operacji -- musi zawierac ten token; ten sam ciag podaj CLI (`--token` lub zmienna `AGENT_TOKEN`) oraz botowi Telegrama (`AGENT_TOKEN` w `clients/telegram/.env`). Jesli tego nie zrobisz, agent dziala na pelnym zaufaniu na interfejsie lokalnym (zabezpieczonym tylko przez SSH).
-
-- Agent dziala jako dedykowany user bez sudo (`vpsagent`)
-- Kazda operacja zapisywana do audit logu
-- Zawartosc pliku nigdy nie trafia do audit logu (moze zawierac sekrety)
-- Lista bezwzglednie zakazanych wzorcow (`rm -rf /`, fork bomb, `curl | bash`, itp.)
+Szczegoly i ograniczenia (np. `docker.sock` = uprawnienia roota): [docs/security.md](./docs/security.md).
 
 ---
 
 ## Dokumentacja
 
 - [Szybki start](./docs/quickstart.md)
+- [Wdrozenie: Docker, native, Kubernetes, chmury](./docs/deploy.md)
 - [Backend](./docs/backend.md)
+- [Workery, cele, rutyny, czuwanie, diagramy](./docs/features.md)
 - [CLI](./docs/cli.md)
 - [Telegram](./docs/telegram.md)
 - [Bezpieczenstwo](./docs/security.md)

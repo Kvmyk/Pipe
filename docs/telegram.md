@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.8.1
+Pipe v0.9.1
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -8,7 +8,26 @@ Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
 Bot Telegram to klient agenta. Laczy sie z backendem przez Unix socket i przekazuje wiadomosci z Telegrama do agenta. Odpowiedzi sa formatowane w HTML i wysylane z powrotem do uzytkownika.
 
-Obsluguje potwierdzenia przez przyciski inline (TAK / NIE).
+Obsluguje potwierdzenia przez przyciski inline (TAK / NIE), wysyla diagramy jako zdjecia, pokazuje postep
+workerow w jednej, aktualizowanej wiadomosci i -- co najwazniejsze -- **sam pisze, gdy cos sie dzieje**:
+alerty czuwania i raporty rutyn przychodza bez pytania, z przyciskiem *Zbadaj*.
+
+## Alerty
+
+Bot utrzymuje stale polaczenie z backendem (`{"command": "subscribe"}`, ponawiane po restarcie) i przesyla
+zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
+
+- **OSTRZEZENIE / KRYTYCZNY** -- dysk, RAM, obciazenie, kontener w petli restartow albo unhealthy, zatrzymany
+  kontener, nowy publiczny port. Przycisk **Zbadaj** prosi agenta o diagnoze (tylko odczyty) i propozycje naprawy.
+- **ROZWIAZANE** -- problem minal.
+- **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
+
+`TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
+
+## Diagramy
+
+`/mapa` albo *"pokaz architekture"* -- diagram przychodzi jako zdjecie. Diagram wiekszy niz limit zdjec
+Telegrama (10 MB, suma bokow 10000 px) przychodzi jako plik w pelnej rozdzielczosci.
 
 ## Formatowanie odpowiedzi
 
@@ -77,18 +96,13 @@ python bot.py
 
 ## Dostepne komendy
 
-| Komenda | Opis |
-|---------|------|
-| `/start` | Przywitanie |
-| `/status` | Status serwera (CPU, RAM, dysk) |
-| `/historia` | Ostatnie 10 wpisow z audit logu |
-
-Mozesz tez pisac bezposrednio, np.:
+Pelna lista ponizej (sekcja *Komendy*). Mozesz tez pisac bezposrednio, np.:
 - "ile mam wolnego miejsca na dysku?"
-- "pokaz ostatnie bledy nginx"
-- "zrestartuj docker compose"
-- "pokaz status git w /home/user/projekt"
-- "jakie porty sa otwarte?"
+- "pokaz architekture serwera" / "narysuj, jak dziala deploy"
+- "dlaczego sklep dziala wolno?"
+- "sprawdz dyski na wszystkich serwerach" (workery)
+- "codziennie o 7 sprawdzaj backupy" (rutyna)
+- "odpowiadaj krocej" (VIBE)
 
 ## Bezpieczenstwo
 
@@ -99,11 +113,17 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Szybki przeglad obciazenia serwera |
+| `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
 | `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |
-| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md |
+| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
+| `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
+| `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia |
+| `/rutyny` | Zadania wykonywane wedlug harmonogramu |
+| `/cele` | Zdalne serwery, kontenery i klastry |
+| `/vibe` | Co agent wie o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |
-| `/historia` | Ostatnie wpisy z audit logu |
+| `/historia` | Ostatnie wpisy z audit logu (bez LLM) |
 | `/pomoc` | Lista komend |
 
 Menu podpowiedzi po wpisaniu `/` bot ustawia sam przy starcie i odswieza po kazdej wiadomosci -- nowy skill

@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.8.1
+Pipe v0.9.1
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -62,6 +62,23 @@ ssh -N -L 7379:127.0.0.1:7379 root@serwer.example.com &
 python cli.py --no-tunnel --local-port 7379
 ```
 
+## Pipe w Kubernetesie
+
+Zamiast tunelu SSH CLI zestawia `kubectl port-forward svc/pipe` (potrzebny `kubectl` i dostep do klastra):
+
+```bash
+pipe --kube pipe                          # namespace, w ktorym dziala Pipe
+pipe --kube pipe --kube-context prod      # inny kontekst kubeconfig
+```
+
+## Diagramy
+
+Diagram (np. `/mapa` albo *"narysuj architekture"*) CLI zapisuje jako PNG w `~/.pipe/diagrams/`
+(`PIPE_DIAGRAMS_DIR`) i pokazuje jego podglad ASCII, jesli miesci sie w terminalu. `--open` otwiera PNG
+w domyslnej przegladarce obrazow, `/mermaid` wypisuje kod ostatniego diagramu (np. do README).
+
+Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent odpowie.
+
 ## Zmienne srodowiskowe
 
 | Zmienna | Opis | Domyslnie |
@@ -72,6 +89,9 @@ python cli.py --no-tunnel --local-port 7379
 | `VPS_SSH_KEY` | Sciezka do klucza prywatnego | domyslny klucz |
 | `VPS_LOCAL_PORT` | Lokalny port tunelu | `7379` |
 | `VPS_REMOTE_SOCKET` | Socket na serwerze | `/tmp/vps-agent.sock` |
+| `PIPE_KUBE_NAMESPACE` | Jak `--kube` | -- |
+| `PIPE_KUBE_CONTEXT` | Jak `--kube-context` | biezacy kontekst |
+| `PIPE_DIAGRAMS_DIR` | Gdzie zapisywac diagramy | `~/.pipe/diagrams` |
 
 ## Przykladowe komendy w CLI
 
@@ -83,7 +103,12 @@ python cli.py --no-tunnel --local-port 7379
 > sprawdz uzycie RAM przez procesy
 > pokaz status repozytoriow git
 > wyswietl otwarte porty
-> dodaj zadanie cron: backup co 3 godziny
+> pokaz architekture serwera
+> narysuj, jak zapytanie trafia do sklepu
+> gdzie lezy repozytorium bloga?
+> dodaj serwer 10.0.0.5 jako web-2 (ssh, root) i sprawdz na nim dysk
+> sprawdz aktualizacje na wszystkich serwerach
+> codziennie o 7 sprawdzaj backupy, pisz tylko jak cos jest nie tak
 ```
 
 Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
@@ -93,9 +118,17 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Stan serwera |
+| `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
+| `/mermaid` | Kod Mermaid ostatniego diagramu |
 | `/server` | Pokazuje SERVER.md; gdy go nie ma -- agent bada serwer i tworzy plik |
-| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md |
+| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
+| `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
+| `/alerty` | Aktywne alerty czuwania (same alerty przychodza na Telegram) |
+| `/rutyny` | Zadania wykonywane wedlug harmonogramu |
+| `/cele` | Zdalne serwery, kontenery i klastry |
+| `/vibe` | Notatka o Twoim stylu rozmowy; `/vibe reset` czysci |
+| `/historia` | Ostatnie wpisy audit logu |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazowkami |
 | `/pomoc` | Lista komend |
 | `/exit` | Wyjscie |
@@ -114,4 +147,5 @@ python3 clients/cli/cli.py --no-tunnel        # + --token ..., jesli ustawiles A
 
 `install.sh` buduje skrot z tunelem SSH, wiec na samym serwerze wygodniej dodac alias recznie, np.
 `alias pipe='python3 ~/Pipe/clients/cli/cli.py --no-tunnel'`. Pamiec agenta (SERVER.md, skille) jest wspolna
-dla wszystkich klientow -- to, co agent zapisze w Telegramie, widac w terminalu i odwrotnie.
+dla wszystkich klientow -- to, co agent zapisze w Telegramie, widac w terminalu i odwrotnie. Wyjatkiem jest
+VIBE: notatka o stylu jest osobna dla kazdego uzytkownika (`cli:<login>`, `telegram:<id>`).

@@ -35,6 +35,9 @@ def _format_entry(
         result = f"→ {extra}"
     else:
         result = ""
+    # Escapuj znaki nowej linii/CR — inaczej komenda z '\n' mogłaby sfałszować kolejne wpisy logu.
+    command = command.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+    interface = interface.replace("\n", "\\n").replace("\r", "\\r")
     return f"[{timestamp}] [{interface}] [{classification}] {command} {result}".strip()
 
 

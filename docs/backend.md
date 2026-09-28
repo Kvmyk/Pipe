@@ -1,14 +1,40 @@
 # Backend -- Pipe
 
-Pipe v0.8.1
+Pipe v0.9.1
 
-Backend agenta VPS. Dziala bezposrednio na serwerze i wystawia lokalny Unix socket dla klientow.
+Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
+i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 
 ## Wymagania
 
-- Docker 24+
-- Docker Compose v2
-- Linux (Unix socket nie dziala na Windows/macOS bez dodatkowej konfiguracji)
+- Linux, Python 3.11+
+- tryb docker: Docker 24+ z Compose v2 (instalator doinstaluje je z repozytorium dystrybucji)
+- tryb native: systemd; tryb kubernetes: klaster z PVC
+
+## Moduly
+
+| Modul | Rola |
+|-------|------|
+| `server.py` | Unix socket + TCP, ramki JSON lines, komendy klientow, subskrypcja zdarzen, start czuwania |
+| `core/agent.py` | Petla LLM z tool calling (`AGENT_MAX_ITERATIONS`), potwierdzenia, redakcja i przycinanie wynikow, historia |
+| `core/handlers/` | Jeden modul na obszar narzedzi; `handle_<nazwa>` = narzedzie `<nazwa>` |
+| `core/security.py` | Klasyfikator komend (fail-closed, tokenowy, swiadomy cudzyslowow), workspace |
+| `core/runtime.py` | Tryb dzialania (docker / native / kubernetes) i mapowanie sciezek hosta |
+| `core/hostinfo.py` | Stan hosta z `/proc`: RAM, CPU, dyski, gniazda -- bez uruchamiania komend |
+| `core/infra.py` | Odkrywanie infrastruktury (Docker, nginx, Caddy, Traefik, systemd, git, Kubernetes) i mapa Mermaid |
+| `core/diagram.py` | Mermaid -> PNG + ASCII (mermaidx, offline) |
+| `core/targets.py` | Zdalne cele: rejestr, walidacja, budowanie komend ssh / docker exec / kubectl |
+| `core/workers.py` | Workery: pod-agenci na petli agenta, tylko odczyty, rownolegle |
+| `core/routines.py` | Rutyny: harmonogram cron, rejestr |
+| `core/watch.py` | Czuwanie: sprawdzenia, alerty, powiadomienia (pub/sub), uruchamianie rutyn |
+| `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
+| `core/vibe.py` | Nauka stylu rozmowy w tle |
+| `core/events.py` | Zdarzenia strumienia: tekst, `Attachment`, `Progress` |
+| `core/executor.py` | `execute` (limit czasu, zabijanie grupy procesow), `read_file`, `write_file` |
+| `core/audit.py` | Append-only audit log |
+| `core/tools.py` | Schematy narzedzi (OpenAI function calling) |
+| `config/` | `settings.py` (zmienne `.env`), `providers.py` (presety LLM), `prompts.py` |
+| `configure.py` | Kreator providera (`--check`, `--models`, `--providers`, `--from-env`) |
 
 ## Konfiguracja
 
@@ -130,8 +156,10 @@ AGENT_TOKEN=twoj-tajny-token
 
 ## Pamiec agenta: SERVER.md i skille
 
-Agent ma dwa rodzaje trwalej pamieci. Oba leza na hoscie w `backend/data/` (w kontenerze `/app/data`,
-zmienna `DATA_DIR`), przetrwaja restart i przebudowe obrazu i nie trafiaja do gita.
+Agent ma kilka rodzajow trwalej pamieci: SERVER.md, skille (ponizej), a takze DIRECTORY (mapa repozytoriow
+i katalogow) i VIBE (styl rozmowy) -- te dwie opisuje [features.md](./features.md). Wszystko lezy na hoscie
+w `backend/data/` (w kontenerze `/app/data`, zmienna `DATA_DIR`), przetrwa restart i przebudowe obrazu
+i nie trafia do gita. Tam sa tez `targets.json`, `routines.json`, `watch_state.json` i audit log.
 
 ### SERVER.md
 
@@ -198,43 +226,50 @@ Powinienes zobaczyc:
 [VPS Agent] TCP         : 0.0.0.0:7379 (tylko localhost)
 [VPS Agent] Provider    : Google Gemini (https://generativelanguage.googleapis.com/v1beta/openai/)
 [VPS Agent] Model       : gemini-3.8-flash
+[VPS Agent] Runtime     : docker (host: /hostfs, proc: /hostproc)
+[VPS Agent] Diagramy    : mermaidx
+[VPS Agent] Czuwanie    : co 120 s
 [VPS Agent] Serwer gotowy. Ctrl+C aby zatrzymac.
 ```
 
 ## Narzedzia agenta
 
-Backend udostepnia agentowi nastepujace narzedzia:
-
 | Narzedzie | Opis | Wymaga potwierdzenia |
 |-----------|------|----------------------|
-| `execute_command` | Wykonywanie komend shell | Zalezne od klasyfikacji |
-| `read_file` | Odczyt plikow | Nie |
+| `execute_command` | Komendy shell | Zalezne od klasyfikacji |
+| `read_file` | Odczyt plikow (sekrety redagowane) | Nie |
 | `write_file` | Zapis plikow | Zawsze |
+| `change_directory` | Katalog roboczy | Nie |
 | `git_command` | Operacje Git | Modyfikujace: tak |
-| `system_stats` | Statystyki CPU/RAM/dysk | Nie |
-| `docker_manage` | Zarzadzanie kontenerami | Modyfikujace: tak |
-| `network_info` | Diagnostyka sieciowa | Nie |
-| `cron_manage` | Zadania cron | Modyfikujace: tak |
+| `system_stats` | CPU/RAM/dyski/procesy z `/proc` hosta | Nie |
+| `docker_manage` | Kontenery, obrazy, compose | Modyfikujace: tak |
+| `network_info` | Porty hosta, polaczenia, ping, curl, DNS | Nie |
+| `cron_manage` | Cron hosta (edycja tylko w trybie native) | Modyfikujace: tak |
+| `diagram` | Mapa infrastruktury / wlasny diagram Mermaid jako obraz | Nie |
+| `target_manage` | Rejestr zdalnych celow | Dodanie: tak |
+| `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
+| `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
+| `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
 
-## Tworzenie dedykowanego uzytkownika (zalecane)
+## Dodatkowe ustawienia `.env`
 
-Agent powinien dzialac jako dedykowany uzytkownik bez uprawnien roota:
-
-```bash
-# Utworz uzytkownika
-sudo useradd --system --no-create-home --shell /bin/false vpsagent
-
-# Ustaw uprawnienia sudoers (tylko konkretne komendy)
-sudo visudo -f /etc/sudoers.d/vpsagent
-```
-
-Zawartosc `/etc/sudoers.d/vpsagent`:
-```
-vpsagent ALL=(ALL) NOPASSWD: /bin/systemctl, /usr/bin/journalctl, /usr/bin/apt, /usr/bin/docker, /usr/local/bin/docker-compose
-```
+| Zmienna | Domyslnie | Opis |
+|---------|-----------|------|
+| `PIPE_RUNTIME` | `auto` | `docker` / `native` / `kubernetes` |
+| `HOST_ROOT`, `HOST_PROC` | wg trybu | Nadpisanie sciezek hosta |
+| `AGENT_MAX_ITERATIONS` | 15 | Limit krokow petli na jedna wiadomosc |
+| `CONFIRMED_COMMAND_TIMEOUT` | 900 | Limit czasu (s) komend zatwierdzonych przez uzytkownika; odczyty maja 30 s |
+| `REDACT_SECRETS` | 1 | Redakcja sekretow w wynikach narzedzi |
+| `WORKER_MODEL` | model agenta | Model workerow i nauki VIBE |
+| `WORKER_MAX_ITERATIONS`, `WORKER_TIMEOUT`, `MAX_WORKERS` | 8, 240, 6 | Limity workerow |
+| `VIBE_EVERY` | 6 | Co ile wiadomosci odswiezac VIBE (0 = wylaczone) |
+| `WATCH_ENABLED`, `WATCH_INTERVAL` | 1, 120 | Czuwanie |
+| `WATCH_DISK_PCT`, `WATCH_MEM_PCT`, `WATCH_LOAD_FACTOR` | 90, 92, 2 | Progi alertow |
 
 ## Zatrzymanie
 
 ```bash
-docker-compose down
+docker-compose down          # tryb docker
+systemctl stop pipe          # tryb native
 ```

@@ -1,0 +1,10 @@
+# Pamiec agenta: SERVER.md, DIRECTORY, skille, VIBE, cele, rutyny, audit log
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pipe-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

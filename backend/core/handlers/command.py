@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import executor
+from backend.core.events import Event
+from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command
-from backend.core.session import Session, ConfirmationRequest
-from backend.core.text import as_code
+from backend.core.session import Session
 
 
 async def handle_execute_command(
@@ -17,64 +17,21 @@ async def handle_execute_command(
     session: Session,
     tool_call: Any,
     args: dict[str, Any],
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Event, None]:
     """
-    Obsługuje narzędzie execute_command.
-    
-    Klasyfikuje komendę (safe/confirm/forbidden) i wykonuje odpowiednią akcję.
+    Obsluguje narzedzie execute_command: klasyfikuje komende (safe/confirm/forbidden)
+    i wykonuje ja w katalogu roboczym sesji albo prosi o potwierdzenie.
+    `requires_confirmation=true` od modelu moze tylko zaostrzyc klasyfikacje.
     """
-    command = args.get("command", "").strip()
+    command = str(args.get("command", "")).strip()
     if not command:
-        session.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": "Błąd: pusta komenda",
-            }
-        )
+        reply(session, tool_call, "Blad: pusta komenda")
         return
 
     classification = classify_command(command)
+    if classification == "safe" and args.get("requires_confirmation") is True:
+        classification = "confirm"
 
-    if classification == "forbidden":
-        from backend.core import audit
-        await audit.log_blocked(session.interface, f"execute_command({command})")
-        yield f"[ODMOWA] Komenda {as_code(command)} jest zabroniona."
-        session.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": "ODMOWA SYSTEMOWA: Komenda jest zakazana.",
-            }
-        )
-        return
-
-    if classification == "confirm":
-        session.pending_confirmation = ConfirmationRequest(
-            tool_call_id=tool_call.id,
-            tool_name="execute_command",
-            command=command,
-            classification="confirm",
-        )
-        yield f"[POTWIERDZ] Operacja wymaga potwierdzenia: {as_code(command)}"
-        return
-
-    # Safe — wykonaj natychmiast
-    try:
-        stdout, stderr, exit_code = await executor.execute(command, cwd=f"/hostfs{session.cwd}")
-        result = f"[STDOUT]\n{stdout}\n[EXIT CODE]\n{exit_code}"
-        if stderr:
-            result += f"\n[STDERR]\n{stderr}"
-        
-        from backend.core import audit
-        await audit.log_safe(session.interface, command, exit_code)
-    except Exception as exc:
-        result = f"[ERROR] Błąd wykonania: {exc}"
-
-    session.messages.append(
-        {
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": result,
-        }
-    )
+    async for event in run_classified(session, tool_call, command, tool_name="execute_command",
+                                      classification=classification):
+        yield event

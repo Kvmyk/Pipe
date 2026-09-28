@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 
 
 @dataclass
@@ -17,9 +17,12 @@ class ConfirmationRequest:
     tool_name: str
     command: str
     classification: Literal["confirm"]
-    # Dla write_file — przechowuje ścieżkę i zawartość
+    # Dla write_file — przechowuje ścieżkę (lokalną, widzianą przez proces Pipe) i zawartość
     file_path: str | None = None
     file_content: str | None = None
+    # Operacja, ktora nie jest komenda shell (np. dodanie celu albo rutyny) —
+    # wykonywana po TAK zamiast `command`, ktore wtedy jest tylko opisem.
+    action: Callable[[], Awaitable[str]] | None = None
 
 
 @dataclass
@@ -31,28 +34,39 @@ class Session:
     messages: list[dict[str, Any]] = field(default_factory=list)
     pending_confirmation: ConfirmationRequest | None = None
     cwd: str = "/"
+    # Historie rozmow workerow (nazwa -> wiadomosci) — agent moze wrocic do workera
+    workers: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # Sesje techniczne (rutyny, workery) nie ucza sie stylu uzytkownika
+    learns_vibe: bool = True
+
+    @property
+    def is_telegram(self) -> bool:
+        return self.interface.lower().startswith("telegram")
+
+    @property
+    def user_key(self) -> str:
+        """Klucz uzytkownika dla VIBE: `cli`, `telegram-123`."""
+        from backend.core.memory import vibe_key
+        return vibe_key(self.interface)
 
     @property
     def system_prompt(self) -> str:
-        """Generuje system prompt dla LLM w zależności od interfejsu."""
-        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT
+        """
+        System prompt dla LLM. Kolejnosc od najbardziej stalego do najbardziej
+        zmiennego — providerzy cache'uja najdluzszy niezmieniony prefiks:
+        baza -> tryb dzialania -> pamiec (SERVER.md, DIRECTORY, skille, VIBE)
+        -> alerty czuwania -> katalog roboczy (zmienia sie najczesciej).
+        """
+        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT, cwd_block
+        from backend.core import runtime
         from backend.core.memory import prompt_context
-        
-        dir_context = (
-            f"\n\n--- NAWIGACJA ---\n"
-            f"Twoj wirtualny katalog roboczy na serwerze to obecnie: {self.cwd}\n"
-            f"(Pamietaj, ze w kontenerze ten katalog znajduje sie pod sciezka /hostfs{self.cwd}).\n"
-            f"1. Jesli uruchamiasz komendy plikowe lokalnie dla tego katalogu, uzyj sciezki /hostfs{self.cwd}.\n"
-            f"2. ZA KAZDYM RAZEM gdy odpisujesz uzytkownikowi, ZAWSZE rozpoczynaj pierwsza linie od "
-            f"tagu reprezentujacego aktualna sciezke, np.: [Katalog: {self.cwd}]\n"
-            f"3. Uzyj narzedzia change_directory, jesli uzytkownik prosi o wejscie/przejscie do innego folderu.\n"
-        )
-        if "telegram" in self.interface.lower():
-            # W telegramie system_prompt uzywa HTML
-            dir_context = dir_context.replace("[Katalog: ", "<b>[Katalog: ")
-            dir_context = dir_context.replace("]", "]</b>")
-            return TELEGRAM_SYSTEM_PROMPT + prompt_context() + dir_context
-        # Katalog roboczy na koncu: zmienia sie najczesciej, a providerzy cache'uja
-        # najdluzszy niezmieniony prefiks promptu (prompt caching).
-        return BASE_SYSTEM_PROMPT + prompt_context() + dir_context
+        from backend.core.watch import prompt_alerts
 
+        base = TELEGRAM_SYSTEM_PROMPT if self.is_telegram else BASE_SYSTEM_PROMPT
+        return (
+            base
+            + "\n\n--- SRODOWISKO ---\n" + runtime.describe()
+            + prompt_context(self.user_key)
+            + prompt_alerts()
+            + cwd_block(self.cwd, telegram=self.is_telegram)
+        )

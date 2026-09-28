@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipe
+  labels:
+    app.kubernetes.io/name: pipe
+spec:
+  replicas: 1                # sesje sa w pamieci procesu — jedna replika
+  strategy:
+    type: Recreate           # wolumen RWO
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pipe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pipe
+    spec:
+      serviceAccountName: pipe
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pipe
+          image: pipe-backend
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: pipe-env     # LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, AGENT_TOKEN... (README)
+          env:
+            - name: PIPE_RUNTIME
+              value: kubernetes
+            - name: DATA_DIR
+              value: /app/data
+            - name: AUDIT_LOG_PATH
+              value: /app/data/audit.log
+            - name: LLM_PROVIDERS_FILE
+              value: /app/data/providers.json
+            - name: AGENT_SOCKET
+              value: /run/pipe/agent.sock
+            - name: TCP_HOST
+              value: 0.0.0.0
+            - name: TCP_PORT
+              value: "7379"
+            - name: HOME
+              value: /tmp          # cache kubectl
+          ports:
+            - name: pipe
+              containerPort: 7379
+          readinessProbe:
+            tcpSocket:
+              port: pipe
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: pipe
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: run
+              mountPath: /run/pipe
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pipe-data
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

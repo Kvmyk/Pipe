@@ -7,6 +7,8 @@ Uruchom z katalogu glownego repozytorium:
     python3 -m backend.configure --check      # sprawdz obecna konfiguracje
     python3 -m backend.configure --models     # aktualne modele obecnego providera
     python3 -m backend.configure --providers  # lista dostepnych providerow
+    python3 -m backend.configure --from-env   # bez pytan: zapisz .env ze zmiennych srodowiska
+                                              # (cloud-init, CI, scripts/install-server.sh)
 
 Kreator wybiera providera, pobiera aktualna liste modeli z jego endpointu
 /models, sprawdza na zywo, czy wybrany model obsluguje tool calling (bez tego
@@ -365,6 +367,9 @@ def run_wizard() -> int:
     updates = {"LLM_PROVIDER": provider.id, "LLM_MODEL": model}
     if new_key is not None:
         updates["LLM_API_KEY"] = new_key
+    token = ensure_agent_token(current)
+    if token:
+        updates["AGENT_TOKEN"] = token
     # Adres pochodzi teraz z presetu — stare LLM_BASE_URL by go nadpisywalo.
     try:
         write_env_file(updates, remove={"LLM_BASE_URL"})
@@ -376,10 +381,24 @@ def run_wizard() -> int:
     print(f"\nZapisano {ENV_PATH}")
     print(f"  Provider: {provider.name}")
     print(f"  Model:    {model}")
+    if token:
+        print("  AGENT_TOKEN: wygenerowany (ten sam podaj klientom: pipe --token ..., clients/telegram/.env)")
     print("\nDalej:")
     print("  cd backend && docker-compose up -d --build")
     print("  (jesli agent juz dziala, wystarczy: docker-compose restart vps-agent)")
     return 0
+
+
+def ensure_agent_token(current: dict[str, str]) -> str | None:
+    """
+    Zwraca nowy AGENT_TOKEN do zapisania, gdy go jeszcze nie ma. Token chroni
+    socket i port TCP; bez niego kazdy lokalny proces moze sterowac agentem.
+    None = token juz jest (w .env albo w srodowisku), nic nie zmieniamy.
+    """
+    import secrets
+    if current.get("AGENT_TOKEN", "").strip() or os.environ.get("AGENT_TOKEN", "").strip():
+        return None
+    return secrets.token_hex(24)
 
 
 # ─── Tryby nieinteraktywne ──────────────────────────────────────────────────
@@ -416,6 +435,49 @@ def run_check() -> int:
     ok, message = test_tool_calling(config.base_url, config.api_key, config.model)
     print(f"[{'OK' if ok else 'BLAD'}] {message}")
     return 0 if ok else 1
+
+
+# Zmienne, ktore --from-env przepisuje ze srodowiska do backend/.env.
+FROM_ENV_KEYS = (
+    "LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL", "LLM_BASE_URL", "LLM_REASONING_EFFORT", "LLM_TIMEOUT",
+    "AGENT_TOKEN", "WORKER_MODEL", "PIPE_RUNTIME", "TCP_HOST", "WATCH_ENABLED", "WATCH_INTERVAL",
+    "WATCH_DISK_PCT", "WATCH_MEM_PCT", "VIBE_EVERY",
+)
+
+
+def run_from_env(test: bool = False) -> int:
+    """
+    Nieinteraktywna konfiguracja: przepisuje ustawione zmienne srodowiska do
+    backend/.env i sprawdza, czy da sie z nich zbudowac konfiguracje LLM.
+    Klucz providera mozna tez podac jego wlasna zmienna (np. GEMINI_API_KEY).
+    """
+    updates = {key: os.environ[key] for key in FROM_ENV_KEYS if os.environ.get(key, "").strip()}
+    if not updates.get("LLM_PROVIDER") and not updates.get("LLM_BASE_URL"):
+        print("[BLAD] Ustaw co najmniej LLM_PROVIDER (np. gemini, openai, openrouter, ollama) albo LLM_BASE_URL.")
+        return 1
+    try:
+        config = resolve_llm_config({**read_env_file(ENV_PATH), **os.environ})
+    except ProviderConfigError as exc:
+        print(f"[BLAD] {exc}")
+        return 1
+    if config.requires_key and not config.api_key:
+        print(f"[BLAD] Brak klucza API dla {config.provider_name} — ustaw LLM_API_KEY.")
+        return 1
+    # Wygeneruj AGENT_TOKEN, jesli nikt go nie podal — port i socket nie moga zostac bez ochrony.
+    token = ensure_agent_token(read_env_file(ENV_PATH))
+    if token:
+        updates["AGENT_TOKEN"] = token
+    try:
+        write_env_file(updates, set(), ENV_PATH)
+    except OSError as exc:
+        print(f"[BLAD] Nie moge zapisac {ENV_PATH}: {exc}")
+        return 1
+    print(f"Zapisano {ENV_PATH}: {', '.join(sorted(k for k in updates if k != 'LLM_API_KEY'))}"
+          + (" + LLM_API_KEY" if "LLM_API_KEY" in updates else ""))
+    print(f"  Provider: {config.provider_name}, model: {config.model}")
+    if token:
+        print("  AGENT_TOKEN: wygenerowany (podaj klientom, np. w clients/telegram/.env)")
+    return run_check() if test else 0
 
 
 def run_models() -> int:
@@ -459,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true", help="sprawdz obecna konfiguracje (lista modeli + test tool callingu)")
     mode.add_argument("--models", action="store_true", help="pokaz aktualne modele obecnego providera")
     mode.add_argument("--providers", action="store_true", help="pokaz dostepnych providerow")
+    mode.add_argument("--from-env", action="store_true",
+                      help="bez pytan: zapisz .env ze zmiennych LLM_PROVIDER, LLM_API_KEY, LLM_MODEL... (automatyzacja)")
+    parser.add_argument("--test", action="store_true", help="z --from-env: od razu sprawdz polaczenie i tool calling")
     args = parser.parse_args(argv)
 
     try:
@@ -468,6 +533,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_models()
         if args.providers:
             return run_providers()
+        if args.from_env:
+            return run_from_env(test=args.test)
         return run_wizard()
     except KeyboardInterrupt:
         print("\nPrzerwano.")

@@ -1,0 +1,40 @@
+# Odczyt prawie wszystkiego w klastrze — bez sekretow (RBAC nie ma wykluczen,
+# wiec zasoby sa wymienione jawnie). Zmiany: overlays/operator.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipe
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pipe-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, nodes, namespaces, events, configmaps,
+                persistentvolumes, persistentvolumeclaims, replicationcontrollers, serviceaccounts,
+                resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [apps, batch, autoscaling, policy, networking.k8s.io, storage.k8s.io, discovery.k8s.io,
+                gateway.networking.k8s.io, cert-manager.io, traefik.io, traefik.containo.us]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pipe-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pipe-reader
+subjects:
+  - kind: ServiceAccount
+    name: pipe
+    namespace: pipe

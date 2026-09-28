@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipe
+spec:
+  template:
+    spec:
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/hostname: ZMIEN-NA-NAZWE-WEZLA
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: pipe
+          env:
+            - name: HOST_ROOT
+              value: /hostfs
+            - name: HOST_PROC
+              value: /hostproc
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: hostfs
+              mountPath: /hostfs
+              readOnly: true
+              mountPropagation: HostToContainer
+            - name: hostproc
+              mountPath: /hostproc
+              readOnly: true
+      volumes:
+        - name: hostfs
+          hostPath:
+            path: /
+        - name: hostproc
+          hostPath:
+            path: /proc
