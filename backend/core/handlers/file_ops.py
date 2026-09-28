@@ -14,7 +14,7 @@ from backend.core import audit, executor, runtime
 from backend.core.events import Event
 from backend.core.handlers.common import reply
 from backend.core.memory import REDACTION_MARK
-from backend.core.security import classify_file_write, validate_workspace_access
+from backend.core.security import classify_file_write, is_sensitive, resolve_local, validate_workspace_access
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
 
@@ -25,6 +25,37 @@ def resolve_path(path: str, session: Session) -> tuple[str, str]:
     """(sciezka hosta, sciezka lokalna) dla sciezki podanej przez model."""
     host = runtime.to_host(path, session.cwd)
     return host, runtime.to_local(host)
+
+
+def checked_local(local: str) -> tuple[str | None, str]:
+    """
+    (sciezka do otwarcia, powod odmowy). Sciezka jest rozwiazana wzgledem
+    korzenia hosta — symlink hosta `/etc/a -> /etc/b` prowadzi do `/hostfs/etc/b`,
+    a nie do pliku kontenera.
+    """
+    allowed, reason = validate_workspace_access(local)
+    if not allowed:
+        return None, reason
+    try:
+        return resolve_local(local), ""
+    except (OSError, ValueError) as exc:
+        return None, f"Nieprawidlowa sciezka: {exc}"
+
+
+async def _read_for_model(session: Session, local: str, host: str) -> str:
+    """Tresc pliku dla modelu (po stronie agenta i tak przechodzi przez redakcje sekretow)."""
+    try:
+        content = await executor.read_file(local)
+        await audit.log_file_read(session.interface, host)
+        if len(content) > MAX_READ_CHARS:
+            content = content[:MAX_READ_CHARS] + f"\n[... plik ma {len(content)} znakow, pokazano poczatek — uzyj tail/grep ...]"
+        return content if content else "(plik jest pusty)"
+    except FileNotFoundError:
+        return f"Blad: plik nie istnieje: {host}"
+    except PermissionError:
+        return f"Blad: brak uprawnien do odczytu: {host}"
+    except Exception as exc:
+        return f"Blad odczytu pliku: {exc}"
 
 
 async def handle_read_file(
@@ -40,31 +71,30 @@ async def handle_read_file(
         return
 
     host, local = resolve_path(path, session)
-    is_allowed, reason = validate_workspace_access(local)
-    if not is_allowed:
+    target, reason = checked_local(local)
+    if target is None:
         await audit.log_blocked(session.interface, f"read_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
         reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
         return
 
-    try:
-        content = await executor.read_file(local)
-        await audit.log_file_read(session.interface, host)
-        if len(content) > MAX_READ_CHARS:
-            content = content[:MAX_READ_CHARS] + f"\n[... plik ma {len(content)} znakow, pokazano poczatek — uzyj tail/grep ...]"
-        result = content if content else "(plik jest pusty)"
-    except FileNotFoundError:
-        result = f"Blad: plik nie istnieje: {host}"
-    except PermissionError:
-        result = f"Blad: brak uprawnien do odczytu: {host}"
-    except Exception as exc:
-        result = f"Blad odczytu pliku: {exc}"
+    real_host = runtime.to_host(target)
+    if is_sensitive(host) or is_sensitive(real_host):
+        # Te same pliki co przy `cat` (.env, klucze, /proc/*/environ) — tresc poszlaby do providera LLM.
+        async def read_confirmed() -> str:
+            return await _read_for_model(session, target, host)
+
+        session.pending_confirmation = ConfirmationRequest(
+            tool_call_id=tool_call.id, tool_name="read_file", command=f"read_file({host})",
+            classification="confirm", action=read_confirmed,
+        )
+        yield (f"[POTWIERDZ] Odczyt pliku {as_code(host)} wymaga potwierdzenia — to plik z sekretami, "
+               "jego tresc trafi do providera LLM.")
+        return
 
     # Wynik trafia wylacznie do LLM (po redakcji sekretow) — uzytkownik dostaje
     # odpowiedz sformulowana przez model, a nie surowa tresc pliku.
-    reply(session, tool_call, result)
-    return
-    yield  # noqa: unreachable — wymagane, by funkcja byla async generatorem
+    reply(session, tool_call, await _read_for_model(session, target, host))
 
 
 async def handle_write_file(
@@ -91,14 +121,15 @@ async def handle_write_file(
         return
 
     host, local = resolve_path(path, session)
-    is_allowed, reason = validate_workspace_access(local)
-    if not is_allowed:
+    target, reason = checked_local(local)
+    if target is None:
         await audit.log_blocked(session.interface, f"write_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
         reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
         return
+    local = target  # zapis idzie tam, dokad prowadzi symlink na hoscie
 
-    if classify_file_write(host) == "forbidden":
+    if classify_file_write(host) == "forbidden" or classify_file_write(runtime.to_host(target)) == "forbidden":
         await audit.log_blocked(session.interface, f"write_file({host})")
         yield f"[ODMOWA] Nie moge zapisac do {as_code(host)}. Ta sciezka jest chroniona."
         reply(session, tool_call, "ODMOWA SYSTEMOWA: Zapis do tej sciezki jest zakazany.")
@@ -115,7 +146,7 @@ async def handle_write_file(
     )
     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
     message = [f"[POTWIERDZ] Zapis pliku {as_code(host)} ({len(content)} znakow, {lines} linii)"]
-    warning = startup_file_warning(host)
+    warning = startup_file_warning(host) or startup_file_warning(runtime.to_host(local))
     if warning:
         message.append(f"UWAGA: {warning}")
     message.append(preview_change(local, content))

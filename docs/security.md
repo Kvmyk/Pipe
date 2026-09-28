@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.9.0
+Pipe v0.9.1
 
 ## Model
 
@@ -31,7 +31,7 @@ Kolejnosc:
 3. Kazdy segment: forbidden -> wrazliwe pliki (confirm) -> wzorce confirm -> rozpoznany odczyt (safe).
    Dopasowanie jest **tokenowe**: `ss` nie pasuje do `ssh`, `ps` do `psql`, `id` do `idiotic-cmd`.
 4. Przekierowanie zapisu (`>`, `>>` poza `/dev/null` i `2>&1`) albo dynamiczna konstrukcja (`$(...)`,
-   backtick, `<(...)`) -> **confirm**, nawet gdy segmenty sa odczytami.
+   `${...}`, `$'...'`, backtick, `<(...)`) -> **confirm**, nawet gdy segmenty sa odczytami.
 5. Wszystko, czego klasyfikator nie rozpoznaje -> **confirm** (fail-closed).
 
 ### SAFE -- rozpoznane odczyty
@@ -47,20 +47,22 @@ Argumenty, ktore zmieniaja stan, sa sprawdzane osobno:
 |---------|------------------------------|
 | `git` | podkomenda nie jest odczytem, flaga uruchamiajaca program (`-c core.pager=`, `--upload-pack`, `--receive-pack`, `--exec`, `-O`/`--open-files-in-pager`) albo piszaca do pliku (`-o`/`--output`), `branch -D`, `branch nowa`, `tag v1`, `remote add`, `config` bez `--get/--list` |
 | `find` | `-exec`, `-execdir`, `-ok`, `-delete`, `-fprint` |
-| `curl` | `-o/-O`, `-T`, `-d/--data`, `-F`, `--json`, `-D`, `--trace*`, `-X`/`--request` (takze `--request=`, `-XPOST`) inne niz GET/HEAD, **albo host inny niz localhost/prywatny** (eksfiltracja) |
+| `curl` | `-o/-O`, `-T`, `-d/--data`, `-F`, `--json`, `-D`, `--trace*`, `-X`/`--request` (takze `--request=`, `-X<METODA>`) inne niz GET/HEAD, **albo host inny niz localhost/prywatny** (eksfiltracja) -- takze proxy (`-x`, `--proxy`, `--socks5`), `--resolve`/`--connect-to` i adres zapisany jedna liczba (`http://134744072/`) |
 | `sort` | `-o`/`--output`, `--compress-program` (uruchamia program) |
 | `journalctl` | `--vacuum-*`, `--rotate`, `--flush` |
-| `kubectl get secret` | `-o yaml/json/jsonpath/go-template/custom-columns` (takze `-o=...`) -- tresc sekretu trafilaby do LLM |
+| `kubectl get secret` | `-o yaml/json/jsonpath/go-template/custom-columns` (takze `-o=...`) albo `--template` -- rowniez gdy sekrety sa na liscie zasobow (`get cm,secret`) -- tresc sekretu trafilaby do LLM |
 
 Odczyty tych sciezek tez wymagaja zgody, bo wyslalyby sekrety do providera:
-`/etc/shadow`, klucze SSH, `*.pem`/`*.key`, `.env`, **`/proc/<pid>/environ` i `/proc/<pid>/root`** (przy
-`pid: host` to zmienne i katalogi domowe procesow hosta -- obejscie read-only `/hostfs`), oraz globy w
-katalogach z sekretami (`cat /etc/s*adow`, `cat /root/.ssh/id_*`).
+`/etc/shadow`, klucze SSH, `*.pem`/`*.key`, `.env` (takze wzgledne `cat .env`), **`/proc/*/environ` i `/proc/*/root`**
+(dowolny PID, `self` i globy; przy `pid: host` to zmienne i katalogi domowe procesow hosta -- obejscie
+read-only `/hostfs`), oraz globy w katalogach z sekretami (`cat /etc/s*adow`, `cat /root/.ssh/id_*`).
+Wzorce sa sprawdzane takze po usunieciu cudzyslowow i backslashy, wiec `cat /etc/sha""dow` nie przejdzie.
+Te same pliki czytane przez `read_file` tez wymagaja zgody.
 
 ### CONFIRM -- zmiany stanu
 
 `rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
-`docker run/exec/stop/rm/compose up/down`, `git push/commit/pull/reset...`, `kubectl apply/delete/scale/exec...`,
+`docker run/exec/start/stop/restart/rm/compose up/down`, `git push/commit/pull/reset...`, `kubectl apply/delete/scale/exec...`,
 `helm install/upgrade/uninstall`, `ufw`, `iptables` (poza listowaniem), `reboot`, `crontab` (poza `-l`) --
 oraz kazda nieznana komenda. Odczyt plikow z sekretami (`/etc/shadow`, klucze SSH, `*.pem`, `*.key`, `.env`)
 tez wymaga zgody.
@@ -72,7 +74,8 @@ tez wymaga zgody.
 `curl|wget ... | sh`, `base64 ... | sh`, `python -c ...exec`, `kubectl delete ns kube-system`.
 Odmowa nie wraca do modelu jako blad do ponowienia -- dostaje informacje, zeby nie probowal obejsc.
 
-Regresje obejsc znalezionych przy przebudowie: `backend/tests/test_security_hardening.py`.
+Regresje obejsc znalezionych przy przebudowie: `backend/tests/test_security_hardening.py`,
+`backend/tests/test_review_fixes_v091.py`.
 
 ---
 
@@ -114,6 +117,7 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
   propozycja, ktora glowny agent moze wykonac przez `remote_exec` -- z Twoim potwierdzeniem. `forbidden`
   jest logowane jak zawsze.
 - **Dodanie celu i rutyny wymaga potwierdzenia** -- zmanipulowany model nie doda po cichu serwera atakujacego.
+  Potwierdzenie rutyny pokazuje cala tresc zadania.
 - Pola celu sa walidowane wzorcami, komenda idzie jako jeden argument (`shlex.quote`). Na celu-klastrze
   dozwolona jest jedna komenda kubectl/helm (dalsze segmenty `| grep` dzialaja lokalnie) -- druga komenda
   kubectl poszlaby do domyslnego kontekstu.
@@ -129,7 +133,9 @@ wysyla alerty tylko uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`.
 
 ## Workspace (narzedzia plikowe)
 
-`read_file`, `write_file`, `change_directory` rozwiazuja sciezke (symlinki, `..`) i odrzucaja:
+`read_file`, `write_file`, `change_directory` rozwiazuja sciezke (symlinki, `..`) i odrzucaja ponizsze sciezki.
+W Dockerze symlink hosta (`/etc/nginx/sites-enabled/x -> /etc/nginx/sites-available/x`) jest rozwiazywany wzgledem
+korzenia hosta (`/hostfs`), a `..` nie wychodzi ponad ten korzen. Odrzucane:
 wszystko poza hostem (`/hostfs` w Dockerze), `/boot`, `/dev`, `/proc`, `/sys`, `/var/spool`, katalogi binarek,
 `/root/.ssh`, `/home/*/.ssh`, `/etc/shadow`, `/etc/gshadow`, prywatne klucze hosta SSH. Zapis do
 `/etc/passwd`, `/etc/shadow`, `/boot`, `/dev` jest zakazany; kazdy inny zapis wymaga potwierdzenia.

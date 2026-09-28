@@ -210,7 +210,10 @@ class Watcher:
         sockets = await asyncio.to_thread(hostinfo.sockets)
         public = {f"{s.port}/{s.proto.rstrip('6')}": f"{s.ip}:{s.port}"
                   for s in sockets if s.public and s.proto.startswith("tcp")}
-        if public or "public_ports" in state:
+        # Punkt odniesienia zapisujemy przy pierwszym udanym odczycie gniazd, takze bez portow
+        # publicznych — inaczej pierwszy port, ktory sie pojawi, zostalby po cichu uznany za "stary".
+        # Pusty odczyt (brak /proc/1/net) niczego nie zmienia — nie kasuje punktu odniesienia.
+        if sockets:
             previous_ports = set(state["public_ports"]) if "public_ports" in state else None
             findings += port_findings(public, previous_ports)
             state["public_ports"] = sorted(public)

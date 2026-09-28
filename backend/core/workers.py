@@ -99,15 +99,21 @@ async def run_worker(
     zostaje w parent.workers[name] — kolejne zadanie dla tej samej nazwy
     kontynuuje rozmowe.
     """
+    from backend.core.agent import _repair_history, _trim_history  # agent importuje handlery -> workery
+
     result = WorkerResult(name=name, target=target.name)
     history = parent.workers.setdefault(name, [])
-    history.append({"role": "user", "content": task + extra_instructions})
     session = Session(
         session_id=f"{parent.session_id}/worker:{name}",
         interface=f"worker:{name}@{parent.interface}",
         messages=history,
         learns_vibe=False,
     )
+    # Poprzednie zadanie moglo zostac przerwane (WORKER_TIMEOUT) w polowie narzedzia —
+    # bez domkniecia provider odrzucilby historie z nieodpowiedzianym tool_call.
+    _repair_history(session)
+    history.append({"role": "user", "content": task + extra_instructions})
+    _trim_history(session)
 
     async def notify(text: str) -> None:
         if progress is not None:

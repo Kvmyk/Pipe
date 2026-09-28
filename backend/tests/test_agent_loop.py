@@ -142,10 +142,15 @@ class TestSanitizing:
             completion(tool_calls=[("c1", "read_file", {"path": "/srv/.env"})]),
             completion("ok"),
         ])
-        run(agent.chat("s", "pokaz env"))
+        events = run(agent.chat("s", "pokaz env"))
+        # .env to plik z sekretami — read_file pyta o zgode tak samo jak `cat .env`
+        assert any("[POTWIERDZ]" in str(e) for e in events)
+        assert len(client.calls) == 1
+        run(agent.confirm("s", True))
         content = client.calls[1]["messages"][-1]["content"]
         assert "supertajnehaslo123" not in content and "sk-abcdef" not in content
         assert "DB_PASSWORD=[ZREDAGOWANO" in content and "PORT=8080" in content
+        assert_history_valid(client.calls[1]["messages"])
 
     def test_write_file_refuses_redacted_content(self):
         agent, client = make_agent([

@@ -1,5 +1,33 @@
 # Historia zmian -- Pipe
 
+## v0.9.1 (2026-09-28)
+
+Poprawki z przegladu kodu v0.9.0 -- glownie obejscia klasyfikatora komend. Aktualizacja bez recznych krokow.
+
+### Bezpieczenstwo
+
+- Pliki z sekretami wymagaja potwierdzenia takze wtedy, gdy sciezka jest zamaskowana cudzyslowami albo
+  backslashem (`/etc/sha""dow`, `.e\nv`), podana wzglednie (`cat .env`) albo jako `/proc/self/environ`
+  i `/proc/*/environ`. Rozwiniecia `${...}` i `$'...'` licza sie jako dynamiczne konstrukcje
+- `curl` przez obcy proxy (`-x`, `--proxy`, `--socks5`), z `--resolve`/`--connect-to` albo na adres
+  zapisany jedna liczba (`http://134744072/`) wymaga potwierdzenia; kazda metoda `-X...` inna niz GET tez
+- Zrzut sekretow Kubernetesa z listy zasobow (`kubectl get cm,secret -o yaml`) i przez `--template`
+  wymaga potwierdzenia
+- `docker restart` i `docker start` nie sa juz traktowane jak odczyt -- workery i rutyny ich nie wykonuja,
+  a w rozmowie wymagaja TAK
+- `read_file` pyta o zgode przy tych samych plikach z sekretami co `cat` (`.env`, klucze, `*.pem`)
+- Potwierdzenie nowej rutyny pokazuje cala tresc zadania, a nie pierwsze 160 znakow
+
+### Poprawki
+
+- Tryb docker: symlinki hosta (np. `sites-enabled` nginx, `/etc/letsencrypt/live`) sa rozwiazywane
+  wzgledem korzenia hosta -- `read_file`, `write_file` i `change_directory` przestaly ich odrzucac
+  jako "poza workspace"
+- Worker przerwany limitem czasu nie psuje juz kolejnego zadania o tej samej nazwie (historia jest
+  domykana i przycinana)
+- Czuwanie: pierwszy publiczny port na hoscie bez publicznych portow jest zglaszany; nieudany odczyt
+  gniazd nie kasuje punktu odniesienia
+
 ## v0.9.0 (2026-09-28)
 
 Przebudowa: Pipe z agenta "na pytanie" stal sie agentem operacyjnym, ktory sam pilnuje serwera,

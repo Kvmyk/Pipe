@@ -23,6 +23,7 @@ Dopasowanie jest tokenowe (shlex), bez wielkosci liter.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from pathlib import Path
@@ -61,7 +62,6 @@ SAFE_PREFIXES: list[str] = [
     "docker volume ls", "docker volume inspect", "docker container ls", "docker system df",
     "docker compose ps", "docker compose logs", "docker compose config", "docker compose ls",
     "docker compose images", "docker-compose ps", "docker-compose logs", "docker-compose config",
-    "docker restart",
     # git (argumenty sprawdza _check_git)
     "git status", "git log", "git diff", "git branch", "git remote", "git show", "git tag",
     "git rev-parse", "git ls-files", "git blame", "git describe", "git shortlog", "git reflog",
@@ -84,7 +84,7 @@ CONFIRM_PATTERNS: list[str] = [
     r"\bapt(-get)?\s+(install|remove|purge|autoremove|upgrade|dist-upgrade|full-upgrade)",
     r"\bmv\s", r"\bcp\s", r"\brm\s", r"\bkill\s", r"\bpkill\s", r"\bkillall\s", r"\bservice\s",
     r"\bsystemctl\s+(start|stop|restart|reload|enable|disable|mask|unmask|daemon-reload|kill|edit)\b",
-    r"\bdocker\s+(stop|rm|rmi|kill|run|exec|system\s+prune|volume\s+rm|network\s+rm|compose\s+(up|down|rm|stop|restart|pull))\b",
+    r"\bdocker\s+(stop|start|restart|rm|rmi|kill|run|exec|system\s+prune|volume\s+rm|network\s+rm|compose\s+(up|down|rm|stop|restart|pull))\b",
     r"\bdocker-compose\s+(up|down|rm|stop|restart|pull)\b",
     r"\bpip3?\s+install\b",
     r"\bgit\s+(push|commit|checkout|switch|merge|rebase|reset|clean|pull|stash\s+(pop|drop|clear)|restore|rm|mv)\b",
@@ -99,11 +99,11 @@ SENSITIVE_PATTERNS: list[str] = [
     r"\bid_(rsa|dsa|ecdsa|ed25519)\b",
     r"ssh_host_\w+_key\b(?!\.pub)",
     r"\.(pem|key|p12|pfx)\b",
-    r"(^|/)\.env(\.[\w.-]+)?\b",
+    r"(^|[/\s'\"=])\.env(\.[\w.-]+)?\b",
     # /proc/<pid>/environ|root|cwd|mem — przy `pid: host` to sekrety i katalogi domowe procesow hosta,
     # obejscie read-only /hostfs. Dotyczy tez /hostproc.
-    r"/proc/\d+/(environ|root|cwd|mem|maps|task)\b",
-    r"/hostproc/\d+/(environ|root|cwd|mem|maps|task)\b",
+    r"/proc/[^/\s]+/(environ|root|cwd|mem|maps|task)\b",
+    r"/hostproc/[^/\s]+/(environ|root|cwd|mem|maps|task)\b",
     r"\bkubectl\s+get\s+secrets?\b.*-o\s*(yaml|json|jsonpath|go-template)",
     r"\bkubectl\s+get\s+secrets?\b.*--output",
     # Globy w katalogach z sekretami — omijaja wzorce wyzej (np. cat /etc/s*adow)
@@ -151,8 +151,8 @@ def split_command(cmd: str) -> tuple[list[str], bool, bool]:
     Returns:
         (segmenty, jest_zapis_do_pliku, jest_dynamiczna_konstrukcja)
         Zapis to `>`/`>>` do czegos innego niz /dev/null albo deskryptor.
-        Dynamiczna konstrukcja to `$(`, backtick, `<(`, `>(` — ich wynik nie
-        jest znany przed wykonaniem.
+        Dynamiczna konstrukcja to `$(`, `${`, `$'...'`, backtick, `<(`, `>(` —
+        ich wynik (np. `${X:-shadow}`, `$'sh\\x61dow'`) nie jest znany przed wykonaniem.
     """
     segments: list[str] = []
     buf: list[str] = []
@@ -182,7 +182,7 @@ def split_command(cmd: str) -> tuple[list[str], bool, bool]:
         if quote == '"':
             if ch == '"':
                 quote = None
-            elif ch == "`" or cmd.startswith("$(", i):
+            elif ch == "`" or cmd.startswith(("$(", "${"), i):
                 dynamic = True
             buf.append(ch)
             i += 1
@@ -193,7 +193,7 @@ def split_command(cmd: str) -> tuple[list[str], bool, bool]:
             buf.append(ch)
             i += 1
             continue
-        if ch == "`" or cmd.startswith("$(", i) or cmd.startswith("<(", i) or cmd.startswith(">(", i):
+        if ch == "`" or cmd.startswith(("$(", "${", "$'", '$"', "<(", ">("), i):
             dynamic = True
             buf.append(ch)
             i += 1
@@ -319,19 +319,33 @@ _CURL_VALUE_FLAGS = frozenset({
     "-H", "--header", "-A", "--user-agent", "-e", "--referer", "-X", "--request", "-u", "--user",
     "-b", "--cookie", "-d", "--data", "--data-binary", "--data-raw", "--data-ascii", "--data-urlencode",
     "-F", "--form", "-o", "--output", "-T", "--upload-file", "-K", "--config", "--url", "--proxy", "-x",
-    "--connect-to", "--resolve", "-w", "--write-out", "--data-out",
+    "--connect-to", "--resolve", "-w", "--write-out", "--data-out", "--preproxy", "--doh-url",
+    "--socks4", "--socks4a", "--socks5", "--socks5-hostname",
 })
+# Flagi kierujace ruch gdzie indziej niz URL: host z wartosci musi byc lokalny.
+_CURL_PROXY_FLAGS = frozenset({"-x", "--proxy", "--preproxy", "--doh-url", "--socks4", "--socks4a", "--socks5",
+                               "--socks5-hostname"})
+# --resolve HOST:PORT:ADRES i --connect-to H1:P1:H2:P2 podmieniaja adres docelowy — zawsze confirm.
+_CURL_REROUTE_FLAGS = frozenset({"--resolve", "--connect-to"})
 
 
 def _host_is_local(host: str) -> bool:
     """True dla localhost, adresow prywatnych i nazw bez kropki (lokalna siec)."""
+    import ipaddress
+
     host = host.strip().strip("[]").lower()
     if not host:
         return False
     if host in ("localhost", "localhost.localdomain") or host.endswith(".localhost"):
         return True
+    # curl rozumie adres IPv4 jako jedna liczbe (`134744072`, `0x08080808`) — to nie nazwa lokalna
+    if re.fullmatch(r"0x[0-9a-f]+|\d+", host):
+        try:
+            address = ipaddress.ip_address(int(host, 16 if host.startswith("0x") else 10))
+        except ValueError:
+            return False
+        return address.is_loopback or address.is_private or address.is_link_local
     try:
-        import ipaddress
         address = ipaddress.ip_address(host)
         return address.is_loopback or address.is_private or address.is_link_local
     except ValueError:
@@ -367,12 +381,26 @@ def _check_curl(tokens: list[str]) -> Classification:
         if not token.startswith("--") and token.startswith("-") and len(token) > 2 \
                 and any(c in token[1:] for c in "oOTdFKcD"):
             return "confirm"                        # sklejone krotkie flagi, np. -sSo plik
-        if name in ("-x", "--request") and inline:
-            method = inline
+        flag, has_value, value = token.partition("=")    # flagi curl rozrozniaja wielkosc liter
+        if flag in _CURL_REROUTE_FLAGS:
+            return "confirm"
+        if flag in _CURL_PROXY_FLAGS or (token.startswith("-x") and len(token) > 2):
+            if flag in _CURL_PROXY_FLAGS:
+                if not has_value:
+                    value = tokens[i + 1] if i + 1 < len(tokens) else ""
+                    skip = True
+            else:
+                value = token[2:]                   # -xhost:port
+            proxy = _url_host(value) if value else None
+            if not proxy or not _host_is_local(proxy):
+                return "confirm"                    # ruch przez obcy proxy = mozliwa eksfiltracja
+            continue
+        if flag in ("-X", "--request") and has_value:
+            method = value
         elif token in ("-X", "--request"):
             method = tokens[i + 1] if i + 1 < len(tokens) else ""
             skip = True
-        elif token.startswith("-XPOST") or token.startswith("-XPUT") or token.startswith("-XDELETE"):
+        elif token.startswith("-X") and len(token) > 2:
             method = token[2:]
         elif name == "--url" and inline:
             host = _url_host(inline)
@@ -391,10 +419,20 @@ def _check_curl(tokens: list[str]) -> Classification:
     return "safe"
 
 
+_KUBE_SECRET_RESOURCE = re.compile(r"(^|,)secrets?($|[,/.])")
+
+
+def _kubectl_mentions_secret(tokens: list[str]) -> bool:
+    """`secret`, `secrets/x`, `cm,secret`, `secrets.v1` — sekrety na liscie zasobow kubectl."""
+    return any(_KUBE_SECRET_RESOURCE.search(t.lower()) for t in tokens[1:])
+
+
 def _kubectl_dumps_secret(tokens: list[str]) -> bool:
     low = [t.lower() for t in tokens]
     for i, token in enumerate(low):
         name, _, inline = token.partition("=")
+        if name in ("--template", "--template-file"):
+            return True                             # --template bez -o oznacza go-template
         fmt = inline if name in ("-o", "--output") and inline else (
             low[i + 1] if token in ("-o", "--output") and i + 1 < len(low) else "")
         if fmt and fmt.split("=", 1)[0] in ("yaml", "json", "jsonpath", "go-template", "go-template-file",
@@ -427,7 +465,7 @@ def _check_arguments(tokens: list[str]) -> Classification:
     if program == "kubectl" and "--raw" in low:
         return "confirm"
     # kubectl get secret ... -o yaml/json (takze -o=yaml) — tresc sekretu poszlaby do LLM.
-    if program == "kubectl" and "secret" in low and _kubectl_dumps_secret(tokens):
+    if program == "kubectl" and _kubectl_mentions_secret(tokens) and _kubectl_dumps_secret(tokens):
         return "confirm"
     if program == "openssl" and any(t in ("-out", "-keyout") for t in low):
         return "confirm"
@@ -445,14 +483,28 @@ def _is_safe_segment(tokens: list[str]) -> bool:
     return False
 
 
+def is_sensitive(text: str) -> bool:
+    """
+    True, gdy tekst (segment komendy albo sciezka) dotyka pliku z sekretami.
+    Sprawdzany jest tez zapis po usunieciu cudzyslowow i backslashy — powloka
+    czyta `/etc/sha""dow` i `.e\\nv` jak `/etc/shadow` i `.env`.
+    """
+    if any(pattern.search(text) for pattern in _compiled_sensitive):
+        return True
+    tokens = _tokens(text)
+    if tokens is None:
+        return True                                 # nie umiemy rozebrac — nie ufamy
+    normalized = " ".join(tokens)
+    return normalized != text and any(pattern.search(normalized) for pattern in _compiled_sensitive)
+
+
 def classify_segment(segment: str) -> Classification:
     """Klasyfikuje jeden segment (bez operatorow sterujacych)."""
     for pattern in _compiled_forbidden:
         if pattern.search(segment):
             return "forbidden"
-    for pattern in _compiled_sensitive:
-        if pattern.search(segment):
-            return "confirm"
+    if is_sensitive(segment):
+        return "confirm"
     for pattern in _compiled_confirm:
         if pattern.search(segment):
             return "confirm"
@@ -519,6 +571,51 @@ FORBIDDEN_HOST_PATHS = (
 )
 
 
+_MAX_SYMLINKS = 40
+
+
+def resolve_local(path: str, workspace: str | None = None) -> str:
+    """
+    Rozwiazuje sciezke widziana przez proces Pipe (symlinki, `..`).
+
+    Gdy host jest zamontowany pod prefiksem (docker: /hostfs), symlinki hosta
+    sa bezwzgledne wzgledem korzenia HOSTA: /hostfs/etc/nginx/sites-enabled/x
+    -> /etc/nginx/sites-available/x oznacza /hostfs/etc/nginx/sites-available/x,
+    a nie plik kontenera. Wynik nigdy nie wychodzi ponad prefiks (`..` na
+    korzeniu zostaje na korzeniu, jak w chroot). Sciezki spoza prefiksu
+    i tryb natywny — zwykle Path.resolve().
+    """
+    root_raw = os.path.normpath(workspace if workspace is not None else runtime.workspace_root())
+    root = str(Path(root_raw).resolve())
+    normalized = os.path.normpath(path)
+    base = next((b for b in (root_raw, root) if normalized == b or normalized.startswith(b.rstrip("/") + "/")), None)
+    if root == "/" or base is None:
+        return str(Path(path).resolve())
+    pending = [part for part in normalized[len(base):].split("/") if part]
+    resolved: list[str] = []
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part == ".":
+            continue
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        candidate = os.path.join(root, *resolved, part)
+        if os.path.islink(candidate):
+            hops += 1
+            if hops > _MAX_SYMLINKS:
+                raise OSError(f"Za duzo dowiazan symbolicznych: {path}")
+            target = os.readlink(candidate)
+            if target.startswith("/"):
+                resolved = []
+            pending = [p for p in target.split("/") if p] + pending
+            continue
+        resolved.append(part)
+    return os.path.join(root, *resolved) if resolved else root
+
+
 def validate_workspace_access(path: str, workspace: str | None = None) -> tuple[bool, str]:
     """
     Sprawdza, czy sciezka (widziana przez proces Pipe) lezy w dozwolonym workspace.
@@ -534,7 +631,7 @@ def validate_workspace_access(path: str, workspace: str | None = None) -> tuple[
         return False, "Pusta sciezka"
     root = workspace if workspace is not None else runtime.workspace_root()
     try:
-        resolved = Path(path).resolve()
+        resolved = Path(resolve_local(path, root))
         workspace_path = Path(root).resolve()
     except (ValueError, OSError):
         return False, f"Nieprawidlowa sciezka: {path}"

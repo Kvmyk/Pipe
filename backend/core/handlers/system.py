@@ -13,7 +13,7 @@ from typing import Any, AsyncGenerator
 from backend.core import executor, hostinfo, runtime
 from backend.core.events import Event
 from backend.core.handlers.common import reply, run_classified
-from backend.core.security import classify_command, validate_workspace_access
+from backend.core.security import classify_command, resolve_local, validate_workspace_access
 from backend.core.session import Session
 
 # Nadpisanie katalogu /proc hosta (testy). None = runtime.host_proc().
@@ -51,6 +51,13 @@ async def handle_change_directory(
     new_cwd = host_path(raw, session.cwd)
     local = runtime.to_local(new_cwd)
     allowed, reason = validate_workspace_access(local)
+    if allowed:
+        try:
+            # symlink hosta (/var/www -> /srv/www) prowadzi do katalogu hosta, nie kontenera
+            local = resolve_local(local)
+            new_cwd = runtime.to_host(local)
+        except (OSError, ValueError) as exc:
+            allowed, reason = False, f"Nieprawidlowa sciezka: {exc}"
     if not allowed:
         result = f"Błąd: {reason}"
     elif not os.path.isdir(local):
