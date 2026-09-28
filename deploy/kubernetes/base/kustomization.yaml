@@ -1,0 +1,20 @@
+# Pipe w Kubernetesie — tryb "cluster": agent zarzadza klastrem przez kubectl
+# (ServiceAccount z uprawnieniami tylko do odczytu). Instrukcja: ../README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: pipe
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: pipe
+images:
+  # Zbuduj i wypchnij obraz: docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG --push backend/
+  - name: pipe-backend
+    newName: pipe-backend
+    newTag: latest

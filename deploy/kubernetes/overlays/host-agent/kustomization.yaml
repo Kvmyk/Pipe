@@ -1,0 +1,9 @@
+# Pipe zarzadza tez WEZLEM (jak na VPS): system plikow wezla pod /hostfs, /proc pod /hostproc.
+# Pod jest przypiety do jednego wezla — ustaw jego nazwe w host-agent.yaml.
+# Uwaga: to uprawnienia roota na wezle. Uzywaj na klastrach, ktorymi administrujesz sam (k3s na VPS).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: host-agent.yaml

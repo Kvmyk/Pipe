@@ -1,0 +1,19 @@
+# Domyslny deny dla ruchu z innych podow. kubectl port-forward dziala dalej (idzie przez
+# API server -> kubelet, z pominieciem sieci podow), a zaden pod w klastrze nie polaczy sie
+# z portem 7379. To defense-in-depth obok wymaganego AGENT_TOKEN — dziala tylko z CNI
+# obslugujacym NetworkPolicy (Calico, Cilium; nie flannel).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pipe-deny-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pipe
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pipe   # sidecar (bot) w tym samym podzie i tak uzywa socketu

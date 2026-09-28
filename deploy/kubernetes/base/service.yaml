@@ -1,0 +1,14 @@
+# Tylko ClusterIP — dostep przez `kubectl port-forward` (CLI: pipe --kube pipe).
+# Nie wystawiaj Pipe przez Ingress/LoadBalancer: to pelny dostep do klastra.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipe
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pipe
+  ports:
+    - name: pipe
+      port: 7379
+      targetPort: pipe

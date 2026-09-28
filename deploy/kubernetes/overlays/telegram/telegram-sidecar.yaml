@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipe
+spec:
+  template:
+    spec:
+      containers:
+        - name: telegram
+          image: pipe-telegram
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: pipe-telegram   # TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS, AGENT_TOKEN
+          env:
+            - name: AGENT_SOCKET
+              value: /run/pipe/agent.sock
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: run
+              mountPath: /run/pipe

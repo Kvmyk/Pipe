@@ -33,7 +33,8 @@ class TestClassifyCommandSafe:
 
     def test_systemctl_status_is_safe(self):
         assert classify_command("systemctl status nginx") == "safe"
-        assert classify_command("systemctl restart docker") == "safe"
+        # Restart zmienia stan uslugi — od v0.9 wymaga potwierdzenia
+        assert classify_command("systemctl restart docker") == "confirm"
 
     def test_docker_read_only_is_safe(self):
         assert classify_command("docker ps") == "safe"
@@ -268,9 +269,10 @@ class TestEdgeCases:
         assert classify_command("   ") == "confirm"
 
     def test_command_with_newlines(self):
-        # Komenda z newline'ami
-        cmd = "ls\n/tmp"
-        assert classify_command(cmd) == "safe"
+        # Nowa linia rozdziela komendy jak `;` — kazda linia jest klasyfikowana osobno
+        assert classify_command("ls\npwd") == "safe"
+        assert classify_command("ls\nrm file") == "confirm"
+        assert classify_command("ls\nrm -rf /") == "forbidden"
 
     def test_combined_safe_and_dangerous(self):
         # ls z piping do grep - oba bezpieczne
@@ -290,6 +292,7 @@ class TestEdgeCases:
         assert classify_command("ls; rm -rf /") == "forbidden"
         
     def test_command_with_and_or_chain(self):
-        assert classify_command("echo test && ls") == "confirm" # echo wymaga potwierdzenia
+        assert classify_command("echo test && ls") == "safe"  # echo bez przekierowania to odczyt
+        assert classify_command("echo test > plik && ls") == "confirm"
         assert classify_command("ls /tmp || ls /var") == "safe"
         assert classify_command("pwd && rm -rf /") == "forbidden"

@@ -98,12 +98,19 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         (text, needs_confirmation)
     """
     parts: list[str] = []
+    notices: list[str] = []
     needs_confirm = False
 
     for resp in responses:
         text = resp.get("response", "")
         status = resp.get("status", "ok")
         if text:
+            # Powiadomienia o zmianie w pamieci agenta MUSZA dotrzec do uzytkownika,
+            # nawet gdy nizej wybierzemy zwiezle podsumowanie modelu — inaczej injection
+            # moglby zmienic pamiec bez wiedzy uzytkownika. Zbieramy je osobno.
+            if text.lstrip().startswith("[PAMIEC]"):
+                notices.append("<b>Pamiec:</b> " + text.split("]", 1)[1].strip())
+                continue
             # Tagi statusowe -- tylko ODMOWA jest widoczna
             # [SUKCES] -- usuniety calkowicie
             text = text.replace("[SUKCES]", "")
@@ -115,24 +122,27 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         if status == "confirm":
             needs_confirm = True
 
+    def _with_notices(body: str) -> str:
+        return "\n".join(notices + [body]) if notices else body
+
     # Jeśli wiele części odpowiedzi, wybierz najbardziej zwięzłe podsumowanie
     # Preferuj fragmenty zawierające czytelne podsumowanie serwera.
     if parts:
         # Jeśli ostatni fragment jest prostym komunikatem o błędzie, zwróć go
         last = parts[-1].strip()
         if last.lower().startswith("błąd:") or last.lower().startswith("blad:"):
-            return last, needs_confirm
+            return _with_notices(last), needs_confirm
 
         # W przeciwnym razie wybierz ostatni fragment który nie zaczyna się od '['
         for part in reversed(parts):
             txt = part.strip()
             if txt and not txt.startswith("["):
-                return part, needs_confirm
+                return _with_notices(part), needs_confirm
 
         # Fallback: zwróć ostatni fragment
-        return parts[-1], needs_confirm
+        return _with_notices(parts[-1]), needs_confirm
 
-    return "", needs_confirm
+    return ("\n".join(notices) if notices else ""), needs_confirm
 
 
 def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
@@ -159,8 +169,14 @@ def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]
 # Komendy wbudowane w menu Telegrama, w kolejnosci wyswietlania.
 BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("status", "Szybki przeglad obciazenia serwera"),
+    ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
+    ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
     ("skille", "Lista zapisanych skilli"),
+    ("alerty", "Aktywne alerty czuwania"),
+    ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
+    ("cele", "Zdalne serwery, kontenery i klastry"),
+    ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("pomoc", "Lista komend"),
 )
@@ -228,3 +244,67 @@ def response_data(responses: list[dict]) -> dict:
     error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or "brak danych"
     raise RuntimeError(error)
 
+
+
+# ─── Czuwanie, rutyny, listy ────────────────────────────────────────────────
+
+SEVERITY_LABEL = {"critical": "KRYTYCZNY", "warning": "OSTRZEZENIE"}
+
+
+def format_alert(event: dict) -> str:
+    """Alert czuwania jako HTML Telegrama."""
+    title = html.escape(str(event.get("title", "")))
+    detail = html.escape(str(event.get("detail", "")))
+    if event.get("state") == "resolved":
+        return f"<b>ROZWIAZANE</b> — {title}"
+    label = SEVERITY_LABEL.get(str(event.get("severity")), "ALERT")
+    return f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+
+
+def format_routine(event: dict, limit: int = 3000) -> str:
+    """Raport rutyny jako HTML Telegrama (tresc od modelu — escapowana, w bloku)."""
+    name = html.escape(str(event.get("name", "")))
+    status = str(event.get("status", ""))
+    report = str(event.get("report", "")).strip()
+    if len(report) > limit:
+        report = report[:limit] + "\n[...]"
+    return f"<b>Rutyna {name}</b> — {html.escape(status)}\n<pre>{html.escape(report)}</pre>"
+
+
+def format_list(title: str, items: list[str], empty: str) -> str:
+    if not items:
+        return f"<b>{html.escape(title)}</b>\n{empty}"
+    return f"<b>{html.escape(title)}</b>\n" + "\n".join(f"• {html.escape(i)}" for i in items)
+
+
+def format_alerts(data: dict) -> str:
+    if not data.get("enabled", True):
+        return "Czuwanie jest wylaczone (WATCH_ENABLED=0 w backend/.env)."
+    active = data.get("active") or []
+    lines = ["<b>Aktywne alerty</b>"]
+    lines += [format_alert(a) for a in active] or ["Brak — wszystko w normie."]
+    recent = [e for e in (data.get("recent") or []) if e.get("type") == "alert" and e.get("state") != "new"]
+    if recent:
+        lines.append("\n<b>Ostatnie zdarzenia</b>")
+        lines += [f"{html.escape(str(e.get('at', '')))} — {format_alert(e)}" for e in recent[-5:]]
+    return "\n".join(lines)
+
+
+def format_directory(entries: list[dict]) -> str:
+    if not entries:
+        return ("<b>DIRECTORY</b>\nMapa katalogow jest pusta. Napisz np. <i>\"znajdz repozytoria na serwerze\"</i> "
+                "albo uzyj /server aktualizuj.")
+    lines = ["<b>DIRECTORY</b>"]
+    for e in entries:
+        extra = f" ({html.escape(e['branch'])})" if e.get("branch") else ""
+        desc = html.escape(e.get("description") or "")
+        lines.append(f"• <code>{html.escape(e['path'])}</code> [{html.escape(e.get('kind', ''))}]{extra} {desc}".rstrip())
+    return "\n".join(lines)
+
+
+def progress_text(lines: list[str], limit: int = 12) -> str:
+    """Tresc wiadomosci-statusu aktualizowanej na biezaco (workery, rutyny)."""
+    shown = lines[-limit:]
+    skipped = len(lines) - len(shown)
+    head = f"<i>... i {skipped} wczesniej</i>\n" if skipped else ""
+    return "<b>W toku</b>\n" + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)

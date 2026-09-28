@@ -223,24 +223,41 @@ class TestHandlers:
 
     def test_server_md_update_section_then_read(self, data_dir):
         chunks, session = run(handle_server_md, {"operation": "update_section", "section": "Uslugi", "content": "nginx"})
-        assert chunks == []  # tylko wynik dla LLM, nic do uzytkownika
+        # update_section zapisuje od razu, ale zglasza to widocznym komunikatem [PAMIEC]
+        assert any(c.startswith("[PAMIEC]") for c in chunks)
         assert "Zaktualizowano" in session.messages[-1]["content"]
         _, session = run(handle_server_md, {"operation": "read"})
         assert "## Uslugi\nnginx" in session.messages[-1]["content"]
 
+    def test_server_md_full_write_needs_confirmation(self, data_dir):
+        # Pelne nadpisanie SERVER.md to najsilniejszy wektor trwalej injekcji — czeka na TAK.
+        chunks, session = run(handle_server_md, {"operation": "write", "content": "## Przeglad\nDebian 13"})
+        assert session.pending_confirmation is not None
+        assert any("wymaga potwierdzenia" in c for c in chunks)
+        assert memory.read_server_md() == ""            # jeszcze nie zapisane
+        result = asyncio.run(session.pending_confirmation.action())
+        assert "SERVER.md" in result and "Debian 13" in memory.read_server_md()
+
     def test_server_md_secret_error_goes_to_llm(self):
         _, session = run(handle_server_md, {"operation": "write", "content": "haslo=Tajne123456"})
         assert session.messages[-1]["content"].startswith("Blad:")
+        assert session.pending_confirmation is None
         assert memory.read_server_md() == ""
 
-    def test_skill_save_list_read_delete(self):
-        _, s = run(handle_skill_manage, {"operation": "save", "name": "deploy", "description": "Wdrozenie", "content": "git pull"})
-        assert "Utworzono skill 'deploy'" in s.messages[-1]["content"]
+    def test_skill_save_needs_confirmation_then_list_read_delete(self):
+        chunks, s = run(handle_skill_manage,
+                        {"operation": "save", "name": "deploy", "description": "Wdrozenie", "content": "git pull"})
+        # Zapis skilla wymaga potwierdzenia (skill jest ladowany i wykonywany w przyszlych sesjach)
+        assert s.pending_confirmation is not None
+        assert any("wymaga potwierdzenia" in c for c in chunks)
+        assert memory.read_skill("deploy") is None      # jeszcze nie zapisany
+        asyncio.run(s.pending_confirmation.action())
         _, s = run(handle_skill_manage, {"operation": "list"})
         assert "- deploy: Wdrozenie" in s.messages[-1]["content"]
         _, s = run(handle_skill_manage, {"operation": "read", "name": "deploy"})
         assert "git pull" in s.messages[-1]["content"]
-        _, s = run(handle_skill_manage, {"operation": "delete", "name": "deploy"})
+        chunks, s = run(handle_skill_manage, {"operation": "delete", "name": "deploy"})
+        assert any(c.startswith("[PAMIEC]") for c in chunks)
         assert "Usunieto" in s.messages[-1]["content"]
 
     def test_skill_invalid_name_error_goes_to_llm(self):

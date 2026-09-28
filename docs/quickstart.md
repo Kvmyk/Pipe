@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.8.1
+Pipe v0.9.0
 
 ## Wymagania wstepne
 
@@ -16,26 +16,24 @@ Zaloguj sie przez SSH na serwer i wykonaj:
 ```bash
 git clone https://github.com/user/pipe
 cd pipe
-
-python3 -m backend.configure
+sudo bash scripts/install-server.sh            # albo --mode native (bez Dockera)
 ```
 
 Kreator zapyta o providera LLM i klucz API, pobierze aktualna liste modeli, sprawdzi, czy wybrany model
 obsluguje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
 darmowy klucz wygenerujesz na https://aistudio.google.com/apikey
 
-Potem:
-
-```bash
-cd backend
-docker-compose up -d
-```
+Skrypt zainstaluje Dockera (jesli go nie ma) i uruchomi backend. Recznie to samo:
+`python3 -m backend.configure && cd backend && docker compose up -d --build`.
 
 Sprawdz czy dziala:
 ```bash
-docker logs vps-agent
+cd backend && docker compose logs vps-agent
 # Powinno pokazac: [VPS Agent] Serwer gotowy.
 ```
+
+Nowy serwer w chmurze mozesz postawic od razu z Pipe -- [cloud-init](../deploy/cloud-init/user-data.yaml).
+Kubernetes: [deploy/kubernetes](../deploy/kubernetes/README.md).
 
 ---
 
@@ -76,8 +74,10 @@ pipe
 CLI automatycznie:
 1. Zestawia tunel SSH (zapyta o haslo jesli potrzeba)
 2. Laczy sie z agentem na serwerze
-3. Wyswietla status serwera (hostname, uptime, dysk, RAM)
-4. Czeka na Twoje polecenia
+3. Czeka na Twoje polecenia
+
+Na poczatek: `/mapa` (diagram tego, co stoi na serwerze) i `/server` (agent zbada serwer i zapisze,
+co wie, w SERVER.md i DIRECTORY).
 
 ---
 

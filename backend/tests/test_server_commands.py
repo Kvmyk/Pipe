@@ -20,7 +20,7 @@ class FakeAgent:
     def __init__(self):
         self.messages: list[tuple[str, str, str]] = []
 
-    async def chat(self, session_id, message, interface="cli"):
+    async def chat(self, session_id, message, interface="cli", **kwargs):
         self.messages.append((session_id, message, interface))
         yield "odpowiedz agenta"
 

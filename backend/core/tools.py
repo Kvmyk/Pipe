@@ -1,369 +1,279 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.8.1
+Pipe v0.9.0
+
+Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
 
 from __future__ import annotations
 
+
+def _tool(name: str, description: str, properties: dict, required: list[str] | None = None) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": properties, "required": required or []},
+        },
+    }
+
+
+_CONFIRM_FLAG = {
+    "type": "boolean",
+    "description": (
+        "Opcjonalne. true wymusza pytanie o potwierdzenie nawet dla operacji, ktora klasyfikator uznalby "
+        "za odczyt. Nie musisz go ustawiac: operacje zmieniajace stan i tak wymagaja potwierdzenia."
+    ),
+}
+
 TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_command",
-            "description": (
-                "Wykonuje komende shell lokalnie na serwerze. "
-                "Uzywaj tylko bezpiecznych komend zgodnych z allowlista. "
-                "Ustaw requires_confirmation=true dla operacji modyfikujacych system "
-                "(edycja plikow konfiguracyjnych, zmiana uprawnien, restart uslug, itp.)."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Komenda shell do wykonania na serwerze.",
+    _tool(
+        "execute_command",
+        "Wykonuje komende shell na serwerze w katalogu roboczym. Odczyty wykonuja sie od razu, komendy "
+        "zmieniajace stan czekaja na potwierdzenie uzytkownika, zakazane sa odrzucane. Ogranicz output "
+        "(tail -n, head, grep). Dla znanych obszarow wolisz specjalizowane narzedzia.",
+        {
+            "command": {"type": "string", "description": "Komenda shell do wykonania na serwerze."},
+            "requires_confirmation": _CONFIRM_FLAG,
+        },
+        ["command"],
+    ),
+    _tool(
+        "read_file",
+        "Odczytuje plik na serwerze. Sciezka hosta (np. /etc/nginx/nginx.conf) albo wzgledna od katalogu "
+        "roboczego. Sekrety w tresci sa ukrywane przed Toba ([ZREDAGOWANO]).",
+        {"path": {"type": "string", "description": "Sciezka do pliku na serwerze."}},
+        ["path"],
+    ),
+    _tool(
+        "write_file",
+        "Zapisuje caly plik na serwerze (tworzy albo nadpisuje). ZAWSZE wymaga potwierdzenia. Nie uzywaj dla "
+        "plikow, ktore czytales z [ZREDAGOWANO] — zmien je punktowo przez execute_command (sed -i).",
+        {
+            "path": {"type": "string", "description": "Sciezka do pliku na serwerze."},
+            "content": {"type": "string", "description": "Nowa, pelna zawartosc pliku."},
+        },
+        ["path", "content"],
+    ),
+    _tool(
+        "change_directory",
+        "Zmienia katalog roboczy na serwerze (np. '/srv/app'). Uzywaj, gdy uzytkownik chce pracowac w innym "
+        "katalogu — kolejne komendy wykonuja sie w nim.",
+        {"path": {"type": "string", "description": "Sciezka hosta albo wzgledna, np. '/home/user/projekt'."}},
+        ["path"],
+    ),
+    _tool(
+        "git_command",
+        "Operacja Git w repozytorium: status, log, diff, branch, show (odczyty) albo pull, commit, push, "
+        "checkout, merge, stash pop (wymagaja potwierdzenia).",
+        {
+            "repo_path": {"type": "string", "description": "Sciezka hosta do repozytorium, np. /srv/shop."},
+            "subcommand": {"type": "string",
+                           "description": "Podkomenda bez 'git', np. 'status', 'log --oneline -20', 'pull'."},
+            "requires_confirmation": _CONFIRM_FLAG,
+        },
+        ["repo_path", "subcommand"],
+    ),
+    _tool(
+        "system_stats",
+        "Stan hosta prosto z /proc hosta: uptime, load average vs liczba rdzeni, RAM, swap, zajetosc "
+        "wszystkich dyskow. stat_type=processes dodaje najciezsze procesy.",
+        {
+            "stat_type": {
+                "type": "string",
+                "enum": ["summary", "processes", "cpu", "memory", "all"],
+                "description": "Zakres danych (domyslnie summary).",
+            }
+        },
+    ),
+    _tool(
+        "docker_manage",
+        "Kontenery i obrazy Docker na hoscie. Odczyty: ps, logs, inspect, stats, top, images, compose-ps, "
+        "compose-logs, networks, volumes, df. Zmiany (restart, stop, start, rm, rmi, prune) wymagaja potwierdzenia.",
+        {
+            "operation": {
+                "type": "string",
+                "enum": ["ps", "logs", "inspect", "stats", "top", "restart", "stop", "start", "rm", "rmi",
+                         "images", "prune", "compose-ps", "compose-logs", "networks", "volumes", "df"],
+                "description": "Operacja Docker.",
+            },
+            "target": {"type": "string",
+                       "description": "Kontener/obraz (dla compose-logs: nazwa projektu). Niepotrzebne dla ps, images."},
+            "options": {"type": "string", "description": "Dodatkowe flagi, np. '--tail 50' dla logs, '-a' dla ps."},
+            "requires_confirmation": _CONFIRM_FLAG,
+        },
+        ["operation"],
+    ),
+    _tool(
+        "network_info",
+        "Diagnostyka sieci hosta: nasluchujace porty (z oznaczeniem publicznych), polaczenia, ping, curl, DNS.",
+        {
+            "check_type": {
+                "type": "string",
+                "enum": ["ports", "connections", "listeners", "ping", "curl", "dns"],
+                "description": "ports/listeners -- porty hosta, connections -- polaczenia TCP, "
+                               "ping/curl/dns -- test celu.",
+            },
+            "target": {"type": "string",
+                       "description": "Dla ping/curl/dns, np. 'example.com', 'http://localhost:8080/health'."},
+        },
+        ["check_type"],
+    ),
+    _tool(
+        "cron_manage",
+        "Zadania cron hosta: list (crontaby i /etc/cron.d), check-logs, add/remove (tylko w trybie native, "
+        "z potwierdzeniem). Zadania, ktore ma wykonywac agent, zakladaj jako rutyny (routine_manage).",
+        {
+            "operation": {"type": "string", "enum": ["list", "add", "remove", "check-logs"]},
+            "schedule": {"type": "string", "description": "Dla add: harmonogram cron, np. '0 3 * * *'."},
+            "command": {"type": "string",
+                        "description": "Dla add: komenda; dla remove: dokladna linia crontaba do usuniecia."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "diagram",
+        "Rysuje diagram i wysyla go uzytkownikowi jako obraz (Telegram: zdjecie, CLI: plik PNG + podglad w "
+        "terminalu). mode=infra: automatyczna mapa infrastruktury hosta (kontenery, projekty compose, reverse "
+        "proxy i domeny, porty, uslugi, klaster Kubernetes, zdalne cele) — uzyj, gdy uzytkownik pyta o "
+        "architekture albo 'co tu jest postawione'. mode=mermaid: Twoj wlasny diagram w skladni Mermaid "
+        "(flowchart, sequenceDiagram, erDiagram, stateDiagram...) — dla przeplywow, procedur i zaleznosci.",
+        {
+            "mode": {"type": "string", "enum": ["infra", "mermaid"]},
+            "mermaid": {"type": "string",
+                        "description": "Dla mode=mermaid: kod diagramu Mermaid (bez otoczki ```). Etykiety "
+                                       "ze znakami specjalnymi w cudzyslowie: A[\"nginx :443\"]."},
+            "title": {"type": "string", "description": "Tytul diagramu (krotki)."},
+            "include_kubernetes": {"type": "boolean",
+                                   "description": "Dla mode=infra: dolacz aplikacje z klastra (kubectl)."},
+        },
+        ["mode"],
+    ),
+    _tool(
+        "server_md",
+        "Twoja trwala pamiec o tym serwerze: plik SERVER.md, dolaczany do kazdej rozmowy. Zapisuj trwale fakty: "
+        "system, uslugi, kontenery, domeny, porty, decyzje uzytkownika. NIGDY sekretow. "
+        "Operacje: read; update_section (zastap albo dodaj jedna sekcje '## ...' — preferowane); write (caly plik).",
+        {
+            "operation": {"type": "string", "enum": ["read", "update_section", "write"]},
+            "section": {"type": "string", "description": "Tytul sekcji bez '##' (dla update_section)."},
+            "content": {"type": "string", "description": "Markdown: tresc sekcji albo calego pliku."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "directory",
+        "DIRECTORY: mapa waznych miejsc na serwerze — repozytoria, katalogi aplikacji, projekty compose, "
+        "konfiguracje, dane, logi, backupy — z jednozdaniowym opisem. Jest w system prompcie. "
+        "upsert dodaje/aktualizuje wpis, scan odkrywa repozytoria git i projekty compose automatycznie.",
+        {
+            "operation": {"type": "string", "enum": ["list", "upsert", "remove", "scan"]},
+            "path": {"type": "string", "description": "Sciezka hosta, np. /srv/shop."},
+            "kind": {"type": "string",
+                     "enum": ["repo", "app", "compose", "config", "data", "logs", "backup", "other"]},
+            "description": {"type": "string", "description": "Jedno zdanie: co to jest i do czego sluzy."},
+            "remote": {"type": "string", "description": "Dla repo: adres remote (bez tokenow)."},
+            "branch": {"type": "string", "description": "Dla repo: glowna galaz."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "skill_manage",
+        "Skille to zapisane przez Ciebie procedury wielokrotnego uzytku (np. wdrozenie aplikacji, odnowienie "
+        "certyfikatu). Lista jest w system prompcie — zanim wykonasz pasujace zadanie, wczytaj skill (read). "
+        "Zapisz skill (save) po wieloetapowej procedurze, ktora sie powtorzy. Skill nie omija zasad bezpieczenstwa.",
+        {
+            "operation": {"type": "string", "enum": ["list", "read", "save", "delete"]},
+            "name": {"type": "string", "description": "Nazwa: male litery, cyfry i myslniki, np. 'odnow-certyfikat'."},
+            "description": {"type": "string", "description": "Dla save: jedno zdanie — kiedy uzyc tego skilla."},
+            "content": {"type": "string", "description": "Dla save: Markdown z krokami, komendami i weryfikacja."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "vibe",
+        "VIBE: notatka o tym, jak rozmawiac z biezacym uzytkownikiem (ton, dlugosc, forma, poziom techniczny). "
+        "Aktualizuje sie tez sama w tle. Uzyj update, gdy uzytkownik wprost powie, jak mam do niego mowic — "
+        "podaj cala nowa notatke (Markdown, zaczyna sie od '# VIBE', maks. 12 punktow).",
+        {
+            "operation": {"type": "string", "enum": ["read", "update"]},
+            "content": {"type": "string", "description": "Dla update: pelna nowa tresc notatki."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "target_manage",
+        "Zdalne cele: serwery SSH, kontenery Docker, klastry i pody Kubernetes, na ktorych mozesz wykonywac "
+        "komendy (remote_exec) i wysylac workerow (delegate). Nic nie jest instalowane po drugiej stronie. "
+        "add wymaga potwierdzenia; test sprawdza lacznosc. Cel 'local' (ten host) istnieje zawsze.",
+        {
+            "operation": {"type": "string", "enum": ["list", "add", "remove", "test"]},
+            "name": {"type": "string", "description": "Nazwa celu: male litery, cyfry, '-', '_' (np. 'web-2')."},
+            "kind": {"type": "string", "enum": ["ssh", "docker", "kubernetes"]},
+            "description": {"type": "string", "description": "Co to za maszyna/klaster."},
+            "host": {"type": "string", "description": "ssh: adres hosta."},
+            "user": {"type": "string", "description": "ssh: uzytkownik."},
+            "port": {"type": "integer", "description": "ssh: port (domyslnie 22)."},
+            "identity_file": {"type": "string", "description": "ssh: sciezka klucza w kontenerze Pipe (opcjonalnie)."},
+            "container": {"type": "string", "description": "docker: nazwa kontenera."},
+            "context": {"type": "string", "description": "kubernetes: kontekst kubeconfig (opcjonalnie)."},
+            "namespace": {"type": "string", "description": "kubernetes: namespace (opcjonalnie)."},
+            "pod": {"type": "string", "description": "kubernetes: pod dla kubectl exec (puste = caly klaster)."},
+            "pod_container": {"type": "string", "description": "kubernetes: kontener w podzie (opcjonalnie)."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "remote_exec",
+        "Wykonuje jedna komende na zdalnym celu. Klasyfikacja bezpieczenstwa jak w execute_command (dla komendy "
+        "docelowej). Na celu-klastrze Kubernetes komenda zaczyna sie od kubectl albo helm.",
+        {
+            "target": {"type": "string", "description": "Nazwa celu (target_manage list) albo 'local'."},
+            "command": {"type": "string", "description": "Komenda do wykonania na celu."},
+        },
+        ["target", "command"],
+    ),
+    _tool(
+        "delegate",
+        "Wysyla workerow — pod-agentow, ktorzy rownolegle badaja cele i zwracaja Ci raporty. Kazdy worker ma "
+        "jeden cel i jedno zadanie, wykonuje tylko odczyty, a komendy zmieniajace stan zwraca jako propozycje. "
+        "Uzyj dla kilku celow naraz albo dluzszej diagnozy (logi, przyczyna awarii). Podanie nazwy workera "
+        "uzytej wczesniej w tej rozmowie kontynuuje jego watek.",
+        {
+            "tasks": {
+                "type": "array",
+                "description": "Lista zadan (maks. kilka).",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "target": {"type": "string", "description": "Nazwa celu albo 'local'."},
+                        "task": {"type": "string",
+                                 "description": "Konkretne zadanie: co sprawdzic, czego szukac, co ma byc w raporcie."},
+                        "name": {"type": "string", "description": "Opcjonalna nazwa workera."},
                     },
-                    "requires_confirmation": {
-                        "type": "boolean",
-                        "description": (
-                            "Czy agent uwaza te operacje za ryzykowna i wymaga "
-                            "potwierdzenia uzytkownika przed wykonaniem. "
-                            "Ustaw true dla operacji modyfikujacych system."
-                        ),
-                    },
+                    "required": ["target", "task"],
                 },
-                "required": ["command", "requires_confirmation"],
-            },
+            }
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": (
-                "Odczytuje zawartosc pliku na serwerze. "
-                "Uzywaj do przegladania plikow konfiguracyjnych, logow itp. "
-                "Nie odczytuj plikow zawierajacych sekrety (klucze prywatne, hasla) "
-                "jesli nie jest to absolutnie konieczne."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Absolutna sciezka do pliku na serwerze.",
-                    },
-                },
-                "required": ["path"],
-            },
+        ["tasks"],
+    ),
+    _tool(
+        "routine_manage",
+        "Rutyny: zadania, ktore wykonujesz sam wedlug harmonogramu (cron) i raportujesz uzytkownikowi — np. "
+        "'codziennie o 7 sprawdz backupy i waznosc certyfikatow'. Wykonuje je worker (tylko odczyty). "
+        "add wymaga potwierdzenia; run uruchamia rutyne od razu.",
+        {
+            "operation": {"type": "string", "enum": ["list", "add", "remove", "enable", "disable", "run"]},
+            "name": {"type": "string", "description": "Nazwa rutyny, np. 'poranny-przeglad'."},
+            "schedule": {"type": "string",
+                         "description": "Cron (5 pol, czas serwera), np. '0 7 * * *', albo @hourly/@daily/@weekly."},
+            "task": {"type": "string", "description": "Co sprawdzic i co ma byc w raporcie."},
+            "target": {"type": "string", "description": "Cel (domyslnie local)."},
+            "notify": {"type": "string", "enum": ["always", "problems"],
+                       "description": "Raport zawsze albo tylko przy problemie."},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": (
-                "Zapisuje lub edytuje plik na serwerze. "
-                "ZAWSZE wymaga potwierdzenia uzytkownika -- ustaw requires_confirmation=true. "
-                "NIE loguj zawartosci pliku w rozmowie jesli moze zawierac sekrety."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Absolutna sciezka do pliku na serwerze.",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Nowa zawartosc pliku.",
-                    },
-                    "requires_confirmation": {
-                        "type": "boolean",
-                        "description": "Zawsze true -- zapis pliku wymaga potwierdzenia.",
-                    },
-                },
-                "required": ["path", "content", "requires_confirmation"],
-            },
-        },
-    },
-    # --- Nawigacja po katalogach ---
-    {
-        "type": "function",
-        "function": {
-            "name": "change_directory",
-            "description": (
-                "Zmienia wirtualny katalog roboczy na serwerze "
-                "(hostfs). Np. '/home/user'. Uzywaj tego aby pamietac "
-                "w jakim katalogu na serwerze uzytkownik chce pracowac."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Sciezka do katalogu na serwerze, np. '/home/user/my-project'",
-                    },
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    # --- Git ---
-    {
-        "type": "function",
-        "function": {
-            "name": "git_command",
-            "description": (
-                "Wykonuje operacje Git w podanym repozytorium. "
-                "Obsluguje: status, log, diff, branch, checkout, pull, add, commit, push, stash. "
-                "Operacje modyfikujace (commit, push, checkout, merge, stash pop) wymagaja potwierdzenia. "
-                "Operacje odczytujace (status, log, diff, branch --list) sa bezpieczne."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "repo_path": {
-                        "type": "string",
-                        "description": (
-                            "Absolutna sciezka do katalogu repozytorium Git. "
-                            "Np. /hostfs/home/user/my-project"
-                        ),
-                    },
-                    "subcommand": {
-                        "type": "string",
-                        "description": (
-                            "Podkomenda Git do wykonania, np.: "
-                            "status, log --oneline -20, diff, branch, "
-                            "pull, add ., commit -m 'msg', push, stash, stash pop"
-                        ),
-                    },
-                    "requires_confirmation": {
-                        "type": "boolean",
-                        "description": (
-                            "Ustaw true dla operacji modyfikujacych repozytorium "
-                            "(commit, push, checkout, merge, reset, stash pop). "
-                            "False dla operacji tylko odczytujacych (status, log, diff, branch --list)."
-                        ),
-                    },
-                },
-                "required": ["repo_path", "subcommand", "requires_confirmation"],
-            },
-        },
-    },
-    # --- Szczegolowy status systemu ---
-    {
-        "type": "function",
-        "function": {
-            "name": "system_stats",
-            "description": (
-                "Pobiera szczegolowe statystyki systemowe serwera: "
-                "zuzycie CPU (per rdzen), zuzycie RAM (dokladne wartosci z /proc/meminfo), "
-                "obciazenie systemu (load average), zuzycie dysku, uptime, "
-                "lista najciezszych procesow (top 10 po CPU/RAM). "
-                "Wszystkie dane pobierane sa z /proc i narzedzi systemowych -- NIE z uproszczonego 'free'."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    # --- Docker management ---
-    {
-        "type": "function",
-        "function": {
-            "name": "docker_manage",
-            "description": (
-                "Zarzadza kontenerami Docker na serwerze. "
-                "Operacje: ps (lista), logs (logi kontenera), inspect (szczegoly), "
-                "stats (zuzycie zasobow), top (procesy w kontenerze), "
-                "restart/stop/start (zarzadzanie cyklem zycia), "
-                "images (lista obrazow), prune (czyszczenie nieuzywanych zasobow). "
-                "Operacje modyfikujace (restart, stop, start, prune, rm, rmi) wymagaja potwierdzenia."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": [
-                            "ps", "logs", "inspect", "stats", "top",
-                            "restart", "stop", "start", "rm", "rmi",
-                            "images", "prune", "compose-ps", "compose-logs",
-                        ],
-                        "description": "Operacja Docker do wykonania.",
-                    },
-                    "target": {
-                        "type": "string",
-                        "description": (
-                            "Nazwa lub ID kontenera/obrazu (wymagane dla operacji na konkretnym kontenerze). "
-                            "Opcjonalne dla ps, images, prune, stats."
-                        ),
-                    },
-                    "options": {
-                        "type": "string",
-                        "description": (
-                            "Dodatkowe flagi, np. '--tail 50' dla logs, "
-                            "'--all' dla ps, '--format json' dla inspect."
-                        ),
-                    },
-                    "requires_confirmation": {
-                        "type": "boolean",
-                        "description": (
-                            "True dla operacji modyfikujacych (restart, stop, start, rm, rmi, prune). "
-                            "False dla operacji odczytujacych (ps, logs, inspect, stats, top, images)."
-                        ),
-                    },
-                },
-                "required": ["operation", "requires_confirmation"],
-            },
-        },
-    },
-    # --- Siec ---
-    {
-        "type": "function",
-        "function": {
-            "name": "network_info",
-            "description": (
-                "Diagnostyka sieciowa serwera: otwarte porty, aktywne polaczenia, "
-                "nasluchujace uslugi, testy polaczenia (ping, curl). "
-                "Przydatne do debugowania problemow z siecia i sprawdzania dostepu do uslug."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "check_type": {
-                        "type": "string",
-                        "enum": ["ports", "connections", "listeners", "ping", "curl", "dns"],
-                        "description": (
-                            "Typ diagnozy: "
-                            "ports / listeners -- nasluchujace porty TCP/UDP hosta VPS, "
-                            "connections -- zestawione polaczenia TCP hosta VPS, "
-                            "ping -- test dostepnosci hosta, "
-                            "curl -- test HTTP endpointu, "
-                            "dns -- rozwiazywanie nazw DNS."
-                        ),
-                    },
-                    "target": {
-                        "type": "string",
-                        "description": (
-                            "Cel diagnozy -- wymagany dla ping, curl, dns. "
-                            "Np. 'google.com', 'http://localhost:8080/health', '1.1.1.1'"
-                        ),
-                    },
-                },
-                "required": ["check_type"],
-            },
-        },
-    },
-    # --- Cron ---
-    {
-        "type": "function",
-        "function": {
-            "name": "cron_manage",
-            "description": (
-                "Zarzadzanie zadaniami cron na serwerze. "
-                "Operacje: list (wyswietl crontab), add (dodaj zadanie), "
-                "remove (usun zadanie), check-logs (sprawdz logi wykonan). "
-                "Dodawanie i usuwanie zadan wymaga potwierdzenia."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["list", "add", "remove", "check-logs"],
-                        "description": "Operacja cron do wykonania.",
-                    },
-                    "schedule": {
-                        "type": "string",
-                        "description": (
-                            "Harmonogram cron (wymagany dla 'add'). "
-                            "Np. '0 3 * * *' (codziennie o 3:00), '*/5 * * * *' (co 5 minut)."
-                        ),
-                    },
-                    "command": {
-                        "type": "string",
-                        "description": "Komenda do zaplanowania (wymagana dla 'add') lub wzorzec do usuniecia (dla 'remove').",
-                    },
-                    "requires_confirmation": {
-                        "type": "boolean",
-                        "description": "True dla add/remove, false dla list/check-logs.",
-                    },
-                },
-                "required": ["operation", "requires_confirmation"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "server_md",
-            "description": (
-                "Twoja trwala pamiec o tym serwerze: plik SERVER.md, dolaczany do kazdej rozmowy. "
-                "Zapisuj trwale fakty: system, uslugi, kontenery, domeny, porty, wazne sciezki, "
-                "decyzje uzytkownika. NIGDY nie zapisuj sekretow (hasel, kluczy, tokenow). "
-                "Operacje: read; update_section (zastap albo dodaj jedna sekcje '## ...' — preferowane); "
-                "write (zastap caly plik)."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["read", "update_section", "write"],
-                        "description": "Operacja na SERVER.md.",
-                    },
-                    "section": {
-                        "type": "string",
-                        "description": "Tytul sekcji bez '##' (dla update_section), np. 'Uslugi i kontenery'.",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Markdown: tresc sekcji (update_section) albo calego pliku (write).",
-                    },
-                },
-                "required": ["operation"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "skill_manage",
-            "description": (
-                "Skille to zapisane przez Ciebie procedury wielokrotnego uzytku (np. wdrozenie aplikacji, "
-                "odnowienie certyfikatu, czyszczenie logow). Lista skilli jest w system prompcie — "
-                "zanim wykonasz zadanie pasujace do opisu, wczytaj skill (read). Zapisz skill (save), gdy "
-                "wykonasz wieloetapowa procedure, ktora sie powtorzy, albo gdy uzytkownik o to poprosi. "
-                "Skill nie omija zasad bezpieczenstwa — komendy nadal wymagaja potwierdzenia."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["list", "read", "save", "delete"],
-                        "description": "Operacja na skillach.",
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Nazwa skilla: male litery, cyfry i myslniki, np. 'odnow-certyfikat'.",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Dla save: jedno zdanie — kiedy uzyc tego skilla.",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Dla save: Markdown z krokami, komendami i sposobem weryfikacji.",
-                    },
-                },
-                "required": ["operation"],
-            },
-        },
-    },
+        ["operation"],
+    ),
 ]

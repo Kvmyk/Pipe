@@ -98,3 +98,35 @@ class TestSlugify:
     ])
     def test_slugify(self, name, expected):
         assert configure.slugify(name) == expected
+
+
+class TestFromEnv:
+    """--from-env: konfiguracja bez pytan (cloud-init, install-server.sh, CI)."""
+
+    @pytest.fixture
+    def env_file(self, tmp_path, monkeypatch):
+        path = tmp_path / ".env"
+        monkeypatch.setattr(configure, "ENV_PATH", path)
+        monkeypatch.setattr(configure, "ENV_EXAMPLE_PATH", tmp_path / "brak.example")
+        for key in configure.FROM_ENV_KEYS + ("GEMINI_API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(key, raising=False)
+        return path
+
+    def test_writes_selected_keys(self, env_file, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("LLM_API_KEY", "sk-test")
+        monkeypatch.setenv("WORKER_MODEL", "gpt-mini")
+        monkeypatch.setenv("UNRELATED", "x")
+        assert configure.main(["--from-env"]) == 0
+        written = configure.parse_env(env_file.read_text())
+        assert written["LLM_PROVIDER"] == "openai" and written["LLM_API_KEY"] == "sk-test"
+        assert written["WORKER_MODEL"] == "gpt-mini" and "UNRELATED" not in written
+        assert oct(env_file.stat().st_mode)[-3:] == "600"
+
+    def test_requires_provider(self, env_file):
+        assert configure.main(["--from-env"]) == 1
+        assert not env_file.exists()
+
+    def test_requires_key_for_cloud_provider(self, env_file, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        assert configure.main(["--from-env"]) == 1

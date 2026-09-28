@@ -1,0 +1,7 @@
+# Pipe moze tez ZMIENIAC klaster (restart/skalowanie deploymentow, usuwanie podow,
+# kubectl exec) — kazda taka komenda nadal wymaga potwierdzenia w rozmowie.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - rbac-operator.yaml

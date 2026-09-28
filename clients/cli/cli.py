@@ -18,16 +18,21 @@ Użycie:
     python cli.py --host root@1.2.3.4 --port 22
     python cli.py --host root@1.2.3.4 --key ~/.ssh/id_rsa
     python cli.py --host root@1.2.3.4 --no-tunnel  # jeśli tunnel jest już aktywny
+    python cli.py --kube pipe                        # Pipe w Kubernetesie (kubectl port-forward)
+
+Diagramy (np. /mapa) CLI zapisuje w ~/.pipe/diagrams/ i pokazuje ich podgląd
+ASCII w terminalu; --open otwiera PNG w przeglądarce obrazów.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import getpass
 import json
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -54,6 +59,9 @@ console = Console()
 DEFAULT_SSH_PORT: int = 22
 DEFAULT_LOCAL_PORT: int = 7379           # lokalny port TCP dla tunelu SSH
 REMOTE_SOCKET: str = "/tmp/vps-agent.sock"  # socket na serwerze
+READ_LIMIT: int = 32 * 1024 * 1024       # ramki z diagramami (base64) sa duze
+DIAGRAMS_DIR: Path = Path(os.getenv("PIPE_DIAGRAMS_DIR", str(Path.home() / ".pipe" / "diagrams")))
+OPEN_IMAGES: bool = False                # ustawiane flaga --open
 
 
 # ─── SSH Tunel ────────────────────────────────────────────────────────────────
@@ -160,6 +168,29 @@ class SSHTunnel:
         self.stop()
 
 
+class KubePortForward(SSHTunnel):
+    """
+    Polaczenie z Pipe dzialajacym w Kubernetesie: `kubectl port-forward svc/pipe`.
+    Ten sam interfejs co SSHTunnel (start / wait_ready / stop).
+    """
+
+    def __init__(self, namespace: str, local_port: int, context: str | None = None, service: str = "pipe") -> None:
+        super().__init__(host=f"svc/{service}", local_port=local_port)
+        self.namespace = namespace
+        self.context = context
+        self.service = service
+
+    def start(self) -> None:
+        if not shutil.which("kubectl"):
+            raise RuntimeError("Brak komendy 'kubectl' — zainstaluj ja albo uzyj polaczenia SSH (--host).")
+        cmd = ["kubectl"]
+        if self.context:
+            cmd += ["--context", self.context]
+        cmd += ["-n", self.namespace, "port-forward", f"svc/{self.service}",
+                f"{self.local_port}:{DEFAULT_LOCAL_PORT}", "--address", "127.0.0.1"]
+        self._process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=None)
+
+
 # ─── Klient TCP (przez tunel SSH) ────────────────────────────────────────────
 
 class RemoteClient:
@@ -186,7 +217,7 @@ class RemoteClient:
     async def connect(self) -> None:
         """Nawiązuje połączenie TCP z lokalnym portem tunelu."""
         try:
-            self._reader, self._writer = await asyncio.open_connection(self.host, self.port)
+            self._reader, self._writer = await asyncio.open_connection(self.host, self.port, limit=READ_LIMIT)
         except ConnectionRefusedError:
             raise ConnectionRefusedError(
                 f"Nie można połączyć się z {self.host}:{self.port}.\n"
@@ -204,10 +235,19 @@ class RemoteClient:
             self._writer = None
             self._reader = None
 
+    @property
+    def interface(self) -> str:
+        # Uzytkownik systemu rozroznia osoby w audit logu i w notatkach VIBE
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+        return f"cli:{user}" if user else "cli"
+
     async def send_message(self, message: str) -> list[dict]:
         """Wysyła wiadomość i zwraca listę odpowiedzi."""
         return await self._send(
-            {"message": message, "session_id": self.session_id, "interface": "cli"}
+            {"message": message, "session_id": self.session_id, "interface": self.interface}
         )
 
     async def send_confirm(self, confirmed: bool) -> list[dict]:
@@ -215,8 +255,9 @@ class RemoteClient:
         return await self._send({"confirm": confirmed, "session_id": self.session_id})
 
     async def send_command(self, command: str, **fields) -> list[dict]:
-        """Zadanie {"command": ...}: list_skills, server_md, scan_server, run_skill."""
-        return await self._send({"command": command, "session_id": self.session_id, "interface": "cli", **fields})
+        """Zadanie {"command": ...} — lista w docs/protocol.md."""
+        return await self._send({"command": command, "session_id": self.session_id,
+                                 "interface": self.interface, **fields})
 
     async def _send(self, data: dict) -> list[dict]:
         """Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`."""
@@ -230,6 +271,7 @@ class RemoteClient:
         self._writer.write(line.encode("utf-8"))
         await self._writer.drain()
 
+        # Postep i zalaczniki sa pokazywane od razu; reszta wraca jako lista.
         responses: list[dict] = []
         while True:
             raw = await self._reader.readline()
@@ -237,16 +279,66 @@ class RemoteClient:
                 break
             try:
                 response = json.loads(raw.decode("utf-8", errors="replace"))
-                responses.append(response)
-                if response.get("done"):
-                    break
             except json.JSONDecodeError:
                 continue
+            if response.get("attachment"):
+                _show_attachment(response["attachment"])
+            elif (response.get("event") or {}).get("type") == "progress":
+                console.print(f"[dim]  › {escape(response['event'].get('text', ''))}[/dim]")
+            else:
+                responses.append(response)
+            if response.get("done"):
+                break
 
         return responses
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
+
+def _open_file(path: Path) -> None:
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        elif os.name == "nt":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif shutil.which("xdg-open"):
+            subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def _show_attachment(attachment: dict) -> None:
+    """Diagram: podgląd ASCII (jeśli mieści się w terminalu) + PNG zapisany na dysk."""
+    caption = attachment.get("caption") or attachment.get("name") or "Załącznik"
+    console.print(Rule(f"[bold cyan]{escape(caption)}[/bold cyan]", style="cyan"))
+    preview = (attachment.get("text") or "").rstrip()
+    if preview:
+        width = max(len(line) for line in preview.splitlines())
+        if width <= console.width:
+            console.print(Text(preview), highlight=False)
+        else:
+            console.print(f"[dim](podgląd ma {width} kolumn — terminal ma {console.width}; otwórz PNG)[/dim]")
+    try:
+        data = base64.b64decode(attachment.get("data", ""))
+        if data:
+            DIAGRAMS_DIR.mkdir(parents=True, exist_ok=True)
+            name = Path(attachment.get("name") or "diagram.png").name
+            path = DIAGRAMS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{name}"
+            path.write_bytes(data)
+            console.print(f"[dim]Zapisano: {path}[/dim]")
+            if OPEN_IMAGES:
+                _open_file(path)
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]Nie zapisano pliku: {escape(str(exc))}[/red]")
+    source = attachment.get("source")
+    if source:
+        console.print("[dim]Kod Mermaid: /mermaid — pokaż ostatni[/dim]")
+        global _last_mermaid
+        _last_mermaid = source
+
+
+_last_mermaid: str = ""
+
 
 def _print_banner(host: str) -> None:
     """Wyświetla baner startowy z informacją o serwerze."""
@@ -261,9 +353,9 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.8.1[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.9.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-            "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/server[/bold cyan]  "
+            "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
             "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
             "[bold cyan]/exit[/bold cyan][/dim]",
             border_style="cyan",
@@ -332,12 +424,28 @@ SCAN_WORDS = ("aktualizuj", "odswiez", "odśwież", "skanuj")
 HELP_TEXT = """**Komendy**
 
 - `/status` — stan serwera
+- `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
 - `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
+- `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
 - `/skille` — zapisane procedury; każda ma własną komendę, np. `/odnow_certyfikat`
+- `/alerty` — aktywne alerty czuwania
+- `/rutyny` — zadania wykonywane według harmonogramu
+- `/cele` — zdalne serwery, kontenery i klastry
+- `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
+- `/historia` — ostatnie wpisy audit logu
 - `/pomoc` — ta lista
 - `/exit` — wyjście
 
-Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
+Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`.
+Diagramy możesz też zamawiać zwykłym tekstem: „narysuj, jak zapytanie trafia do sklepu”."""
+
+
+def _print_list(title: str, items: list[str], empty: str) -> None:
+    console.print(f"[bold]{escape(title)}[/bold]")
+    if not items:
+        console.print(f"[dim]{escape(empty)}[/dim]")
+    for item in items:
+        console.print(f"  • {escape(item)}")
 
 
 def _response_data(responses: list[dict]) -> dict:
@@ -370,6 +478,62 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
 
     if name in ("pomoc", "help"):
         console.print(Markdown(HELP_TEXT))
+        return True
+
+    if name == "status":
+        console.print("[dim]Analizuję stan serwera...[/dim]")
+        await _handle_responses(await client.send_command("status"), client)
+        return True
+
+    if name == "mapa":
+        console.print("[dim]Odkrywam infrastrukturę i rysuję mapę...[/dim]")
+        responses = await client.send_command("diagram", args=args)
+        for resp in responses:
+            if resp.get("status") == "error":
+                console.print(f"[red]{escape(resp.get('response', ''))}[/red]")
+        return True
+
+    if name == "mermaid":
+        console.print(Markdown(f"```mermaid\n{_last_mermaid}\n```") if _last_mermaid else "[dim]Brak diagramu w tej sesji.[/dim]")
+        return True
+
+    if name == "katalogi":
+        data = _response_data(await client.send_command("directory"))
+        console.print(Markdown("**DIRECTORY**\n\n" + (data.get("text") or "_(pusto — napisz: znajdź repozytoria na serwerze)_")))
+        return True
+
+    if name == "alerty":
+        data = _response_data(await client.send_command("alerts"))
+        if not data.get("enabled", True):
+            console.print("[dim]Czuwanie jest wyłączone (WATCH_ENABLED=0).[/dim]")
+        _print_list("Aktywne alerty", [f"[{a.get('severity')}] {a.get('title')} — {a.get('detail')}"
+                                       for a in data.get("active", [])], "Brak — wszystko w normie.")
+        return True
+
+    if name == "cele":
+        _print_list("Zdalne cele", _response_data(await client.send_command("targets")).get("targets", []),
+                    "Brak. Napisz np.: dodaj serwer 10.0.0.5 jako web-2 (ssh, root)")
+        return True
+
+    if name == "rutyny":
+        _print_list("Rutyny", _response_data(await client.send_command("routines")).get("routines", []),
+                    "Brak. Napisz np.: codziennie o 7 sprawdzaj backupy")
+        return True
+
+    if name == "vibe":
+        data = _response_data(await client.send_command("vibe", args=args))
+        if "reset" in data:
+            console.print("Wyczyściłem notatkę o Twoim stylu." if data["reset"] else "Nie było notatki.")
+        elif data.get("content", "").strip():
+            console.print(Markdown(data["content"]))
+            console.print("[dim]/vibe reset — wyczyść[/dim]")
+        else:
+            console.print("[dim]Jeszcze nie znam Twojego stylu — uczę się z rozmów.[/dim]")
+        return True
+
+    if name == "historia":
+        entries = _response_data(await client.send_command("history")).get("entries", [])
+        console.print(Text("\n".join(entries) or "(pusto)"), highlight=False)
         return True
 
     if not name:
@@ -424,25 +588,6 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 continue
             if user_input.lower() in ("/exit", "exit", "quit", "wyjðź", "koniec"):
                 break
-
-            # Lokalna komenda /status
-            if user_input.lower() == "/status":
-                console.print()
-                console.print("[dim]Analizuje stan serwera...[/dim]")
-                status_prompt = (
-                    "Uzyj narzedzia system_stats aby pobrac szczegolowe statystyki systemowe serwera. "
-                    "Na podstawie wynikow przygotuj zwiezle podsumowanie: uptime, obciazenie CPU "
-                    "(load average), zuzycie RAM (na podstawie sekcji MEMORY z bezposrednich wartosci), "
-                    "wolne miejsce na dysku. Odpowiedz zwiezla lista w formacie terminalowym. "
-                    "Uzyj formatowania *Pogrubienie* dla tytulow sekcji i `wartosci` dla liczb."
-                )
-                try:
-                    responses = await client.send_message(status_prompt)
-                    await _handle_responses(responses, client)
-                except Exception as exc:
-                    console.print(f"[red]Błąd: {exc}[/red]")
-                console.print()
-                continue
 
             # /server, /skille, /pomoc i skille jako komendy
             if user_input.startswith("/"):
@@ -543,6 +688,20 @@ Przykłady:
         metavar="PORT",
     )
 
+    # ─── Kubernetes ────────────────────────────────────────────────────────
+    kube_group = parser.add_argument_group("Pipe w Kubernetesie (kubectl port-forward)")
+    kube_group.add_argument(
+        "--kube",
+        metavar="NAMESPACE",
+        default=os.getenv("PIPE_KUBE_NAMESPACE"),
+        help="Połącz z Pipe w klastrze: kubectl port-forward svc/pipe w podanym namespace (np. pipe).",
+    )
+    kube_group.add_argument("--kube-context", default=os.getenv("PIPE_KUBE_CONTEXT"), metavar="CONTEXT",
+                            help="Kontekst kubeconfig (domyślnie bieżący).")
+
+    parser.add_argument("--open", action="store_true",
+                        help="Otwieraj zapisane diagramy PNG w domyślnej przeglądarce obrazów.")
+
     # ─── Sesja ─────────────────────────────────────────────────────────────
     parser.add_argument(
         "--token",
@@ -561,6 +720,29 @@ Przykłady:
     args = parser.parse_args()
 
     session_id = args.session or str(uuid.uuid4())
+    global OPEN_IMAGES
+    OPEN_IMAGES = args.open
+
+    # ─── Kubernetes: port-forward zamiast tunelu SSH ──────────────────────
+    if args.kube:
+        forward = KubePortForward(args.kube, args.local_port, args.kube_context)
+        client = RemoteClient(session_id=session_id, host="127.0.0.1", port=args.local_port, token=args.token)
+        console.print(f"[dim]kubectl port-forward svc/pipe (namespace {args.kube})...[/dim]")
+        try:
+            forward.start()
+            if not forward.wait_ready(timeout=20.0):
+                console.print("[red]Port-forward nie odpowiada. Sprawdź: kubectl -n "
+                              f"{args.kube} get pods,svc[/red]")
+                sys.exit(1)
+            asyncio.run(run_cli(client, f"kubernetes/{args.kube}"))
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            forward.stop()
+        return
 
     # ─── Tryb bez tunelu ───────────────────────────────────────────────────
     if args.no_tunnel:

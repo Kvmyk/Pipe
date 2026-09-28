@@ -1,0 +1,17 @@
+# Pipe — bot Telegram (tryb native). Wymaga clients/telegram/.env.
+[Unit]
+Description=Pipe — bot Telegram
+After=pipe.service
+Requires=pipe.service
+
+[Service]
+Type=simple
+WorkingDirectory=@PIPE_DIR@/clients/telegram
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PIPE_DIR@/.venv/bin/python bot.py
+Restart=on-failure
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

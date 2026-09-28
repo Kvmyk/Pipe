@@ -1,5 +1,66 @@
 # Historia zmian -- Pipe
 
+## v0.9.0 (2026-09-28)
+
+Przebudowa: Pipe z agenta "na pytanie" stal sie agentem operacyjnym, ktory sam pilnuje serwera,
+widzi jego architekture i zarzadza wieloma maszynami. Aktualizacja nie wymaga recznych krokow:
+`git pull` i ponowne uruchomienie `scripts/install-server.sh` (albo `docker compose up -d --build`).
+
+### Diagramy
+
+- Nowe narzedzie `diagram` i komenda `/mapa`: mapa infrastruktury hosta (domeny -> reverse proxy nginx/Caddy/Traefik -> kontenery -> bazy, projekty compose, porty wystawione na swiat, uslugi systemd, aplikacje z Kubernetesa, zdalne cele). `/mapa` dziala bez LLM
+- Agent rysuje tez wlasne diagramy Mermaid (przeplywy, procedury). Telegram dostaje zdjecie, CLI plik PNG w `~/.pipe/diagrams` i podglad ASCII w terminalu
+- Renderowanie offline przez mermaidx (bez przegladarki, Node.js i zewnetrznych uslug); blad skladni wraca do modelu
+
+### Pamiec agenta
+
+- DIRECTORY: mapa repozytoriow, katalogow aplikacji, projektow compose, konfiguracji i backupow z opisami, w prompcie kazdej rozmowy. Skan sam znajduje repozytoria git (bez tokenow w adresach) i projekty compose. Komenda `/katalogi`
+- VIBE: agent co kilka wiadomosci w tle uczy sie stylu rozmowy uzytkownika (osobna notatka na uzytkownika). `/vibe` pokazuje, `/vibe reset` czysci
+
+### Workery, cele, rutyny i czuwanie
+
+- Zdalne cele (`target_manage`, `remote_exec`): serwery SSH, kontenery Docker, klastry i pody Kubernetes -- bez instalowania czegokolwiek po drugiej stronie. Komenda `/cele`
+- Workery (`delegate`): pod-agenci wysylani rownolegle na cele; wykonuja tylko odczyty, zmiany zwracaja jako propozycje do zatwierdzenia. Postep widac na zywo w obu klientach
+- Rutyny (`routine_manage`): zadania wedlug harmonogramu cron z raportem na Telegram. Komenda `/rutyny`
+- Czuwanie: co 2 minuty sprawdzenia bez LLM (dyski, RAM, obciazenie, kontenery w petli restartow albo unhealthy, zatrzymane kontenery, nowe publiczne porty). Alerty przychodza na Telegram z przyciskiem "Zbadaj". Komenda `/alerty`
+
+### Wdrozenie
+
+- Trzy tryby dzialania (`PIPE_RUNTIME`): docker, native (systemd, bez Dockera) i kubernetes; wykrywane automatycznie
+- `scripts/install-server.sh`: instalacja jedna komenda (apt, dnf, apk, pacman, zypper), tez bez pytan (`-y`, `configure --from-env`)
+- Manifesty Kubernetes (kustomize): baza tylko do odczytu, bez sekretow, i nakladki operator, telegram, host-agent. CLI laczy sie przez `pipe --kube <namespace>`
+- cloud-init dla kazdego dostawcy chmury (`deploy/cloud-init/user-data.yaml`), obraz Dockera dla amd64 i arm64
+
+### Bezpieczenstwo
+
+- Klasyfikator komend przepisany: dopasowanie tokenowe (`ss` nie przepuszcza juz `ssh`, `ps` -- `psql`), podzial z uwzglednieniem cudzyslowow, przekierowania i `$(...)` wymagaja potwierdzenia, flagi uruchamiajace programy (`git -c`, `--upload-pack`, `-O`, `sort --compress-program`) i piszace do plikow (`find -delete`, `curl -o`) tez
+- `curl` do obcego hosta wymaga potwierdzenia (ochrona przed wyslaniem danych na zewnatrz)
+- Restart i zatrzymanie uslug (`systemctl restart/stop`), `apt install` i `docker compose up/down` wymagaja teraz potwierdzenia
+- Sekrety w wynikach narzedzi (klucze API, tokeny, JWT, hasla w URL-ach, hashe z shadow, klucze prywatne) sa ukrywane przed wyslaniem do providera LLM
+- Potwierdzenie zapisu pliku pokazuje diff i ostrzega przy plikach startowych; znaki sterujace i bidi w potwierdzeniach sa widoczne jako `\xNN`
+- Zapis skilla i pelne nadpisanie SERVER.md wymagaja potwierdzenia; kazdy inny zapis pamieci jest zglaszany komunikatem
+- `AGENT_TOKEN` jest generowany automatycznie przez kreator i instalator; w trybie kubernetes jest wymagany. Token porownywany w stalym czasie, audit log odporny na falszowanie wpisow
+- `backend/.env` nie trafia juz do obrazu Dockera (wczesniej `.dockerignore` byl w `.gitignore`)
+
+### Poprawki
+
+- `docker_manage` i `cron_manage` dzialaja: schemat narzedzia i handler uzywaly roznych nazw pol, wiec kazde wywolanie konczylo sie bledem albo `crontab -l`
+- Kilka wywolan narzedzi w jednej odpowiedzi modelu z potwierdzeniem, nowa wiadomosc zamiast TAK/NIE i rozlaczenie klienta w trakcie narzedzia nie psuja juz historii sesji
+- Komendy zatwierdzone przez uzytkownika maja limit 15 minut zamiast 30 s; timeout zabija cala grupe procesow
+- Statystyki, porty i dyski czytane sa z `/proc` hosta bez uruchamiania komend (wszystkie dyski, obciazenie wzgledem liczby rdzeni)
+
+### Architektura
+
+- `agent.py` bez martwego kodu (~500 linii); wspolna petla dla agenta i workerow, zdarzenia strumienia (tekst, zalaczniki, postep)
+- Protokol rozszerzony wstecznie zgodnie: ramki `attachment` i `event`, komendy `status`, `diagram`, `directory`, `vibe`, `alerts`, `targets`, `routines`, `history`, `investigate`, `subscribe`
+
+### Dokumentacja
+
+- Nowe: `docs/features.md`, `docs/deploy.md`, `deploy/kubernetes/README.md`; przepisane README, `docs/security.md`, `docs/protocol.md`, `CLAUDE.md`
+- Testy: 555 (wczesniej 353), w tym petla agenta na atrapie LLM i regresje obejsc klasyfikatora
+
+---
+
 ## v0.8.1 (2026-09-16)
 
 ### Poprawki

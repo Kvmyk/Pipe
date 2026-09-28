@@ -23,8 +23,7 @@ env/
 *.log
 audit.log
 
-# Docker
-.dockerignore
+# Docker — backend/.dockerignore JEST commitowany: nie wpuszcza .env i data/ do obrazu
 
 # IDE
 .vscode/

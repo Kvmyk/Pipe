@@ -4,12 +4,60 @@ Handler dla operacji Docker.
 
 from __future__ import annotations
 
+import shlex
 from typing import Any, AsyncGenerator
 
-from backend.core import executor
+from backend.core.events import Event
+from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command
-from backend.core.session import Session, ConfirmationRequest
-from backend.core.text import as_code
+from backend.core.session import Session
+
+# operacja ze schematu -> podkomenda docker. {target} to nazwa kontenera/obrazu.
+_OPERATIONS: dict[str, str] = {
+    "ps": "ps",
+    "logs": "logs {target}",
+    "inspect": "inspect {target}",
+    "stats": "stats --no-stream {target}",
+    "top": "top {target}",
+    "restart": "restart {target}",
+    "stop": "stop {target}",
+    "start": "start {target}",
+    "rm": "rm {target}",
+    "rmi": "rmi {target}",
+    "images": "images",
+    "prune": "system prune -f",
+    "compose-ps": "compose ls",
+    "compose-logs": "compose -p {target} logs --tail 100",
+    "networks": "network ls",
+    "volumes": "volume ls",
+    "df": "system df",
+}
+_NEEDS_TARGET = {"logs", "inspect", "top", "restart", "stop", "start", "rm", "rmi", "compose-logs"}
+
+
+def build_docker_command(args: dict[str, Any]) -> tuple[str | None, str]:
+    """Zwraca (komenda, blad). Akceptuje tez stary format {"docker_command": "ps -a"}."""
+    legacy = str(args.get("docker_command", "")).strip()
+    if legacy:
+        return f"docker {legacy.removeprefix('docker ').strip()}", ""
+
+    operation = str(args.get("operation", "")).strip().lower()
+    if operation not in _OPERATIONS:
+        return None, f"Blad: nieznana operacja docker {operation!r}. Dostepne: {', '.join(_OPERATIONS)}."
+    target = str(args.get("target", "")).strip()
+    if operation in _NEEDS_TARGET and not target:
+        return None, f"Blad: operacja {operation} wymaga parametru target (nazwa lub ID kontenera/obrazu)."
+    if operation == "logs" and "--tail" not in str(args.get("options", "")):
+        args = {**args, "options": f"--tail 200 {args.get('options', '')}".strip()}
+
+    sub = _OPERATIONS[operation].format(target=shlex.quote(target) if target else "").strip()
+    options = str(args.get("options", "")).strip()
+    if options:
+        # opcje przed nazwa kontenera: `docker logs --tail 50 web`
+        head, _, tail = sub.partition(" ")
+        sub = f"{head} {options} {tail}".strip() if operation not in ("prune", "compose-ps", "compose-logs") \
+            else f"{sub} {options}"
+    return f"docker {sub}", ""
 
 
 async def handle_docker_manage(
@@ -17,56 +65,18 @@ async def handle_docker_manage(
     session: Session,
     tool_call: Any,
     args: dict[str, Any],
-) -> AsyncGenerator[str, None]:
-    """Obsługuje narzędzie docker_manage."""
-    docker_cmd = args.get("docker_command", "").strip()
-
-    if not docker_cmd:
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": "Błąd: pusta komenda docker",
-        })
+) -> AsyncGenerator[Event, None]:
+    """Obsluguje narzedzie docker_manage."""
+    command, error = build_docker_command(args)
+    if command is None:
+        reply(session, tool_call, error)
         return
 
-    full_cmd = f"docker {docker_cmd}"
-    classification = classify_command(full_cmd)
+    classification = classify_command(command)
+    if classification == "safe" and args.get("requires_confirmation") is True \
+            and str(args.get("operation", "")) not in ("ps", "logs", "inspect", "stats", "top", "images"):
+        classification = "confirm"
 
-    if classification == "forbidden":
-        from backend.core import audit
-        await audit.log_blocked(session.interface, f"docker_manage({full_cmd})")
-        yield f"[ODMOWA] Komenda docker {as_code(docker_cmd)} jest zabroniona."
-        session.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": "ODMOWA SYSTEMOWA",
-        })
-        return
-
-    if classification == "confirm":
-        session.pending_confirmation = ConfirmationRequest(
-            tool_call_id=tool_call.id,
-            tool_name="docker_manage",
-            command=full_cmd,
-            classification="confirm",
-        )
-        yield f"[POTWIERDZ] Operacja docker wymaga potwierdzenia: {as_code(full_cmd)}"
-        return
-
-    # Safe — wykonaj
-    try:
-        stdout, stderr, exit_code = await executor.execute(full_cmd)
-        result = f"[STDOUT]\n{stdout}\n[EXIT CODE]\n{exit_code}"
-        if stderr:
-            result += f"\n[STDERR]\n{stderr}"
-
-        from backend.core import audit
-        await audit.log_safe(session.interface, full_cmd, exit_code)
-    except Exception as exc:
-        result = f"[ERROR] Błąd Docker: {exc}"
-
-    session.messages.append({
-        "role": "tool",
-        "tool_call_id": tool_call.id,
-        "content": result,
-    })
+    async for event in run_classified(session, tool_call, command, tool_name="docker_manage",
+                                      classification=classification, what="Operacja Docker"):
+        yield event

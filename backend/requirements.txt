@@ -1,4 +1,6 @@
 openai>=1.30.0
 python-dotenv>=1.0.0
+# Diagramy: prawdziwy Mermaid -> PNG/ASCII bez przegladarki i Node.js (QuickJS + resvg)
+mermaidx>=0.9.5
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

@@ -1,0 +1,53 @@
+#cloud-config
+# Pipe na nowym serwerze w dowolnej chmurze, ktora obsluguje cloud-init:
+# Hetzner, DigitalOcean, AWS EC2, Google Cloud, Azure, OVH, Oracle Cloud, Vultr, Linode, Scaleway...
+#
+# 1. Uzupelnij wartosci ZMIEN_* ponizej (co najmniej LLM_API_KEY albo LLM_PROVIDER=ollama).
+# 2. Wklej plik jako "user data" przy tworzeniu serwera (przyklady CLI: docs/deploy.md).
+# 3. Po ~3 minutach: ssh root@IP 'tail /var/log/pipe-install.log', potem na laptopie: pipe --host root@IP
+#
+# Sekrety trafiaja do plikow 0600 i sa usuwane po instalacji. Pamietaj, ze dostawca chmury
+# przechowuje user-data w metadanych serwera — po instalacji zmien klucz, jesli to dla Ciebie istotne.
+
+package_update: true
+packages:
+  - git
+  - python3
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /root/pipe-install.env
+    permissions: "0600"
+    content: |
+      # Provider LLM: gemini, openai, anthropic, openrouter, groq, deepseek, mistral, ollama...
+      LLM_PROVIDER=gemini
+      LLM_API_KEY=ZMIEN_KLUCZ_API
+      # Pusty = domyslny model providera
+      LLM_MODEL=
+      # Opcjonalnie tanszy model dla workerow
+      WORKER_MODEL=
+      # Token klientow — pusty = instalator wygeneruje go sam (znajdziesz go w /opt/pipe/backend/.env)
+      AGENT_TOKEN=
+      # docker (domyslnie) albo native (systemd, bez Dockera)
+      PIPE_MODE=docker
+      PIPE_REPO=https://github.com/user/pipe.git
+      PIPE_BRANCH=main
+      # Opcjonalnie: bot Telegram (puste = bez bota)
+      TELEGRAM_BOT_TOKEN=
+      TELEGRAM_ALLOWED_USER_IDS=
+
+runcmd:
+  - - bash
+    - -c
+    - |
+      set -eu
+      set -a; . /root/pipe-install.env; set +a
+      git clone --depth 1 --branch "$PIPE_BRANCH" "$PIPE_REPO" /opt/pipe
+      if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+        umask 077
+        printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_ALLOWED_USER_IDS=%s\nAGENT_TOKEN=%s\nAGENT_SOCKET=/tmp/vps-agent.sock\n' \
+          "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_ALLOWED_USER_IDS" "${AGENT_TOKEN:-}" > /opt/pipe/clients/telegram/.env
+      fi
+      bash /opt/pipe/scripts/install-server.sh --non-interactive --mode "$PIPE_MODE" > /var/log/pipe-install.log 2>&1
+      rm -f /root/pipe-install.env
