@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -27,7 +27,7 @@ from openai.types.chat import ChatCompletion
 
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
-from backend.core import audit, executor, memory, runtime
+from backend.core import audit, executor, memory, runtime, usage
 from backend.core.events import Event
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.tools import TOOLS
@@ -166,6 +166,7 @@ class VPSAgent:
                 session.messages,
                 tools=TOOLS if tools is None else tools,
                 model=model,
+                who=session.interface,
             )
             message = response.choices[0].message
             session.messages.append(message.model_dump(exclude_unset=True, exclude_none=True))
@@ -198,8 +199,14 @@ class VPSAgent:
         *,
         tools: list[dict] | None = None,
         model: str | None = None,
+        who: str = "",
     ) -> ChatCompletion:
-        """Wysyla historie do LLM i zwraca odpowiedz."""
+        """
+        Wysyla historie do LLM i zwraca odpowiedz. Zuzycie tokenow trafia do
+        licznika (core/usage.py) z etykieta `who` (interfejs sesji); przy
+        wyczerpanym dziennym limicie rzuca usage.BudgetExceeded bez zapytania.
+        """
+        usage.check_budget(settings.DAILY_TOKEN_LIMIT, settings.DAILY_COST_LIMIT)
         # tool_choice pomijamy celowo: "auto" jest i tak domyslne, gdy podano
         # tools, a czesc providerow (np. Ollama) nie obsluguje tego parametru.
         # reasoning_effort idzie przez extra_body, zeby dzialal na kazdej
@@ -216,11 +223,15 @@ class VPSAgent:
         }
         if tools:
             kwargs["tools"] = tools
-        return await self._client.chat.completions.create(**kwargs)
+        response = await self._client.chat.completions.create(**kwargs)
+        _record_usage(kwargs["model"], getattr(response, "usage", None), who)
+        return response
 
-    async def complete(self, system_prompt: str, user_message: str, model: str | None = None) -> str:
+    async def complete(self, system_prompt: str, user_message: str, model: str | None = None,
+                       who: str = "") -> str:
         """Jedno zapytanie bez narzedzi (np. aktualizacja VIBE). Zwraca tekst."""
-        response = await self.call_llm(system_prompt, [{"role": "user", "content": user_message}], model=model)
+        response = await self.call_llm(system_prompt, [{"role": "user", "content": user_message}],
+                                       model=model, who=who)
         return response.choices[0].message.content or ""
 
     async def verify_model(self) -> str | None:
@@ -329,6 +340,18 @@ class VPSAgent:
 
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
+
+def _record_usage(model: str, response_usage: Any, who: str) -> None:
+    """Licznik kosztow nigdy nie przerywa rozmowy — blad zapisu jest tylko logowany."""
+    main_model = settings.LLM.model if settings.LLM else ""
+    worker = bool(settings.WORKER_MODEL) and model == settings.WORKER_MODEL and model != main_model
+    prices = usage.Prices(settings.WORKER_PRICE_IN, settings.WORKER_PRICE_OUT) if worker \
+        else usage.Prices(settings.LLM_PRICE_IN, settings.LLM_PRICE_OUT)
+    try:
+        usage.record(model, response_usage, usage.who_from_interface(who), prices)
+    except OSError as exc:
+        print(f"[usage] Nie zapisano zuzycia tokenow: {exc}", flush=True)
+
 
 def _answered(session: Session, tool_call_id: str, since: int) -> bool:
     return any(m.get("role") == "tool" and m.get("tool_call_id") == tool_call_id for m in session.messages[since:])

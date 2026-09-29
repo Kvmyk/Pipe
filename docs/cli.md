@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -118,6 +118,11 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Stan serwera |
+| `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
+| `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
+| `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
+| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
 | `/mermaid` | Kod Mermaid ostatniego diagramu |
 | `/server` | Pokazuje SERVER.md; gdy go nie ma -- agent bada serwer i tworzy plik |

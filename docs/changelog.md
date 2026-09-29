@@ -1,5 +1,40 @@
 # Historia zmian -- Pipe
 
+## v0.10.0 (2026-09-29)
+
+Pipe pamieta, jak serwer sie zmienia, i sam wie, co sprawdzac. Aktualizacja bez recznych krokow -- nowe
+funkcje dzialaja od razu z domyslnymi ustawieniami.
+
+### Co sie zmienilo -- wehikul czasu serwera
+
+- Co godzine Pipe zapisuje migawke hosta: pakiety, kontenery (z identyfikatorem obrazu -- widac nowa wersje
+  pod tym samym tagiem), porty, uslugi systemd, cron, konta, klucze SSH (sam odcisk), konfiguracje sshd,
+  sudoers, nginx, Caddy i pliki compose. Zapis tylko przy zmianie
+- `/zmiany [24h|3d]` pokazuje zmiany z przedzialem czasu (*miedzy 03:00 a 04:00*); zmiany kont, kluczy SSH,
+  sudoers i sshd sa oznaczone `[BEZPIECZENSTWO]`
+- Agent zaczyna diagnoze awarii od historii zmian, a przycisk *Zbadaj* przy alercie dolacza zmiany
+  z ostatniej doby
+
+### Wykresy i monitoring bez konfiguracji
+
+- Historia pomiarow (load, RAM, swap, dyski) i `/wykres [load|ram|dysk] [24h|7d]` -- obraz z progiem alertu;
+  agent rysuje wykres sam, gdy pytasz o trend
+- Certyfikaty TLS, odpowiedz HTTPS i DNS domen znalezionych w nginx, Caddy i etykietach Traefika oraz swiezosc
+  backupow z wpisow `[backup]` w DIRECTORY -- sprawdzane co godzine, z alertami na Telegram. `/zdrowie`
+  pokazuje wszystko naraz
+- Nowe narzedzie agenta `server_history` (changes, chart, checks)
+
+### Poranny raport i koszty
+
+- Codziennie o 7:00 (`DIGEST_TIME`) raport na Telegram: stan, alerty, zmiany od wczoraj, certyfikaty, backupy,
+  aktualizacje, wymagany restart, rutyny i zuzycie LLM, z wykresem obciazenia. Bez LLM. `/raport` na zadanie
+- `/koszt` -- tokeny dzis, w ostatnich dniach i w miesiacu, z podzialem na uzytkownikow, workery, rutyny i VIBE;
+  koszt w USD po podaniu `LLM_PRICE_IN` / `LLM_PRICE_OUT`. Dzienny limit: `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT`
+
+### Poprawki
+
+- CI: samo `pytest` (bez `python -m`) znajduje pakiet `backend` -- dodany `pytest.ini`
+
 ## v0.9.2 (2026-09-29)
 
 Ciagla integracja w GitHub Actions. Zachowanie agenta sie nie zmienilo -- aktualizacja bez recznych krokow.

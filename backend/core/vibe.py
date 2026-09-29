@@ -90,7 +90,8 @@ class VibeLearner:
         listing = "\n".join(f"- {m}" for m in messages)
         prompt = (f"Obecna notatka:\n<<<\n{current}\n>>>\n\n"
                   f"Ostatnie wiadomosci uzytkownika (od najstarszej):\n{listing}")
-        answer = await self._agent.complete(VIBE_DISTILL_PROMPT, prompt, model=settings.WORKER_MODEL or None)
+        answer = await self._agent.complete(VIBE_DISTILL_PROMPT, prompt, model=settings.WORKER_MODEL or None,
+                                            who="vibe")
         text = clean_distilled(answer)
         if text is None or text.strip() == current.strip():
             return None

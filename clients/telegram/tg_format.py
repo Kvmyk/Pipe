@@ -169,6 +169,10 @@ def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]
 # Komendy wbudowane w menu Telegrama, w kolejnosci wyswietlania.
 BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("status", "Szybki przeglad obciazenia serwera"),
+    ("raport", "Poranny raport: stan, zmiany, certyfikaty, backupy"),
+    ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
+    ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
+    ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
@@ -177,6 +181,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
     ("cele", "Zdalne serwery, kontenery i klastry"),
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
+    ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("pomoc", "Lista komend"),
 )
@@ -308,3 +313,24 @@ def progress_text(lines: list[str], limit: int = 12) -> str:
     skipped = len(lines) - len(shown)
     head = f"<i>... i {skipped} wczesniej</i>\n" if skipped else ""
     return "<b>W toku</b>\n" + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
+
+
+def format_digest(event: dict) -> str:
+    """Poranny raport (zdarzenie albo dane z /raport) jako HTML Telegrama."""
+    lines = [f"<b>{html.escape(str(event.get('title', 'Raport')))}</b>"]
+    for section in event.get("sections") or []:
+        lines.append(f"\n<b>{html.escape(str(section.get('title', '')))}</b>")
+        for line in section.get("lines") or []:
+            text = html.escape(str(line))
+            if text.startswith("[BEZPIECZENSTWO]"):
+                text = "<b>[BEZPIECZENSTWO]</b>" + text[len("[BEZPIECZENSTWO]"):]
+            lines.append(f"• {text}")
+    return "\n".join(lines)
+
+
+def format_pre(title: str, text: str, limit: int = 3500) -> str:
+    """Tekst od backendu (bez LLM) w bloku <pre> — /zmiany, /zdrowie, /koszt."""
+    body = (text or "").strip() or "(pusto)"
+    if len(body) > limit:
+        body = body[:limit] + "\n[...]"
+    return f"<b>{html.escape(title)}</b>\n<pre>{html.escape(body)}</pre>"

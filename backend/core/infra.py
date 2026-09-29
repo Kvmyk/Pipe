@@ -68,6 +68,7 @@ class Container:
     workdir: str = ""
     restart_count: int = 0
     domains: list[str] = field(default_factory=list)   # z etykiet Traefika / VIRTUAL_HOST
+    image_id: str = ""                                  # sha256:... — zmienia sie po pull + recreate
 
     @property
     def kind(self) -> str:
@@ -196,6 +197,7 @@ def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
             workdir=str(labels.get("com.docker.compose.project.working_dir", "")),
             restart_count=int(item.get("RestartCount", 0) or 0),
             domains=sorted(set(domains)),
+            image_id=str(item.get("Image", ""))[:19],
         ))
     return sorted(result, key=lambda c: (c.project, c.name))
 

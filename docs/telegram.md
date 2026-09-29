@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -21,6 +21,10 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
   kontener, nowy publiczny port. Przycisk **Zbadaj** prosi agenta o diagnoze (tylko odczyty) i propozycje naprawy.
 - **ROZWIAZANE** -- problem minal.
 - **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
+- **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
+  aktualizacje i wykres obciazenia. Skladany bez LLM.
+- Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
+  i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
 
 `TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
 
@@ -113,6 +117,11 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Szybki przeglad obciazenia serwera |
+| `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
+| `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
+| `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
+| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
 | `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |

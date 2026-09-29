@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.9.2** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), watches it (proactive alerts), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`) or a Telegram bot; Discord/WebUI are placeholders. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.10.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`) or a Telegram bot; Discord/WebUI are placeholders. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -14,7 +14,7 @@ All code comments, error messages, documentation, and LLM prompts are in **Polis
 
 ```bash
 pip install -r backend/requirements.txt   # openai, python-dotenv, mermaidx, pytest, pytest-asyncio
-pytest backend/tests/                     # all tests (run from repo root — imports are absolute `backend.*`)
+pytest                                    # all tests (pytest.ini puts the repo root on sys.path — imports are absolute `backend.*`)
 pytest backend/tests/test_security.py -v  # single file
 pytest backend/tests/test_security.py::TestClassifyCommandSafe -v   # single class
 python -m backend.server                  # local run; needs backend/.env (PIPE_RUNTIME=native outside Docker)
@@ -49,7 +49,8 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
                                                                       │           │     └─> core/executor.py  subprocess (30 s reads / CONFIRMED_COMMAND_TIMEOUT)
                                                                       │           ├─> core/workers.py → targets.wrap() → ssh / docker exec / kubectl
                                                                       │           └─> core/infra.py + core/diagram.py → Mermaid → PNG Attachment
-                                                                      └─> core/watch.py  Watcher: checks + routines → Notifier → {"command":"subscribe"} clients
+                                                                      └─> core/watch.py  Watcher: checks + metrics + snapshots + zero-config checks + digest + routines
+                                                                                         → Notifier → {"command":"subscribe"} clients
 ```
 
 ### Key modules
@@ -69,10 +70,15 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 | `backend/core/targets.py` | Remote targets registry (`targets.json`), validation, `wrap()` |
 | `backend/core/workers.py` | Sub-agents: `run_worker()`, `run_many()` — read-only by construction |
 | `backend/core/routines.py` | Cron parser (`parse_schedule`), routine registry (`routines.json`) |
-| `backend/core/watch.py` | `Watcher` (checks, alert lifecycle, routine loop), `Notifier` (pub/sub), `prompt_alerts()` |
+| `backend/core/watch.py` | `Watcher` (checks, alert lifecycle with per-group `scope`, snapshot/checks loops, clock loop: routines + digest), `Notifier` (pub/sub), `prompt_alerts()` |
+| `backend/core/metrics.py` | Metric samples → `metrics.jsonl`; bucketed series → Mermaid `xychart-beta` chart + numeric summary for the model |
+| `backend/core/snapshots.py` | Host snapshots (packages, containers + image id, ports, systemd, cron, users, SSH key fingerprints, config hashes), saved only on change; `diff()`, `timeline()`, `[BEZPIECZENSTWO]` marks |
+| `backend/core/checks.py` | Zero-config checks: TLS expiry / HTTPS / DNS for domains from proxy config and container labels, backup freshness for DIRECTORY `[backup]` entries |
+| `backend/core/digest.py` | Morning digest (no LLM): health, alerts, changes since yesterday, checks, updates, routines, LLM usage |
+| `backend/core/usage.py` | Token/cost accounting per day/who/model (`usage.json`), `check_budget()` for daily limits — **no `settings` import** |
 | `backend/core/memory.py` | SERVER.md, DIRECTORY (`directory.json`), skills, VIBE (`vibe/<key>.md`), `find_secret()`, `redact_secrets()`, `prompt_context()` |
 | `backend/core/vibe.py` | `VibeLearner` — background style distillation every `VIBE_EVERY` user messages |
-| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 18 tools |
+| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 19 tools |
 | `backend/config/providers.py` | Provider presets, user providers file, `resolve_llm_config()`, model-list filtering — **stdlib only** |
 | `backend/configure.py` | Setup wizard (`--check` / `--models` / `--providers` / `--from-env`) — **stdlib only** |
 | `backend/config/prompts.py` | `BASE_SYSTEM_PROMPT`, `TELEGRAM_SYSTEM_PROMPT`, `cwd_block()`, worker/routine/VIBE/scan/status prompts |
@@ -83,7 +89,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 
 ### Tool dispatch
 
-Eighteen tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`, `diagram`, `server_md`, `directory`, `skill_manage`, `vibe`, `target_manage`, `remote_exec`, `delegate`, `routine_manage`.
+Nineteen tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`, `diagram`, `server_md`, `directory`, `skill_manage`, `vibe`, `target_manage`, `remote_exec`, `delegate`, `routine_manage`, `server_history`.
 
 `_handle_tool_call()` dispatches by name reflection: `getattr(handlers_module, f"handle_{tool_name}")` (workers pass their own `dispatch` instead). **Adding a tool means three edits:** a schema in `core/tools.py`, a `handle_<name>` async generator in `core/handlers/`, and its export in `core/handlers/__init__.py` (`test_every_tool_has_handler` checks this).
 
@@ -113,14 +119,15 @@ async def handle_x(agent, session, tool_call, args) -> AsyncGenerator[Event, Non
 
 ### Agent memory
 
-`memory.prompt_context(user_key)` appends SERVER.md (≤12k chars), DIRECTORY (≤60 entries), the skill index, and the user's VIBE note. Files live in `DATA_DIR` (container `/app/data`, host `backend/data/`, gitignored) together with `targets.json`, `routines.json`, `watch_state.json`, `known_hosts`, audit log. Writes are audited by path only and rejected by `find_secret()`; remote URLs are stripped of credentials. Skill save and full SERVER.md overwrite require confirmation (persistence vectors); other writes emit a `[PAMIEC]` user notice. Memory is framed as data, not instructions. Keep `memory.py` free of `settings` imports so it stays testable via `DATA_DIR`. VIBE keys come from `interface` (`cli:kuba` → `cli-kuba`); backend-built messages are marked `pipe_generated` (stripped before the provider call by `call_llm`) and never teach VIBE.
+`memory.prompt_context(user_key)` appends SERVER.md (≤12k chars), DIRECTORY (≤60 entries), the skill index, and the user's VIBE note. Files live in `DATA_DIR` (container `/app/data`, host `backend/data/`, gitignored) together with `targets.json`, `routines.json`, `watch_state.json`, `metrics.jsonl`, `snapshots/`, `usage.json`, `known_hosts`, audit log. Writes are audited by path only and rejected by `find_secret()`; remote URLs are stripped of credentials. Skill save and full SERVER.md overwrite require confirmation (persistence vectors); other writes emit a `[PAMIEC]` user notice. Memory is framed as data, not instructions. Keep `memory.py` free of `settings` imports so it stays testable via `DATA_DIR`. VIBE keys come from `interface` (`cli:kuba` → `cli-kuba`); backend-built messages are marked `pipe_generated` (stripped before the provider call by `call_llm`) and never teach VIBE.
 
 ### Workers, targets, routines, watch
 
 - `targets.wrap()` builds `ssh -o BatchMode=yes ... -- 'cmd'`, `docker exec c sh -c 'cmd'`, `kubectl --context/--namespace ...` or `kubectl exec`; all fields are regex-validated and the command is one `shlex.quote`d argument. Classification is on the inner command.
 - Workers run `agent.run_loop()` with `WORKER_TOOLS` (`run`) and a custom `dispatch`: `safe` executes, `confirm` becomes a proposal (never executed), `forbidden` is refused. History lives in `parent.workers[name]`.
 - Routines run as workers from `Watcher._routine_loop()`; reports and alerts go through `Notifier.publish()` to subscribed clients.
-- The Watcher is deterministic (no LLM). Persistent findings (disk, memory, load, restarting/unhealthy containers) fire once and resolve; transient ones (new public port, stopped container) fire once.
+- The Watcher is deterministic (no LLM). Persistent findings (disk, memory, load, restarting/unhealthy containers) fire once and resolve; transient ones (new public port, stopped container) fire once. Alert keys are `<group>:...`; each loop passes its `scope` to `apply()` so it only resolves its own groups (`RESOURCE_SCOPE` every `WATCH_INTERVAL`, `CHECKS_SCOPE` = cert/site/dns/backup every `CHECKS_INTERVAL`). Site failures need two consecutive runs.
+- Every `call_llm()` records token usage via `usage.record()` (label = session interface → `who_from_interface`) and first calls `usage.check_budget()`; `BudgetExceeded` surfaces as a `[BLAD]` chunk. Fakes of `agent.complete()` must accept `who=`.
 
 ### Wire protocol (JSON lines, both transports)
 
@@ -132,7 +139,7 @@ server → client   {"response": "...", "status": "ok" | "confirm" | "error", "d
                   + optional "attachment" {name, mime, caption, data(base64), source, text} / "event" {type: progress|alert|routine|subscribed, ...}
 server → client   {"response": "", "status": "ok", "done": true}      (+ "data" for data commands)
 ```
-Commands: `list_skills`, `server_md`, `directory`, `vibe`, `alerts`, `targets`, `routines`, `history` (reply with `data`); `scan_server`, `status`, `run_skill`, `investigate` (stream; prompts built server-side from `prompts.py` — clients never compose prompts); `diagram` (infra map without LLM); `subscribe` (connection stays open, pushes watcher events). Frames with attachments are large — both sides use `READ_LIMIT` (server 4 MiB, clients 32 MiB). Full spec: `docs/protocol.md`.
+Commands: `list_skills`, `server_md`, `directory`, `vibe`, `alerts`, `targets`, `routines`, `history`, `changes`, `health`, `usage` (reply with `data`); `scan_server`, `status`, `run_skill`, `investigate` (stream; prompts built server-side from `prompts.py` — clients never compose prompts; `investigate` appends the last 24 h of snapshot changes); `diagram`, `chart`, `digest` (attachment frame + `data`, no LLM); `subscribe` (connection stays open, pushes watcher events: `alert`, `routine`, `digest`). Frames with attachments are large — both sides use `READ_LIMIT` (server 4 MiB, clients 32 MiB). Full spec: `docs/protocol.md`.
 
 `token` is required only when `AGENT_TOKEN` is set, and is checked for **every** request type (including `confirm` and `subscribe`). `server.py` derives `status` by string-matching chunk text (`[POTWIERDZ]` + `wymaga potwierdzenia` → confirm, `[BLAD]`/`[ODMOWA]` → error), so those tags in handler output are load-bearing. The prompt tells the model **not** to emit `[POTWIERDZ]` itself.
 
@@ -152,7 +159,7 @@ Persistence defence: `skill_manage save` and `server_md` full `write` require co
 
 ## Environment
 
-`backend/.env` is written by `python3 -m backend.configure` (or `--from-env`, or copied from `backend/.env.example`): `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL` / `LLM_REASONING_EFFORT` / `LLM_TIMEOUT`, then `AGENT_TOKEN`, `AUDIT_LOG_PATH`, `AGENT_SOCKET`, `TCP_HOST`, `TCP_PORT`, `DATA_DIR`, and optional `PIPE_RUNTIME`, `HOST_ROOT`, `HOST_PROC`, `AGENT_MAX_ITERATIONS`, `CONFIRMED_COMMAND_TIMEOUT`, `REDACT_SECRETS`, `WORKER_MODEL`, `WORKER_MAX_ITERATIONS`, `WORKER_TIMEOUT`, `MAX_WORKERS`, `VIBE_EVERY`, `WATCH_ENABLED`, `WATCH_INTERVAL`, `WATCH_DISK_PCT`, `WATCH_MEM_PCT`, `WATCH_LOAD_FACTOR` (all in `config/settings.py`). `settings` never raises at import; `settings.validate()` fails fast on an unknown provider, a missing model, a missing key, or (in kubernetes mode) a missing `AGENT_TOKEN`.
+`backend/.env` is written by `python3 -m backend.configure` (or `--from-env`, or copied from `backend/.env.example`): `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL` / `LLM_REASONING_EFFORT` / `LLM_TIMEOUT`, then `AGENT_TOKEN`, `AUDIT_LOG_PATH`, `AGENT_SOCKET`, `TCP_HOST`, `TCP_PORT`, `DATA_DIR`, and optional `PIPE_RUNTIME`, `HOST_ROOT`, `HOST_PROC`, `AGENT_MAX_ITERATIONS`, `CONFIRMED_COMMAND_TIMEOUT`, `REDACT_SECRETS`, `WORKER_MODEL`, `WORKER_MAX_ITERATIONS`, `WORKER_TIMEOUT`, `MAX_WORKERS`, `VIBE_EVERY`, `WATCH_ENABLED`, `WATCH_INTERVAL`, `WATCH_DISK_PCT`, `WATCH_MEM_PCT`, `WATCH_LOAD_FACTOR`, `METRICS_KEEP_DAYS`, `SNAPSHOT_INTERVAL`, `SNAPSHOT_KEEP_DAYS`, `CHECKS_INTERVAL`, `WATCH_SITES`, `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS`, `WATCH_IGNORE`, `DIGEST_TIME`, `LLM_PRICE_IN/OUT`, `WORKER_PRICE_IN/OUT`, `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` (all in `config/settings.py`). `settings` never raises at import; `settings.validate()` fails fast on an unknown provider, a missing model, a missing key, or (in kubernetes mode) a missing `AGENT_TOKEN`.
 
 Telegram needs `clients/telegram/.env` with `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS`, a matching `AGENT_TOKEN` if set, and optionally `TELEGRAM_ALERTS=0`. The CLI takes the token via `--token` or `AGENT_TOKEN`; `--kube NAMESPACE` / `--kube-context` connect through `kubectl port-forward`.
 

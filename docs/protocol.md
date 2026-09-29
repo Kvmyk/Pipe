@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 ## Opis
 
@@ -63,14 +63,19 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `targets` | -- | `"data": {"targets": ["opis celu", ...]}` |
 | `routines` | -- | `"data": {"routines": ["opis rutyny", ...]}` |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
-| `investigate` | `id` alertu | streaming: agent bada alert czuwania |
+| `investigate` | `id` alertu | streaming: agent bada alert czuwania; backend dolacza zmiany na serwerze z ostatniej doby |
+| `changes` | `args`: okres (`24h`, `3d`) | `"data": {"text": "...", "hours": 24}` -- co sie zmienilo (migawki), **bez LLM** |
+| `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
+| `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
+| `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
+| `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
 
 Tresc wiadomosci dla agenta (`scan_server`, `status`, `run_skill`, `investigate`) buduje backend -- klient
 wysyla tylko komende. Wiadomosci zbudowane przez backend nie ucza VIBE.
 Pole `command` skilla to nazwa zgodna z zasadami Telegrama (male litery, cyfry, `_`, do 32 znakow). Jest puste,
 gdy nazwa skilla jest zarezerwowana (`status`, `mapa`, `server`, `skille`, `katalogi`, `vibe`, `alerty`,
-`cele`, `rutyny`, ...) albo po skroceniu koliduje z innym skillem.
+`cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, ...) albo po skroceniu koliduje z innym skillem.
 
 ### Odpowiedz
 
@@ -118,8 +123,18 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
   "type": "routine", "name": "poranny-przeglad", "status": "OK|PROBLEM", "report": "...", "at": "..."}}
 ```
 
+```json
+{"response": "", "status": "ok", "done": false, "event": {
+  "type": "digest", "title": "Raport vps1 -- 29.09.2026 07:00", "text": "<calosc jako tekst>",
+  "sections": [{"title": "Stan", "lines": ["..."]}, {"title": "Zmiany od wczoraj", "lines": ["..."]}],
+  "attachment": {"name": "wykres-load.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
+```
+
 `state`: `new` -- nowy albo eskalowany alert, `resolved` -- problem minal, `event` -- zdarzenie jednorazowe
 (nowy publiczny port, zatrzymany kontener). `investigate` z `id` prosi agenta o zbadanie alertu.
+Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
+oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
+`digest` przychodzi raz dziennie o `DIGEST_TIME`.
 
 ### Autoryzacja tokenem
 

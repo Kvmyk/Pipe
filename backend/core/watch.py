@@ -12,6 +12,14 @@ Alerty trwale (dysk, RAM) sa zglaszane raz i "rozwiazywane", gdy problem minie.
 Zdarzenia jednorazowe (nowy port, zatrzymany kontener) sa zglaszane raz.
 Co minute wykonywane sa tez rutyny (core/routines.py) — przez workerow.
 
+Przy kazdym sprawdzeniu zapisywana jest probka do historii (core/metrics.py,
+wykresy). Rzadziej, we wlasnych petlach:
+  - migawka stanu hosta co SNAPSHOT_INTERVAL (core/snapshots.py, "co sie zmienilo"),
+  - sprawdzenia bez konfiguracji co CHECKS_INTERVAL (core/checks.py): certyfikaty,
+    strony i DNS domen z konfiguracji proxy, swiezosc backupow z DIRECTORY,
+  - poranny raport o DIGEST_TIME (core/digest.py).
+Kazda grupa sprawdzen rozwiazuje tylko wlasne alerty (zakres = prefiks klucza).
+
 Zdarzenia trafiaja do subskrybentow (Notifier) — bot Telegram laczy sie
 komenda {"command": "subscribe"} i przesyla je dozwolonym uzytkownikom
 z przyciskiem "Zbadaj". Aktywne alerty sa tez w system prompcie agenta.
@@ -22,15 +30,21 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 
 from backend.config import settings
 from backend.config.prompts import ROUTINE_REPORT_INSTRUCTION
-from backend.core import hostinfo, memory, routines, targets
+from backend.core import hostinfo, memory, metrics, routines, targets
 
 MAX_HISTORY = 50
+# Zakresy alertow (prefiks klucza przed ':') — kazda petla rozwiazuje tylko swoje.
+RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port"})
+CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
+# Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
+SITE_FAILURES_BEFORE_ALERT = 2
 
 
 @dataclass
@@ -40,6 +54,10 @@ class Finding:
     title: str
     detail: str
     transient: bool = False
+
+    @property
+    def scope(self) -> str:
+        return self.key.split(":", 1)[0]
 
 
 @dataclass
@@ -164,6 +182,9 @@ class Watcher:
         self.active: dict[str, Alert] = {}
         self._tasks: list[asyncio.Task] = []
         self._routines_running: set[str] = set()
+        self.checks_report: Any = None          # ostatni checks.Report
+        self._site_failures: dict[str, int] = {}
+        self._last_digest: str = ""
 
     # --- alerty -------------------------------------------------------------
 
@@ -172,8 +193,12 @@ class Watcher:
         alert_id = hashlib.sha1(f"{finding.key}|{since}".encode()).hexdigest()[:10]
         return Alert(alert_id, finding.key, finding.severity, finding.title, finding.detail, since, state)
 
-    def apply(self, findings: list[Finding]) -> list[Alert]:
-        """Porownuje z aktywnymi alertami; zwraca zdarzenia do rozeslania."""
+    def apply(self, findings: list[Finding], scope: frozenset[str] | None = None) -> list[Alert]:
+        """
+        Porownuje z aktywnymi alertami; zwraca zdarzenia do rozeslania.
+        `scope` — prefiksy kluczy, ktore ta runda sprawdzila; aktywny alert spoza
+        zakresu nie jest rozwiazywany (None = wszystkie).
+        """
         events: list[Alert] = []
         current = {f.key: f for f in findings if not f.transient}
         for finding in findings:
@@ -188,7 +213,7 @@ class Watcher:
             else:
                 known.title, known.detail = finding.title, finding.detail
         for key in list(self.active):
-            if key not in current:
+            if key not in current and (scope is None or key.split(":", 1)[0] in scope):
                 resolved = self.active.pop(key)
                 resolved.state = "resolved"
                 events.append(resolved)
@@ -200,6 +225,11 @@ class Watcher:
         state = load_state()
         # statvfs na zawieszonym NFS potrafi blokowac w nieskonczonosc — poza petla zdarzen
         findings = await asyncio.to_thread(resource_findings)
+        try:
+            point = await asyncio.to_thread(metrics.sample)
+            await asyncio.to_thread(metrics.record, point, settings.METRICS_KEEP_DAYS)
+        except OSError as exc:
+            print(f"[Czuwanie] Nie zapisano probki pomiarow: {exc}", flush=True)
 
         containers = await infra.docker_containers()
         if containers is not None:
@@ -222,10 +252,62 @@ class Watcher:
             save_state(state)
         except OSError:
             pass
-        events = self.apply(findings)
+        return self._publish(self.apply(findings, RESOURCE_SCOPE))
+
+    def _publish(self, events: list[Alert]) -> list[Alert]:
         for alert in events:
             self.notifier.publish(alert.to_event())
         return events
+
+    # --- migawki, sprawdzenia bez konfiguracji, raport ---------------------
+
+    async def snapshot_once(self) -> bool:
+        from backend.core import snapshots
+
+        sections = await snapshots.capture()
+        return await asyncio.to_thread(snapshots.save, sections, None, settings.SNAPSHOT_KEEP_DAYS)
+
+    async def checks_once(self) -> list[Alert]:
+        from backend.core import checks
+
+        report = await checks.run_checks(sites=settings.WATCH_SITES,
+                                         ignore=checks.parse_ignore(settings.WATCH_IGNORE))
+        self.checks_report = report
+        findings = report.findings(cert_days=settings.WATCH_CERT_DAYS, backup_hours=settings.WATCH_BACKUP_HOURS)
+        failing = {f.key for f in findings if f.scope == "site"}
+        self._site_failures = {key: self._site_failures.get(key, 0) + 1 for key in failing}
+        findings = [f for f in findings
+                    if f.scope != "site" or self._site_failures.get(f.key, 0) >= SITE_FAILURES_BEFORE_ALERT
+                    or f.key in self.active]
+        return self._publish(self.apply(findings, CHECKS_SCOPE))
+
+    async def build_digest(self, *, fresh_checks: bool = False) -> Any:
+        """Poranny raport (core/digest.py) z wykresem obciazenia z ostatniej doby."""
+        from backend.core import digest, infra, snapshots, usage
+        from backend.core.handlers.history import chart_attachment
+
+        report = self.checks_report
+        if fresh_checks or report is None or time.time() - report.at > 2 * settings.CHECKS_INTERVAL:
+            try:
+                from backend.core import checks
+                report = await checks.run_checks(sites=settings.WATCH_SITES,
+                                                 ignore=checks.parse_ignore(settings.WATCH_IGNORE))
+            except Exception as exc:
+                print(f"[Czuwanie] Sprawdzenia do raportu nie powiodly sie: {exc}", flush=True)
+        try:
+            current = await snapshots.capture()
+        except Exception:
+            current = None
+        hostname, _ = infra.host_identity()
+        priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
+        result = await asyncio.to_thread(
+            digest.build, hostname=hostname, active=list(self.active.values()), history=self.notifier.history,
+            current=current, report=report, usage_line=usage.yesterday_line(priced),
+            cert_days=settings.WATCH_CERT_DAYS, backup_hours=settings.WATCH_BACKUP_HOURS,
+            load_factor=settings.WATCH_LOAD_FACTOR)
+        attachment, _ = await chart_attachment("load", 24)
+        result.attachment = attachment
+        return result
 
     def find_alert(self, alert_id: str) -> dict[str, Any] | None:
         for alert in self.active.values():
@@ -282,23 +364,54 @@ class Watcher:
                 print(f"[Czuwanie] Blad sprawdzenia: {exc}", flush=True)
             await asyncio.sleep(max(30, settings.WATCH_INTERVAL))
 
-    async def _routine_loop(self) -> None:
+    async def _periodic(self, name: str, action, interval: int, delay: float) -> None:
+        await asyncio.sleep(delay)
+        while True:
+            try:
+                await action()
+            except Exception as exc:
+                print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
+            await asyncio.sleep(max(300, interval))
+
+    async def publish_digest(self) -> None:
+        result = await self.build_digest()
+        self.notifier.publish(result.to_event())
+
+    async def _clock_loop(self) -> None:
+        """Co minute: rutyny wedlug harmonogramu i poranny raport."""
+        from backend.core import digest
+
         last_minute = None
         while True:
             now = datetime.now().replace(second=0, microsecond=0)
             if now != last_minute:
                 last_minute = now
-                for routine in routines.due(routines.load_routines(), now):
-                    asyncio.create_task(self.run_routine(routine))
+                if self.agent is not None:
+                    for routine in routines.due(routines.load_routines(), now):
+                        asyncio.create_task(self.run_routine(routine))
+                stamp = now.strftime("%Y-%m-%d")
+                if digest.due(settings.DIGEST_TIME, now) and self._last_digest != stamp:
+                    self._last_digest = stamp
+                    asyncio.create_task(self._safe(self.publish_digest(), "raport"))
             await asyncio.sleep(15)
+
+    @staticmethod
+    async def _safe(coro, name: str) -> None:
+        try:
+            await coro
+        except Exception as exc:
+            print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
 
     def start(self) -> None:
         if self._tasks:
             return
         if settings.WATCH_ENABLED:
             self._tasks.append(asyncio.create_task(self._watch_loop()))
-        if self.agent is not None:
-            self._tasks.append(asyncio.create_task(self._routine_loop()))
+            self._tasks.append(asyncio.create_task(
+                self._periodic("migawka", self.snapshot_once, settings.SNAPSHOT_INTERVAL, 30)))
+            self._tasks.append(asyncio.create_task(
+                self._periodic("sprawdzenia", self.checks_once, settings.CHECKS_INTERVAL, 60)))
+        self._tasks.append(asyncio.create_task(self._clock_loop()))
 
 
 _watcher: Watcher | None = None

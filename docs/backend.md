@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -26,7 +26,12 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/targets.py` | Zdalne cele: rejestr, walidacja, budowanie komend ssh / docker exec / kubectl |
 | `core/workers.py` | Workery: pod-agenci na petli agenta, tylko odczyty, rownolegle |
 | `core/routines.py` | Rutyny: harmonogram cron, rejestr |
-| `core/watch.py` | Czuwanie: sprawdzenia, alerty, powiadomienia (pub/sub), uruchamianie rutyn |
+| `core/watch.py` | Czuwanie: sprawdzenia, alerty, powiadomienia (pub/sub), uruchamianie rutyn i petle ponizej |
+| `core/metrics.py` | Historia pomiarow (load, RAM, dyski) i wykresy Mermaid `xychart-beta` |
+| `core/snapshots.py` | Migawki stanu hosta i roznice -- "co sie zmienilo" |
+| `core/checks.py` | Sprawdzenia bez konfiguracji: certyfikaty, strony, DNS, swiezosc backupow |
+| `core/digest.py` | Poranny raport (bez LLM) |
+| `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
 | `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
 | `core/vibe.py` | Nauka stylu rozmowy w tle |
 | `core/events.py` | Zdarzenia strumienia: tekst, `Attachment`, `Progress` |
@@ -250,6 +255,7 @@ Powinienes zobaczyc:
 | `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
 
 ## Dodatkowe ustawienia `.env`
@@ -266,6 +272,16 @@ Powinienes zobaczyc:
 | `VIBE_EVERY` | 6 | Co ile wiadomosci odswiezac VIBE (0 = wylaczone) |
 | `WATCH_ENABLED`, `WATCH_INTERVAL` | 1, 120 | Czuwanie |
 | `WATCH_DISK_PCT`, `WATCH_MEM_PCT`, `WATCH_LOAD_FACTOR` | 90, 92, 2 | Progi alertow |
+| `METRICS_KEEP_DAYS` | 8 | Jak dlugo trzymac historie pomiarow (wykresy) |
+| `SNAPSHOT_INTERVAL`, `SNAPSHOT_KEEP_DAYS` | 3600, 30 | Migawki stanu hosta ("co sie zmienilo") |
+| `CHECKS_INTERVAL` | 3600 | Co ile sekund sprawdzac certyfikaty, strony, DNS i backupy |
+| `WATCH_SITES` | 1 | 0 wylacza sprawdzenia sieciowe (certyfikaty, strony, DNS) |
+| `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS` | 14, 26 | Progi: dni do wygasniecia certyfikatu, wiek najnowszego backupu |
+| `WATCH_IGNORE` | -- | Domeny i sciezki pomijane w sprawdzeniach (po przecinku) |
+| `DIGEST_TIME` | `07:00` | Godzina porannego raportu (czas serwera); `off` wylacza |
+| `LLM_PRICE_IN`, `LLM_PRICE_OUT` | -- | Ceny modelu w USD za milion tokenow -- `/koszt` pokaze koszt |
+| `WORKER_PRICE_IN`, `WORKER_PRICE_OUT` | jak LLM | Ceny `WORKER_MODEL` |
+| `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 
 ## Zatrzymanie
 

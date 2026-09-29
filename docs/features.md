@@ -1,6 +1,6 @@
-# Workery, cele, rutyny, czuwanie i diagramy -- Pipe
+# Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -159,3 +159,88 @@ Deterministyczne sprawdzenia co `WATCH_INTERVAL` (120 s), bez LLM i bez kosztow:
 - Telegram: alert z przyciskiem **Zbadaj** -- agent bada przyczyne (tylko odczyty) i proponuje naprawe.
 - Aktywne alerty sa w prompcie agenta -- pytany o stan serwera, uwzgledni je. `/alerty` w obu klientach.
 - Stan (poprzednie porty i kontenery) w `backend/data/watch_state.json`. `WATCH_ENABLED=0` wylacza.
+
+---
+
+## Co sie zmienilo -- wehikul czasu serwera
+
+Najczestsze pytanie przy awarii: *"co sie zmienilo, ze przestalo dzialac?"*. Pipe zna odpowiedz, bo co
+`SNAPSHOT_INTERVAL` (1 h) robi migawke hosta -- same odczyty plikow i `docker inspect`, bez LLM:
+
+| Sekcja | Co widac |
+|--------|----------|
+| System | jadro, restart serwera (nowy rozruch) |
+| Pakiety | instalacje, aktualizacje, usuniecia (dpkg, apk) |
+| Kontenery | nowe i usuniete, zmiana obrazu **albo nowej wersji obrazu pod tym samym tagiem**, zatrzymanie |
+| Porty | nowe i zamkniete porty TCP hosta |
+| Uslugi | wlaczone/wylaczone uslugi systemd, zmienione pliki jednostek |
+| Cron | dodane i usuniete linie (sekrety zredagowane) |
+| Konta | nowe konta z powloka albo uid 0 |
+| Klucze SSH | nowe klucze w `authorized_keys` (odcisk + komentarz; sam klucz nie jest zapisywany) |
+| Konfiguracja | sshd, sudoers, nginx, Caddy, HAProxy, fstab, hosts, `daemon.json`, pliki compose projektow |
+
+- Migawka jest zapisywana tylko, gdy cos sie zmienilo. Ostatnie 48 h -- wszystkie, starsze -- jedna na dzien,
+  maksymalnie `SNAPSHOT_KEEP_DAYS` (30) dni. Pliki: `backend/data/snapshots/`.
+- `/zmiany [24h|3d]` pokazuje zmiany pogrupowane w przedzialy *"miedzy 03:00 a 04:00"*.
+- Agent sam zaczyna od historii zmian, gdy slyszy *"przestalo dzialac"*, a przy **Zbadaj** (alert) backend
+  dolacza zmiany z ostatniej doby do polecenia.
+- Zmiany kont, kluczy SSH, sudoers i sshd sa oznaczone **[BEZPIECZENSTWO]**.
+
+---
+
+## Wykresy
+
+Czuwanie przy kazdym sprawdzeniu (co 2 min) zapisuje probke: load, RAM, swap, zajetosc dyskow. Historia
+(`METRICS_KEEP_DAYS`, 8 dni) daje wykresy bez Prometheusa:
+
+- `/wykres` -- load z ostatniej doby; `/wykres ram 7d`, `/wykres dysk 3d`
+- *"czy RAM rosnie od tygodnia?"* -- agent rysuje wykres (narzedzie `server_history`, `operation=chart`)
+  i dostaje liczby (min, max, srednia, przekroczenia progu), bo sam obrazu nie widzi
+- Czerwona linia na wykresie to prog alertu czuwania.
+
+Wykres to Mermaid `xychart-beta` renderowany tym samym silnikiem co diagramy (offline).
+
+---
+
+## Monitoring bez konfiguracji
+
+Pipe wie, co jest na serwerze, wiec sam wie, co sprawdzac -- co `CHECKS_INTERVAL` (1 h):
+
+| Sprawdzenie | Skad Pipe wie, co sprawdzic | Alert |
+|-------------|-----------------------------|-------|
+| Waznosc certyfikatu TLS | domeny z nginx, Caddy, etykiet Traefika / `VIRTUAL_HOST` | `WATCH_CERT_DAYS` (14) dni przed wygasnieciem; krytyczny 3 dni przed albo gdy certyfikat jest nieprawidlowy |
+| Odpowiedz HTTPS | te same domeny | 5xx albo brak odpowiedzi **dwa razy z rzedu** (chwilowe 502 przy deployu nie alarmuje) |
+| DNS | te same domeny | domena sie nie rozwiazuje; w `/zdrowie` -- czy wskazuje na ten serwer |
+| Swiezosc backupow | wpisy `[backup]` w DIRECTORY | najnowszy plik starszy niz `WATCH_BACKUP_HOURS` (26 h), pusty albo brakujacy katalog |
+
+- `/zdrowie` -- wszystko naraz, z liczba dni do wygasniecia kazdego certyfikatu.
+- Katalog backupow dopiszesz zdaniem: *"backupy bazy leza w /var/backups/pg"* (agent doda wpis `[backup]`).
+- `WATCH_SITES=0` wylacza sprawdzenia sieciowe, `WATCH_IGNORE=a.example.com,/var/backups/stare` pomija wybrane.
+
+---
+
+## Poranny raport
+
+Codziennie o `DIGEST_TIME` (7:00, czas serwera; `off` wylacza) na Telegram przychodzi raport -- **bez LLM**:
+
+- **Stan** -- uptime, load wzgledem rdzeni, RAM, dyski
+- **Alerty** -- aktywne i zdarzenia z ostatniej doby
+- **Zmiany od wczoraj** -- najpierw zmiany bezpieczenstwa, potem kontenery, porty, uslugi; pakiety zbiorczo
+- **Zdrowie** -- najblizej wygasajace certyfikaty, strony, backupy
+- **Aktualizacje** -- liczba pakietow do aktualizacji i *wymagany restart* (Ubuntu/Debian)
+- **Rutyny** -- ostatni status kazdej rutyny
+- **LLM** -- zuzycie tokenow z poprzedniego dnia
+
+Do raportu dolaczony jest wykres obciazenia z ostatniej doby. `/raport` -- raport na zadanie.
+
+---
+
+## Koszty LLM
+
+Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `backend/data/usage.json`.
+
+- `/koszt` -- tokeny dzis (z podzialem na uzytkownika, workery, rutyny, VIBE i model), ostatnie dni, miesiac.
+- Koszt w USD pojawi sie po podaniu cen modelu: `LLM_PRICE_IN` i `LLM_PRICE_OUT` (USD za milion tokenow),
+  osobno `WORKER_PRICE_IN/OUT` dla `WORKER_MODEL`.
+- `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT` -- po przekroczeniu agent odpowiada komunikatem o limicie do polnocy
+  i nie wysyla zapytan do providera. Czuwanie, raport i komendy bez LLM (`/mapa`, `/zmiany`, `/wykres`) dzialaja dalej.
