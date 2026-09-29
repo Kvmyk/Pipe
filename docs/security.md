@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 ## Model
 
@@ -113,6 +113,22 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
 - Plan bezpiecznika (kopie, sprawdzenia, weryfikacja) jest czescia potwierdzenia i jest przechowywany w nim --
   po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
   sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
+
+## Role i tokeny
+
+- `AGENT_TOKEN` -- admin, `AGENT_VIEWER_TOKEN` -- viewer, tokeny klientow z `python3 -m backend.tokens`
+  (plik `tokens.json` 0600, tylko skroty SHA-256; odwolanie: `revoke`). Porownanie w stalym czasie, na bajtach.
+- Viewer: backend odrzuca `confirm: true` i `undo` z `execute`, a narzedzia zmieniajace stan (takze zapis pamieci
+  Pipe) zwracaja modelowi odmowe -- pytanie o TAK nie powstaje. Egzekwuje to backend, nie klient.
+- Sesja jest przypieta do tozsamosci tokenu, ktora ja zalozyla: inny token nie odczyta jej historii ani nie
+  zatwierdzi cudzej operacji, nawet znajac `session_id`.
+
+## Webhooki
+
+- Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
+  (w Dockerze port publikowany tylko na localhost) -- nadawcy spoza serwera przez odwrotne proxy z TLS.
+- Tresc alertu pochodzi z zewnatrz: trafia do modelu jako dane, a automatyczne badanie robi worker, ktory
+  wykonuje wylacznie odczyty. Limit badan: raz na godzine na alert, 10 dziennie.
 
 ## Dziennik zmian i cofanie
 

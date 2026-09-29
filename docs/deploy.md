@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -29,7 +29,9 @@ Recznie: `python3 -m backend.configure && cd backend && docker compose up -d --b
 
 Montowania (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/hostfs/root` (rw),
 `/proc` -> `/hostproc:ro`, `docker.sock`, `/root/.ssh:ro` (git, cele ssh), opcjonalnie `/root/.kube:ro`
-(cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH.
+(cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH; 7380 (webhooki,
+dziala po ustawieniu `WEBHOOK_PORT` i `WEBHOOK_TOKEN`) -- tez tylko na 127.0.0.1. Caly `backend/.env` trafia do
+kontenera (`env_file`), wiec kazde ustawienie z `backend/.env.example` dziala bez edycji compose.
 
 ## Native (systemd, bez Dockera)
 

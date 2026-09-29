@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -337,3 +337,65 @@ przy pierwszym polaczeniu z danym serwerem. Bez LLM.
 Instalowane przy starcie do `backend/data/skills/` jak zwykle skille -- masz je w `/skille` i jako komendy
 (`/nginx_vhost`). Mozesz je edytowac i usuwac: nowa wersja z aktualizacji Pipe zastapi tylko skill, ktorego
 nie zmieniales, a usunietego nie przywroci.
+
+---
+
+## Pamiec incydentow
+
+Kazdy rozwiazany alert zostaje w `backend/data/incidents.json`: co sie stalo, kiedy i jak dlugo, co ustalil agent
+po *Zbadaj* (albo worker przy alercie z webhooka) i co pomoglo -- zmiany z dziennika wykonane w czasie trwania
+problemu. Bez dodatkowych zapytan do LLM.
+
+Gdy ten sam problem wraca, alert na Telegramie ma linie **Poprzednio: 2026-09-12 (40 min) — ustalenia: logi
+nginx bez rotacji... — pomoglo: journalctl --vacuum-size=200M**, a polecenie *Zbadaj* dostaje te historie: agent
+najpierw sprawdza, czy to ta sama przyczyna, i proponuje sprawdzona naprawe (dalej do zatwierdzenia).
+`/incydenty` pokazuje historie; agent siega po nia sam (*"czy to juz sie zdarzalo?"*).
+
+---
+
+## Alerty z zewnatrz (webhooki)
+
+Pipe dolacza do monitoringu, ktory juz masz, zamiast go zastepowac:
+
+```bash
+# backend/.env
+WEBHOOK_PORT=7380
+WEBHOOK_TOKEN=$(openssl rand -hex 24)
+```
+
+| Zrodlo | Adres | Konfiguracja po stronie nadawcy |
+|--------|-------|---------------------------------|
+| Prometheus Alertmanager | `/hook/alertmanager` | `webhook_configs: - url: http://127.0.0.1:7380/hook/alertmanager` + `http_config.authorization.credentials: <token>` |
+| Grafana | `/hook/grafana` | contact point typu Webhook, naglowek `Authorization: Bearer <token>` |
+| Uptime Kuma | `/hook/uptime-kuma?token=<token>` | powiadomienie typu Webhook (application/json) |
+| GitHub | `/hook/github` | webhook repozytorium, *Secret* = token; zdarzenia *Workflow runs*, *Deployment statuses* |
+| Wszystko inne | `/hook/generic` | `{"title", "message", "severity", "status": "firing|resolved", "name"}` |
+
+Alert trafia do czuwania (znika po `resolved`) i na Telegram z przyciskiem *Zbadaj*. Z `WEBHOOK_INVESTIGATE=1`
+nowy alert od razu bada worker (tylko odczyty: uslugi, kontenery, logi, zasoby, ostatnie zmiany) i raport
+przychodzi chwile po alercie -- ten sam alert najwyzej raz na godzine, 10 badan dziennie.
+
+W Dockerze port jest publikowany tylko na `127.0.0.1:7380`; nadawcy spoza serwera -- przez odwrotne proxy z TLS.
+
+---
+
+## Wiadomosci glosowe
+
+Na Telegramie wystarczy nagrac wiadomosc: *"sprawdz, czemu sklep nie dziala"*. Bot odpisze *Uslyszalem: ...*
+i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- przy `LLM_PROVIDER=openai` albo
+`groq` dziala bez konfiguracji; przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`
+(np. darmowy Groq `whisper-large-v3-turbo` albo lokalny faster-whisper). Nagranie OGG idzie bez konwersji.
+
+---
+
+## Role i wielu uzytkownikow
+
+| Rola | Moze | Nie moze |
+|------|------|----------|
+| admin | wszystko | -- |
+| viewer | rozmowa, diagnoza, odczyty, wykresy, raporty, audyt, alerty | zatwierdzac zmian, `/cofnij`, zapisywac pamieci Pipe (SERVER.md, skille, cele, rutyny) |
+
+- Telegram: `TELEGRAM_ALLOWED_USER_IDS` (admini) i `TELEGRAM_VIEWER_IDS` (tylko odczyt, z `AGENT_VIEWER_TOKEN`).
+- CLI i inne klienty: osobny token na osobe albo laptop, odwolywalny:
+  `python3 -m backend.tokens add laptop-kuba --role admin`, `list`, `revoke laptop-kuba`.
+- Role egzekwuje backend. Sesja nalezy do tokenu, ktory ja zalozyl.

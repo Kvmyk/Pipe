@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -35,6 +35,10 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/posture.py` | Audyt bezpieczenstwa hosta (ocena, poprawki), straznik zmian bezpieczenstwa, log SSH |
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
 | `skills_builtin/` | Wbudowane skille, instalowane do `data/skills` przy starcie |
+| `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
+| `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
+| `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI) |
+| `tokens.py` | Tokeny klientow z rolami admin/viewer (`python3 -m backend.tokens`) |
 | `core/safety.py` | Bezpiecznik: plan zmiany (kopie, sprawdzenie przed, weryfikacja po) i strzezone wykonanie |
 | `core/journal.py` | Dziennik zmian: kopie plikow, stan gita i crontaba, komendy odwrotne, `/cofnij` |
 | `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
@@ -290,6 +294,10 @@ Powinienes zobaczyc:
 | `DIGEST_TIME` | `07:00` | Godzina porannego raportu (czas serwera); `off` wylacza |
 | `LLM_PRICE_IN`, `LLM_PRICE_OUT` | -- | Ceny modelu w USD za milion tokenow -- `/koszt` pokaze koszt |
 | `WORKER_PRICE_IN`, `WORKER_PRICE_OUT` | jak LLM | Ceny `WORKER_MODEL` |
+| `AGENT_VIEWER_TOKEN` | -- | Token roli viewer (tylko odczyt); wymaga `AGENT_TOKEN` |
+| `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Serwer alertow z zewnatrz (0 = wylaczony; bez tokenu nie wystartuje) |
+| `WEBHOOK_INVESTIGATE` | 1 | Nowy alert z webhooka bada worker (tylko odczyty), raport na Telegram; limit 1/h na alert, 10/dzien |
+| `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (openai/groq -- automatycznie) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 

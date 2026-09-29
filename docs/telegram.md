@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -27,11 +27,26 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
   zmiana sudoers/sshd/PAM/`ld.so.preload`, ktorej nie zrobil Pipe. Sprawdzane co 2 minuty.
 - **Logowania SSH** -- seria nieudanych logowan (`WATCH_SSH_FAILURES` w 10 min), udane logowanie haslem z adresu,
   ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
+- **Zbadalem alert** -- raport workera dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba (webhooki).
+- Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
 - **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
 - Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
 
 `TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
+
+## Wiadomosci glosowe
+
+Nagraj wiadomosc glosowa -- bot odpisze *Uslyszalem: ...* i przekaze tekst agentowi. Transkrypcja idzie przez
+endpoint zgodny z OpenAI (Whisper): przy providerze `openai` albo `groq` dziala od razu, przy innych ustaw w
+`backend/.env` `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy klucz Groq albo lokalny faster-whisper).
+
+## Role
+
+- `TELEGRAM_ALLOWED_USER_IDS` -- administratorzy: wszystko, lacznie z TAK/NIE i `/cofnij`.
+- `TELEGRAM_VIEWER_IDS` -- tylko odczyt: rozmowa, diagnoza, raporty, wykresy i alerty; bez przyciskow TAK/NIE
+  i `/cofnij`. Wymaga `AGENT_VIEWER_TOKEN` w `clients/telegram/.env` i tego samego w `backend/.env`. Backend
+  egzekwuje role sam -- nawet gdyby bot sie pomylil, zmiana z tokenem viewera nie zostanie wykonana.
 
 ## Diagramy
 
@@ -127,6 +142,7 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |

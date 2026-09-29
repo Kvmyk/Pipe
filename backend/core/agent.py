@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -42,6 +42,20 @@ SKIPPED_FOR_CONFIRMATION = (
     "NIE WYKONANO: poprzednie narzedzie czeka na potwierdzenie uzytkownika. "
     "Jesli to wywolanie jest nadal potrzebne, powtorz je po jego decyzji."
 )
+VIEWER_NOTICE = "Twoja rola pozwala tylko na odczyt — tej zmiany nie wykonam. Moze ja zatwierdzic administrator."
+VIEWER_REFUSAL = ("ODMOWA SYSTEMOWA: uzytkownik ma role viewer (tylko odczyt). Operacja nie zostala wykonana — "
+                  "opisz, co trzeba zrobic; zmiane moze zatwierdzic administrator.")
+# Operacje, ktore zmieniaja pamiec/rejestry Pipe bez potwierdzenia — dla viewera zablokowane z gory.
+VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
+    "write_file": None,
+    "server_md": frozenset({"update_section", "write"}),
+    "directory": frozenset({"upsert", "remove", "scan"}),
+    "skill_manage": frozenset({"save", "delete"}),
+    "target_manage": frozenset({"add", "remove"}),
+    "routine_manage": frozenset({"add", "remove", "enable", "disable"}),
+    "journal": frozenset({"undo"}),
+    "cron_manage": frozenset({"add", "remove"}),
+}
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 ABANDONED_CONFIRMATION = (
     "Uzytkownik nie potwierdzil tej operacji -- zamiast odpowiedziec TAK/NIE napisal nowa wiadomosc. "
@@ -70,11 +84,19 @@ class VPSAgent:
 
     # ─── Sesje ──────────────────────────────────────────────────────────────
 
-    def get_or_create_session(self, session_id: str, interface: str = "cli") -> Session:
-        """Zwraca istniejaca sesje lub tworzy nowa."""
+    def get_or_create_session(self, session_id: str, interface: str = "cli", *, owner: str = "",
+                              role: str = "admin") -> Session:
+        """Zwraca istniejaca sesje lub tworzy nowa. Rola jest ustawiana przy kazdym zadaniu."""
         if session_id not in self._sessions:
-            self._sessions[session_id] = Session(session_id=session_id, interface=interface)
-        return self._sessions[session_id]
+            self._sessions[session_id] = Session(session_id=session_id, interface=interface, owner=owner)
+        session = self._sessions[session_id]
+        session.role = role
+        return session
+
+    def owns(self, session_id: str, owner: str) -> bool:
+        """Czy klient o tej tozsamosci moze uzyc sesji (nieistniejaca sesja — tak)."""
+        session = self._sessions.get(session_id)
+        return session is None or session.owner in ("", owner)
 
     def delete_session(self, session_id: str) -> None:
         """Usuwa sesje (np. po rozlaczeniu klienta)."""
@@ -89,6 +111,8 @@ class VPSAgent:
         interface: str = "cli",
         *,
         generated: bool = False,
+        owner: str = "",
+        role: str = "admin",
     ) -> AsyncGenerator[Event, None]:
         """
         Przetwarza wiadomosc uzytkownika i strumieniuje zdarzenia odpowiedzi.
@@ -97,7 +121,7 @@ class VPSAgent:
         `generated=True` — tresc zbudowal backend (skan, /status, skill), nie
         uzytkownik; nie uczy VIBE.
         """
-        session = self.get_or_create_session(session_id, interface)
+        session = self.get_or_create_session(session_id, interface, owner=owner, role=role)
 
         # Nowa wiadomosc zamiast TAK/NIE: operacja przepada, a wywolanie narzedzia
         # dostaje odpowiedz — inaczej provider odrzuci historie z nieodpowiedzianym tool_call.
@@ -286,14 +310,34 @@ class VPSAgent:
                                      "content": f"Nieznane narzedzie: {tool_call.function.name}"})
             return
 
+        viewer = session.role == "viewer" and dispatch is None
+        if viewer and viewer_blocked(tool_call.function.name, args):
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": VIEWER_REFUSAL})
+            yield f"[ODMOWA] {VIEWER_NOTICE}"
+            return
+
+        buffered: list[Event] = []
         try:
             async for event in handler(session, tool_call, args):
-                yield event
+                if viewer:
+                    buffered.append(event)   # przegladajacy nie moze zobaczyc pytania o TAK, ktorego nie zatwierdzi
+                else:
+                    yield event
         except Exception as exc:  # blad handlera nie moze zostawic wywolania bez odpowiedzi
             if not _answered(session, tool_call.id, before) and session.pending_confirmation is None:
                 session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
                                          "content": f"Blad narzedzia: {exc}"})
             yield f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}"
+
+        if viewer:
+            pending = session.pending_confirmation
+            if pending is not None and pending.tool_call_id == tool_call.id:
+                session.pending_confirmation = None
+                session.messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": VIEWER_REFUSAL})
+                buffered = [e for e in buffered if not (isinstance(e, str) and "[POTWIERDZ]" in e)]
+                buffered.append(f"[ODMOWA] {VIEWER_NOTICE}")
+            for event in buffered:
+                yield event
 
         if not _answered(session, tool_call.id, before) and (
             session.pending_confirmation is None or session.pending_confirmation.tool_call_id != tool_call.id
@@ -386,6 +430,13 @@ def _record_usage(model: str, response_usage: Any, who: str) -> None:
         usage.record(model, response_usage, usage.who_from_interface(who), prices)
     except OSError as exc:
         print(f"[usage] Nie zapisano zuzycia tokenow: {exc}", flush=True)
+
+
+def viewer_blocked(tool_name: str, args: dict[str, Any]) -> bool:
+    if tool_name not in VIEWER_WRITE_OPERATIONS:
+        return False
+    operations = VIEWER_WRITE_OPERATIONS[tool_name]
+    return operations is None or str(args.get("operation", "") or "").strip().lower() in operations
 
 
 def _answered(session: Session, tool_call_id: str, since: int) -> bool:

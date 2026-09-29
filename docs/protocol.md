@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 ## Opis
 
@@ -68,6 +68,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
 | `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
 | `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
+| `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamiec incydentow (co sie zdarzalo, ustalenia, co pomoglo) |
+| `transcribe` | `audio` (base64, maks. ~2.5 MB), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomosci glosowej (STT) |
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
@@ -119,7 +121,7 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
 {"response": "", "status": "ok", "done": false, "event": {
   "type": "alert", "id": "3f2a9c1d0b", "key": "disk:/", "severity": "warning|critical",
   "title": "Dysk / zapelniony w 93%", "detail": "wolne 3.1 GB z 40 GB (/dev/sda1)",
-  "since": "2026-09-24 14:02", "state": "new|resolved|event", "at": "2026-09-24 14:02"}}
+  "since": "2026-09-24 14:02", "state": "new|resolved|event", "history": "", "at": "2026-09-24 14:02"}}
 ```
 
 ```json
@@ -134,6 +136,9 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
   "attachment": {"name": "wykres-load.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
+`{"type": "investigation", "key", "title", "report"}` -- raport workera, ktory sam zbadal alert z webhooka
+(`WEBHOOK_INVESTIGATE=1`). `history` w alercie -- ostatnie wystapienie tego samego problemu (pamiec incydentow).
+
 `{"type": "welcome", "title", "sections", "score", "grade", "text", "attachment"?}` -- raz po instalacji, gdy
 podlaczy sie pierwszy subskrybent.
 
@@ -141,14 +146,21 @@ podlaczy sie pierwszy subskrybent.
 (nowy publiczny port, zatrzymany kontener). `investigate` z `id` prosi agenta o zbadanie alertu.
 Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
 oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
-`auth:ssh` (seria nieudanych logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
+`hook:<zrodlo>:<nazwa>` -- alerty z webhookow (trwale do komunikatu `resolved`). `auth:ssh` (seria nieudanych
+logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
 to zdarzenia jednorazowe.
 `digest` przychodzi raz dziennie o `DIGEST_TIME`.
 
 ### Autoryzacja tokenem
 
-Pole `token` jest wymagane tylko wtedy, gdy w `backend/.env` ustawiono `AGENT_TOKEN`.
-Gdy `AGENT_TOKEN` jest pusty, pole mozna pominac i backend przyjmuje kazde zadanie.
+Pole `token` jest wymagane, gdy skonfigurowano jakikolwiek token: `AGENT_TOKEN` (rola admin),
+`AGENT_VIEWER_TOKEN` (rola viewer) albo tokeny klientow (`python3 -m backend.tokens add NAZWA --role admin|viewer`,
+w `data/tokens.json` sam skrot SHA-256). Bez zadnego tokenu backend przyjmuje kazde zadanie (rola admin).
+
+Rola **viewer** (tylko odczyt): `{"confirm": true}` i `undo` z `execute` sa odrzucane, narzedzia zmieniajace stan
+zwracaja modelowi odmowe (klient nie dostaje pytania o TAK). Sesja nalezy do tozsamosci, ktora ja zalozyla
+(token admina, viewera albo nazwany token) -- zadanie z innym tokenem i tym samym `session_id` dostaje
+`Ta sesja nalezy do innego klienta.`
 
 Token jest sprawdzany dla **kazdego** typu zadania -- rowniez dla potwierdzen
 (`confirm`), zeby nieuwierzytelniony klient nie mogl zatwierdzic operacji
@@ -215,3 +227,20 @@ async def chat_with_agent(message: str, session_id: str) -> list[dict]:
 - Czytaj linie z limitem >= 32 MiB
 - Obsluz dlugie odpowiedzi -- podziel na mniejsze wiadomosci jesli platforma ma limit
 - Alerty: osobne, trwale polaczenie z `subscribe` i ponawianiem po rozlaczeniu
+
+
+## Webhooki (HTTP)
+
+Osobny port (`WEBHOOK_PORT`, domyslnie wylaczony), przyjmuje alerty z innych systemow:
+
+```
+POST /hook/alertmanager | /hook/grafana | /hook/uptime-kuma | /hook/github | /hook/generic
+Authorization: Bearer <WEBHOOK_TOKEN>        (albo ?token=..., albo podpis X-Hub-Signature-256 GitHuba)
+Content-Type: application/json
+
+202 {"ok": true, "alerts": 2, "events": 1}
+GET /health -> 200 {"ok": true}
+```
+
+Format ogolny (`/hook/generic`): `{"title", "message", "severity": "critical|warning", "status": "firing|resolved",
+"name"}`. Limit tresci 1 MiB. Bez `WEBHOOK_TOKEN` serwer webhookow nie startuje.

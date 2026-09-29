@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -158,9 +158,10 @@ TOOLS: list[dict] = [
         "sshd, sudoers, compose), restart serwera — z przedzialem czasu kazdej zmiany. UZYJ NAJPIERW przy "
         "awarii ('przestalo dzialac', 'od wczoraj'). chart: wykres load/RAM/dyskow z historii czuwania, "
         "wysylany uzytkownikowi jako obraz. checks: waznosc certyfikatow TLS i odpowiedz domen z konfiguracji "
-        "proxy, rekordy DNS, swiezosc backupow z DIRECTORY.",
+        "proxy, rekordy DNS, swiezosc backupow z DIRECTORY. incidents: pamiec incydentow — co sie juz zdarzalo, "
+        "co ustalono i co pomoglo (uzyj, gdy uzytkownik pyta 'czy to juz bylo').",
         {
-            "operation": {"type": "string", "enum": ["changes", "chart", "checks"]},
+            "operation": {"type": "string", "enum": ["changes", "chart", "checks", "incidents"]},
             "since": {"type": "string",
                       "description": "Okres wstecz: '24h' (domyslnie), '3h', '7d'. Dla changes i chart."},
             "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},

@@ -1,5 +1,36 @@
 # Historia zmian -- Pipe
 
+## v0.13.0 (2026-09-29)
+
+Pamiec incydentow, alerty z zewnatrz, wiadomosci glosowe i role. Aktualizacja w Dockerze: `docker compose up -d`
+przebuduje kontener z nowym `env_file` -- bez innych recznych krokow.
+
+### Pamiec incydentow
+
+- Rozwiazany alert zostaje w pamieci: ustalenia z *Zbadaj* i zmiany z dziennika wykonane w czasie problemu
+- Powtorny alert przychodzi z linia *Poprzednio: ...*, a *Zbadaj* zaczyna od sprawdzonej przyczyny i naprawy
+- `/incydenty` i `server_history operation=incidents`
+
+### Alerty z zewnatrz
+
+- Webhooki (`WEBHOOK_PORT`, `WEBHOOK_TOKEN`): Alertmanager, Grafana, Uptime Kuma, GitHub (nieudany workflow,
+  wdrozenie) i format ogolny. Alert na Telegram z *Zbadaj*, znika po `resolved`
+- `WEBHOOK_INVESTIGATE=1` -- worker od razu bada alert na serwerze (tylko odczyty) i przysyla raport
+
+### Glos i role
+
+- Wiadomosci glosowe na Telegramie: transkrypcja (Whisper przez API zgodne z OpenAI; openai/groq bez konfiguracji,
+  inni -- `STT_*`) i odpowiedz jak na tekst
+- Rola viewer: `TELEGRAM_VIEWER_IDS` + `AGENT_VIEWER_TOKEN` oraz tokeny klientow `python3 -m backend.tokens`
+  (admin/viewer, odwolywalne). Viewer diagnozuje i czyta, nie zatwierdza zmian -- egzekwuje to backend
+- Sesja jest przypieta do tokenu, ktory ja zalozyl
+
+### Poprawki
+
+- Docker: caly `backend/.env` trafia do kontenera (`env_file`) -- wczesniej czesc ustawien (np. progi, raport,
+  ceny, `WORKER_TIMEOUT`) byla pomijana, bo nie bylo ich na liscie `environment`
+- Token z niestandardowymi znakami nie przerywa juz polaczenia wyjatkiem (porownanie na bajtach)
+
 ## v0.12.0 (2026-09-29)
 
 Pipe pilnuje bezpieczenstwa serwera, wita sie po instalacji i przychodzi z gotowymi przepisami.

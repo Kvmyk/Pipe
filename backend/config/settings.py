@@ -44,6 +44,8 @@ LLM_MODEL: str = LLM.model if LLM else ""
 # Opcjonalny token autoryzacji. Jesli pusty — serwer nie wymaga tokenu
 # (dostep chroniony wylacznie przez tunel SSH / uprawnienia do socketu).
 AGENT_TOKEN: str = os.getenv("AGENT_TOKEN", "")
+# Token roli viewer (tylko odczyt) — np. dla bota Telegram obslugujacego TELEGRAM_VIEWER_IDS.
+AGENT_VIEWER_TOKEN: str = os.getenv("AGENT_VIEWER_TOKEN", "")
 
 AUDIT_LOG_PATH: str = os.getenv("AUDIT_LOG_PATH", "/app/audit.log")
 
@@ -65,6 +67,10 @@ def validate() -> None:
             "Uruchom kreator z katalogu repozytorium: python3 -m backend.configure "
             "(albo ustaw LLM_API_KEY w backend/.env)."
         )
+    if AGENT_VIEWER_TOKEN and not AGENT_TOKEN:
+        raise ValueError("AGENT_VIEWER_TOKEN wymaga AGENT_TOKEN — inaczej administrator nie mialby czym sie uwierzytelnic.")
+    if AGENT_VIEWER_TOKEN and AGENT_VIEWER_TOKEN == AGENT_TOKEN:
+        raise ValueError("AGENT_VIEWER_TOKEN musi byc inny niz AGENT_TOKEN.")
     # W Kubernetesie port jest osiagalny z kazdego poda (ClusterIP), wiec pusty token
     # oznaczalby, ze dowolny pod moze sterowac agentem. Na VPS chroni go tunel SSH.
     from backend.core import runtime
@@ -125,6 +131,14 @@ WATCH_SSH_LOGINS: bool = os.getenv("WATCH_SSH_LOGINS", "1").strip().lower() not 
 WATCH_IGNORE: str = os.getenv("WATCH_IGNORE", "")
 # Poranny raport (HH:MM, czas serwera); pusty albo "off" wylacza.
 DIGEST_TIME: str = os.getenv("DIGEST_TIME", "07:00").strip()
+
+
+# ─── Webhooki (alerty z zewnatrz) ───────────────────────────────────────────
+# 0 = wylaczone. Bez WEBHOOK_TOKEN serwer webhookow nie wystartuje.
+WEBHOOK_PORT: int = _int("WEBHOOK_PORT", 0)
+WEBHOOK_HOST: str = os.getenv("WEBHOOK_HOST", "127.0.0.1")
+WEBHOOK_TOKEN: str = os.getenv("WEBHOOK_TOKEN", "")
+WEBHOOK_INVESTIGATE: bool = os.getenv("WEBHOOK_INVESTIGATE", "1").strip().lower() not in ("0", "false", "no", "nie")
 
 
 # ─── Koszty LLM ─────────────────────────────────────────────────────────────

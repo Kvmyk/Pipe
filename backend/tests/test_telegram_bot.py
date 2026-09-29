@@ -55,6 +55,7 @@ async def frames(*items):
 
 def test_stream_sends_photo_progress_and_confirm_keyboard(monkeypatch):
     monkeypatch.setattr(bot, "PROGRESS_EDIT_INTERVAL", 0)
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {42})
     context = Context()
     png = b"\x89PNG-dane"
     asyncio.run(bot._run_and_reply(context, 1, 42, frames(
@@ -70,6 +71,18 @@ def test_stream_sends_photo_progress_and_confirm_keyboard(monkeypatch):
     assert kinds.count("message") == 2 and "edit" in kinds          # status postepu + odpowiedz
     answer = context.bot.log[-1]
     assert "rm x" in answer[1] and answer[2] is not None             # klawiatura TAK/NIE
+
+
+def test_viewer_never_gets_confirm_keyboard(monkeypatch):
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {1})
+    monkeypatch.setattr(bot, "VIEWER_USER_IDS", {42})
+    context = Context()
+    asyncio.run(bot._run_and_reply(context, 1, 42, frames(
+        {"response": "[POTWIERDZ] Operacja wymaga potwierdzenia: `rm x`", "status": "confirm", "done": False},
+        {"response": "", "status": "ok", "done": True},
+    )))
+    assert context.bot.log[-1][2] is None
+    assert bot._is_allowed(42) and not bot._is_admin(42) and bot._is_admin(1)
 
 
 def test_alert_broadcast_to_allowed_users(monkeypatch):
