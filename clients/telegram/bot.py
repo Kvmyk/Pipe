@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -73,6 +73,7 @@ from tg_format import (
     collect_response_text,
     format_alert,
     format_alerts,
+    format_audit,
     format_digest,
     format_directory,
     format_help,
@@ -325,6 +326,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>Na poczatek:</b>\n"
         "/mapa - diagram tego, co stoi na serwerze\n"
         "/raport - stan, zmiany od wczoraj, certyfikaty i backupy (przychodzi sam co rano)\n"
+        "/audyt - ocena bezpieczenstwa z gotowymi poprawkami\n"
         "/server - co wiem o serwerze (SERVER.md)\n"
         "/status - szybki przeglad obciazenia\n"
         "/pomoc - wszystkie komendy\n\n"
@@ -408,6 +410,11 @@ async def cmd_zdrowie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """/zdrowie -- certyfikaty, strony, DNS, backupy."""
     await _command_with_image(update, context, "health", "",
                               lambda d: format_pre("Zdrowie uslug", d.get("text", "")))
+
+
+async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/audyt -- audyt bezpieczenstwa hosta (bez LLM)."""
+    await _command_with_image(update, context, "audit", "", format_audit)
 
 
 async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -688,7 +695,7 @@ async def _broadcast(app: Application, event: dict) -> None:
         markup = _investigate_keyboard(event["id"]) if event.get("state") != "resolved" and event.get("id") else None
     elif kind == "routine":
         text, markup = format_routine(event), None
-    elif kind == "digest":
+    elif kind in ("digest", "welcome"):
         text, markup = format_digest(event), None
     else:
         return
@@ -800,6 +807,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("raport", cmd_raport))
+    app.add_handler(CommandHandler("audyt", cmd_audyt))
     app.add_handler(CommandHandler("zmiany", cmd_zmiany))
     app.add_handler(CommandHandler("wykres", cmd_wykres))
     app.add_handler(CommandHandler("zdrowie", cmd_zdrowie))

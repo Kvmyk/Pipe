@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -23,6 +23,11 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
 - **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
 - **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
   aktualizacje i wykres obciazenia. Skladany bez LLM.
+- **Zmiana bezpieczenstwa** -- nowe konto (uid 0 = krytyczny), nowy klucz w `authorized_keys`, nowy program SUID,
+  zmiana sudoers/sshd/PAM/`ld.so.preload`, ktorej nie zrobil Pipe. Sprawdzane co 2 minuty.
+- **Logowania SSH** -- seria nieudanych logowan (`WATCH_SSH_FAILURES` w 10 min), udane logowanie haslem z adresu,
+  ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
+- **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
 - Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
 
@@ -121,6 +126,7 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |

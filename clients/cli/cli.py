@@ -353,7 +353,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.11.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.12.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
             "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -429,6 +429,7 @@ HELP_TEXT = """**Komendy**
 - `/zmiany [24h|3d]` — co się zmieniło na serwerze (pakiety, kontenery, porty, cron, konta, konfiguracje)
 - `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
 - `/zdrowie` — certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów
+- `/audyt` — ocena bezpieczeństwa hosta z gotowymi poprawkami („napraw 1”)
 - `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
 - `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
 - `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
@@ -526,6 +527,14 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         console.print(Markdown("\n".join(lines)))
         return True
 
+    if name == "audyt":
+        console.print("[dim]Sprawdzam konfigurację bezpieczeństwa...[/dim]")
+        data = _response_data(await client.send_command("audit"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        if data.get("findings"):
+            console.print('[dim]Napisz „napraw 1”, a przygotuję poprawkę do zatwierdzenia.[/dim]')
+        return True
+
     if name == "dziennik":
         data = _response_data(await client.send_command("journal"))
         console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
@@ -616,6 +625,34 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
     return True
 
 
+def _welcome_marker(host: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in host)[:80] or "default"
+    return Path.home() / ".pipe" / f"welcomed-{safe}"
+
+
+async def _first_run_welcome(client: "RemoteClient", host: str) -> None:
+    """Pierwsze polaczenie z serwerem: mapa, ocena bezpieczenstwa i co Pipe pilnuje (raz na serwer)."""
+    marker = _welcome_marker(host)
+    if marker.exists():
+        return
+    console.print("[dim]Pierwsze połączenie z tym serwerem — rozglądam się (mapa i audyt)...[/dim]")
+    try:
+        data = _response_data(await client.send_command("welcome"))
+    except Exception as exc:
+        console.print(f"[dim]Powitanie niedostępne: {escape(str(exc))}[/dim]")
+        return
+    lines = [f"**{data.get('title', '')}**"]
+    for section in data.get("sections", []):
+        lines.append(f"\n**{section.get('title', '')}**\n")
+        lines += [f"- {line}" for line in section.get("lines", [])]
+    console.print(Markdown("\n".join(lines)))
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(time.strftime("%Y-%m-%d %H:%M"))
+    except OSError:
+        pass
+
+
 # ─── Główna pętla REPL ────────────────────────────────────────────────────────
 
 async def run_cli(client: RemoteClient, host: str) -> None:
@@ -629,6 +666,8 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     except Exception as exc:
         console.print(f"[red]Błąd połączenia: {exc}[/red]")
         return
+
+    await _first_run_welcome(client, host)
 
     # Status startowy ukryty na zyczenie
     console.print(Rule(style="dim"))

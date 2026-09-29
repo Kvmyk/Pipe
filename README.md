@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.11.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.12.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 Pipe dziala na serwerze na stale: zna go (SERVER.md, mapa katalogow), czuwa nad nim i odzywa sie pierwszy,
 gdy cos sie psuje. Rozmawiasz z nim z terminala (CLI przez tunel SSH) albo z telefonu (Telegram) -- po polsku.
@@ -20,6 +20,7 @@ Tamte narzedzia to ogolni agenci do kodu albo "do wszystkiego". Pipe jest agente
 | **Monitoring bez konfiguracji** | Domeny z nginx/Caddy/Traefik i backupy z mapy katalogow Pipe znajduje sam: pilnuje waznosci certyfikatow, odpowiedzi stron, DNS i swiezosci backupow. Nic nie definiujesz. |
 | **Widzi architekture** | `/mapa` rysuje diagram tego, co stoi na serwerze: domeny -> reverse proxy -> kontenery -> bazy, projekty compose, porty wystawione na swiat. Na Telegramie przychodzi jako obraz, w CLI jako PNG + podglad w terminalu. |
 | **Zarzadza flota** | Zdalne serwery (SSH), kontenery i klastry Kubernetes to *cele*. Agent wysyla na nie **workerow** -- pod-agentow, ktorzy rownolegle badaja kazdy cel i raportuja mu, a nie Tobie. Nic nie instaluje sie po drugiej stronie. |
+| **Pilnuje bezpieczenstwa** | `/audyt` ocenia serwer (0-100): hasla w SSH, zapora, bazy wystawione na swiat (takze przez Dockera, ktory omija ufw), kontenery z `docker.sock`, konta z uid 0, aktualizacje -- kazdy punkt z gotowa poprawka. Co 2 minuty wypatruje nowych kont, kluczy SSH, programow SUID i podejrzanych logowan. |
 | **Zmiany, ktore da sie cofnac** | Przed kazda zatwierdzona zmiana kopia do dziennika. `nginx -t`, `sshd -t`, `docker compose config` **przed** przeladowaniem; po zmianie weryfikacja: usluga aktywna, kontener zdrowy, strony dalej odpowiadaja. Zepsuta konfiguracja wraca sama, reszta -- `/cofnij`. |
 | **Bezpieczenstwo w kodzie** | Klasyfikator fail-closed (nieznana komenda = pytanie), potwierdzenie pokazuje dokladnie to, co sie wykona, workery wykonuja tylko odczyty. Sekrety z plikow (`.env`, klucze) sa **redagowane, zanim trafia do providera LLM**. |
 | **Pamieta serwer, nie repo** | `SERVER.md` (fakty o serwerze), `DIRECTORY` (gdzie leza repozytoria, aplikacje, konfiguracje, backupy), skille (procedury) i **VIBE** -- agent z czasem uczy sie, jak lubisz rozmawiac. |
@@ -77,10 +78,12 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"odpowiadaj krocej i bez wstepow"* -- zapisze to w VIBE
 - *"strona padla po nocy -- co sie zmienilo?"* -- agent zaczyna od historii zmian: pakiety, obrazy, porty, konfiguracje
 - *"czy RAM rosnie od tygodnia?"* -- wykres z historii czuwania
+- *"jak bezpieczny jest ten serwer?"* albo `/audyt`, potem *"napraw 1"* -- poprawka z kopia i weryfikacja
+- *"postaw strone shop.example.com na porcie 3000 z certyfikatem"* -- wbudowany skill `nginx-vhost`
 - *"cofnij ostatnia zmiane"* albo `/cofnij` -- przywraca pliki i odwraca operacje z dziennika
 
 Komendy w obu klientach: `/status` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
-`/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
+`/audyt` `/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
 
 ---
 
@@ -122,6 +125,7 @@ czuwania -- [docs/protocol.md](./docs/protocol.md).
 | `target_manage` / `remote_exec` | Zdalne cele (SSH, kontenery, Kubernetes) i komendy na nich |
 | `delegate` | Workery: rownolegli pod-agenci, tylko odczyty, raport dla agenta |
 | `routine_manage` | Zadania wedlug harmonogramu z raportem na Telegram |
+| `security_audit` | Audyt bezpieczenstwa z ocena i gotowymi poprawkami |
 | `journal` | Dziennik zatwierdzonych zmian z kopiami i cofanie (`/cofnij`) |
 | `server_history` | Co sie zmienilo na serwerze (i kiedy), wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy |
 | `server_md` / `directory` / `skill_manage` / `vibe` | Pamiec agenta |
@@ -134,7 +138,9 @@ Wszystko lezy w `backend/data/` na serwerze (poza gitem, mozna edytowac recznie)
 
 - **SERVER.md** -- fakty o serwerze: uslugi, domeny, decyzje. W prompcie kazdej rozmowy.
 - **DIRECTORY** (`directory.json`) -- mapa miejsc: repozytoria (z remote i galezia), katalogi aplikacji, projekty compose, konfiguracje, dane, logi, backupy. Skan sam znajduje repozytoria i projekty compose.
-- **Skille** (`skills/<nazwa>/SKILL.md`) -- procedury; kazdy skill ma wlasna komende `/nazwa`.
+- **Skille** (`skills/<nazwa>/SKILL.md`) -- procedury; kazdy skill ma wlasna komende `/nazwa`. Na start Pipe ma
+  wbudowane: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `aktualizuj-kontener`, `utwardz-ssh`,
+  `wolne-miejsce` -- mozesz je zmieniac i usuwac.
 - **VIBE** (`vibe/<uzytkownik>.md`) -- jak z Toba rozmawiac. Aktualizuje sie w tle co kilka wiadomosci; `/vibe` pokazuje, `/vibe reset` czysci.
 - **Cele, rutyny** (`targets.json`, `routines.json`) i audit log.
 

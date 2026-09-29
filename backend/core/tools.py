@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -166,6 +166,14 @@ TOOLS: list[dict] = [
             "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},
         },
         ["operation"],
+    ),
+    _tool(
+        "security_audit",
+        "Audyt bezpieczenstwa hosta z ocena 0-100: logowanie SSH haslem/rootem, zapora, bazy danych i API Dockera "
+        "wystawione publicznie, kontenery uprzywilejowane i z docker.sock, konta z uid 0 i bez hasla, "
+        "automatyczne aktualizacje, fail2ban, pliki .env czytelne dla wszystkich, certyfikaty. Kazde znalezisko "
+        "ma poprawke z dokladna komenda. Same odczyty. Uzyj, gdy uzytkownik pyta o bezpieczenstwo serwera.",
+        {},
     ),
     _tool(
         "journal",

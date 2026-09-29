@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 ## Model
 

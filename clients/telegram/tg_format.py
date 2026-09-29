@@ -173,6 +173,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
     ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
+    ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
@@ -336,3 +337,26 @@ def format_pre(title: str, text: str, limit: int = 3500) -> str:
     if len(body) > limit:
         body = body[:limit] + "\n[...]"
     return f"<b>{html.escape(title)}</b>\n<pre>{html.escape(body)}</pre>"
+
+
+AUDIT_SEVERITY = {"high": "WYSOKIE", "medium": "SREDNIE", "low": "NISKIE"}
+
+
+def format_audit(data: dict) -> str:
+    """Audyt bezpieczenstwa (/audyt) jako HTML Telegrama."""
+    lines = [f"<b>Bezpieczenstwo: {int(data.get('score', 0))}/100 ({html.escape(str(data.get('grade', '?')))})</b>"]
+    for index, finding in enumerate(data.get("findings") or [], start=1):
+        label = AUDIT_SEVERITY.get(finding.get("severity"), "")
+        lines.append(f"\n<b>{index}. [{label}]</b> {html.escape(str(finding.get('title', '')))}")
+        if finding.get("detail"):
+            lines.append(f"<i>{html.escape(str(finding['detail']))}</i>")
+        if finding.get("fix"):
+            lines.append("Poprawka: " + html.escape(str(finding["fix"])))
+        if finding.get("command"):
+            where = " (na hoscie)" if finding.get("host_only") else ""
+            lines.append(f"<code>{html.escape(str(finding['command']))}</code>{where}")
+    if data.get("passed"):
+        lines.append("\n<b>W porzadku:</b> " + html.escape("; ".join(data["passed"])))
+    if data.get("findings"):
+        lines.append("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.")
+    return "\n".join(lines)

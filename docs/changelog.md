@@ -1,5 +1,35 @@
 # Historia zmian -- Pipe
 
+## v0.12.0 (2026-09-29)
+
+Pipe pilnuje bezpieczenstwa serwera, wita sie po instalacji i przychodzi z gotowymi przepisami.
+Aktualizacja bez recznych krokow -- skille wbudowane instaluja sie same przy starcie.
+
+### Audyt bezpieczenstwa
+
+- `/audyt` -- ocena 0-100 bez LLM: logowanie SSH haslem i rootem, zapora, bazy danych i API Dockera
+  wystawione na swiat (z poprawka w compose, bo Docker omija ufw), kontenery `privileged` i z `docker.sock`,
+  konta z uid 0 i bez hasla, automatyczne aktualizacje, fail2ban, pliki `.env` czytelne dla wszystkich,
+  synchronizacja czasu, swap, certyfikaty
+- Kazdy punkt ma gotowa komende; *"napraw 1"* przechodzi przez potwierdzenie z bezpiecznikiem. Wylaczenie hasel
+  SSH trafia do `sshd_config.d/00-pipe-*.conf` i nie jest proponowane bez klucza w `authorized_keys`
+- Nowe narzedzie agenta `security_audit`
+
+### Straznik i logowania SSH
+
+- Co 2 minuty: nowe konta (uid 0 = krytyczny), nowe klucze SSH, nowe programy SUID, zmiany sudoers, sshd, PAM
+  i `ld.so.preload` -- alert, chyba ze zmiane zrobil Pipe (dziennik)
+- Log SSH: seria nieudanych logowan (`WATCH_SSH_FAILURES`), udane logowanie haslem z adresu, ktory zgadywal
+  hasla, logowanie z nowego adresu (`WATCH_SSH_LOGINS`)
+- Migawki zapisuja programy SUID/SGID
+
+### Pierwsze 5 minut i skille
+
+- Powitanie po instalacji na Telegramie (i w CLI przy pierwszym polaczeniu): mapa, ocena bezpieczenstwa,
+  trzy najwazniejsze poprawki i to, czego Pipe pilnuje
+- Wbudowane skille: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `aktualizuj-kontener`,
+  `utwardz-ssh`, `wolne-miejsce` -- edytowalne; aktualizacja nie nadpisuje zmian uzytkownika
+
 ## v0.11.0 (2026-09-29)
 
 Zmiany z bezpiecznikiem: kazda zatwierdzona operacja ma kopie, sprawdzenie przed, weryfikacje po i da sie ja
