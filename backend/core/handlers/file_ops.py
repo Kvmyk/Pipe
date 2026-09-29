@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, executor, runtime
+from backend.core import audit, executor, runtime, safety
 from backend.core.events import Event
 from backend.core.handlers.common import reply
 from backend.core.memory import REDACTION_MARK
@@ -136,6 +136,7 @@ async def handle_write_file(
         return
 
     # Zapis pliku zawsze wymaga potwierdzenia — pokazujemy uzytkownikowi, CO sie zmieni
+    plan = await safety.plan_for_write(runtime.to_host(local))
     session.pending_confirmation = ConfirmationRequest(
         tool_call_id=tool_call.id,
         tool_name="write_file",
@@ -143,6 +144,7 @@ async def handle_write_file(
         classification="confirm",
         file_path=local,
         file_content=content,
+        plan=plan,
     )
     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
     message = [f"[POTWIERDZ] Zapis pliku {as_code(host)} ({len(content)} znakow, {lines} linii)"]
@@ -150,6 +152,9 @@ async def handle_write_file(
     if warning:
         message.append(f"UWAGA: {warning}")
     message.append(preview_change(local, content))
+    described = plan.describe()
+    if described:
+        message.append(described)
     yield "\n".join(message)
 
 

@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -244,3 +244,39 @@ Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `ba
   osobno `WORKER_PRICE_IN/OUT` dla `WORKER_MODEL`.
 - `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT` -- po przekroczeniu agent odpowiada komunikatem o limicie do polnocy
   i nie wysyla zapytan do providera. Czuwanie, raport i komendy bez LLM (`/mapa`, `/zmiany`, `/wykres`) dzialaja dalej.
+
+---
+
+## Zmiany z bezpiecznikiem i `/cofnij`
+
+Kazda operacja, ktora zatwierdzasz, dostaje **plan** -- widoczny w potwierdzeniu, zanim nacisniesz TAK:
+
+```
+WYMAGA POTWIERDZENIA: `sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx`
+Bezpiecznik:
+- kopia przed zmiana: /etc/nginx/sites-enabled/shop
+- sprawdzenie przed (niepowodzenie = nie wykonam): nginx -t
+- weryfikacja po: nginx -t; usluga nginx aktywna; strony, ktore dzialaja teraz, maja dzialac po zmianie
+- jesli weryfikacja nie przejdzie: przywroce pliki z kopii automatycznie i przeladuje ponownie
+- cofniecie pozniej: /cofnij
+```
+
+| Krok | Co Pipe robi |
+|------|--------------|
+| Kopia | pliki zmieniane przez `sed -i`, `tee`, `>`/`>>`, `cp`, `mv`, `rm`, `chmod`/`chown`, `write_file`; HEAD repozytorium przy `git pull/checkout/reset/commit`; crontab; pliki pamieci Pipe przy zmianie celow, rutyn, skilli i SERVER.md |
+| Przed | walidacja konfiguracji przed (prze)ladowaniem: `nginx -t`, `sshd -t` (chroni przed odcieciem SSH), `caddy validate`, `apachectl configtest`, `haproxy -c`, `postfix check`, `docker compose config -q`; w kontenerze -- `docker exec <nginx> nginx -t`. **Nieudane sprawdzenie = operacja nie jest wykonywana** |
+| Po | usluga `active`, kontener `running` i nie `unhealthy`, wszystkie kontenery projektu compose wstaly, zmieniony plik przechodzi walidacje (nginx, sshd, sudoers `visudo -c`, fstab, compose, JSON), **strony, ktore odpowiadaly przed zmiana, odpowiadaja po niej** |
+| Przywrocenie | nieudana weryfikacja zmiany plikow konfiguracji -> kopia wraca automatycznie (`SAFE_AUTO_ROLLBACK=1`), a usluga jest przeladowana ponownie. Inne operacje -- wynik trafia do agenta, a Ty mozesz `/cofnij` |
+
+Plan powstaje z analizy komendy w kodzie (bez LLM); wykonywany jest dokladnie plan, ktory widziales.
+Program, ktorego nie ma w miejscu dzialania Pipe (np. `sshd` w kontenerze), jest pomijany i zglaszany jako
+*nie sprawdzono* -- wtedy plan mowi to wprost.
+
+**Dziennik i cofanie.** `/dziennik` pokazuje ostatnie zmiany (`backend/data/journal/`, 50 wpisow, 14 dni).
+`/cofnij` (albo *"cofnij ostatnia zmiane"*) pokazuje roznice plikow i komendy odwrotne -- `docker stop` ->
+`docker start`, `systemctl disable` -> `enable`, `git pull` -> `git reset --keep <poprzedni HEAD>`,
+`docker compose down` -> `up -d` -- i czeka na TAK. `/cofnij` dziala bez LLM, wiec pomaga tez wtedy, gdy
+provider nie odpowiada albo skonczyl sie dzienny limit. Cofniecie tez trafia do dziennika -- mozna je cofnac.
+
+Czego Pipe nie cofa automatycznie (i mowi to w planie): instalacji pakietow, zmian w klastrze Kubernetes,
+usunietych kontenerow i wolumenow, `git clean`, katalogow usuwanych `rm -r`, poprzednich wersji obrazow.

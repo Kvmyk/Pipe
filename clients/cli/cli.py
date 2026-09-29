@@ -353,7 +353,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.10.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.11.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
             "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -437,6 +437,7 @@ HELP_TEXT = """**Komendy**
 - `/rutyny` — zadania wykonywane według harmonogramu
 - `/cele` — zdalne serwery, kontenery i klastry
 - `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
+- `/dziennik` — zatwierdzone zmiany z kopiami; `/cofnij [id]` — cofnij ostatnią (albo wybraną) zmianę
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
 - `/pomoc` — ta lista
@@ -523,6 +524,28 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             lines.append(f"\n**{section.get('title', '')}**\n")
             lines += [f"- {line}" for line in section.get("lines", [])]
         console.print(Markdown("\n".join(lines)))
+        return True
+
+    if name == "dziennik":
+        data = _response_data(await client.send_command("journal"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        console.print("[dim]/cofnij <id> — cofnij wybraną zmianę[/dim]")
+        return True
+
+    if name == "cofnij":
+        data = _response_data(await client.send_command("undo", id=args))
+        console.print(Markdown(data.get("preview", "")))
+        if not data.get("undoable"):
+            return True
+        try:
+            confirmed = Confirm.ask("[yellow]Cofnąć tę zmianę?[/yellow]", default=False)
+        except (KeyboardInterrupt, EOFError):
+            confirmed = False
+        if confirmed:
+            result = _response_data(await client.send_command("undo", id=data["id"], execute=True))
+            console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
+        else:
+            console.print("[dim]✖ Anulowano.[/dim]")
         return True
 
     if name == "koszt":

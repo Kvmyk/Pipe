@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -13,7 +13,7 @@ Funkcje:
   - Czuwanie: alerty i raporty rutyn przychodza same, z przyciskiem "Zbadaj"
   - InlineKeyboard dla potwierdzen (TAK / NIE)
   - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
-    /cele /vibe /koszt /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
+    /cele /vibe /koszt /dziennik /cofnij /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
   - Poranny raport przychodzi sam (DIGEST_TIME w backendzie) razem z wykresem obciazenia
   - Menu '/' ustawiane per czat dozwolonego uzytkownika (opisy skilli nie wyciekaja do obcych)
   - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
@@ -420,6 +420,57 @@ async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _command_with_image(update, context, "usage", "", lambda d: format_pre("Koszt LLM", d.get("text", "")))
 
 
+async def cmd_dziennik(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/dziennik -- zatwierdzone zmiany z kopiami (bez LLM)."""
+    await _command_with_image(update, context, "journal", "",
+                              lambda d: format_pre("Dziennik zmian", d.get("text", "")) + "\n<i>/cofnij &lt;id&gt; — cofnij wybrana</i>")
+
+
+def _undo_keyboard(entry_id: str, user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Cofnij", callback_data=f"undo:yes:{entry_id}:{user_id}"),
+        InlineKeyboardButton("Anuluj", callback_data=f"undo:no:{entry_id}:{user_id}"),
+    ]])
+
+
+async def cmd_cofnij(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/cofnij [id] -- podglad cofniecia i przyciski (bez LLM — dziala tez przy awarii providera)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    entry_id = " ".join(context.args or []).strip()
+
+    async def go() -> None:
+        data = response_data([f async for f in get_client(user_id).command("undo", id=entry_id)])
+        await _send_html(context.bot, update.effective_chat.id, to_telegram_html(data.get("preview", "")),
+                         _undo_keyboard(data["id"], user_id) if data.get("undoable") else None)
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    if len(parts) != 4 or not user or not _is_allowed(user.id) or str(user.id) != parts[3]:
+        await query.answer("Nie mozesz cofac cudzych operacji.", show_alert=True)
+        return
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if parts[1] != "yes":
+        await query.message.reply_text("Anulowano — nic nie zmienilem.")
+        return
+
+    async def go() -> None:
+        result = response_data([f async for f in get_client(user.id).command("undo", id=parts[2], execute=True)])
+        await _send_html(context.bot, query.message.chat_id, format_pre("Cofniecie", result.get("text", "")))
+
+    await _backend_call(update, context, go())
+
+
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/historia -- ostatnie wpisy z audit logu (bez LLM)."""
     user_id = await _guard(update)
@@ -511,6 +562,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     user = update.effective_user
     data = query.data or ""
+
+    if data.startswith("undo:"):
+        await _handle_undo_callback(update, context, data)
+        return
 
     if data.startswith("investigate:"):
         if not user or not _is_allowed(user.id):
@@ -749,6 +804,8 @@ def main() -> None:
     app.add_handler(CommandHandler("wykres", cmd_wykres))
     app.add_handler(CommandHandler("zdrowie", cmd_zdrowie))
     app.add_handler(CommandHandler("koszt", cmd_koszt))
+    app.add_handler(CommandHandler("cofnij", cmd_cofnij))
+    app.add_handler(CommandHandler("dziennik", cmd_dziennik))
     app.add_handler(CommandHandler("mapa", cmd_mapa))
     app.add_handler(CommandHandler("historia", cmd_historia))
     app.add_handler(CommandHandler("server", cmd_server))

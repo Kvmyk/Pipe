@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -164,6 +164,18 @@ TOOLS: list[dict] = [
             "since": {"type": "string",
                       "description": "Okres wstecz: '24h' (domyslnie), '3h', '7d'. Dla changes i chart."},
             "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "journal",
+        "Dziennik zatwierdzonych zmian: przed kazda zmiana Pipe robi kopie plikow, stanu gita i crontaba oraz "
+        "zapisuje komendy odwrotne (docker start/stop, systemctl enable/disable). list: ostatnie wpisy. "
+        "undo: cofniecie wpisu (domyslnie ostatniego) — zawsze z potwierdzeniem. Uzyj, gdy uzytkownik mowi "
+        "'cofnij', 'przywroc jak bylo', albo gdy zmiana okazala sie bledna.",
+        {
+            "operation": {"type": "string", "enum": ["list", "undo"]},
+            "id": {"type": "string", "description": "Dla undo: identyfikator wpisu (np. 3f2a9c1d); pusty = ostatni."},
         },
         ["operation"],
     ),

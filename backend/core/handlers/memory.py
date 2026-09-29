@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, memory
+from backend.core import audit, memory, safety
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
 
@@ -76,6 +76,7 @@ async def handle_server_md(
             session.pending_confirmation = ConfirmationRequest(
                 tool_call_id=tool_call.id, tool_name="server_md",
                 command="pelne nadpisanie SERVER.md", classification="confirm", action=do_write,
+                plan=safety.Plan(local_files=[(str(memory.server_md_path()), "pamiec Pipe: SERVER.md")]),
             )
             yield f"[POTWIERDZ] Nadpisanie calego SERVER.md wymaga potwierdzenia.\n{preview}"
             return
@@ -125,6 +126,8 @@ async def handle_skill_manage(
             session.pending_confirmation = ConfirmationRequest(
                 tool_call_id=tool_call.id, tool_name="skill_manage",
                 command=f"zapis skilla {skill_name}", classification="confirm", action=do_save,
+                plan=safety.Plan(local_files=[(str(memory.skills_dir() / skill_name / "SKILL.md"),
+                                               f"pamiec Pipe: skill {skill_name}")]),
             )
             yield f"[POTWIERDZ] {verb} skilla {as_code(skill_name)} wymaga potwierdzenia:\n{preview}"
             return

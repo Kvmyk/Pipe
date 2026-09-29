@@ -181,6 +181,8 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
     ("cele", "Zdalne serwery, kontenery i klastry"),
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
+    ("cofnij", "Cofnij ostatnia zmiane (/cofnij <id> - wybrana)"),
+    ("dziennik", "Dziennik zatwierdzonych zmian"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("pomoc", "Lista komend"),

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, executor, runtime
+from backend.core import audit, executor, runtime, safety
 from backend.core.events import Event
 from backend.core.security import Classification, classify_command
 from backend.core.session import ConfirmationRequest, Session
@@ -66,13 +66,19 @@ async def run_classified(
         return
 
     if classification == "confirm":
+        # Plan bezpiecznika tylko dla komend wykonywanych lokalnie — na zdalnym celu
+        # (ssh/kubectl exec) pliki i uslugi sa po drugiej stronie.
+        plan = await safety.plan_for_command(command, session.cwd) if inner is None or inner == command \
+            else safety.Plan(notes=["zdalny cel — bez kopii i weryfikacji po stronie Pipe"])
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name=tool_name,
             command=command,
             classification="confirm",
+            plan=plan,
         )
-        yield f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(command)}"
+        described = plan.describe()
+        yield f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(command)}" + (f"\n{described}" if described else "")
         return
 
     stdout, stderr, exit_code = await executor.execute(command, cwd=cwd if cwd is not None else local_cwd(session))

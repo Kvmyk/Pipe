@@ -23,6 +23,9 @@ class ConfirmationRequest:
     # Operacja, ktora nie jest komenda shell (np. dodanie celu albo rutyny) —
     # wykonywana po TAK zamiast `command`, ktore wtedy jest tylko opisem.
     action: Callable[[], Awaitable[str]] | None = None
+    # Plan bezpiecznika (core/safety.py) pokazany w potwierdzeniu: kopie, sprawdzenia,
+    # weryfikacja. Wykonywany jest dokladnie ten plan, ktory widzial uzytkownik.
+    plan: Any = None
 
 
 @dataclass

@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -132,7 +132,14 @@ class VPSAgent:
         session.pending_confirmation = None
 
         if confirmed:
-            await self._execute_tool_confirmed(session, pending)
+            try:
+                async for event in self._execute_tool_confirmed(session, pending):
+                    yield event
+            finally:
+                # Klient rozlaczyl sie w trakcie weryfikacji — wywolanie i tak musi dostac odpowiedz.
+                if not _answered(session, pending.tool_call_id, 0):
+                    session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
+                                             "content": INTERRUPTED_TOOL})
         else:
             session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
                                      "content": "Uzytkownik odmowil wykonania tej operacji."})
@@ -295,48 +302,76 @@ class VPSAgent:
                                      "content": "Narzedzie nie zwrocilo wyniku."})
         _sanitize_new_results(session, before)
 
-    async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> str:
+    async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> AsyncGenerator[Event, None]:
         """
-        Wykonuje zatwierdzona operacje i dopisuje wynik do historii.
+        Wykonuje zatwierdzona operacje i dopisuje wynik do historii. Yielduje postep bezpiecznika.
 
         Handler nie jest wywolywany ponownie: `action` (operacje na rejestrach Pipe)
         jest wywolywana wprost, write_file odtwarza sciezke i tresc, a kazde inne
         narzedzie przechowuje w ConfirmationRequest gotowa komende shell.
+        Zmiany (wszystko poza akcja bez planu, np. odczytem pliku z sekretami) ida
+        przez bezpiecznik (core/safety.py): kopia do dziennika, sprawdzenie przed,
+        weryfikacja po, automatyczne przywrocenie plikow — wedlug planu z potwierdzenia.
         """
         before = len(session.messages)
+        from backend.core import safety
         from backend.core.handlers.common import format_result
 
-        if pending.action is not None:
+        async def run_action() -> tuple[str, int]:
             try:
                 result = await pending.action()
                 await audit.log_confirmed(session.interface, pending.command, 0)
+                return result, 0
             except Exception as exc:
                 await audit.log_confirmed(session.interface, pending.command, 1)
-                result = f"Blad: {exc}"
-        elif pending.tool_name == "write_file":
+                return f"Blad: {exc}", 1
+
+        async def run_write() -> tuple[str, int]:
             path = pending.file_path or ""
             try:
                 await executor.write_file(path, pending.file_content or "")
                 await audit.log_file_write(session.interface, path, 0)
-                result = f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie."
+                return f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie.", 0
             except PermissionError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                result = f"Blad zapisu (brak uprawnien): {exc}"
+                return f"Blad zapisu (brak uprawnien): {exc}", 1
             except OSError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                result = f"Blad zapisu pliku: {exc}"
-        else:
+                return f"Blad zapisu pliku: {exc}", 1
+
+        async def run_command() -> tuple[str, int]:
             stdout, stderr, exit_code = await executor.execute(
                 pending.command,
                 cwd=runtime.to_local(session.cwd),
                 timeout=settings.CONFIRMED_COMMAND_TIMEOUT,
             )
             await audit.log_confirmed(session.interface, pending.command, exit_code)
-            result = format_result(stdout, stderr, exit_code)
+            return format_result(stdout, stderr, exit_code), exit_code
+
+        if pending.action is not None and pending.plan is None:
+            result, _ = await run_action()
+        else:
+            if pending.action is not None:
+                operation, plan = run_action, pending.plan
+            elif pending.tool_name == "write_file":
+                operation = run_write
+                plan = pending.plan or safety.plan_write(runtime.to_host(pending.file_path or ""))
+            else:
+                operation, plan = run_command, pending.plan or safety.Plan()
+            result = ""
+            from backend.core import checks
+            async for item in safety.guarded(
+                plan, operation, interface=session.interface, tool=pending.tool_name, description=pending.command,
+                cwd=runtime.to_local(session.cwd), auto_restore=settings.SAFE_AUTO_ROLLBACK,
+                sites_enabled=settings.WATCH_SITES, site_ignore=checks.parse_ignore(settings.WATCH_IGNORE),
+            ):
+                if isinstance(item, safety.Outcome):
+                    result = item.text
+                else:
+                    yield item
 
         session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id, "content": result})
         _sanitize_new_results(session, before)
-        return result
 
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
