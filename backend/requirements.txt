@@ -1,4 +1,6 @@
 openai>=1.30.0
+# Klient MCP po HTTP (i tak instalowany z openai — tu jawnie, bo uzywamy go bezposrednio)
+httpx>=0.27
 python-dotenv>=1.0.0
 # Diagramy: prawdziwy Mermaid -> PNG/ASCII bez przegladarki i Node.js (QuickJS + resvg)
 mermaidx>=0.9.5

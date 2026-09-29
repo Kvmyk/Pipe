@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 ## Model
 
@@ -122,6 +122,22 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
   Pipe) zwracaja modelowi odmowe -- pytanie o TAK nie powstaje. Egzekwuje to backend, nie klient.
 - Sesja jest przypieta do tozsamosci tokenu, ktora ja zalozyla: inny token nie odczyta jej historii ani nie
   zatwierdzi cudzej operacji, nawet znajac `session_id`.
+
+## MCP
+
+**Pipe jako serwer MCP.** Zewnetrzny agent dostaje narzedzia Pipe zamiast powloki: kazda komenda przechodzi przez
+klasyfikator, odczyt wykonuje sie od razu, zmiana czeka na zgode administratora (Telegram/CLI) i po niej idzie przez
+bezpiecznik i dziennik. Zakazane komendy sa odrzucane, pliki z sekretami nie sa wydawane, wyniki sa redagowane.
+Token viewer nie tworzy zgod. Zgode moze sprawdzic tylko agent, ktory ja utworzyl; zgody zyja w pamieci i wygasaja
+po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: tylko localhost, token Pipe
+(`Authorization: Bearer`), walidacja `Origin` (403) i naglowkow 2026-07-28 (`-32020`).
+
+**Pipe jako klient MCP.** Serwer MCP to cudzy kod: dodanie serwera zawsze wymaga potwierdzenia (widac program albo
+URL; wartosci `env`/`headers` sa ukryte), `mcp.json` ma prawa 0600, a podproces stdio dostaje minimalne srodowisko
+(PATH, HOME, LANG... i to, co podano) -- nigdy klucza LLM ani tokenow Pipe. Kazde wywolanie narzedzia wymaga TAK
+z widocznymi argumentami, chyba ze uzytkownik oznaczyl je jako bezpieczne (`autoApprove`, `trustReadOnly`) --
+adnotacje serwera same z siebie nie wystarczaja. Wyniki narzedzi MCP sa danymi dla modelu, przechodza redakcje
+sekretow, a viewer nie zatwierdzi zadnego wywolania.
 
 ## Webhooki
 

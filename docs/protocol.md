@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 ## Opis
 
@@ -68,6 +68,10 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
 | `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
 | `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
+| `mcp` | `rpc`: jedna wiadomosc JSON-RPC MCP | `"data": {"rpc": odpowiedz \| null}` -- most MCP (CLI `--mcp`); tozsamosc i rola z tokenu |
+| `mcp_servers` | -- | `"data": {"servers": ["opis serwera MCP", ...]}` |
+| `approvals` | -- | `"data": {"pending": [zdarzenie approval]}` |
+| `approve` | `id`, `decision` (bool) | tylko admin; zatwierdzenie wykonuje operacje przez bezpiecznik, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamiec incydentow (co sie zdarzalo, ustalenia, co pomoglo) |
 | `transcribe` | `audio` (base64, maks. ~2.5 MB), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomosci glosowej (STT) |
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
@@ -138,6 +142,9 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
 
 `{"type": "investigation", "key", "title", "report"}` -- raport workera, ktory sam zbadal alert z webhooka
 (`WEBHOOK_INVESTIGATE=1`). `history` w alercie -- ostatnie wystapienie tego samego problemu (pamiec incydentow).
+
+`{"type": "approval", "id", "command", "target", "requested_by", "reason", "plan", "status"}` -- zewnetrzny agent
+(MCP) czeka na zgode administratora; klient pokazuje przyciski i wysyla `approve`.
 
 `{"type": "welcome", "title", "sections", "score", "grade", "text", "attachment"?}` -- raz po instalacji, gdy
 podlaczy sie pierwszy subskrybent.

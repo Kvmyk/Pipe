@@ -31,6 +31,9 @@ services:
       # Webhooki (alerty z Alertmanagera, Uptime Kuma, GitHuba...) — dziala po ustawieniu WEBHOOK_PORT=7380
       # i WEBHOOK_TOKEN w .env; tylko localhost (odwrotne proxy z TLS, jesli nadawca jest poza serwerem)
       - "127.0.0.1:7380:7380"
+      # MCP (Streamable HTTP) dla agentow na serwerze — dziala po ustawieniu MCP_PORT=7381;
+      # z laptopa wygodniej: most stdio `pipe --mcp --host root@serwer` (bez tego portu)
+      - "127.0.0.1:7381:7381"
     # Wszystkie ustawienia z backend/.env (progi czuwania, raport, ceny, webhooki...) trafiaja do kontenera;
     # ponizsze `environment` nadpisuje to, co zalezy od kontenera (sciezki, adresy nasluchu).
     env_file:
@@ -63,6 +66,7 @@ services:
       - TCP_HOST=0.0.0.0
       - TCP_PORT=7379
       - WEBHOOK_HOST=0.0.0.0
+      - MCP_HOST=0.0.0.0
     network_mode: bridge
 
   telegram:

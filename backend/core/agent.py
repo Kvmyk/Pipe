@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -55,6 +55,7 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "routine_manage": frozenset({"add", "remove", "enable", "disable"}),
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
+    "mcp_manage": frozenset({"add", "remove", "reload"}),
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 ABANDONED_CONFIRMATION = (
@@ -195,7 +196,7 @@ class VPSAgent:
             response = await self.call_llm(
                 system_prompt if system_prompt is not None else session.system_prompt,
                 session.messages,
-                tools=TOOLS if tools is None else tools,
+                tools=tools_for_agent() if tools is None else tools,
                 model=model,
                 who=session.interface,
             )
@@ -303,6 +304,9 @@ class VPSAgent:
             handler = lambda s, tc, a: dispatch(s, tc, a)  # noqa: E731
         else:
             found = getattr(handlers_module, f"handle_{tool_call.function.name}", None)
+            if found is None and tool_call.function.name.startswith("mcp__"):
+                from backend.core.handlers.mcp import handle_mcp_tool
+                found = handle_mcp_tool
             handler = (lambda s, tc, a: found(self, s, tc, a)) if found else None
 
         if handler is None:
@@ -430,6 +434,14 @@ def _record_usage(model: str, response_usage: Any, who: str) -> None:
         usage.record(model, response_usage, usage.who_from_interface(who), prices)
     except OSError as exc:
         print(f"[usage] Nie zapisano zuzycia tokenow: {exc}", flush=True)
+
+
+def tools_for_agent() -> list[dict]:
+    """Narzedzia Pipe + narzedzia polaczonych serwerow MCP (lista zmienia sie po mcp_manage)."""
+    from backend.core.mcp.registry import get_manager
+
+    extra = get_manager().tool_schemas()
+    return TOOLS + extra if extra else TOOLS
 
 
 def viewer_blocked(tool_name: str, args: dict[str, Any]) -> bool:

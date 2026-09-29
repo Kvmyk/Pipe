@@ -130,26 +130,10 @@ async def handle_client(
 
 
 def _authorize(request: dict) -> tuple[str, str] | None:
-    """
-    (tozsamosc, rola) dla tokenu z zadania albo None. Kolejno: AGENT_TOKEN (admin), AGENT_VIEWER_TOKEN
-    (viewer), tokeny z `python3 -m backend.tokens`. Bez zadnego skonfigurowanego tokenu — otwarty dostep
-    (chroni go tunel SSH / uprawnienia socketu), rola admin.
-    """
-    from backend import tokens
+    """(tozsamosc, rola) dla tokenu z zadania albo None — patrz core/auth.py (hmac.compare_digest)."""
+    from backend.core.auth import authorize
 
-    token = str(request.get("token", "") or "")
-    raw = token.encode("utf-8", errors="replace")
-    # compare_digest na bajtach — w stalym czasie i bez wyjatku dla znakow spoza ASCII
-    if settings.AGENT_TOKEN and hmac.compare_digest(raw, settings.AGENT_TOKEN.encode()):
-        return "admin", "admin"
-    if settings.AGENT_VIEWER_TOKEN and hmac.compare_digest(raw, settings.AGENT_VIEWER_TOKEN.encode()):
-        return "viewer", "viewer"
-    found = tokens.match(token)
-    if found:
-        return f"token:{found[0]}", found[1]
-    if not settings.AGENT_TOKEN and not settings.AGENT_VIEWER_TOKEN and not tokens.load():
-        return "open", "admin"
-    return None
+    return authorize(str(request.get("token", "") or ""))
 
 
 def event_frame(event) -> dict:
@@ -295,6 +279,19 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             if attachment:
                 await _send(writer, {"response": "", "status": "ok", "done": False, "attachment": attachment})
             await _send(writer, _data(event))
+        elif command == "mcp":
+            # Most MCP (stdio w CLI): jedna wiadomosc JSON-RPC -> odpowiedz (None dla powiadomien).
+            from backend.core.mcp.server import Caller, handle as mcp_handle
+            await _send(writer, _data({"rpc": await mcp_handle(request.get("rpc"), Caller(identity, role))}))
+        elif command == "mcp_servers":
+            from backend.core.mcp.registry import get_manager, load_config
+            lines = get_manager().status() or [f"{n}: (nie polaczony)" for n in load_config()]
+            await _send(writer, _data({"servers": lines}))
+        elif command == "approvals":
+            from backend.core.approvals import get_approvals
+            await _send(writer, _data({"pending": [a.to_event() for a in get_approvals().pending()]}))
+        elif command == "approve":
+            await _approve(writer, request, identity, role)
         elif command == "incidents":
             await _send(writer, _data({"text": incidents.render(),
                                        "incidents": [i.__dict__ for i in incidents.recent(15)]}))
@@ -340,6 +337,24 @@ async def _undo(writer, request: dict, interface: str) -> None:
         await _send(writer, _error("Cofniecie wymaga identyfikatora wpisu z podgladu."))
         return
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
+
+
+async def _approve(writer, request: dict, identity: str, role: str) -> None:
+    """Decyzja administratora o zgodzie dla zewnetrznego agenta (MCP)."""
+    from backend.core.approvals import ApprovalError, get_approvals
+
+    if role != "admin":
+        await _send(writer, _error("Zgody moze zatwierdzac tylko administrator."))
+        return
+    try:
+        approval = await get_approvals().decide(
+            str(request.get("id", "")), bool(request.get("decision")), identity,
+            cwd=runtime.to_local("/"), auto_restore=settings.SAFE_AUTO_ROLLBACK,
+            sites_enabled=settings.WATCH_SITES)
+    except ApprovalError as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    await _send(writer, _data({"id": approval.id, "status": approval.status, "text": approval.describe()}))
 
 
 async def _transcribe(writer, request: dict) -> None:
@@ -500,6 +515,15 @@ async def main() -> None:
     asyncio.create_task(_report_model_status())
     # Czuwanie i rutyny — proaktywne alerty dla subskrybentow (bot Telegram)
     get_watcher(get_agent()).start()
+
+    from backend.core.mcp.registry import get_manager, load_config
+    from backend.core.mcp.server import start_http as start_mcp_http
+    if load_config():
+        asyncio.create_task(get_manager().reload())     # serwery MCP lacza sie w tle
+    mcp_server = await start_mcp_http(settings.MCP_HOST, settings.MCP_PORT,
+                                      {o.strip() for o in settings.MCP_ALLOWED_ORIGINS.split(",") if o.strip()})
+    if mcp_server is not None:
+        print(f"[VPS Agent] MCP (HTTP)  : http://{settings.MCP_HOST}:{settings.MCP_PORT}/mcp", flush=True)
 
     from backend.core import webhooks
     hook_server = await webhooks.start(get_watcher(), settings.WEBHOOK_HOST, settings.WEBHOOK_PORT,
