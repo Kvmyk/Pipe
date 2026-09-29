@@ -18,6 +18,7 @@ from backend.core import checks, diagram, metrics, snapshots
 from backend.core.events import Attachment, Event
 from backend.core.handlers.common import reply
 from backend.core.session import Session
+from backend.core.i18n import tr
 
 
 async def chart_attachment(metric: str, hours: float) -> tuple[Attachment | None, str]:
@@ -29,12 +30,14 @@ async def chart_attachment(metric: str, hours: float) -> tuple[Attachment | None
     try:
         rendered = await diagram.render(source, ascii_art=False)
     except diagram.DiagramError as exc:
-        return None, f"{text}\n(Nie udalo sie narysowac wykresu: {exc})"
+        return None, f"{text}\n" + tr(f"(Nie udalo sie narysowac wykresu: {exc})", f"(Could not draw the chart: {exc})")
     if rendered.png is None:
-        return None, text + "\n(Renderer wykresow niedostepny — zainstaluj mermaidx.)"
-    title = metrics.TITLES[metric]
-    return Attachment(name=f"wykres-{metric}.png", mime="image/png", data=rendered.png,
-                      caption=f"{title} — {text.split('. Prog')[0]}"[:1000], source=rendered.source), text
+        return None, text + tr("\n(Renderer wykresow niedostepny — zainstaluj mermaidx.)",
+                               "\n(Chart renderer unavailable — install mermaidx.)")
+    title = metrics.title(metric)
+    return Attachment(name=f"{tr('wykres', 'chart')}-{metric}.png", mime="image/png", data=rendered.png,
+                      caption=f"{title} — {text.split('. Prog')[0].split('. Alert threshold')[0]}"[:1000],
+                      source=rendered.source), text
 
 
 async def changes_text(hours: float) -> str:
@@ -63,12 +66,13 @@ async def handle_server_history(
     if operation == "chart":
         metric = metrics.normalize_metric(str(args.get("metric", "load") or "load"))
         if metric is None:
-            reply(session, tool_call, "Blad: metric to load, memory albo disk.")
+            reply(session, tool_call, tr("Blad: metric to load, memory albo disk.", "Error: metric is load, memory or disk."))
             return
         attachment, text = await chart_attachment(metric, hours)
         if attachment is not None:
             yield attachment
-            reply(session, tool_call, f"Wykres wyslany uzytkownikowi jako obraz. Liczby z wykresu: {text}")
+            reply(session, tool_call, tr(f"Wykres wyslany uzytkownikowi jako obraz. Liczby z wykresu: {text}",
+                                         f"The chart was sent to the user as an image. Numbers from the chart: {text}"))
         else:
             reply(session, tool_call, text)
         return
@@ -82,4 +86,5 @@ async def handle_server_history(
         reply(session, tool_call, await checks_text())
         return
 
-    reply(session, tool_call, f"Nieznana operacja {operation!r}. Dostepne: changes, chart, checks, incidents.")
+    reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: changes, chart, checks, incidents.",
+                                 f"Unknown operation {operation!r}. Available: changes, chart, checks, incidents."))

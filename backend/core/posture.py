@@ -425,7 +425,7 @@ def cert_findings(audit: Audit, report: Any, cert_days: int) -> None:
     if report is None:
         return
     for cert in report.certs:
-        if cert.error and "odrzucony" in cert.error:
+        if cert.rejected:
             audit.findings.append(Finding(f"cert-{cert.domain}", "medium", f"Certyfikat {cert.domain} jest nieprawidlowy",
                                           cert.error, "odnow certyfikat (certbot renew / restart proxy)"))
         elif cert.days_left is not None and cert.days_left <= cert_days:

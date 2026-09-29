@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 
 from backend.core import runtime
+from backend.core.i18n import tr
 
 # Systemy plikow, ktore opisuja prawdziwe dyski (bez tmpfs, overlay, proc...).
 REAL_FILESYSTEMS = frozenset({
@@ -98,7 +99,7 @@ def format_duration(seconds: float) -> str:
     hours, rest = divmod(rest, 3600)
     minutes = rest // 60
     if days:
-        return f"{days} dni, {hours}h {minutes}m"
+        return tr(f"{days} dni, {hours}h {minutes}m", f"{days} days, {hours}h {minutes}m")
     if hours:
         return f"{hours}h {minutes}m"
     return f"{minutes}m"

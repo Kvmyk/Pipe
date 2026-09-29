@@ -32,14 +32,7 @@ import sys
 from pathlib import Path
 
 from backend.config import settings
-from backend.config.prompts import (
-    INVESTIGATE_ALERT_MESSAGE,
-    RUN_SKILL_EXTRA,
-    RUN_SKILL_MESSAGE,
-    SCAN_SERVER_CREATE,
-    SCAN_SERVER_UPDATE,
-    STATUS_MESSAGE,
-)
+from backend.core.i18n import prompt
 from backend.core import audit, diagram, incidents, journal, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
 from backend.core.events import Attachment, Progress
@@ -200,18 +193,18 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command == "server_md":
             await _send(writer, _data({"content": memory.read_server_md()}))
         elif command == "scan_server":
-            message = SCAN_SERVER_UPDATE if memory.read_server_md().strip() else SCAN_SERVER_CREATE
+            message = prompt("SCAN_SERVER_UPDATE") if memory.read_server_md().strip() else prompt("SCAN_SERVER_CREATE")
             await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "status":
-            await _stream_chat(writer, agent, session_id, STATUS_MESSAGE, interface, generated=True)
+            await _stream_chat(writer, agent, session_id, prompt("STATUS_MESSAGE"), interface, generated=True)
         elif command == "run_skill":
             entry = memory.find_skill_command(str(request.get("name", "")))
             if entry is None:
                 await _send(writer, _error(f"Nie ma skilla {request.get('name', '')!r}. Lista: /skille"))
                 return
-            message = RUN_SKILL_MESSAGE.format(name=entry["name"], command=entry["command"] or entry["name"])
+            message = prompt("RUN_SKILL_MESSAGE").format(name=entry["name"], command=entry["command"] or entry["name"])
             if args:
-                message += RUN_SKILL_EXTRA.format(args=args)
+                message += prompt("RUN_SKILL_EXTRA").format(args=args)
             await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "history":
             await _send(writer, _data({"entries": await audit.get_recent(15)}))
@@ -242,7 +235,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             if alert is None:
                 await _send(writer, _error("Nie znam tego alertu (serwer mogl zostac zrestartowany)."))
                 return
-            message = INVESTIGATE_ALERT_MESSAGE.format(title=alert["title"], detail=alert["detail"])
+            message = prompt("INVESTIGATE_ALERT_MESSAGE").format(title=alert["title"], detail=alert["detail"])
             message += incidents.context_for(alert.get("key", ""))
             message += await _recent_changes_context()
             texts = await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)

@@ -440,8 +440,22 @@ def tools_for_agent() -> list[dict]:
     """Narzedzia Pipe + narzedzia polaczonych serwerow MCP (lista zmienia sie po mcp_manage)."""
     from backend.core.mcp.registry import get_manager
 
+    from backend.core.i18n import is_en
+
+    base = _english_tools() if is_en() else TOOLS
     extra = get_manager().tool_schemas()
-    return TOOLS + extra if extra else TOOLS
+    return base + extra if extra else base
+
+
+_ENGLISH_TOOLS: list[dict] | None = None
+
+
+def _english_tools() -> list[dict]:
+    global _ENGLISH_TOOLS
+    if _ENGLISH_TOOLS is None:
+        from backend.core.tools_en import english_tools
+        _ENGLISH_TOOLS = english_tools(TOOLS)
+    return _ENGLISH_TOOLS
 
 
 def viewer_blocked(tool_name: str, args: dict[str, Any]) -> bool:

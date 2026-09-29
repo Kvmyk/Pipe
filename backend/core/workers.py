@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 from backend.config import settings
-from backend.config.prompts import WORKER_SYSTEM_PROMPT
+from backend.core.i18n import prompt
 from backend.core import audit, executor, runtime, targets
 from backend.core.events import Event, Progress
 from backend.core.handlers.common import format_result, reply
@@ -148,12 +148,12 @@ async def run_worker(
         return
         yield  # noqa: unreachable — async generator
 
-    prompt = WORKER_SYSTEM_PROMPT.format(target=f"{target.describe()}\n{target.command_hint()}")
+    system = prompt("WORKER_SYSTEM_PROMPT").format(target=f"{target.describe()}\n{target.command_hint()}")
     await notify(f"{name}: start ({target.name})")
     try:
         async for event in agent.run_loop(
             session,
-            system_prompt=prompt,
+            system_prompt=system,
             tools=WORKER_TOOLS,
             model=settings.WORKER_MODEL or None,
             max_iterations=settings.WORKER_MAX_ITERATIONS,

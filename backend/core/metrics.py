@@ -19,12 +19,14 @@ from pathlib import Path
 from typing import Any
 
 from backend.core import hostinfo, memory
+from backend.core.i18n import tr
 
 # Najwyzej tyle punktow na wykresie — wiecej i tak zlewa sie w linie.
 MAX_POINTS = 96
 MAX_DISK_SERIES = 3
 PALETTE = ("#2563eb", "#16a34a", "#9333ea", "#dc2626")
 PALETTE_NAMES = ("niebieska", "zielona", "fioletowa", "czerwona")
+PALETTE_NAMES_EN = ("blue", "green", "purple", "red")
 METRICS = ("load", "memory", "disk")
 _ALIASES = {"ram": "memory", "pamiec": "memory", "mem": "memory", "dysk": "disk", "dyski": "disk",
             "cpu": "load", "obciazenie": "load"}
@@ -153,7 +155,7 @@ def series(metric: str, points: list[dict[str, Any]], start: float, end: float) 
             for mount in (point.get("disks") or {}):
                 mounts[mount] = mounts.get(mount, 0) + 1
         chosen = sorted(mounts, key=lambda m: (-mounts[m], len(m)))[:MAX_DISK_SERIES]
-        getters = [(f"dysk {m}", (lambda p, m=m: (p.get("disks") or {}).get(m))) for m in sorted(chosen, key=len)]
+        getters = [(tr(f"dysk {m}", f"disk {m}"), (lambda p, m=m: (p.get("disks") or {}).get(m))) for m in sorted(chosen, key=len)]
     result = []
     for name, getter in getters:
         filled = _fill(_bucket(points, start, end, getter))
@@ -174,6 +176,11 @@ def threshold(metric: str, points: list[dict[str, Any]], *, disk_pct: int, mem_p
 # ─── Wykres ─────────────────────────────────────────────────────────────────
 
 TITLES = {"load": "Obciazenie (load average)", "memory": "Pamiec RAM", "disk": "Zajetosc dyskow"}
+TITLES_EN = {"load": "Load average", "memory": "Memory (RAM)", "disk": "Disk usage"}
+
+
+def title(metric: str) -> str:
+    return tr(TITLES[metric], TITLES_EN[metric])
 
 
 def _fmt(value: float) -> str:
@@ -185,9 +192,11 @@ def to_mermaid(metric: str, lines: list[Series], limit: float, hours: float) -> 
     percent = metric in ("memory", "disk")
     top = 100.0 if percent else max([limit, *(max(s.values) for s in lines)]) * 1.15 or 1.0
     colors = ", ".join(PALETTE[:len(lines)] + ("#dc2626",))
-    span = f"{_fmt(hours)} h" if hours < 48 else f"{_fmt(hours / 24)} dni"
-    legend = ", ".join(f"{PALETTE_NAMES[i]}: {s.name}" for i, s in enumerate(lines))
-    title = f"{TITLES[metric]} — ostatnie {span}"
+    span = f"{_fmt(hours)} h" if hours < 48 else tr(f"{_fmt(hours / 24)} dni", f"{_fmt(hours / 24)} days")
+    names = tr(PALETTE_NAMES, PALETTE_NAMES_EN)
+    legend = ", ".join(f"{names[i]}: {s.name}" for i, s in enumerate(lines))
+    chart_title = tr(f"{TITLES[metric]} — ostatnie {span}", f"{TITLES_EN[metric]} — last {span}")
+    axis = tr(f"godziny temu ({legend}; czerwona: prog alertu)", f"hours ago ({legend}; red: alert threshold)")
     out = [
         "---",
         "config:",
@@ -199,8 +208,8 @@ def to_mermaid(metric: str, lines: list[Series], limit: float, hours: float) -> 
         f'      plotColorPalette: "{colors}"',
         "---",
         "xychart-beta",
-        f'  title "{title}"',
-        f'  x-axis "godziny temu ({legend}; czerwona: prog alertu)" -{_fmt(hours)} --> 0',
+        f'  title "{chart_title}"',
+        f'  x-axis "{axis}" -{_fmt(hours)} --> 0',
         f'  y-axis "{"%" if percent else "load"}" 0 --> {_fmt(round(top, 2))}',
     ]
     for line in lines:
@@ -212,18 +221,20 @@ def to_mermaid(metric: str, lines: list[Series], limit: float, hours: float) -> 
 def summary(metric: str, lines: list[Series], limit: float, points: list[dict[str, Any]]) -> str:
     """Liczby dla modelu (i podpis obrazka) — model nie widzi obrazu."""
     if not lines:
-        return "Brak pomiarow w tym okresie."
+        return tr("Brak pomiarow w tym okresie.", "No measurements in this period.")
     unit = "%" if metric in ("memory", "disk") else ""
     parts = []
     for line in lines:
         values = line.values
-        parts.append(f"{line.name}: teraz {_fmt(values[-1])}{unit}, min {_fmt(min(values))}{unit}, "
-                     f"max {_fmt(max(values))}{unit}, srednio {_fmt(sum(values) / len(values))}{unit}")
+        now_v, min_v, max_v = _fmt(values[-1]), _fmt(min(values)), _fmt(max(values))
+        avg_v = _fmt(sum(values) / len(values))
+        parts.append(tr(f"{line.name}: teraz {now_v}{unit}, min {min_v}{unit}, max {max_v}{unit}, srednio {avg_v}{unit}",
+                        f"{line.name}: now {now_v}{unit}, min {min_v}{unit}, max {max_v}{unit}, average {avg_v}{unit}"))
     over = [line.name for line in lines if max(line.values) >= limit]
-    text = "; ".join(parts) + f". Prog alertu: {_fmt(limit)}{unit}."
+    text = "; ".join(parts) + tr(f". Prog alertu: {_fmt(limit)}{unit}.", f". Alert threshold: {_fmt(limit)}{unit}.")
     if over:
-        text += " Prog przekroczony w: " + ", ".join(over) + "."
-    text += f" Probek: {len(points)}."
+        text += tr(" Prog przekroczony w: ", " Threshold exceeded in: ") + ", ".join(over) + "."
+    text += tr(f" Probek: {len(points)}.", f" Samples: {len(points)}.")
     return text
 
 
@@ -237,7 +248,8 @@ def chart(metric: str, hours: float, *, disk_pct: int, mem_pct: int, load_factor
     limit = threshold(metric, points, disk_pct=disk_pct, mem_pct=mem_pct, load_factor=load_factor)
     text = summary(metric, lines, limit, points)
     if not lines:
-        return None, text + " Historia zbiera sie przy kazdym sprawdzeniu czuwania (WATCH_ENABLED=1)."
+        return None, text + tr(" Historia zbiera sie przy kazdym sprawdzeniu czuwania (WATCH_ENABLED=1).",
+                               " History is collected at every monitoring check (WATCH_ENABLED=1).")
     return to_mermaid(metric, lines, limit, hours), text
 
 

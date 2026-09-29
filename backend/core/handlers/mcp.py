@@ -29,6 +29,7 @@ from backend.core.mcp.registry import (
 )
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
+from backend.core.i18n import tr
 
 
 async def handle_mcp_tool(agent: Any, session: Session, tool_call: Any, args: dict[str, Any]
@@ -36,8 +37,10 @@ async def handle_mcp_tool(agent: Any, session: Session, tool_call: Any, args: di
     manager = get_manager()
     resolved = manager.resolve(tool_call.function.name)
     if resolved is None:
-        reply(session, tool_call, "Narzedzie MCP jest niedostepne (serwer odlaczony albo usuniety). "
-                                  "Lista: mcp_manage operation=list.")
+        reply(session, tool_call, tr("Narzedzie MCP jest niedostepne (serwer odlaczony albo usuniety). "
+                                     "Lista: mcp_manage operation=list.",
+                                     "The MCP tool is unavailable (server disconnected or removed). "
+                                     "List: mcp_manage operation=list."))
         return
     state, tool = resolved
     label = f"{state.name}.{tool['name']}"
@@ -50,27 +53,30 @@ async def handle_mcp_tool(agent: Any, session: Session, tool_call: Any, args: di
     if needs_confirmation(state.config, tool):
         async def confirmed() -> str:
             text, _images, is_error = await call()
-            return ("BLAD NARZEDZIA MCP: " if is_error else "") + text
+            return (tr("BLAD NARZEDZIA MCP: ", "MCP TOOL ERROR: ") if is_error else "") + text
 
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="mcp", command=f"mcp {label} {json.dumps(args, ensure_ascii=False)}",
             classification="confirm", action=confirmed,
-            plan=safety.Plan(notes=[f"narzedzie zewnetrznego serwera MCP {state.name} — skutkow Pipe nie cofnie"]),
+            plan=safety.Plan(notes=[tr(f"narzedzie zewnetrznego serwera MCP {state.name} — skutkow Pipe nie cofnie",
+                                       f"a tool of the external MCP server {state.name} — Pipe cannot undo its effects")]),
         )
         shown = json.dumps(args, ensure_ascii=False, indent=2)
-        yield (f"[POTWIERDZ] Narzedzie MCP {as_code(label)} wymaga potwierdzenia. Argumenty:\n{as_code(shown)}")
+        yield tr(f"[POTWIERDZ] Narzedzie MCP {as_code(label)} wymaga potwierdzenia. Argumenty:\n{as_code(shown)}",
+                 f"[POTWIERDZ] The MCP tool {as_code(label)} requires confirmation. Arguments:\n{as_code(shown)}")
         return
 
     try:
         text, images, is_error = await call()
     except (McpError, OSError) as exc:
-        reply(session, tool_call, f"Blad serwera MCP {state.name}: {exc}")
+        reply(session, tool_call, tr(f"Blad serwera MCP {state.name}: {exc}", f"MCP server {state.name} error: {exc}"))
         return
     for index, (mime, data) in enumerate(images[:3]):
         if mime.startswith("image/"):
             yield Attachment(f"mcp-{state.name}-{index}.{mime.split('/')[-1]}", mime, data, caption=label)
-    note = f"\n[{len(images)} obraz(y) wyslano uzytkownikowi]" if images else ""
-    reply(session, tool_call, ("BLAD NARZEDZIA MCP: " if is_error else "") + text + note)
+    note = tr(f"\n[{len(images)} obraz(y) wyslano uzytkownikowi]", f"\n[{len(images)} image(s) sent to the user]") \
+        if images else ""
+    reply(session, tool_call, (tr("BLAD NARZEDZIA MCP: ", "MCP TOOL ERROR: ") if is_error else "") + text + note)
 
 
 async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: dict[str, Any]
@@ -79,21 +85,22 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
     operation = str(args.get("operation", "list") or "list").strip().lower()
     manager = get_manager()
     if operation == "list":
-        lines = manager.status() or [f"{name}: (nie polaczony)" for name in load_config()]
-        reply(session, tool_call, "Serwery MCP:\n" + ("\n".join(f"- {l}" for l in lines) if lines else "(brak — dodaj: operation=add)"))
+        lines = manager.status() or [f"{name}: " + tr("(nie polaczony)", "(not connected)") for name in load_config()]
+        reply(session, tool_call, tr("Serwery MCP:\n", "MCP servers:\n") + ("\n".join(f"- {l}" for l in lines) if lines
+                                  else tr("(brak — dodaj: operation=add)", "(none — add one: operation=add)")))
         return
     if operation == "reload":
         await manager.reload()
-        reply(session, tool_call, "Polaczono ponownie:\n" + "\n".join(f"- {l}" for l in manager.status()))
+        reply(session, tool_call, tr("Polaczono ponownie:\n", "Reconnected:\n") + "\n".join(f"- {l}" for l in manager.status()))
         return
     name = str(args.get("name", "") or "").strip().lower()
     if operation == "remove":
         if remove_server(name):
             await manager.reload()
             await audit.log_file_write(session.interface, f"mcp.json#{name} (usuniety)", 0)
-            reply(session, tool_call, f"Usunieto serwer MCP {name}.")
+            reply(session, tool_call, tr(f"Usunieto serwer MCP {name}.", f"Removed MCP server {name}."))
         else:
-            reply(session, tool_call, f"Nie ma serwera MCP {name!r}.")
+            reply(session, tool_call, tr(f"Nie ma serwera MCP {name!r}.", f"No MCP server {name!r}."))
         return
     if operation == "add":
         cfg = {k: args.get(k) for k in ("command", "args", "env", "url", "headers", "autoApprove", "trustReadOnly",
@@ -101,23 +108,27 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
         try:
             clean = validate_server(name, cfg)
         except McpConfigError as exc:
-            reply(session, tool_call, f"Blad: {exc}")
+            reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
             return
 
         async def do_add() -> str:
             created = add_server(name, clean)
             await manager.reload()
             state = manager.servers.get(name)
-            return (f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP {name}: "
-                    + (state.describe() if state else "brak stanu"))
+            return (tr(f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP {name}: ",
+                       f"{'Added' if created else 'Updated'} MCP server {name}: ")
+                    + (state.describe() if state else tr("brak stanu", "no state")))
 
         from backend.core.mcp.registry import config_path
         session.pending_confirmation = ConfirmationRequest(
-            tool_call_id=tool_call.id, tool_name="mcp_manage", command=f"dodanie serwera MCP {name}",
+            tool_call_id=tool_call.id, tool_name="mcp_manage", command=tr(f"dodanie serwera MCP {name}", f"adding MCP server {name}"),
             classification="confirm", action=do_add,
-            plan=safety.Plan(local_files=[(str(config_path()), "pamiec Pipe: mcp.json")]),
+            plan=safety.Plan(local_files=[(str(config_path()), tr("pamiec Pipe: mcp.json", "Pipe memory: mcp.json"))]),
         )
-        yield (f"[POTWIERDZ] Nowy serwer MCP wymaga potwierdzenia — Pipe bedzie uruchamial/wywolywal: "
-               f"{as_code(describe_server(name, clean))}")
+        yield tr(f"[POTWIERDZ] Nowy serwer MCP wymaga potwierdzenia — Pipe bedzie uruchamial/wywolywal: "
+                 f"{as_code(describe_server(name, clean))}",
+                 f"[POTWIERDZ] A new MCP server requires confirmation — Pipe will run/call: "
+                 f"{as_code(describe_server(name, clean))}")
         return
-    reply(session, tool_call, f"Nieznana operacja {operation!r}. Dostepne: list, add, remove, reload.")
+    reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, add, remove, reload.",
+                                 f"Unknown operation {operation!r}. Available: list, add, remove, reload."))

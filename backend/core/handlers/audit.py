@@ -14,12 +14,19 @@ from backend.core import posture
 from backend.core.events import Event
 from backend.core.handlers.common import reply
 from backend.core.session import Session
+from backend.core.i18n import tr
 
-AUDIT_HINT = (
+AUDIT_HINT_PL = (
     "\n\nPrzedstaw uzytkownikowi ocene i najwazniejsze punkty (numeracja jak wyzej). Gdy poprosi o poprawke "
     "('napraw 1'), wykonaj jej komende narzedziem execute_command (albo write_file) — dostanie ja do "
     "zatwierdzenia z planem bezpiecznika. Komendy oznaczone 'w powloce hosta' podaj mu do wykonania samemu. "
     "Przy SSH trzymaj sie kolejnosci ze skilla utwardz-ssh."
+)
+AUDIT_HINT_EN = (
+    "\n\nPresent the score and the most important points to the user (numbering as above). When they ask for a fix "
+    "('fix 1'), run its command with execute_command (or write_file) — they will get it to approve with the "
+    "safety-fuse plan. Give commands marked 'in the host shell' to the user to run themselves. "
+    "For SSH follow the order from the harden-ssh skill (utwardz-ssh)."
 )
 
 
@@ -37,6 +44,6 @@ async def handle_security_audit(
     args: dict[str, Any],
 ) -> AsyncGenerator[Event, None]:
     _, text = await run_audit_text()
-    reply(session, tool_call, text + AUDIT_HINT)
+    reply(session, tool_call, text + tr(AUDIT_HINT_PL, AUDIT_HINT_EN))
     return
     yield  # noqa: unreachable — async generator

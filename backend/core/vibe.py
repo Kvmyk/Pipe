@@ -18,7 +18,7 @@ import re
 from typing import Any
 
 from backend.config import settings
-from backend.config.prompts import VIBE_DISTILL_PROMPT
+from backend.core.i18n import prompt, tr
 from backend.core import audit, memory
 from backend.core.session import Session
 
@@ -86,11 +86,13 @@ class VibeLearner:
             self._running.discard(key)
 
     async def distill(self, key: str, messages: list[str]) -> str | None:
-        current = memory.read_vibe(key).strip() or "# VIBE\n\n(brak obserwacji)"
+        current = memory.read_vibe(key).strip() or tr("# VIBE\n\n(brak obserwacji)", "# VIBE\n\n(no observations)")
         listing = "\n".join(f"- {m}" for m in messages)
-        prompt = (f"Obecna notatka:\n<<<\n{current}\n>>>\n\n"
-                  f"Ostatnie wiadomosci uzytkownika (od najstarszej):\n{listing}")
-        answer = await self._agent.complete(VIBE_DISTILL_PROMPT, prompt, model=settings.WORKER_MODEL or None,
+        request = tr(f"Obecna notatka:\n<<<\n{current}\n>>>\n\n"
+                     f"Ostatnie wiadomosci uzytkownika (od najstarszej):\n{listing}",
+                     f"Current note:\n<<<\n{current}\n>>>\n\n"
+                     f"The user's recent messages (oldest first):\n{listing}")
+        answer = await self._agent.complete(prompt("VIBE_DISTILL_PROMPT"), request, model=settings.WORKER_MODEL or None,
                                             who="vibe")
         text = clean_distilled(answer)
         if text is None or text.strip() == current.strip():

@@ -36,8 +36,8 @@ from datetime import datetime
 from typing import Any
 
 from backend.config import settings
-from backend.config.prompts import ROUTINE_REPORT_INSTRUCTION
 from backend.core import hostinfo, memory, metrics, routines, targets
+from backend.core.i18n import prompt, tr
 
 MAX_HISTORY = 50
 # Zakresy alertow (prefiks klucza przed ':') — kazda petla rozwiazuje tylko swoje.
@@ -129,18 +129,21 @@ def resource_findings(proc: str | None = None) -> list[Finding]:
         pct = disk.used_pct
         if pct >= settings.WATCH_DISK_PCT:
             severity = "critical" if pct >= max(97, settings.WATCH_DISK_PCT) else "warning"
+            free, total = hostinfo.human_bytes(disk.available), hostinfo.human_bytes(disk.total)
             findings.append(Finding(
-                f"disk:{disk.mount}", severity, f"Dysk {disk.mount} zapelniony w {pct}%",
-                f"wolne {hostinfo.human_bytes(disk.available)} z {hostinfo.human_bytes(disk.total)} ({disk.device})"))
+                f"disk:{disk.mount}", severity, tr(f"Dysk {disk.mount} zapelniony w {pct}%", f"Disk {disk.mount} is {pct}% full"),
+                tr(f"wolne {free} z {total} ({disk.device})", f"{free} free of {total} ({disk.device})")))
     mem = hostinfo.memory(proc)
     if mem and mem.used_pct >= settings.WATCH_MEM_PCT:
-        findings.append(Finding("memory", "warning", f"RAM zajety w {mem.used_pct}%",
-                                f"dostepne {mem.available_mb} MB z {mem.total_mb} MB"
+        findings.append(Finding("memory", "warning", tr(f"RAM zajety w {mem.used_pct}%", f"RAM is {mem.used_pct}% used"),
+                                tr(f"dostepne {mem.available_mb} MB z {mem.total_mb} MB",
+                                   f"{mem.available_mb} MB available of {mem.total_mb} MB")
                                 + (f", swap {mem.swap_used_mb}/{mem.swap_total_mb} MB" if mem.swap_total_mb else "")))
     load = hostinfo.loadavg(proc)
     cpus = hostinfo.cpu_count(proc)
     if load and load[1] > cpus * settings.WATCH_LOAD_FACTOR:
-        findings.append(Finding("load", "warning", f"Wysokie obciazenie: load 5m {load[1]:.1f} przy {cpus} rdzeniach",
+        findings.append(Finding("load", "warning", tr(f"Wysokie obciazenie: load 5m {load[1]:.1f} przy {cpus} rdzeniach",
+                                                      f"High load: 5m load {load[1]:.1f} on {cpus} cores"),
                                 f"load 1/5/15 min: {load[0]:.1f} / {load[1]:.1f} / {load[2]:.1f}"))
     return findings
 
@@ -151,25 +154,30 @@ def container_findings(containers: list[Any], previous_running: set[str] | None)
     for c in containers:
         if c.state == "restarting":
             findings.append(Finding(f"container:{c.name}:restarting", "critical",
-                                    f"Kontener {c.name} restartuje sie w petli",
-                                    f"obraz {c.image}, restartow: {c.restart_count}"))
+                                    tr(f"Kontener {c.name} restartuje sie w petli", f"Container {c.name} is in a restart loop"),
+                                    tr(f"obraz {c.image}, restartow: {c.restart_count}",
+                                       f"image {c.image}, restarts: {c.restart_count}")))
         elif c.health == "unhealthy":
             findings.append(Finding(f"container:{c.name}:unhealthy", "warning",
-                                    f"Kontener {c.name} jest unhealthy", f"obraz {c.image}"))
+                                    tr(f"Kontener {c.name} jest unhealthy", f"Container {c.name} is unhealthy"),
+                                    tr(f"obraz {c.image}", f"image {c.image}")))
     if previous_running is not None:
         for name in sorted(previous_running):
             c = by_name.get(name)
             if c is not None and c.state in ("exited", "dead"):
-                findings.append(Finding(f"container:{name}:stopped", "critical", f"Kontener {name} przestal dzialac",
-                                        f"stan {c.state}, obraz {c.image}", transient=True))
+                findings.append(Finding(f"container:{name}:stopped", "critical",
+                                        tr(f"Kontener {name} przestal dzialac", f"Container {name} stopped"),
+                                        tr(f"stan {c.state}, obraz {c.image}", f"state {c.state}, image {c.image}"),
+                                        transient=True))
     return findings
 
 
 def port_findings(public_now: dict[str, str], previous: set[str] | None) -> list[Finding]:
     if previous is None:
         return []
-    return [Finding(f"port:{key}", "warning", f"Nowy publiczny port: {key}",
-                    f"na hoscie pojawila sie usluga nasluchujaca na {address} — sprawdz, czy to zamierzone",
+    return [Finding(f"port:{key}", "warning", tr(f"Nowy publiczny port: {key}", f"New public port: {key}"),
+                    tr(f"na hoscie pojawila sie usluga nasluchujaca na {address} — sprawdz, czy to zamierzone",
+                       f"a service listening on {address} appeared on the host — check whether it is intended"),
                     transient=True)
             for key, address in sorted(public_now.items()) if key not in previous]
 
@@ -319,14 +327,13 @@ class Watcher:
 
     async def investigate_external(self, alert: Alert) -> None:
         """Worker (tylko odczyty) bada alert z zewnatrz; raport idzie do subskrybentow i pamieci incydentow."""
-        from backend.config.prompts import EXTERNAL_ALERT_TASK
         from backend.core import incidents, workers
         from backend.core.session import Session
 
         if self.agent is None:
             return
         target = targets.get_target("local")
-        task = EXTERNAL_ALERT_TASK.format(title=alert.title, detail=alert.detail or "-")
+        task = prompt("EXTERNAL_ALERT_TASK").format(title=alert.title, detail=alert.detail or "-")
         task += incidents.context_for(alert.key)
         parent = Session(session_id=f"hook:{alert.key}", interface="webhook", learns_vibe=False)
         try:
@@ -334,9 +341,10 @@ class Watcher:
                 workers.run_worker(self.agent, parent, "zbadaj-alert", target, task), timeout=settings.WORKER_TIMEOUT)
             report = result.render()
         except asyncio.TimeoutError:
-            report = f"Badanie przekroczylo {settings.WORKER_TIMEOUT} s."
+            report = tr(f"Badanie przekroczylo {settings.WORKER_TIMEOUT} s.",
+                        f"The investigation exceeded {settings.WORKER_TIMEOUT} s.")
         except Exception as exc:
-            report = f"Badanie nie powiodlo sie: {exc}"
+            report = tr(f"Badanie nie powiodlo sie: {exc}", f"The investigation failed: {exc}")
         incidents.note_investigation(alert.key, report)
         self.notifier.publish({"type": "investigation", "key": alert.key, "title": alert.title, "report": report})
 
@@ -405,26 +413,27 @@ class Watcher:
 
         if routine.name in self._routines_running:
             return {"type": "routine", "name": routine.name, "status": "PROBLEM",
-                    "report": "Poprzednie uruchomienie jeszcze trwa."}
+                    "report": tr("Poprzednie uruchomienie jeszcze trwa.", "The previous run is still in progress.")}
         target = targets.get_target(routine.target)
         started = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._routines_running.add(routine.name)
         try:
             if target is None:
-                report, status = f"Cel {routine.target!r} nie istnieje.", "PROBLEM"
+                report, status = tr(f"Cel {routine.target!r} nie istnieje.", f"Target {routine.target!r} does not exist."), "PROBLEM"
             else:
                 parent = Session(session_id=f"routine:{routine.name}", interface=f"routine:{routine.name}",
                                  learns_vibe=False)
                 result = await asyncio.wait_for(
                     workers.run_worker(self.agent, parent, routine.name, target, routine.task,
-                                       extra_instructions=ROUTINE_REPORT_INSTRUCTION),
+                                       extra_instructions=prompt("ROUTINE_REPORT_INSTRUCTION")),
                     timeout=settings.WORKER_TIMEOUT)
                 report = result.render()
                 status = "PROBLEM" if result.error else routines.report_status(result.report)
         except asyncio.TimeoutError:
-            report, status = f"Przekroczono limit czasu {settings.WORKER_TIMEOUT} s.", "PROBLEM"
+            report, status = tr(f"Przekroczono limit czasu {settings.WORKER_TIMEOUT} s.",
+                                f"Time limit of {settings.WORKER_TIMEOUT} s exceeded."), "PROBLEM"
         except Exception as exc:
-            report, status = f"Blad: {exc}", "PROBLEM"
+            report, status = tr(f"Blad: {exc}", f"Error: {exc}"), "PROBLEM"
         finally:
             self._routines_running.discard(routine.name)
         routines.update_routine(routine.name, last_run=started, last_status=status)
@@ -526,7 +535,10 @@ def prompt_alerts() -> str:
     """Aktywne alerty dla system promptu (pusty napis, gdy ich nie ma)."""
     if _watcher is None or not _watcher.active:
         return ""
-    lines = [f"- [{a.severity}] {a.title} ({a.detail}) od {a.since}" for a in _watcher.active.values()]
-    return ("\n\n--- CZUWANIE: AKTYWNE ALERTY ---\n"
-            "Problemy wykryte automatycznie na hoscie. Jesli rozmowa dotyczy zdrowia serwera, uwzglednij je.\n"
-            + "\n".join(lines))
+    lines = [f"- [{a.severity}] {a.title} ({a.detail}) " + tr(f"od {a.since}", f"since {a.since}")
+             for a in _watcher.active.values()]
+    return tr("\n\n--- CZUWANIE: AKTYWNE ALERTY ---\n"
+              "Problemy wykryte automatycznie na hoscie. Jesli rozmowa dotyczy zdrowia serwera, uwzglednij je.\n",
+              "\n\n--- MONITORING: ACTIVE ALERTS ---\n"
+              "Problems detected automatically on the host. If the conversation is about server health, take them "
+              "into account.\n") + "\n".join(lines)

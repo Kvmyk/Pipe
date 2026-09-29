@@ -63,17 +63,17 @@ class Session:
         baza -> tryb dzialania -> pamiec (SERVER.md, DIRECTORY, skille, VIBE)
         -> alerty czuwania -> katalog roboczy (zmienia sie najczesciej).
         """
-        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT, VIEWER_BLOCK, cwd_block
+        from backend.core.i18n import prompt
         from backend.core import runtime
         from backend.core.memory import prompt_context
         from backend.core.watch import prompt_alerts
 
-        base = TELEGRAM_SYSTEM_PROMPT if self.is_telegram else BASE_SYSTEM_PROMPT
+        base = prompt("TELEGRAM_SYSTEM_PROMPT" if self.is_telegram else "BASE_SYSTEM_PROMPT")
         return (
             base
             + "\n\n--- SRODOWISKO ---\n" + runtime.describe()
             + prompt_context(self.user_key)
             + prompt_alerts()
-            + (VIEWER_BLOCK if self.role == "viewer" else "")
-            + cwd_block(self.cwd, telegram=self.is_telegram)
+            + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
+            + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

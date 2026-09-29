@@ -12,6 +12,7 @@ from backend.core.events import Event, Progress
 from backend.core.handlers.common import reply, run_classified
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
+from backend.core.i18n import tr
 
 
 async def handle_target_manage(
@@ -27,8 +28,9 @@ async def handle_target_manage(
     if operation == "list":
         found = targets.load_targets()
         lines = [f"- {t.describe()}" for t in found]
-        reply(session, tool_call, "Zdalne cele:\n" + ("\n".join(lines) or "(brak — dodaj: operation=add)")
-              + "\n- local: ten host (zawsze dostepny)")
+        reply(session, tool_call, tr("Zdalne cele:\n", "Remote targets:\n")
+              + ("\n".join(lines) or tr("(brak — dodaj: operation=add)", "(none — add one: operation=add)"))
+              + tr("\n- local: ten host (zawsze dostepny)", "\n- local: this host (always available)"))
         return
 
     if operation == "add":
@@ -38,37 +40,43 @@ async def handle_target_manage(
         try:
             target = targets.validate(targets.Target(name=name, **fields))
             if target.name == "local":
-                raise targets.TargetError("Nazwa 'local' jest zarezerwowana dla tego hosta.")
+                raise targets.TargetError(tr("Nazwa 'local' jest zarezerwowana dla tego hosta.",
+                                             "The name 'local' is reserved for this host."))
         except (targets.TargetError, TypeError) as exc:
-            reply(session, tool_call, f"Blad: {exc}")
+            reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
             return
 
         async def add() -> str:
             created = targets.save_target(target)
-            return (f"{'Dodano' if created else 'Zaktualizowano'} cel {target.name}. "
-                    f"Sprawdz lacznosc: target_manage operation=test name={target.name}.")
+            return tr(f"{'Dodano' if created else 'Zaktualizowano'} cel {target.name}. "
+                      f"Sprawdz lacznosc: target_manage operation=test name={target.name}.",
+                      f"{'Added' if created else 'Updated'} target {target.name}. "
+                      f"Check connectivity: target_manage operation=test name={target.name}.")
 
-        description = f"dodanie celu {target.describe()}"
+        description = tr(f"dodanie celu {target.describe()}", f"adding target {target.describe()}")
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="target_manage", command=description,
             classification="confirm", action=add,
-            plan=safety.Plan(local_files=[(str(targets.targets_path()), "pamiec Pipe: targets.json")]),
+            plan=safety.Plan(local_files=[(str(targets.targets_path()), tr("pamiec Pipe: targets.json",
+                                                                           "Pipe memory: targets.json"))]),
         )
-        yield f"[POTWIERDZ] Nowy cel zdalny wymaga potwierdzenia: {as_code(target.describe())}"
+        yield tr(f"[POTWIERDZ] Nowy cel zdalny wymaga potwierdzenia: {as_code(target.describe())}",
+                 f"[POTWIERDZ] A new remote target requires confirmation: {as_code(target.describe())}")
         return
 
     if operation == "remove":
         if targets.remove_target(name):
             await audit.log_file_write(session.interface, f"targets.json#{name} (usuniety)", 0)
-            reply(session, tool_call, f"Usunieto cel {name}.")
+            reply(session, tool_call, tr(f"Usunieto cel {name}.", f"Removed target {name}."))
         else:
-            reply(session, tool_call, f"Nie ma celu {name!r}.")
+            reply(session, tool_call, tr(f"Nie ma celu {name!r}.", f"No target {name!r}."))
         return
 
     if operation == "test":
         target = targets.get_target(name)
         if target is None:
-            reply(session, tool_call, f"Nie ma celu {name!r}. Lista: target_manage operation=list.")
+            reply(session, tool_call, tr(f"Nie ma celu {name!r}. Lista: target_manage operation=list.",
+                                         f"No target {name!r}. List: target_manage operation=list."))
             return
         command = targets.test_command(target)
         async for event in run_classified(session, tool_call, targets.wrap(target, command), tool_name="remote_exec",
@@ -76,7 +84,8 @@ async def handle_target_manage(
             yield event
         return
 
-    reply(session, tool_call, f"Nieznana operacja {operation!r}. Dostepne: list, add, remove, test.")
+    reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, add, remove, test.",
+                                 f"Unknown operation {operation!r}. Available: list, add, remove, test."))
 
 
 async def handle_remote_exec(
@@ -90,16 +99,17 @@ async def handle_remote_exec(
     command = str(args.get("command", "") or "").strip()
     target = targets.get_target(name)
     if target is None:
-        reply(session, tool_call, f"Nie ma celu {name!r}. Lista: target_manage operation=list.")
+        reply(session, tool_call, tr(f"Nie ma celu {name!r}. Lista: target_manage operation=list.",
+                                     f"No target {name!r}. List: target_manage operation=list."))
         return
     try:
         wrapped = targets.wrap(target, command)
     except targets.TargetError as exc:
-        reply(session, tool_call, f"Blad: {exc}")
+        reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
         return
     cwd = None if target.kind == "local" else runtime.to_local("/")
     async for event in run_classified(session, tool_call, wrapped, tool_name="remote_exec", inner=command,
-                                      cwd=cwd, what=f"Komenda na celu {target.name}"):
+                                      cwd=cwd, what=tr(f"Komenda na celu {target.name}", f"Command on target {target.name}")):
         yield event
 
 
@@ -114,10 +124,12 @@ async def handle_delegate(
     if isinstance(tasks, dict):
         tasks = [tasks]
     if not isinstance(tasks, list) or not tasks:
-        reply(session, tool_call, "Blad: podaj tasks — liste obiektow {target, task, name?}.")
+        reply(session, tool_call, tr("Blad: podaj tasks — liste obiektow {target, task, name?}.",
+                                     "Error: provide tasks — a list of {target, task, name?} objects."))
         return
     if len(tasks) > settings.MAX_WORKERS:
-        reply(session, tool_call, f"Blad: najwyzej {settings.MAX_WORKERS} workerow naraz.")
+        reply(session, tool_call, tr(f"Blad: najwyzej {settings.MAX_WORKERS} workerow naraz.",
+                                     f"Error: at most {settings.MAX_WORKERS} workers at once."))
         return
 
     specs: list[tuple[str, targets.Target, str]] = []
@@ -125,15 +137,15 @@ async def handle_delegate(
     errors = []
     for item in tasks:
         if not isinstance(item, dict):
-            errors.append("kazde zadanie musi byc obiektem {target, task}")
+            errors.append(tr("kazde zadanie musi byc obiektem {target, task}", "every task must be a {target, task} object"))
             continue
         target = targets.get_target(str(item.get("target", "local") or "local"))
         task = str(item.get("task", "") or "").strip()
         if target is None:
-            errors.append(f"nie ma celu {item.get('target')!r}")
+            errors.append(tr(f"nie ma celu {item.get('target')!r}", f"no target {item.get('target')!r}"))
             continue
         if not task:
-            errors.append(f"brak tresci zadania dla celu {target.name}")
+            errors.append(tr(f"brak tresci zadania dla celu {target.name}", f"no task text for target {target.name}"))
             continue
         requested = str(item.get("name", "") or "")
         # Ta sama nazwa co wczesniej = kontynuacja rozmowy z tym workerem
@@ -142,10 +154,12 @@ async def handle_delegate(
         taken.add(name)
         specs.append((name, target, task))
     if errors:
-        reply(session, tool_call, "Blad: " + "; ".join(errors) + ". Lista celow: target_manage operation=list.")
+        reply(session, tool_call, tr("Blad: ", "Error: ") + "; ".join(errors)
+              + tr(". Lista celow: target_manage operation=list.", ". Targets: target_manage operation=list."))
         return
 
-    yield Progress("Wysylam workerow: " + ", ".join(f"{n} -> {t.name}" for n, t, _ in specs), source="delegate")
+    yield Progress(tr("Wysylam workerow: ", "Sending workers: ") + ", ".join(f"{n} -> {t.name}" for n, t, _ in specs),
+                   source="delegate")
     results: list[workers.WorkerResult] = []
     async for item in workers.run_many(agent, session, specs):
         if isinstance(item, Progress):
@@ -153,4 +167,5 @@ async def handle_delegate(
         else:
             results = item
     reply(session, tool_call, "\n\n".join(r.render() for r in results)
-          + "\n\nPodsumuj uzytkownikowi wyniki. Zmiany z propozycji wykonuj przez remote_exec (za zgoda).")
+          + tr("\n\nPodsumuj uzytkownikowi wyniki. Zmiany z propozycji wykonuj przez remote_exec (za zgoda).",
+               "\n\nSummarise the results for the user. Make proposed changes through remote_exec (with approval)."))
