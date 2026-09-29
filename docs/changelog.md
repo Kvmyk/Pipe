@@ -1,5 +1,18 @@
 # Historia zmian -- Pipe
 
+## v0.9.2 (2026-09-29)
+
+Ciagla integracja w GitHub Actions. Zachowanie agenta sie nie zmienilo -- aktualizacja bez recznych krokow.
+
+### CI
+
+- Kazdy push na `main` i kazdy pull request uruchamia testy (`pytest backend/tests/`) na Pythonie 3.11
+  i 3.13, razem z testami bota Telegrama
+- Obrazy backendu i bota Telegrama sa budowane przy kazdej zmianie (bez wypychania do rejestru), wiec
+  zepsuty `Dockerfile` wychodzi przed wdrozeniem
+- Manifesty Kubernetesa (base i wszystkie overlaye) sa renderowane przez `kubectl kustomize`, a skrypty
+  instalacyjne sprawdzane `bash -n`
+
 ## v0.9.1 (2026-09-28)
 
 Poprawki z przegladu kodu v0.9.0 -- glownie obejscia klasyfikatora komend. Aktualizacja bez recznych krokow.

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.9.1** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), watches it (proactive alerts), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`) or a Telegram bot; Discord/WebUI are placeholders. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.9.2** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), watches it (proactive alerts), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`) or a Telegram bot; Discord/WebUI are placeholders. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 All code comments, error messages, documentation, and LLM prompts are in **Polish**. Source files are mostly ASCII-transliterated Polish (no diacritics) in prompts/user-facing strings; docstrings use full Polish.
 
@@ -33,7 +33,7 @@ cd backend && docker compose logs -f vps-agent      # or: journalctl -u pipe -f
 
 CLI install (client machine): `.\install.ps1` (Windows) or `bash install.sh` (Linux/macOS), then `pipe`.
 
-There is no linter, formatter, or CI configured; tests are run manually.
+There is no linter or formatter. CI (`.github/workflows/ci.yml`, on push to `main` and PRs) runs pytest on Python 3.11 and 3.13 with the Telegram requirements installed, builds both Docker images without pushing, renders every kustomize overlay, and runs `bash -n` on the install scripts.
 
 ## Architecture
 

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nowy push na ten sam branch anuluje poprzedni przebieg.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Testy (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 = obraz Dockera, 3.13 = nowsze systemy przy instalacji natywnej
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            clients/telegram/requirements.txt
+
+      # Wymagania Telegrama tez, zeby test_telegram_bot.py nie byl pomijany.
+      - name: Instalacja zaleznosci
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r clients/telegram/requirements.txt
+
+      - name: pytest
+        run: pytest backend/tests/ -q -rs
+
+  docker:
+    name: Obraz ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: backend
+            dockerfile: backend/Dockerfile
+          - image: telegram
+            context: .
+            dockerfile: clients/telegram/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Tylko build — nic nie jest wypychane do rejestru.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  manifests:
+    name: Manifesty Kubernetes i skrypty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: kustomize build (base + overlaye)
+        run: |
+          kubectl kustomize deploy/kubernetes/base > /dev/null
+          for overlay in deploy/kubernetes/overlays/*/; do
+            echo "::group::$overlay"
+            kubectl kustomize "$overlay" > /dev/null
+            echo "::endgroup::"
+          done
+
+      - name: Skladnia skryptow bash
+        run: |
+          for script in install.sh scripts/*.sh; do
+            bash -n "$script"
+          done
