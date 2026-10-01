@@ -86,6 +86,8 @@ def _int(name: str, default: int) -> int:
 AGENT_MAX_ITERATIONS: int = _int("AGENT_MAX_ITERATIONS", 15)
 # Limit dla komend zatwierdzonych przez uzytkownika (apt upgrade, docker build...).
 CONFIRMED_COMMAND_TIMEOUT: int = _int("CONFIRMED_COMMAND_TIMEOUT", 900)
+# Bezpiecznik: nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii.
+SAFE_AUTO_ROLLBACK: bool = os.getenv("SAFE_AUTO_ROLLBACK", "1").strip().lower() not in ("0", "false", "no", "nie")
 # Redakcja sekretow w wynikach narzedzi przed wyslaniem do providera LLM.
 REDACT_SECRETS: bool = os.getenv("REDACT_SECRETS", "1").strip().lower() not in ("0", "false", "no", "nie")
 

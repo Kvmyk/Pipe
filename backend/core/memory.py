@@ -485,7 +485,7 @@ def reset_vibe(key: str) -> bool:
 RESERVED_COMMANDS = frozenset({
     "start", "status", "server", "skille", "historia", "pomoc", "help", "exit",
     "mapa", "mermaid", "katalogi", "vibe", "alerty", "cele", "rutyny",
-    "zmiany", "wykres", "zdrowie", "raport", "koszt",
+    "zmiany", "wykres", "zdrowie", "raport", "koszt", "cofnij", "dziennik",
 })
 MAX_COMMAND_CHARS = 32  # limit Telegrama
 

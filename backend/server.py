@@ -40,7 +40,7 @@ from backend.config.prompts import (
     SCAN_SERVER_UPDATE,
     STATUS_MESSAGE,
 )
-from backend.core import audit, diagram, memory, metrics, routines, runtime, targets, usage
+from backend.core import audit, diagram, journal, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
 from backend.core.events import Attachment, Progress
 from backend.core.watch import get_watcher
@@ -238,6 +238,11 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             event = result.to_event()
             event.pop("attachment", None)
             await _send(writer, _data(event))
+        elif command == "journal":
+            await _send(writer, _data({"entries": [journal.as_data(e) for e in journal.entries(15)],
+                                       "text": journal.render_list()}))
+        elif command == "undo":
+            await _undo(writer, request, interface)
         elif command == "usage":
             priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
             await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
@@ -246,6 +251,30 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _send(writer, _error(f"Nieznana komenda: {command!r}"))
     except OSError as exc:
         await _send(writer, _error(f"Blad odczytu pamieci agenta: {exc}"))
+
+
+async def _undo(writer, request: dict, interface: str) -> None:
+    """
+    /cofnij bez LLM (dziala tez, gdy provider lezy albo skonczyl sie limit): najpierw podglad,
+    potem — po TAK w kliencie — {"command": "undo", "id": ..., "execute": true}.
+    """
+    entry_id = str(request.get("id") or request.get("args") or "").strip().lstrip("#").lower()
+    try:
+        entry = journal.load(entry_id) if entry_id else journal.latest_undoable()
+    except ValueError as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    if entry is None:
+        await _send(writer, _error("Nie ma takiego wpisu w dzienniku (/dziennik)." if entry_id
+                                   else "Nie ma zmiany, ktora da sie cofnac."))
+        return
+    if not request.get("execute"):
+        await _send(writer, _data({"id": entry.id, "undoable": entry.undoable, "preview": journal.preview(entry)}))
+        return
+    if not entry_id:
+        await _send(writer, _error("Cofniecie wymaga identyfikatora wpisu z podgladu."))
+        return
+    await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
 
 
 async def _recent_changes_context(hours: float = 24) -> str:

@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 ## Model
 
@@ -110,6 +110,19 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
   uruchamianych automatycznie (`.bashrc`, `authorized_keys`, cron, systemd, `.gitconfig`) dodaje ostrzezenie
   o trwalym dostepie.
 - Potwierdzenie jest przypiete do `tool_call_id` w sesji; nowa wiadomosc zamiast TAK anuluje operacje.
+- Plan bezpiecznika (kopie, sprawdzenia, weryfikacja) jest czescia potwierdzenia i jest przechowywany w nim --
+  po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
+  sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
+
+## Dziennik zmian i cofanie
+
+- Kopie plikow sprzed zmian leza w `backend/data/journal/` (katalogi `0700`, pliki `0600`). Edytowany `.env`
+  trafia tam w calosci -- to kopia na dysku serwera, nie wysylana do LLM. Limit: 50 wpisow, 14 dni, 5 MB na plik.
+- `/cofnij` pokazuje roznice i komendy odwrotne przed TAK. Komendy odwrotne przechodza przez klasyfikator:
+  zakazana komenda jest pomijana i logowana. Identyfikator wpisu jest walidowany (tylko hex), wiec nie wskaze
+  sciezki poza katalogiem dziennika. Przywracanie i komendy odwrotne trafiaja do audit logu.
+- `/cofnij` z klienta dziala bez LLM -- tak jak inne komendy wymaga tokenu (`AGENT_TOKEN`), a w Telegramie
+  przycisk *Cofnij* zadziala tylko dla dozwolonego uzytkownika, ktory otworzyl podglad.
 
 ## Workery, cele i rutyny
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, routines, targets
+from backend.core import audit, routines, safety, targets
 from backend.core.events import Event, Progress
 from backend.core.handlers.common import reply
 from backend.core.session import ConfirmationRequest, Session
@@ -53,6 +53,7 @@ async def handle_routine_manage(
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="routine_manage", command=f"rutyna {routine.describe()}",
             classification="confirm", action=add,
+            plan=safety.Plan(local_files=[(str(routines.routines_path()), "pamiec Pipe: routines.json")]),
         )
         # describe() skraca zadanie — w potwierdzeniu musi byc CALE, bo cale bedzie wykonywane bez nadzoru
         yield (f"[POTWIERDZ] Nowa rutyna wymaga potwierdzenia: {as_code(routine.describe())}\n"

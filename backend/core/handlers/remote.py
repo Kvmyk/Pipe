@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator
 
 from backend.config import settings
-from backend.core import audit, runtime, targets, workers
+from backend.core import audit, runtime, safety, targets, workers
 from backend.core.events import Event, Progress
 from backend.core.handlers.common import reply, run_classified
 from backend.core.session import ConfirmationRequest, Session
@@ -52,6 +52,7 @@ async def handle_target_manage(
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="target_manage", command=description,
             classification="confirm", action=add,
+            plan=safety.Plan(local_files=[(str(targets.targets_path()), "pamiec Pipe: targets.json")]),
         )
         yield f"[POTWIERDZ] Nowy cel zdalny wymaga potwierdzenia: {as_code(target.describe())}"
         return

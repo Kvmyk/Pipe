@@ -1,5 +1,29 @@
 # Historia zmian -- Pipe
 
+## v0.11.0 (2026-09-29)
+
+Zmiany z bezpiecznikiem: kazda zatwierdzona operacja ma kopie, sprawdzenie przed, weryfikacje po i da sie ja
+cofnac. Aktualizacja bez recznych krokow.
+
+### Bezpiecznik
+
+- Potwierdzenie pokazuje plan: co zostanie skopiowane, co Pipe sprawdzi przed zmiana i co zweryfikuje po niej
+- Przed przeladowaniem uslugi -- walidacja konfiguracji (`nginx -t`, `sshd -t`, `caddy validate`,
+  `apachectl configtest`, `haproxy -c`, `docker compose config -q`, takze `docker exec <nginx> nginx -t`).
+  Nieudane sprawdzenie = operacja nie jest wykonywana
+- Po zmianie: usluga aktywna, kontener dziala i nie jest unhealthy, projekt compose wstal, zmieniony plik
+  konfiguracji przechodzi walidacje, a strony, ktore odpowiadaly przed zmiana, odpowiadaja po niej
+- Nieudana weryfikacja zmiany plikow konfiguracji przywraca kopie automatycznie i przeladowuje usluge ponownie
+  (`SAFE_AUTO_ROLLBACK=1`)
+
+### Dziennik zmian i `/cofnij`
+
+- Kopie plikow (`sed -i`, `tee`, `>`, `cp`, `mv`, `rm`, `chmod`, `write_file`), HEAD repozytorium przy operacjach
+  gita, crontab i pliki pamieci Pipe (cele, rutyny, skille, SERVER.md) trafiaja do dziennika przed zmiana
+- `/dziennik` i `/cofnij [id]` w obu klientach -- podglad roznic i komend odwrotnych (`docker start`,
+  `systemctl enable`, `git reset --keep`, `docker compose up -d`), potem TAK. Dziala bez LLM
+- Agent cofa zmiany sam, gdy o to poprosisz (nowe narzedzie `journal`); cofniecie tez mozna cofnac
+
 ## v0.10.0 (2026-09-29)
 
 Pipe pamieta, jak serwer sie zmienia, i sam wie, co sprawdzac. Aktualizacja bez recznych krokow -- nowe

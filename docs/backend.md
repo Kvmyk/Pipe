@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -32,6 +32,8 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/checks.py` | Sprawdzenia bez konfiguracji: certyfikaty, strony, DNS, swiezosc backupow |
 | `core/digest.py` | Poranny raport (bez LLM) |
 | `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
+| `core/safety.py` | Bezpiecznik: plan zmiany (kopie, sprawdzenie przed, weryfikacja po) i strzezone wykonanie |
+| `core/journal.py` | Dziennik zmian: kopie plikow, stan gita i crontaba, komendy odwrotne, `/cofnij` |
 | `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
 | `core/vibe.py` | Nauka stylu rozmowy w tle |
 | `core/events.py` | Zdarzenia strumienia: tekst, `Attachment`, `Progress` |
@@ -255,6 +257,7 @@ Powinienes zobaczyc:
 | `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
 
@@ -281,6 +284,7 @@ Powinienes zobaczyc:
 | `DIGEST_TIME` | `07:00` | Godzina porannego raportu (czas serwera); `off` wylacza |
 | `LLM_PRICE_IN`, `LLM_PRICE_OUT` | -- | Ceny modelu w USD za milion tokenow -- `/koszt` pokaze koszt |
 | `WORKER_PRICE_IN`, `WORKER_PRICE_OUT` | jak LLM | Ceny `WORKER_MODEL` |
+| `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 
 ## Zatrzymanie

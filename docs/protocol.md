@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.10.0
+Pipe v0.11.0
 
 ## Opis
 
@@ -68,6 +68,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
 | `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
 | `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
+| `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
+| `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
 
