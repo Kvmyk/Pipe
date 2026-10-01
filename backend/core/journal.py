@@ -352,5 +352,51 @@ def render_list(limit: int = 15) -> str:
     return "\n".join(e.summary() for e in found)
 
 
+def changes(entry: Entry, max_lines: int = 400) -> dict[str, Any]:
+    """
+    Co faktycznie zmienil wpis: roznica "przed -> teraz" dla kazdego pliku z kopia (sekrety zredagowane),
+    komendy odwrotne i uwagi. Dla interfejsu webowego (widok zmian); `preview()` pokazuje odwrotny kierunek.
+    """
+    import difflib
+
+    files = []
+    for backup in entry.files:
+        item: dict[str, Any] = {"path": backup.label, "status": "modified", "diff": "", "note": ""}
+        if backup.skipped:
+            item.update(status="unknown", note=tr(f"brak kopii ({backup.skipped})", f"no backup ({backup.skipped})"))
+            files.append(item)
+            continue
+        old = ""
+        if backup.existed and backup.blob:
+            try:
+                old = (_entry_dir(entry.id) / backup.blob).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                item.update(status="unknown", note=tr("kopia nieczytelna", "backup unreadable"))
+                files.append(item)
+                continue
+        try:
+            with open(backup.local, encoding="utf-8", errors="replace") as fh:
+                new, exists = fh.read(), True
+        except OSError:
+            new, exists = "", False
+        if not backup.existed:
+            item["status"] = "added" if exists else "unchanged"
+        elif not exists:
+            item["status"] = "deleted"
+        elif old == new:
+            item["status"] = "unchanged"
+        old, _ = memory.redact_secrets(old)
+        new, _ = memory.redact_secrets(new)
+        diff = list(difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=3))[2:]
+        if len(diff) > max_lines:
+            diff = diff[:max_lines] + [tr(f"[... i {len(diff) - max_lines} linii roznicy]",
+                                          f"[... and {len(diff) - max_lines} more diff lines]")]
+        item["diff"] = "\n".join(diff)
+        files.append(item)
+    return {"id": entry.id, "when": entry.when, "tool": entry.tool, "command": entry.command, "status": entry.status,
+            "summary": entry.summary(), "undoable": entry.undoable, "files": files, "inverse": entry.inverse,
+            "notes": entry.notes, "verify": entry.verify}
+
+
 def as_data(entry: Entry) -> dict[str, Any]:
     return {"id": entry.id, "summary": entry.summary(), "undoable": entry.undoable, "status": entry.status}

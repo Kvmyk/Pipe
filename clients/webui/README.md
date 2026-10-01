@@ -1,62 +1,44 @@
-# Web UI — Coming Soon
+# Pipe Web
 
-Przeglądarkowy interfejs dla VPS Management Agent.
+Interfejs w przegladarce: rozmowa z agentem, schemat serwera na zywo i podglad zmian.
 
-> 🚧 **Status: Placeholder — Pull Requests mile widziane!**
-
-## Planowany stack
-
-- **Frontend:** React + Vite
-- **Komunikacja z backendem:** WebSocket proxy lub HTTP-to-socket bridge
-- **Funkcje:** historia rozmów, audit log viewer, real-time streaming odpowiedzi
-
-## Architektura
-
-Ponieważ przeglądarka nie może bezpośrednio łączyć się z Unix socket, potrzebny jest bridge:
-
-```
-Przeglądarka (WebSocket)
-        ↓
-    bridge.py (WebSocket → Unix socket)
-        ↓
-    /tmp/vps-agent.sock
-        ↓
-    backend/server.py
+```bash
+pipe web                 # tunel SSH jak w CLI + strona na http://127.0.0.1:7400
+pipe web --lang en       # po angielsku
+pipe web --no-browser    # tylko wypisz adres
+pipe web --web-port 8080
 ```
 
-### Bridge WebSocket → Socket (przykład)
+Adres wypisany w terminalu zawiera jednorazowy klucz dostepu. Nic nie trzeba budowac ani instalowac --
+strona to zwykle pliki z `static/`, a serwer (`server.py`) uzywa wylacznie biblioteki standardowej Pythona.
 
-```python
-import asyncio
-import json
-import websockets
+## Jak to dziala
 
-async def bridge_handler(websocket):
-    reader, writer = await asyncio.open_unix_connection("/tmp/vps-agent.sock")
-    
-    async def forward_to_backend():
-        async for message in websocket:
-            writer.write(message.encode() + b"\n")
-            await writer.drain()
-    
-    async def forward_to_client():
-        while True:
-            raw = await reader.readline()
-            if not raw:
-                break
-            await websocket.send(raw.decode())
-    
-    await asyncio.gather(forward_to_backend(), forward_to_client())
-
-asyncio.run(websockets.serve(bridge_handler, "localhost", 8765))
+```
+przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH--> backend na serwerze
 ```
 
-## Chcesz dodać Web UI?
+- Na serwerze nie otwiera sie zaden nowy port; token backendu zostaje w procesie `pipe web`.
+- `POST /api/request` przekazuje zadanie protokolu Pipe i strumieniuje ramki (NDJSON),
+  `GET /api/events` przekazuje alerty, przypomnienia i raporty na zywo (SSE).
+- Strona jest dostepna tylko z tego komputera, z kluczem z adresu (potem ciasteczko HttpOnly);
+  zadania z obcym naglowkiem `Host` albo `Origin` sa odrzucane.
 
-1. Fork tego repo
-2. Utwórz `clients/webui/`
-3. Zaimplementuj frontend + bridge WebSocket → socket
-4. Dodaj `README.md` z instrukcją instalacji
-5. Otwórz Pull Request 🎉
+## Co jest na stronie
 
-Protokół socket: patrz `clients/discord/README.md`
+- **Rozmowa** -- odpowiedzi agenta, diagramy, potwierdzenia z planem bezpiecznika i roznica pliku.
+- **Schemat** -- generowany automatycznie, trzy poziomy: serwery -> wnetrze serwera -> projekt compose.
+  Element, na ktorym agent pracuje, jest podswietlony; *Sledze agenta* przenosi widok za nim. Dowolny ruch
+  na schemacie wylacza sledzenie, przycisk wlacza je z powrotem. Pod schematem os czasu dzialan.
+- **Zmiany** -- dziennik zatwierdzonych zmian: roznica "przed -> po" dla kazdego pliku i przycisk cofniecia.
+- **Alerty** -- aktywne alerty z przyciskiem *Zbadaj* oraz zdarzenia na zywo.
+
+## Pliki
+
+| Plik | Rola |
+|------|------|
+| `server.py` | lokalny serwer HTTP i most do backendu |
+| `static/app.js` | czat, potwierdzenia, os czasu, zakladki |
+| `static/graph.js` | schemat: uklad, kamera, przejscia miedzy poziomami, animacje |
+| `static/md.js` | bezpieczny renderer Markdowna (bez `innerHTML`) |
+| `static/i18n.js` | teksty pl / en |

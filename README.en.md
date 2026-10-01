@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.16.2** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.17.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -20,6 +20,7 @@ Those tools are general agents for code or "for everything". Pipe is an **operat
 | **Writes first** | Every 2 minutes the watcher checks disks, RAM, load, containers in a restart loop and **new public ports**. The alert arrives on Telegram with an *Investigate* button. No LLM, no cost. Every morning -- a **report** with a chart. |
 | **Knows what changed** | An hourly host snapshot: packages, container images, ports, cron, accounts, SSH keys, configs. *"What changed since yesterday?"* has an answer with a timestamp -- and when investigating an alert the agent gets it automatically. |
 | **Zero-config monitoring** | Pipe finds the domains in nginx/Caddy/Traefik and the backups in its directory map by itself: it watches certificate expiry, site responses, DNS and backup freshness. You define nothing. |
+| **Shows what it is doing** | `pipe web`: next to the chat, a map of the server that shows live where the agent works -- servers, inside a server, a project. Every change has a before -> after diff and an undo button. |
 | **Sees the architecture** | `/map` draws a diagram of what runs on the server: domains -> reverse proxy -> containers -> databases, compose projects, ports exposed to the world. On Telegram it arrives as an image, in the CLI as a PNG + a terminal preview. |
 | **Manages a fleet** | Remote servers (SSH), containers and Kubernetes clusters are *targets*. The agent sends **workers** to them -- sub-agents that examine every target in parallel and report to the agent, not to you. Nothing is installed on the other side. |
 | **MCP gateway for other agents** | Claude Code, Cursor or your own agent connect to Pipe over MCP (`pipe --mcp --host root@server`) and work on the server through the classifier: reads immediately, changes only after your approval on Telegram -- with a backup and `/undo`. Pipe itself also uses other MCP servers (GitHub, Grafana...). |
@@ -83,6 +84,10 @@ bash install.sh
 From now on you type `pipe --lang en` in any terminal (or put `export PIPE_LANG=en` in your shell profile and
 just type `pipe`). The CLI sets up an SSH tunnel and connects to the agent.
 
+Prefer a browser? `pipe web` opens an interface with the chat, a **live map of the server** (you see which
+element the agent is working on right now) and a view of changes with undo. It runs locally over the same
+tunnel -- no port is opened on the server.
+
 ### 3. Telegram (optional, recommended -- alerts arrive here)
 
 ```bash
@@ -121,7 +126,8 @@ Commands in both clients: `/status` `/report` `/changes` `/chart` `/health` `/ma
 | `backend/` | Server (Docker / systemd / Kubernetes) | -- this is the backend |
 | `clients/cli/` | Your laptop | SSH tunnel -> TCP `127.0.0.1:7379` (or `kubectl port-forward`) |
 | `clients/telegram/` | Server | Unix socket |
-| `clients/discord/`, `clients/webui/` | -- | Placeholder -- PRs welcome |
+| `clients/webui/` | Your laptop (`pipe web`) | page on `127.0.0.1:7400`, same SSH tunnel as the CLI |
+| `clients/discord/` | -- | Placeholder -- PRs welcome |
 
 ```
 CLI / Telegram ──JSON lines──> server.py ──> agent (LLM loop + tools)

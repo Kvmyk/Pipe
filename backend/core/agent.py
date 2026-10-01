@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.16.2
+Pipe v0.17.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -19,6 +19,7 @@ i promptem -- uruchamiaja workery (core/workers.py).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from typing import Any, AsyncGenerator
 
@@ -29,7 +30,7 @@ from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
 from backend.core import audit, executor, memory, runtime, usage
 from backend.core.i18n import tr
-from backend.core.events import Event
+from backend.core.events import Activity, Event
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.tools import TOOLS
 import backend.core.handlers as handlers_module
@@ -172,6 +173,8 @@ class VPSAgent:
 
         if confirmed:
             try:
+                if pending.activity is not None:
+                    yield dataclasses.replace(pending.activity, phase="start")
                 async for event in self._execute_tool_confirmed(session, pending):
                     yield event
             finally:
@@ -180,6 +183,8 @@ class VPSAgent:
                     session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
                                              "content": tr(INTERRUPTED_TOOL, INTERRUPTED_TOOL_EN)})
         else:
+            if pending.activity is not None:
+                yield dataclasses.replace(pending.activity, phase="end", ok=None)
             session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
                                      "content": tr("Uzytkownik odmowil wykonania tej operacji.",
                                                    "The user declined this operation.")})
@@ -344,6 +349,18 @@ class VPSAgent:
             yield f"[ODMOWA] {tr(VIEWER_NOTICE, VIEWER_NOTICE_EN)}"
             return
 
+        # Interfejs webowy rysuje schemat na zywo: co agent robi i na ktorym elemencie.
+        activity: Activity | None = None
+        if session.shows_activity and dispatch is None and not viewer:
+            from backend.core import graph
+            name = tool_call.function.name
+            workers = tuple((str(t.get("name") or t.get("target") or ""), str(t.get("target") or ""))
+                            for t in args.get("tasks") or [] if isinstance(t, dict)) if name == "delegate" else ()
+            activity = Activity(str(tool_call.id), "start", name, graph.describe(name, args),
+                                tuple(graph.locate(name, args, session.cwd)), workers=workers)
+            yield activity
+        failed = False
+
         buffered: list[Event] = []
         try:
             async for event in handler(session, tool_call, args):
@@ -355,6 +372,7 @@ class VPSAgent:
             if not _answered(session, tool_call.id, before) and session.pending_confirmation is None:
                 session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
                                          "content": tr(f"Blad narzedzia: {exc}", f"Tool error: {exc}")})
+            failed = True
             yield tr(f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}",
                      f"[BLAD] Tool {tool_call.function.name} raised an error: {exc}")
 
@@ -375,6 +393,14 @@ class VPSAgent:
             session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
                                      "content": tr("Narzedzie nie zwrocilo wyniku.", "The tool returned no result.")})
         _sanitize_new_results(session, before)
+
+        if activity is not None:
+            pending = session.pending_confirmation
+            if pending is not None and pending.tool_call_id == tool_call.id:
+                pending.activity = activity
+                yield dataclasses.replace(activity, phase="wait")
+            else:
+                yield dataclasses.replace(activity, phase="end", ok=not failed and not _refused(session, tool_call.id, before))
 
     async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> AsyncGenerator[Event, None]:
         """
@@ -423,8 +449,9 @@ class VPSAgent:
             await audit.log_confirmed(session.interface, pending.command, exit_code)
             return format_result(stdout, stderr, exit_code), exit_code
 
+        exit_code, entry_id = 0, ""
         if pending.action is not None and pending.plan is None:
-            result, _ = await run_action()
+            result, exit_code = await run_action()
         else:
             if pending.action is not None:
                 operation, plan = run_action, pending.plan
@@ -441,12 +468,14 @@ class VPSAgent:
                 sites_enabled=settings.WATCH_SITES, site_ignore=checks.parse_ignore(settings.WATCH_IGNORE),
             ):
                 if isinstance(item, safety.Outcome):
-                    result = item.text
+                    result, exit_code, entry_id = item.text, item.exit_code, item.entry_id
                 else:
                     yield item
 
         session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id, "content": result})
         _sanitize_new_results(session, before)
+        if pending.activity is not None:
+            yield dataclasses.replace(pending.activity, phase="end", ok=exit_code == 0, entry=entry_id)
 
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
@@ -490,6 +519,15 @@ def viewer_blocked(tool_name: str, args: dict[str, Any]) -> bool:
         return False
     operations = VIEWER_WRITE_OPERATIONS[tool_name]
     return operations is None or str(args.get("operation", "") or "").strip().lower() in operations
+
+
+def _refused(session: Session, tool_call_id: str, since: int) -> bool:
+    """Czy wynik narzedzia to odmowa albo blad (do stanu dzialania na schemacie)."""
+    for message in session.messages[since:]:
+        if message.get("role") == "tool" and message.get("tool_call_id") == tool_call_id:
+            content = str(message.get("content", "")).lstrip()
+            return content.startswith(("ODMOWA", "REFUSED", "SYSTEM REFUSAL", "Blad", "Błąd", "Error", "[BLAD]", "[ODMOWA]"))
+    return False
 
 
 def _answered(session: Session, tool_call_id: str, since: int) -> bool:

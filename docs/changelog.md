@@ -1,5 +1,30 @@
 # Historia zmian -- Pipe
 
+## v0.17.0 (2026-10-01)
+
+Interfejs w przegladarce ze schematem serwera na zywo. Aktualizacja bez recznych krokow; na serwerze nic sie nie
+zmienia w konfiguracji -- nowa komenda dziala po stronie klienta.
+
+### `pipe web`
+
+- Rozmowa z agentem w przegladarce: `pipe web` zestawia tunel jak CLI i otwiera strone na `127.0.0.1:7400`.
+  Bez instalowania i budowania czegokolwiek; token backendu zostaje w procesie `pipe web`
+- **Schemat na zywo** obok rozmowy, generowany automatycznie: serwery -> wnetrze serwera -> projekt compose.
+  Element, na ktorym agent pracuje, jest podswietlony; dzialanie czekajace na zgode jest oznaczone osobno
+- **Sledzenie agenta**: widok sam przechodzi tam, gdzie agent pracuje; wlasny ruch na schemacie wylacza sledzenie,
+  przycisk wlacza je z powrotem
+- Os czasu dzialan z krokami bezpiecznika i workerow; szczegoly elementu po kliknieciu
+- **Zmiany**: roznica pliku w karcie potwierdzenia, a po wykonaniu roznica "przed -> po" w rozmowie i w zakladce
+  *Zmiany*, z przyciskiem cofniecia
+- Alerty, przypomnienia i raporty przychodza na strone na zywo; aktywne alerty maja przycisk *Zbadaj*
+- Jasny motyw w blekitach (domyslny) i ciemny; polski i angielski (`--lang`)
+
+### Backend
+
+- Komenda `graph` -- schemat infrastruktury jako dane (wezly, polaczenia, trzy poziomy)
+- Zdarzenia `activity` dla klientow webowych: co agent robi i na ktorym elemencie schematu
+- Komenda `journal_changes` -- roznica "przed -> teraz" dla wpisu dziennika, z redakcja sekretow
+
 ## v0.16.2 (2026-10-01)
 
 Czytelniejsze wiadomosci na Telegramie. Aktualizacja: przebuduj kontener bota (`docker compose up -d --build`).

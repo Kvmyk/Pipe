@@ -7,6 +7,8 @@ Handler i petla agenta yielduja:
                zdjecie, CLI zapisuje na dysk i pokazuje wersje tekstowa
   Progress     krotki status posredni (np. co robi worker); klienci pokazuja
                go na biezaco i nie wliczaja do odpowiedzi
+  Activity     co agent wlasnie robi i na ktorym elemencie schematu — tylko dla
+               klientow, ktore rysuja schemat na zywo (interfejs webowy)
 
 server.py zamienia je na ramki protokolu (docs/protocol.md). Starsi klienci
 ignoruja pola `attachment` i `event`, bo `response` jest wtedy pusty.
@@ -48,4 +50,25 @@ class Progress:
         return {"type": "progress", "text": self.text, "source": self.source}
 
 
-Event = Union[str, Attachment, Progress]
+@dataclass(frozen=True)
+class Activity:
+    """
+    Dzialanie agenta przypisane do wezlow schematu (core/graph.py).
+    phase: start | wait (czeka na potwierdzenie) | end. `entry` — wpis dziennika zmian (po wykonaniu zmiany).
+    """
+    id: str
+    phase: str
+    tool: str
+    label: str
+    nodes: tuple[str, ...] = ("host",)
+    ok: bool | None = None
+    entry: str = ""
+    workers: tuple[tuple[str, str], ...] = ()    # (nazwa workera, cel) — dla delegate
+
+    def to_wire(self) -> dict:
+        return {"type": "activity", "id": self.id, "phase": self.phase, "tool": self.tool, "label": self.label,
+                "nodes": list(self.nodes), "ok": self.ok, "entry": self.entry,
+                "workers": {name: target for name, target in self.workers}}
+
+
+Event = Union[str, Attachment, Progress, Activity]

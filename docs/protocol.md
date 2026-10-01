@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.16.2
+Pipe v0.17.0
 
 ## Opis
 
@@ -62,6 +62,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `alerts` | -- | `"data": {"active": [alert], "recent": [zdarzenie], "enabled": bool}` |
 | `targets` | -- | `"data": {"targets": ["opis celu", ...]}` |
 | `routines` | -- | `"data": {"routines": ["opis rutyny", ...]}` |
+| `graph` | -- | `"data": {"root", "hostname", "views": {"fleet" \| "host" \| "p:<projekt>": {"title", "parent", "nodes": [{id, kind, label, sub, state, opens?, meta, alerts?}], "edges": [{from, to, kind, label?}]}}, "index": {id: [wezel na kazdym poziomie]}}` -- schemat jako dane (interfejs webowy) |
+| `journal_changes` | `id` | `"data": {"id", "command", "status", "undoable", "files": [{path, status: added\|deleted\|modified\|unchanged\|unknown, diff, note}], "inverse", "notes"}` -- roznica "przed -> teraz" z kopii dziennika, sekrety zredagowane |
 | `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
 | `investigate` | `id` alertu | streaming: agent bada alert czuwania; backend dolacza zmiany na serwerze z ostatniej doby |
@@ -139,6 +141,16 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
   "type": "reminder", "id": "6d1546", "kind": "message|task", "text": "...", "report": "",
   "to": "telegram:123", "set_at": "2026-10-01 20:02", "due": "2026-10-01 20:02:42", "at": "..."}}
 ```
+
+```json
+{"response": "", "status": "ok", "done": false, "event": {
+  "type": "activity", "id": "<id wywolania narzedzia>", "phase": "start|wait|end", "tool": "execute_command",
+  "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {}}}
+```
+
+Zdarzenia `activity` dostaje tylko klient, ktorego `interface` zaczyna sie od `web` -- mowia, co agent robi i na
+ktorych wezlach schematu (`graph`). `wait` = czeka na potwierdzenie; `end` ma `ok` (true/false/null po odmowie)
+i `entry` -- identyfikator wpisu dziennika, gdy zmiana zostala wykonana.
 
 `to` to interfejs, ktory ustawil przypomnienie -- klient decyduje, komu je pokazac. Dla `kind: task`
 pole `report` zawiera raport workera.

@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.16.2
+Pipe v0.17.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -423,6 +423,36 @@ i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- prz
 - CLI i inne klienty: osobny token na osobe albo laptop, odwolywalny:
   `python3 -m backend.tokens add laptop-kuba --role admin`, `list`, `revoke laptop-kuba`.
 - Role egzekwuje backend. Sesja nalezy do tokenu, ktory ja zalozyl.
+
+---
+
+## Interfejs webowy i schemat na zywo
+
+`pipe web` otwiera w przegladarce interfejs z rozmowa i panelem bocznym. Dziala na Twoim komputerze, przez ten sam
+tunel co CLI.
+
+**Schemat** powstaje sam z tego, co Pipe wie o infrastrukturze -- nic sie nie rysuje ani nie konfiguruje:
+
+| Poziom | Co widac |
+|--------|----------|
+| Serwery | ten serwer i zdalne cele (SSH, kontenery, klastry) |
+| Wnetrze serwera | internet, reverse proxy, projekty compose, pojedyncze kontenery, uslugi i porty |
+| Projekt | kontenery projektu, ich porty i zaleznosci (aplikacja -> baza), katalog projektu |
+
+- Gdy agent cos robi, element, ktorego to dotyczy, jest podswietlony, a po polaczeniach plyna impulsy. Dzialanie
+  czekajace na Twoja zgode ma inna, przerywana obwodke. Po zakonczeniu element blyska na zielono albo czerwono.
+- **Sledze agenta** (domyslnie wlaczone) przenosi widok za agentem, takze miedzy poziomami. Dowolny wlasny ruch --
+  przesuniecie, zoom, klikniecie -- wylacza sledzenie; przycisk wlacza je z powrotem.
+- Klikniecie w element pokazuje jego stan, alerty oraz co agent robi na nim teraz i co robil ostatnio; w projekt
+  albo serwer -- wchodzi poziom nizej.
+- Pod schematem jest os czasu dzialan, z krokami bezpiecznika (kopia, sprawdzenie, weryfikacja) i workerow.
+
+Przypisanie dzialania do elementu wynika z tresci komendy: nazwa kontenera, jednostka systemd, sciezka pliku, katalog
+projektu. Gdy sie nie da (np. dowolny skrypt), dzialanie jest pokazywane na calym serwerze.
+
+**Zmiany.** Przed zatwierdzeniem zapisu pliku widac roznice w karcie potwierdzenia. Po wykonaniu roznica "przed -> po"
+pojawia sie w rozmowie i w zakladce *Zmiany* -- takze gdy plik zmienila komenda (np. `sed`), bo bezpiecznik robi kopie.
+Sekrety w roznicach sa redagowane. Kazdy wpis ma przycisk cofniecia. Roznic nie ma dla katalogow i danych w bazach.
 
 ---
 
