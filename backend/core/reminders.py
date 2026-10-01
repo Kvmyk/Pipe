@@ -270,10 +270,15 @@ def owned_by(reminder: Reminder, interface: str) -> bool:
     return bool(reminder.to) and reminder.to == interface
 
 
+def zone() -> str:
+    """Nazwa strefy czasowej serwera (np. UTC, CEST) — wszystkie czasy przypomnien sa w niej."""
+    return time.strftime("%Z") or "UTC"
+
+
 def render_list(items: list[Reminder] | None = None, now: float | None = None) -> str:
     items = load_reminders() if items is None else items
     now = time.time() if now is None else now
-    stamp = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S") + " " + zone()
     if not items:
         return tr(f"Brak przypomnien. Czas serwera: {stamp}.", f"No reminders. Server time: {stamp}.")
     return tr(f"Przypomnienia (czas serwera: {stamp}):\n", f"Reminders (server time: {stamp}):\n") \

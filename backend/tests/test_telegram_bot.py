@@ -106,3 +106,101 @@ def test_alert_broadcast_to_allowed_users(monkeypatch):
 def test_routine_report_is_escaped():
     text = tg_format.format_routine({"name": "backup", "status": "PROBLEM", "report": "<script> & x"})
     assert "&lt;script&gt; &amp; x" in text and "<pre>" in text
+
+
+# --- Kanal zdarzen: przypomnienia dochodza zawsze, a cisza ma byc wyjasniona ---
+
+class _App:
+    def __init__(self):
+        self.bot = FakeBot()
+        self.bot_data = {}
+
+
+def _serve(tmp_path, frames_to_send, received):
+    """Atrapa backendu na sockecie Unix: przyjmuje subskrypcje i wysyla podane ramki."""
+    async def handle(reader, writer):
+        import json
+        received.append(json.loads(await reader.readline()))
+        for frame in frames_to_send:
+            writer.write((json.dumps(frame) + "\n").encode())
+        await writer.drain()
+        await asyncio.sleep(0.3)
+        writer.close()
+    return asyncio.start_unix_server(handle, path=str(tmp_path / "pipe.sock"))
+
+
+def _run_loop(monkeypatch, tmp_path, frames_to_send, *, alerts_enabled=True, seconds=0.6):
+    monkeypatch.setattr(bot, "AGENT_SOCKET", str(tmp_path / "pipe.sock"))
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {1, 2})
+    monkeypatch.setattr(bot, "VIEWER_USER_IDS", set())
+    monkeypatch.setattr(bot, "ALERTS_ENABLED", alerts_enabled)
+    monkeypatch.setattr(bot, "_subscription", {"connected": False, "error": "", "since": 0.0})
+    app, received = _App(), []
+
+    async def scenario():
+        server = await _serve(tmp_path, frames_to_send, received)
+        task = asyncio.create_task(bot.alerts_loop(app))
+        await asyncio.sleep(seconds)
+        connected = bot._subscription["connected"]
+        task.cancel()
+        server.close()
+        return connected
+    return app, received, asyncio.run(scenario())
+
+
+def _event(event):
+    return {"response": "", "status": "ok", "done": False, "event": event}
+
+
+def test_reminder_goes_only_to_the_user_who_set_it(monkeypatch, tmp_path):
+    app, received, _ = _run_loop(monkeypatch, tmp_path, [
+        _event({"type": "subscribed"}),
+        _event({"type": "reminder", "id": "ab12cd", "kind": "message", "text": "siemka", "to": "telegram:2",
+                "set_at": "2026-10-01 20:16"}),
+    ], seconds=0.2)
+    assert received[0]["command"] == "subscribe"
+    assert [(kind, text) for kind, text, _ in app.bot.log] == [
+        ("message", "<b>Przypomnienie</b>\nsiemka\n<i>ustawione 2026-10-01 20:16</i>")]
+
+
+def test_alerts_off_still_delivers_reminders_and_approvals(monkeypatch, tmp_path):
+    """TELEGRAM_ALERTS=0 wycisza czuwanie, ale przypomnienie (i zgoda) to cos, o co uzytkownik sam prosil."""
+    app, _, connected = _run_loop(monkeypatch, tmp_path, [
+        _event({"type": "subscribed"}),
+        _event({"type": "alert", "id": "a", "severity": "warning", "state": "new", "title": "Dysk", "detail": "x"}),
+        _event({"type": "routine", "name": "r", "status": "OK", "report": "ok"}),
+        _event({"type": "reminder", "id": "ab12cd", "kind": "message", "text": "kawa", "to": "telegram:1"}),
+    ], alerts_enabled=False, seconds=0.2)
+    texts = [text for _, text, _ in app.bot.log]
+    assert connected and len(texts) == 1 and "kawa" in texts[0]
+
+
+def test_subscription_state_and_note(monkeypatch, tmp_path):
+    monkeypatch.setenv("PIPE_LANG", "pl")
+    _, _, connected = _run_loop(monkeypatch, tmp_path, [_event({"type": "subscribed"})], seconds=0.15)
+    assert connected
+    # backend zamknal polaczenie -> stan "nieaktywny" z powodem, widoczny w /przypomnienia i /alerty
+    assert bot._subscription["connected"] is False or bot.subscription_note() == ""
+    monkeypatch.setattr(bot, "_subscription", {"connected": True, "error": "", "since": 1.0})
+    assert bot.subscription_note() == ""
+    monkeypatch.setattr(bot, "_subscription", {"connected": False, "error": "backend odrzucil subskrypcje: zly <token>", "since": 0})
+    note = bot.subscription_note()
+    assert "bot nie odbiera teraz powiadomien" in note and "zly &lt;token&gt;" in note
+
+
+def test_rejected_subscription_is_recorded(monkeypatch, tmp_path):
+    _, _, connected = _run_loop(monkeypatch, tmp_path, [
+        {"response": "[BLAD] Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True}], seconds=0.2)
+    assert not connected and "Nieprawidlowy token" in bot._subscription["error"]
+
+
+def test_missing_socket_is_recorded(monkeypatch, tmp_path):
+    monkeypatch.setattr(bot, "AGENT_SOCKET", str(tmp_path / "nie-ma.sock"))
+    monkeypatch.setattr(bot, "_subscription", {"connected": False, "error": "", "since": 0.0})
+
+    async def scenario():
+        task = asyncio.create_task(bot.alerts_loop(_App()))
+        await asyncio.sleep(0.15)
+        task.cancel()
+    asyncio.run(scenario())
+    assert "nie-ma.sock" in bot._subscription["error"]

@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.16.0** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.16.1** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 

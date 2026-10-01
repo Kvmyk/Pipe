@@ -225,6 +225,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 "active": [a.to_event() for a in watcher.active.values()],
                 "recent": watcher.notifier.history[-10:],
                 "enabled": settings.WATCH_ENABLED,
+                "subscribers": watcher.notifier.subscribers,
             }))
         elif command == "targets":
             await _send(writer, _data({"targets": [t.describe() for t in targets.load_targets()]}))
@@ -367,6 +368,7 @@ async def _reminders(writer, request: dict, interface: str, role: str) -> None:
         "reminders": [{"id": r.id, "due": r.when, "kind": r.kind, "text": r.text, "fired": r.fired} for r in items],
         "claimed": [r.to_event() for r in claimed],
         "cancelled": cancel_id if cancel_id else "",
+        "subscribers": get_watcher().notifier.subscribers,
     }))
 
 

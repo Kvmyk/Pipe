@@ -323,3 +323,35 @@ class TestTelegram:
         assert "przypomnienia" in {name for name, _ in tg_format.BUILTIN_COMMANDS}
         assert tg_format.COMMAND_ALIASES["reminders"] == "przypomnienia"
         assert {"przypomnienia", "reminders"} <= RESERVED_COMMANDS
+
+
+class TestHonestyWhenNobodyListens:
+
+    def test_tool_reply_and_notice_warn_on_telegram_without_subscription(self):
+        agent = VPSAgent(client=FakeClient([
+            completion(tool_calls=[("c1", "reminder", {"operation": "add", "delay": "5s", "text": "siemka"})]),
+            completion("ok"),
+        ]))
+        events = [e for e in run(agent.chat("s", "napisz za 5 sekund", "telegram:7")) if isinstance(e, str)]
+        tool = next(m for m in agent._sessions["s"].messages if m.get("role") == "tool")["content"]
+        assert "UWAGA: bot Telegrama nie odbiera teraz powiadomien" in tool and "NIE twierdz" in tool
+        assert any("[PAMIEC]" in e and "UWAGA: bot nie odbiera" in e for e in events)
+
+    def test_no_warning_when_bot_is_subscribed(self):
+        agent = VPSAgent(client=FakeClient([
+            completion(tool_calls=[("c1", "reminder", {"operation": "add", "delay": "5s", "text": "siemka"})]),
+            completion("ok"),
+        ]))
+        watch.get_watcher(agent).notifier.subscribe()
+        events = [e for e in run(agent.chat("s", "napisz za 5 sekund", "telegram:7")) if isinstance(e, str)]
+        tool = next(m for m in agent._sessions["s"].messages if m.get("role") == "tool")["content"]
+        assert "UWAGA" not in tool and not any("UWAGA" in e for e in events)
+
+    def test_cli_gets_a_plain_note(self):
+        agent = VPSAgent(client=FakeClient([
+            completion(tool_calls=[("c1", "reminder", {"operation": "add", "delay": "5s", "text": "siemka"})]),
+            completion("ok"),
+        ]))
+        run(agent.chat("s", "napisz za 5 sekund", "cli:kuba"))
+        tool = next(m for m in agent._sessions["s"].messages if m.get("role") == "tool")["content"]
+        assert "przy najblizszej wiadomosci" in tool

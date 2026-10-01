@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.16.0
+Pipe v0.16.1
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -36,6 +36,20 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
 
 `TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
+
+## Gdy powiadomienia nie przychodza
+
+Alerty, raporty i przypomnienia bot dostaje stalym polaczeniem z backendem (subskrypcja zdarzen). Gdy go nie ma,
+`/przypomnienia` i `/alerty` pokazuja ostrzezenie z powodem, a przypomnienie ma stan *czeka na odbior* i dotrze po
+polaczeniu. Najczestsze przyczyny:
+
+- `AGENT_TOKEN` w `clients/telegram/.env` rozni sie od tego w `backend/.env` -- w logu bota:
+  `Kanal zdarzen nieaktywny: backend odrzucil subskrypcje`
+- backend nie dziala albo socket (`AGENT_SOCKET`) nie jest wspolny dla obu procesow
+- dziala stary proces bota (np. druga instancja spoza Dockera)
+
+Logi: `docker compose logs telegram | grep -i "kanal\|subskrypcja"` -- prawidlowo: `Subskrypcja alertow aktywna.`
+`TELEGRAM_ALERTS=0` wycisza tylko alerty czuwania i raporty; przypomnienia i prosby o zgode przychodza zawsze.
 
 ## Wiadomosci glosowe
 

@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.16.0
+Pipe v0.16.1
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -81,6 +81,14 @@ do projektu. Jesli to istotne, po instalacji zmien klucz albo skonfiguruj go rec
 `AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `PIPE_LANG`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
 konfiguracja LLM jest kompletna (`--test` od razu testuje tool calling). Uzywaja go `install-server.sh -y`
 i cloud-init; przyda sie w Ansible czy CI.
+
+## Strefa czasowa
+
+Godziny w przypomnieniach (*"przypomnij o 9"*), rutynach, porannym raporcie (`DIGEST_TIME`) i alertach to czas
+**serwera**. W Dockerze kontenery dostaja strefe hosta (`/etc/localtime`); wczesniej chodzily w UTC niezaleznie od
+hosta. Jesli serwer jest w UTC, a Ty nie -- ustaw w `backend/.env` np. `TZ=Europe/Warsaw` i zrob
+`docker compose up -d` (w trybie native: `timedatectl set-timezone Europe/Warsaw`; w Kubernetesie dodaj `TZ` do
+sekretow `pipe-env` i `pipe-telegram`). `/przypomnienia` pokazuje aktualny czas i strefe serwera.
 
 ## Jezyk (`PIPE_LANG`)
 

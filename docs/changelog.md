@@ -1,5 +1,21 @@
 # Historia zmian -- Pipe
 
+## v0.16.1 (2026-10-01)
+
+Poprawki przypomnien. W Dockerze po `git pull` zrob `docker compose up -d --build` (zmienil sie `docker-compose.yml`).
+
+### Poprawki
+
+- Przypomnienie, ktorego bot nie mogl odebrac, konczylo sie cisza, a agent twierdzil, ze wiadomosc wyslal. Teraz
+  agent dostaje informacje, ze bot nie odbiera powiadomien, i mowi o tym od razu; `/przypomnienia` i `/alerty`
+  pokazuja ostrzezenie z powodem (np. odrzucony token, brak polaczenia z backendem)
+- `TELEGRAM_ALERTS=0` wylaczalo cala subskrypcje zdarzen, wiec nie dochodzily tez przypomnienia ani prosby o zgode
+  dla agentow MCP. Teraz wycisza tylko alerty czuwania i raporty
+- Bot nie logowal nieudanych prob polaczenia z backendem -- w logu jest teraz `Kanal zdarzen nieaktywny: <powod>`
+- Kontenery chodzily w UTC niezaleznie od strefy hosta: *"przypomnij o 9"*, rutyny i poranny raport przychodzily
+  o innej godzinie niz na zegarze serwera. Kontenery biora teraz strefe hosta; `TZ=Europe/Warsaw` w `backend/.env`
+  ustawia wlasna. Komunikaty o przypomnieniach podaja strefe
+
 ## v0.16.0 (2026-10-01)
 
 Przypomnienia: agent moze odezwac sie pozniej, gdy go o to poprosisz. Aktualizacja bez recznych krokow.

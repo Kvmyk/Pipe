@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.16.0
+Pipe v0.16.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -604,7 +604,7 @@ async def cmd_katalogi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cmd_alerty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _show_data(update, context, "alerts", format_alerts)
+    await _show_data(update, context, "alerts", lambda d: format_alerts(d) + subscription_note())
 
 
 async def cmd_cele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -630,7 +630,8 @@ async def cmd_przypomnienia(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         head = tr(f"Anulowano #{data['cancelled']}.\n", f"Cancelled #{data['cancelled']}.\n") if data.get("cancelled") else ""
         hint = tr("\n<i>Napisz np. \"przypomnij mi za 2 godziny o backupie\". Anulowanie: /przypomnienia anuluj &lt;id&gt;</i>",
                   "\n<i>Write e.g. \"remind me in 2 hours about the backup\". Cancel: /reminders cancel &lt;id&gt;</i>")
-        return html.escape(head) + format_pre(tr("Przypomnienia", "Reminders"), data.get("text", "")) + hint
+        return html.escape(head) + format_pre(tr("Przypomnienia", "Reminders"), data.get("text", "")) + hint \
+            + subscription_note()
 
     await _show_data(update, context, "reminders", render, cancel=cancel)
 
@@ -884,6 +885,31 @@ async def _broadcast(app: Application, event: dict) -> None:
             print(f"[Pipe Telegram] Nie wyslano zdarzenia do {user_id}: {exc}", flush=True)
 
 
+# Zdarzenia czuwania, ktore TELEGRAM_ALERTS=0 wycisza. Przypomnienia i prosby o zgode przychodza zawsze —
+# uzytkownik sam o nie poprosil albo czeka na nie zewnetrzny agent.
+WATCH_EVENT_TYPES = frozenset({"alert", "routine", "digest", "welcome", "investigation"})
+# Stan kanalu zdarzen — pokazywany w /przypomnienia i /alerty, zeby cisza nie byla zagadka.
+_subscription: dict = {"connected": False, "error": "", "since": 0.0}
+
+
+def _subscription_down(error: str) -> None:
+    if _subscription["connected"] or _subscription["error"] != error:
+        print(f"[Pipe Telegram] Kanal zdarzen nieaktywny: {error}", flush=True)
+    _subscription.update(connected=False, error=error)
+
+
+def subscription_note() -> str:
+    """Ostrzezenie HTML, gdy bot nie odbiera zdarzen backendu (pusty napis, gdy kanal dziala)."""
+    if _subscription["connected"]:
+        return ""
+    reason = html.escape(_subscription["error"] or tr("lacze sie z backendem", "connecting to the backend"))
+    return tr(f"\n\n<b>Uwaga:</b> bot nie odbiera teraz powiadomien z backendu ({reason}). Przypomnienia i alerty "
+              "dotra, gdy polaczenie wroci. Sprawdz logi bota i zgodnosc AGENT_TOKEN w obu plikach .env.",
+              f"\n\n<b>Warning:</b> the bot is not receiving notifications from the backend right now ({reason}). "
+              "Reminders and alerts will arrive when the connection is back. Check the bot logs and that AGENT_TOKEN "
+              "matches in both .env files.")
+
+
 async def alerts_loop(app: Application) -> None:
     """Trwala subskrypcja zdarzen backendu z ponawianiem polaczenia."""
     backoff = 2.0
@@ -904,21 +930,28 @@ async def alerts_loop(app: Application) -> None:
                 except json.JSONDecodeError:
                     continue
                 if frame.get("status") == "error":
-                    print(f"[Pipe Telegram] Subskrypcja odrzucona: {frame.get('response')}", flush=True)
+                    _subscription_down(tr("backend odrzucil subskrypcje: ", "the backend rejected the subscription: ")
+                                       + str(frame.get("response", "")))
                     break
                 event = frame.get("event") or {}
                 if event.get("type") == "subscribed":
                     print("[Pipe Telegram] Subskrypcja alertow aktywna.", flush=True)
+                    _subscription.update(connected=True, error="", since=time.time())
                     backoff = 2.0
-                elif event:
-                    await _broadcast(app, event)
+                elif event and (ALERTS_ENABLED or event.get("type") not in WATCH_EVENT_TYPES):
+                    try:
+                        await _broadcast(app, event)
+                    except Exception as exc:          # jedno zle zdarzenie nie moze zerwac kanalu
+                        print(f"[Pipe Telegram] Nie rozeslano zdarzenia {event.get('type')}: {exc}", flush=True)
+            if _subscription["connected"]:
+                _subscription_down(tr("backend zamknal polaczenie (restart?)", "the backend closed the connection (restart?)"))
             writer.close()
-        except (OSError, ConnectionError):
-            pass
+        except (OSError, ConnectionError) as exc:
+            _subscription_down(tr(f"brak polaczenia z {AGENT_SOCKET}: {exc}", f"cannot connect to {AGENT_SOCKET}: {exc}"))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"[Pipe Telegram] Blad subskrypcji: {exc}", flush=True)
+            _subscription_down(tr(f"blad subskrypcji: {exc}", f"subscription error: {exc}"))
         await asyncio.sleep(backoff)
         backoff = min(backoff * 2, 60.0)
 
@@ -953,8 +986,10 @@ async def refresh_menu_after_update(update: Update, context: ContextTypes.DEFAUL
 async def _post_init(app: Application) -> None:
     for user_id in ALLOWED_USER_IDS | VIEWER_USER_IDS:
         await refresh_menu(app.bot, user_id)
-    if ALERTS_ENABLED and (ALLOWED_USER_IDS or VIEWER_USER_IDS):
-        app.create_task(alerts_loop(app))
+    if ALLOWED_USER_IDS or VIEWER_USER_IDS:
+        # Zawsze: TELEGRAM_ALERTS=0 wycisza tylko alerty czuwania, przypomnienia musza dochodzic.
+        # Referencja w bot_data — zadanie bez referencji moze zostac usuniete przez garbage collector.
+        app.bot_data["alerts_task"] = asyncio.create_task(alerts_loop(app), name="pipe-alerts")
 
 
 # --- Main ---
@@ -979,7 +1014,7 @@ def main() -> None:
         print(f"[Pipe Telegram] Tylko odczyt: {VIEWER_USER_IDS}"
               + ("" if AGENT_VIEWER_TOKEN else " — UWAGA: brak AGENT_VIEWER_TOKEN, backend ich odrzuci"))
     print(f"[Pipe Telegram] Backend socket: {AGENT_SOCKET}")
-    print(f"[Pipe Telegram] Alerty czuwania: {'tak' if ALERTS_ENABLED else 'nie'}")
+    print(f"[Pipe Telegram] Alerty czuwania: {'tak' if ALERTS_ENABLED else 'nie (TELEGRAM_ALERTS=0; przypomnienia i zgody dochodza)'}")
 
     # concurrent_updates: dluga operacja (workery) jednego uzytkownika nie blokuje innych
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).concurrent_updates(True).build()

@@ -14,6 +14,23 @@ from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
 
 
+def delivery_note(session: Session, subscribers: int) -> str:
+    """Uczciwa informacja dla modelu (i uzytkownika), jesli przypomnienie nie ma teraz ktoredy dotrzec."""
+    if subscribers:
+        return ""
+    if session.is_telegram:
+        return tr("\nUWAGA: bot Telegrama nie odbiera teraz powiadomien z backendu (brak subskrypcji) — przypomnienie "
+                  "dotrze dopiero, gdy bot sie podlaczy. Powiedz o tym uzytkownikowi i NIE twierdz, ze wiadomosc "
+                  "zostala wyslana; stan pokazuje /przypomnienia.",
+                  "\nWARNING: the Telegram bot is not receiving notifications from the backend right now (no "
+                  "subscription) — the reminder will arrive only once the bot connects. Tell the user and do NOT claim "
+                  "the message was sent; /reminders shows the state.")
+    return tr("\nUwaga: zaden klient nie odbiera teraz powiadomien na zywo (bot Telegrama nie jest podlaczony). "
+              "W CLI przypomnienie pokaze sie po polaczeniu albo przy najblizszej wiadomosci — powiedz to uzytkownikowi.",
+              "\nNote: no client receives live notifications right now (the Telegram bot is not connected). "
+              "In the CLI the reminder shows up on connect or with the next message — tell the user.")
+
+
 async def handle_reminder(
     agent: Any,
     session: Session,
@@ -69,18 +86,22 @@ async def handle_reminder(
             reminder = reminders.add(when, text, kind=kind, target=target, to=session.interface)
             get_watcher(agent).reminders_changed()
             await audit.log_file_write(session.interface, f"reminders.json#{reminder.id} ({kind})", 0)
-            return tr(f"Ustawiono przypomnienie #{reminder.id} na {reminder.when} (czas serwera). "
-                      "Wiadomosc przyjdzie sama — nie czekaj i niczego nie odliczaj.",
-                      f"Reminder #{reminder.id} set for {reminder.when} (server time). "
-                      "The message will arrive by itself — do not wait or count down.")
+            result = tr(f"Ustawiono przypomnienie #{reminder.id} na {reminder.when} (czas serwera, {reminders.zone()}). "
+                        "Wiadomosc przyjdzie sama — nie czekaj i niczego nie odliczaj.",
+                        f"Reminder #{reminder.id} set for {reminder.when} (server time, {reminders.zone()}). "
+                        "The message will arrive by itself — do not wait or count down.")
+            return result + delivery_note(session, get_watcher(agent).notifier.subscribers)
 
         if kind == "message":
             result = await create()
             reply(session, tool_call, result)
             reminder_id = result.split("#", 1)[1].split(" ", 1)[0]
             saved = reminders.get(reminder_id)
-            yield tr(f"[PAMIEC] Przypomnienie #{reminder_id} na {saved.when if saved else '?'}: {text[:200]}",
-                     f"[PAMIEC] Reminder #{reminder_id} for {saved.when if saved else '?'}: {text[:200]}")
+            offline = "" if get_watcher(agent).notifier.subscribers or not session.is_telegram else tr(
+                " — UWAGA: bot nie odbiera teraz powiadomien, wiadomosc dotrze po polaczeniu (/przypomnienia)",
+                " — WARNING: the bot is not receiving notifications right now, the message arrives once it connects (/reminders)")
+            yield tr(f"[PAMIEC] Przypomnienie #{reminder_id} na {saved.when if saved else '?'}: {text[:200]}{offline}",
+                     f"[PAMIEC] Reminder #{reminder_id} for {saved.when if saved else '?'}: {text[:200]}{offline}")
             return
 
         # Zadanie wykona worker bez nadzoru (jak rutyna) — uzytkownik musi zobaczyc cala tresc.

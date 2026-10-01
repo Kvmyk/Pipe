@@ -14,6 +14,9 @@ services:
       - /:/hostfs:ro
       # Katalog domowy — zapis dozwolony (overlay na ro mount powyzej)
       - /root:/hostfs/root
+      # Strefa czasowa hosta — bez tego kontener liczy czas w UTC ("przypomnij o 9" i poranny raport
+      # przychodzilyby o innej godzinie niz na zegarze serwera). Inna strefa: TZ=Europe/Warsaw w backend/.env.
+      - /etc/localtime:/etc/localtime:ro
       # Proc hosta VPS — aby agent czytał statystyki z poziomu VPS, a nie maszyny fizycznej
       - /proc:/hostproc:ro
       # Docker socket - aby agent mogl zarzadzac kontenerami!
@@ -81,8 +84,11 @@ services:
       - ../clients/telegram/.env:/app/clients/telegram/.env:ro
       # Wspólny socket plikowy do gadania z vps-agentem
       - /tmp:/tmp
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - AGENT_TOKEN
+      - TZ
+      - PIPE_LANG
       # 0 = bot nie przesyla alertow czuwania ani raportow rutyn
       - TELEGRAM_ALERTS
     network_mode: bridge
