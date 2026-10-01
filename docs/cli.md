@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -103,6 +103,7 @@ Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent o
 | `PIPE_KUBE_NAMESPACE` | Jak `--kube` | -- |
 | `PIPE_KUBE_CONTEXT` | Jak `--kube-context` | biezacy kontekst |
 | `PIPE_DIAGRAMS_DIR` | Gdzie zapisywac diagramy | `~/.pipe/diagrams` |
+| `PIPE_LANG` | Jezyk CLI: `pl` albo `en` (rownowazne `--lang`) | `pl` |
 
 ## Przykladowe komendy w CLI
 
@@ -125,6 +126,11 @@ Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent o
 Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 
 ## Komendy
+
+Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
+`/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`,
+`/approvals`, `/cost`, `/history`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski (jezyk
+odpowiedzi agenta ustawia `PIPE_LANG` w backendzie).
 
 | Komenda | Dzialanie |
 |---|---|

@@ -26,6 +26,8 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+from backend.core.i18n import tr
+
 RuntimeKind = Literal["docker", "native", "kubernetes"]
 
 DOCKER_HOST_ROOT = "/hostfs"
@@ -102,20 +104,30 @@ def describe() -> str:
     root = host_root()
     proc = host_proc()
     if runtime == "native":
-        return (
+        return tr(
             "Tryb: native. Dzialasz bezposrednio na serwerze (bez kontenera): sciezki, /proc, "
-            "`ss`, `ip`, `df` i `systemctl` opisuja ten serwer."
+            "`ss`, `ip`, `df` i `systemctl` opisuja ten serwer.",
+            "Mode: native. You run directly on the server (no container): paths, /proc, "
+            "`ss`, `ip`, `df` and `systemctl` describe this server."
         )
     if runtime == "kubernetes" and not root:
-        return (
+        return tr(
             "Tryb: kubernetes. Dzialasz jako pod w klastrze. Klastrem zarzadzasz przez kubectl "
             "(uprawnienia z ServiceAccount). System plikow poda to nie jest wezel — o wezlach "
-            "dowiadujesz sie z `kubectl get nodes` / `kubectl describe node`."
+            "dowiadujesz sie z `kubectl get nodes` / `kubectl describe node`.",
+            "Mode: kubernetes. You run as a pod in the cluster. You manage the cluster through kubectl "
+            "(permissions from the ServiceAccount). The pod's filesystem is not the node — you learn about "
+            "nodes from `kubectl get nodes` / `kubectl describe node`."
         )
     where = "kontenerze Docker" if runtime == "docker" else "podzie Kubernetesa z zamontowanym wezlem"
-    return (
+    where_en = "a Docker container" if runtime == "docker" else "a Kubernetes pod with the node mounted"
+    return tr(
         f"Tryb: {runtime}. Dzialasz w {where}. System plikow hosta jest pod `{root}` (tylko do odczytu, "
         f"poza `{root}/root`), /proc hosta pod `{proc}`. `hostname`, `cat /etc/...`, `ip addr`, `ss` "
         f"i `df /` opisuja kontener, nie serwer: konfiguracje hosta czytaj z `{root}/etc`, porty hosta "
-        f"daje network_info, dysk `df -h {root}`. Uzytkownikowi zawsze podawaj sciezki hosta, bez `{root}`."
+        f"daje network_info, dysk `df -h {root}`. Uzytkownikowi zawsze podawaj sciezki hosta, bez `{root}`.",
+        f"Mode: {runtime}. You run in {where_en}. The host filesystem is under `{root}` (read-only, "
+        f"except `{root}/root`), the host /proc under `{proc}`. `hostname`, `cat /etc/...`, `ip addr`, `ss` "
+        f"and `df /` describe the container, not the server: read host configs from `{root}/etc`, host ports "
+        f"come from network_info, disk from `df -h {root}`. Always give the user host paths, without `{root}`."
     )

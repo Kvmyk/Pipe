@@ -240,7 +240,7 @@ class Watcher:
             point = await asyncio.to_thread(metrics.sample)
             await asyncio.to_thread(metrics.record, point, settings.METRICS_KEEP_DAYS)
         except OSError as exc:
-            print(f"[Czuwanie] Nie zapisano probki pomiarow: {exc}", flush=True)
+            print(tr(f"[Czuwanie] Nie zapisano probki pomiarow: {exc}", f"[Watcher] Metric sample not saved: {exc}"), flush=True)
 
         containers = await infra.docker_containers()
         if containers is not None:
@@ -279,14 +279,14 @@ class Watcher:
             findings += posture.sentinel_findings(state.get("sentinel"), current, pipe_changed)
             state["sentinel"] = current
         except Exception as exc:
-            print(f"[Czuwanie] Straznik bezpieczenstwa: {exc}", flush=True)
+            print(tr(f"[Czuwanie] Straznik bezpieczenstwa: {exc}", f"[Watcher] Security sentinel: {exc}"), flush=True)
         try:
             events = await asyncio.to_thread(posture.read_auth_increment, state)
             if events is not None:
                 findings += posture.auth_findings(events, self._auth, state, threshold=settings.WATCH_SSH_FAILURES,
                                                   notify_logins=settings.WATCH_SSH_LOGINS)
         except Exception as exc:
-            print(f"[Czuwanie] Log SSH: {exc}", flush=True)
+            print(tr(f"[Czuwanie] Log SSH: {exc}", f"[Watcher] SSH log: {exc}"), flush=True)
         return findings
 
     def _publish(self, events: list[Alert]) -> list[Alert]:
@@ -310,7 +310,7 @@ class Watcher:
             else:
                 incidents.closed(alert.key, journal.entries(50))
         except (OSError, ValueError) as exc:
-            print(f"[Czuwanie] Pamiec incydentow: {exc}", flush=True)
+            print(tr(f"[Czuwanie] Pamiec incydentow: {exc}", f"[Watcher] Incident memory: {exc}"), flush=True)
 
     # --- alerty z zewnatrz (webhooki) --------------------------------------
 
@@ -382,7 +382,8 @@ class Watcher:
                 report = await checks.run_checks(sites=settings.WATCH_SITES,
                                                  ignore=checks.parse_ignore(settings.WATCH_IGNORE))
             except Exception as exc:
-                print(f"[Czuwanie] Sprawdzenia do raportu nie powiodly sie: {exc}", flush=True)
+                print(tr(f"[Czuwanie] Sprawdzenia do raportu nie powiodly sie: {exc}",
+                         f"[Watcher] Checks for the report failed: {exc}"), flush=True)
         try:
             current = await snapshots.capture()
         except Exception:
@@ -451,7 +452,7 @@ class Watcher:
             try:
                 await self.check_once()
             except Exception as exc:
-                print(f"[Czuwanie] Blad sprawdzenia: {exc}", flush=True)
+                print(tr(f"[Czuwanie] Blad sprawdzenia: {exc}", f"[Watcher] Check error: {exc}"), flush=True)
             await asyncio.sleep(max(30, settings.WATCH_INTERVAL))
 
     async def _periodic(self, name: str, action, interval: int, delay: float) -> None:
@@ -460,7 +461,7 @@ class Watcher:
             try:
                 await action()
             except Exception as exc:
-                print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
+                print(tr(f"[Czuwanie] Blad ({name}): {exc}", f"[Watcher] Error ({name}): {exc}"), flush=True)
             await asyncio.sleep(max(300, interval))
 
     async def publish_digest(self) -> None:
@@ -504,7 +505,7 @@ class Watcher:
         try:
             await coro
         except Exception as exc:
-            print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
+            print(tr(f"[Czuwanie] Blad ({name}): {exc}", f"[Watcher] Error ({name}): {exc}"), flush=True)
 
     def start(self) -> None:
         if self._tasks:

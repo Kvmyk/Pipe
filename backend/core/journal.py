@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core import memory
+from backend.core.i18n import tr
 
 MAX_ENTRIES = 50
 KEEP_DAYS = 14
@@ -79,14 +80,17 @@ class Entry:
             backed or bool(self.inverse) or self.crontab is not None)
 
     def summary(self) -> str:
-        state = {"pending": "w toku", "done": "wykonano", "failed": "blad", "aborted": "przerwano przed wykonaniem",
-                 "restored": "cofnieto automatycznie", "rolled_back": "cofnieto"}.get(self.status, self.status)
+        state = tr({"pending": "w toku", "done": "wykonano", "failed": "blad", "aborted": "przerwano przed wykonaniem",
+                    "restored": "cofnieto automatycznie", "rolled_back": "cofnieto"},
+                   {"pending": "in progress", "done": "done", "failed": "failed", "aborted": "aborted before running",
+                    "restored": "rolled back automatically", "rolled_back": "undone"}).get(self.status, self.status)
         what = self.command if len(self.command) <= 120 else self.command[:117] + "..."
         extra = []
         if self.files:
-            extra.append(f"kopie: {len([f for f in self.files if not f.skipped])}")
+            copies = len([f for f in self.files if not f.skipped])
+            extra.append(tr(f"kopie: {copies}", f"backups: {copies}"))
         if self.inverse:
-            extra.append("komendy odwrotne")
+            extra.append(tr("komendy odwrotne", "inverse commands"))
         return f"#{self.id} {self.when} [{state}] {self.tool}: {what}" + (f" ({', '.join(extra)})" if extra else "")
 
 
@@ -96,7 +100,7 @@ def journal_dir() -> Path:
 
 def _entry_dir(entry_id: str) -> Path:
     if not entry_id or not all(c in "0123456789abcdef" for c in entry_id):
-        raise ValueError(f"Nieprawidlowy identyfikator wpisu: {entry_id!r}")
+        raise ValueError(tr(f"Nieprawidlowy identyfikator wpisu: {entry_id!r}", f"Invalid entry id: {entry_id!r}"))
     return journal_dir() / entry_id
 
 
@@ -150,22 +154,22 @@ def _backup_file(directory: Path, index: int, local: str, label: str, budget: li
     if not os.path.lexists(local):
         return FileBackup(local, label, existed=False)
     if os.path.isdir(local) and not os.path.islink(local):
-        return FileBackup(local, label, existed=True, skipped="katalog — bez kopii")
+        return FileBackup(local, label, existed=True, skipped=tr("katalog — bez kopii", "directory — no backup"))
     try:
         stat = os.stat(local)
     except OSError as exc:
-        return FileBackup(local, label, existed=True, skipped=f"brak dostepu ({exc.strerror})")
+        return FileBackup(local, label, existed=True, skipped=tr(f"brak dostepu ({exc.strerror})", f"no access ({exc.strerror})"))
     backup = FileBackup(local, label, existed=True, mode=stat.st_mode & 0o7777, uid=stat.st_uid, gid=stat.st_gid,
                         size=stat.st_size)
     if stat.st_size > MAX_FILE_BYTES or stat.st_size > budget[0]:
-        backup.skipped = f"plik za duzy na kopie ({stat.st_size} B)"
+        backup.skipped = tr(f"plik za duzy na kopie ({stat.st_size} B)", f"file too large to back up ({stat.st_size} B)")
         return backup
     blob = f"{index}.bak"
     try:
         shutil.copyfile(local, directory / blob)
         os.chmod(directory / blob, 0o600)
     except OSError as exc:
-        backup.skipped = f"nie udalo sie skopiowac ({exc.strerror or exc})"
+        backup.skipped = tr(f"nie udalo sie skopiowac ({exc.strerror or exc})", f"could not copy ({exc.strerror or exc})")
         return backup
     budget[0] -= stat.st_size
     backup.blob = blob
@@ -202,7 +206,7 @@ async def begin(interface: str, tool: str, command: str, *, files: list[tuple[st
         entry.inverse.append(f"git -C {quoted} reset --keep {shlex.quote(sha)}")
     if crontab:
         out, _, code = await executor.execute("crontab -l", timeout=10)
-        entry.crontab = out if code == 0 and out != "Komenda wykonana bez outputu" else ""
+        entry.crontab = out if code == 0 and out not in executor.NO_OUTPUT else ""
     _save(entry)
     prune()
     return entry
@@ -228,9 +232,11 @@ def restore_files(entry: Entry) -> list[str]:
             if not backup.existed:
                 if os.path.lexists(backup.local) and not os.path.isdir(backup.local):
                     os.unlink(backup.local)
-                    report.append(f"{backup.label}: usunieto (nie istnial przed zmiana)")
+                    report.append(tr(f"{backup.label}: usunieto (nie istnial przed zmiana)",
+                                     f"{backup.label}: removed (did not exist before the change)"))
                 else:
-                    report.append(f"{backup.label}: bez zmian (nie istnial i nie istnieje)")
+                    report.append(tr(f"{backup.label}: bez zmian (nie istnial i nie istnieje)",
+                                     f"{backup.label}: unchanged (did not exist and still does not)"))
                 continue
             os.makedirs(os.path.dirname(backup.local) or "/", exist_ok=True)
             tmp = backup.local + ".pipe-restore"
@@ -245,7 +251,8 @@ def restore_files(entry: Entry) -> list[str]:
             os.replace(tmp, backup.local)
             report.append(f"{backup.label}: przywrocono")
         except OSError as exc:
-            report.append(f"{backup.label}: BLAD przywracania ({exc.strerror or exc})")
+            report.append(tr(f"{backup.label}: BLAD przywracania ({exc.strerror or exc})",
+                             f"{backup.label}: RESTORE ERROR ({exc.strerror or exc})"))
     return report
 
 
@@ -259,30 +266,34 @@ def preview(entry: Entry, max_lines: int = 30) -> str:
     parts = [f"Cofniecie {entry.summary()}"]
     for backup in entry.files:
         if backup.skipped:
-            parts.append(f"- {backup.label}: brak kopii ({backup.skipped})")
+            parts.append(tr(f"- {backup.label}: brak kopii ({backup.skipped})", f"- {backup.label}: no backup ({backup.skipped})"))
             continue
         if not backup.existed:
-            parts.append(f"- {backup.label}: zostanie usuniety (nie istnial przed zmiana)")
+            parts.append(tr(f"- {backup.label}: zostanie usuniety (nie istnial przed zmiana)",
+                            f"- {backup.label}: will be removed (did not exist before the change)"))
             continue
         try:
             old = (directory / backup.blob).read_text(encoding="utf-8", errors="replace")
             current = Path(backup.local).read_text(encoding="utf-8", errors="replace") \
                 if os.path.isfile(backup.local) else ""
         except OSError:
-            parts.append(f"- {backup.label}: zostanie przywrocony")
+            parts.append(tr(f"- {backup.label}: zostanie przywrocony", f"- {backup.label}: will be restored"))
             continue
         if old == current:
-            parts.append(f"- {backup.label}: bez roznic (tylko uprawnienia/wlasciciel, jesli sie zmienily)")
+            parts.append(tr(f"- {backup.label}: bez roznic (tylko uprawnienia/wlasciciel, jesli sie zmienily)",
+                            f"- {backup.label}: no differences (only permissions/owner, if they changed)"))
             continue
-        diff = list(difflib.unified_diff(current.splitlines(), old.splitlines(), fromfile="obecny",
-                                         tofile="po cofnieciu", lineterm=""))
+        diff = list(difflib.unified_diff(current.splitlines(), old.splitlines(), fromfile=tr("obecny", "current"),
+                                         tofile=tr("po cofnieciu", "after undo"), lineterm=""))
         if len(diff) > max_lines:
-            diff = diff[:max_lines] + [f"[... i {len(diff) - max_lines} linii roznicy]"]
+            diff = diff[:max_lines] + [tr(f"[... i {len(diff) - max_lines} linii roznicy]",
+                                         f"[... and {len(diff) - max_lines} more diff lines]")]
         parts.append(f"- {backup.label}:\n" + as_code("\n".join(diff)))
     if entry.crontab is not None:
-        parts.append("- crontab zostanie przywrocony do stanu sprzed zmiany")
+        parts.append(tr("- crontab zostanie przywrocony do stanu sprzed zmiany",
+                        "- crontab will be restored to its state before the change"))
     for command in entry.inverse:
-        parts.append(f"- komenda odwrotna: {as_code(command)}")
+        parts.append(tr("- komenda odwrotna: ", "- inverse command: ") + as_code(command))
     for note in entry.notes:
         parts.append(f"- uwaga: {note}")
     return "\n".join(parts)
@@ -296,7 +307,8 @@ async def rollback(entry: Entry, interface: str) -> str:
     from backend.core.security import classify_command
 
     if not entry.undoable:
-        return f"Wpisu #{entry.id} nie da sie cofnac (status: {entry.status})."
+        return tr(f"Wpisu #{entry.id} nie da sie cofnac (status: {entry.status}).",
+                  f"Entry #{entry.id} cannot be undone (status: {entry.status}).")
     redo = await begin(interface, "cofnij", f"cofniecie #{entry.id}",
                        files=[(f.local, f.label) for f in entry.files if not f.skipped], undo_of=entry.id)
     lines = restore_files(entry)
@@ -309,7 +321,8 @@ async def rollback(entry: Entry, interface: str) -> str:
     failed = False
     for command in entry.inverse:
         if classify_command(command) == "forbidden":
-            lines.append(f"{command}: ODMOWA — komenda zakazana, pominieto")
+            lines.append(tr(f"{command}: ODMOWA — komenda zakazana, pominieto",
+                            f"{command}: REFUSED — forbidden command, skipped"))
             await audit.log_blocked(interface, f"cofnij({command})")
             failed = True
             continue
@@ -324,15 +337,18 @@ async def rollback(entry: Entry, interface: str) -> str:
     finish(redo, "done" if not failed else "failed", 0 if not failed else 1)
     for backup in entry.files:
         await audit.log_file_write(interface, f"cofnij #{entry.id}: {backup.label}", 0)
-    head = f"Cofnieto #{entry.id}." if not failed else f"Cofniecie #{entry.id} czesciowo nieudane."
+    head = tr(f"Cofnieto #{entry.id}.", f"Undone #{entry.id}.") if not failed else \
+        tr(f"Cofniecie #{entry.id} czesciowo nieudane.", f"Undo of #{entry.id} partly failed.")
     return head + "\n" + "\n".join(f"- {line}" for line in lines) + \
-        f"\nStan sprzed cofniecia zapisany jako #{redo.id} (mozna go przywrocic: /cofnij {redo.id})."
+        tr(f"\nStan sprzed cofniecia zapisany jako #{redo.id} (mozna go przywrocic: /cofnij {redo.id}).",
+           f"\nThe state before the undo is saved as #{redo.id} (restore it with: /undo {redo.id}).")
 
 
 def render_list(limit: int = 15) -> str:
     found = entries(limit)
     if not found:
-        return "Dziennik zmian jest pusty — zapisuje sie przy kazdej zatwierdzonej zmianie."
+        return tr("Dziennik zmian jest pusty — zapisuje sie przy kazdej zatwierdzonej zmianie.",
+                  "The change journal is empty — an entry is written for every approved change.")
     return "\n".join(e.summary() for e in found)
 
 

@@ -59,26 +59,34 @@ TCP_PORT: int = int(os.getenv("TCP_PORT", "7379"))
 # ─── Validation ─────────────────────────────────────────────────────────────
 def validate() -> None:
     """Rzuca ValueError jeśli brakuje wymaganych ustawień."""
+    from backend.core.i18n import tr
     if LLM is None:
         raise ValueError(_LLM_ERROR)
     if LLM.requires_key and not LLM.api_key:
-        raise ValueError(
+        raise ValueError(tr(
             f"Brak klucza API dla providera {LLM.provider_name}. "
             "Uruchom kreator z katalogu repozytorium: python3 -m backend.configure "
-            "(albo ustaw LLM_API_KEY w backend/.env)."
-        )
+            "(albo ustaw LLM_API_KEY w backend/.env).",
+            f"No API key for provider {LLM.provider_name}. "
+            "Run the wizard from the repository directory: python3 -m backend.configure "
+            "(or set LLM_API_KEY in backend/.env)."
+        ))
     if AGENT_VIEWER_TOKEN and not AGENT_TOKEN:
-        raise ValueError("AGENT_VIEWER_TOKEN wymaga AGENT_TOKEN — inaczej administrator nie mialby czym sie uwierzytelnic.")
+        raise ValueError(tr("AGENT_VIEWER_TOKEN wymaga AGENT_TOKEN — inaczej administrator nie mialby czym sie uwierzytelnic.",
+                            "AGENT_VIEWER_TOKEN needs AGENT_TOKEN — otherwise the administrator would have nothing to authenticate with."))
     if AGENT_VIEWER_TOKEN and AGENT_VIEWER_TOKEN == AGENT_TOKEN:
-        raise ValueError("AGENT_VIEWER_TOKEN musi byc inny niz AGENT_TOKEN.")
+        raise ValueError(tr("AGENT_VIEWER_TOKEN musi byc inny niz AGENT_TOKEN.",
+                            "AGENT_VIEWER_TOKEN must differ from AGENT_TOKEN."))
     # W Kubernetesie port jest osiagalny z kazdego poda (ClusterIP), wiec pusty token
     # oznaczalby, ze dowolny pod moze sterowac agentem. Na VPS chroni go tunel SSH.
     from backend.core import runtime
     if not AGENT_TOKEN and runtime.kind() == "kubernetes":
-        raise ValueError(
+        raise ValueError(tr(
             "Tryb kubernetes wymaga AGENT_TOKEN — bez niego kazdy pod w klastrze moze sterowac agentem. "
-            "Ustaw go w sekrecie pipe-env (np. openssl rand -hex 24)."
-        )
+            "Ustaw go w sekrecie pipe-env (np. openssl rand -hex 24).",
+            "Kubernetes mode requires AGENT_TOKEN — without it any pod in the cluster can control the agent. "
+            "Set it in the pipe-env secret (e.g. openssl rand -hex 24)."
+        ))
 
 
 # ─── Petla agenta i komendy ─────────────────────────────────────────────────

@@ -31,6 +31,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from backend.core.i18n import tr
 
 MAX_BODY = 1024 * 1024
 MAX_HEADERS = 100
@@ -102,7 +103,7 @@ def parse_uptime_kuma(payload: dict[str, Any]) -> list[ExternalAlert]:
     detail = _clip(beat.get("msg") or payload.get("msg") or "")
     if monitor.get("url"):
         detail = f"{monitor['url']} — {detail}" if detail else monitor["url"]
-    return [ExternalAlert("uptime-kuma", name, f"{name}: {'nie dziala' if down else 'dziala'}", detail,
+    return [ExternalAlert("uptime-kuma", name, f"{name}: {tr('nie dziala', 'is down') if down else tr('dziala', 'is up')}", detail,
                           "critical", down)]
 
 
@@ -115,10 +116,13 @@ def parse_github(payload: dict[str, Any], event: str) -> list[ExternalAlert]:
         conclusion = run.get("conclusion")
         name = f"{repo}-{run.get('name', 'workflow')}-{run.get('head_branch', '')}"
         if conclusion == "success":
-            return [ExternalAlert("github", name, f"{repo}: {run.get('name')} przeszedl", firing=False)]
+            return [ExternalAlert("github", name, tr(f"{repo}: {run.get('name')} przeszedl", f"{repo}: {run.get('name')} passed"),
+                                  firing=False)]
         if conclusion in ("failure", "timed_out", "startup_failure"):
-            return [ExternalAlert("github", name, f"{repo}: workflow {run.get('name')} nie przeszedl "
-                                                  f"({run.get('head_branch')})", _clip(run.get("html_url")))]
+            return [ExternalAlert("github", name,
+                                  tr(f"{repo}: workflow {run.get('name')} nie przeszedl ({run.get('head_branch')})",
+                                     f"{repo}: workflow {run.get('name')} failed ({run.get('head_branch')})"),
+                                  _clip(run.get("html_url")))]
         return []
     if event == "deployment_status":
         status = payload.get("deployment_status") or {}
@@ -126,9 +130,11 @@ def parse_github(payload: dict[str, Any], event: str) -> list[ExternalAlert]:
         name = f"{repo}-deploy-{environment}"
         state = status.get("state")
         if state == "success":
-            return [ExternalAlert("github", name, f"{repo}: wdrozenie {environment} udane", firing=False)]
+            return [ExternalAlert("github", name, tr(f"{repo}: wdrozenie {environment} udane",
+                                                             f"{repo}: deployment to {environment} succeeded"), firing=False)]
         if state in ("failure", "error"):
-            return [ExternalAlert("github", name, f"{repo}: wdrozenie {environment} nieudane",
+            return [ExternalAlert("github", name, tr(f"{repo}: wdrozenie {environment} nieudane",
+                                                             f"{repo}: deployment to {environment} failed"),
                                   _clip(status.get("description") or status.get("target_url")), "critical")]
     return []
 
@@ -142,7 +148,7 @@ def parse_generic(payload: dict[str, Any]) -> list[ExternalAlert]:
 
 def parse(source: str, payload: Any, headers: dict[str, str]) -> list[ExternalAlert]:
     if not isinstance(payload, dict):
-        raise ValueError("oczekiwano obiektu JSON")
+        raise ValueError(tr("oczekiwano obiektu JSON", "expected a JSON object"))
     if source == "alertmanager":
         return parse_alertmanager(payload)
     if source == "grafana":
@@ -183,7 +189,7 @@ async def read_request(reader: asyncio.StreamReader) -> tuple[str, str, dict[str
     line = (await asyncio.wait_for(reader.readline(), 10)).decode("latin-1").strip()
     parts = line.split()
     if len(parts) != 3:
-        raise HttpError(400, "zly wiersz zadania")
+        raise HttpError(400, tr("zly wiersz zadania", "bad request line"))
     method, target, _version = parts
     headers: dict[str, str] = {}
     for _ in range(MAX_HEADERS + 1):
@@ -193,10 +199,10 @@ async def read_request(reader: asyncio.StreamReader) -> tuple[str, str, dict[str
         name, _, value = raw.partition(":")
         headers[name.strip().lower()] = value.strip()
     else:
-        raise HttpError(431, "za duzo naglowkow")
+        raise HttpError(431, tr("za duzo naglowkow", "too many headers"))
     length = int(headers.get("content-length", "0") or 0)
     if length > MAX_BODY:
-        raise HttpError(413, "za duze zadanie")
+        raise HttpError(413, tr("za duze zadanie", "request too large"))
     body = await asyncio.wait_for(reader.readexactly(length), 10) if length else b""
     return method, target, headers, body
 
@@ -227,7 +233,7 @@ class WebhookServer:
             except HttpError as exc:
                 status, data = exc.status, {"ok": False, "error": str(exc)}
             except (asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError):
-                status, data = 400, {"ok": False, "error": "niepelne albo nieprawidlowe zadanie"}
+                status, data = 400, {"ok": False, "error": tr("niepelne albo nieprawidlowe zadanie", "incomplete or invalid request")}
             await respond(writer, status, data)
         except (ConnectionError, OSError):
             pass
@@ -240,15 +246,16 @@ class WebhookServer:
             return 200, {"ok": True}
         match = re.fullmatch(r"/hook/([a-z-]+)/?", url.path)
         if not match or match.group(1) not in SOURCES:
-            raise HttpError(404, f"nieznany adres — uzyj /hook/<{'|'.join(SOURCES)}>")
+            raise HttpError(404, tr(f"nieznany adres — uzyj /hook/<{'|'.join(SOURCES)}>",
+                                    f"unknown path — use /hook/<{'|'.join(SOURCES)}>"))
         if method != "POST":
-            raise HttpError(405, "tylko POST")
+            raise HttpError(405, tr("tylko POST", "POST only"))
         if not authorized(self.token, headers, parse_qs(url.query), body):
-            raise HttpError(401, "brak albo zly token")
+            raise HttpError(401, tr("brak albo zly token", "missing or wrong token"))
         try:
             payload = json.loads(body or b"{}")
         except json.JSONDecodeError:
-            raise HttpError(400, "tresc nie jest JSON-em") from None
+            raise HttpError(400, tr("tresc nie jest JSON-em", "the body is not JSON")) from None
         if match.group(1) == "github" and headers.get("x-github-event") == "ping":
             return 200, {"ok": True, "pong": True}
         try:
@@ -277,7 +284,8 @@ async def start(watcher: Any, host: str, port: int, token: str, investigate: boo
     if not port:
         return None
     if not token:
-        print("[Webhooki] WEBHOOK_PORT jest ustawiony, ale WEBHOOK_TOKEN pusty — serwer webhookow NIE wystartowal.",
+        print(tr("[Webhooki] WEBHOOK_PORT jest ustawiony, ale WEBHOOK_TOKEN pusty — serwer webhookow NIE wystartowal.",
+                 "[Webhooks] WEBHOOK_PORT is set but WEBHOOK_TOKEN is empty — the webhook server did NOT start."),
               flush=True)
         return None
     server = WebhookServer(watcher, token, investigate=investigate)

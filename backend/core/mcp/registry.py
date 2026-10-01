@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core import memory
+from backend.core.i18n import tr
 from backend.core.mcp.client import HttpTransport, McpClient, McpError, StdioTransport
 
 MAX_SERVERS = 20
@@ -65,16 +66,18 @@ def _save(servers: dict[str, dict[str, Any]]) -> None:
 def validate_server(name: str, cfg: dict[str, Any]) -> dict[str, Any]:
     name = (name or "").strip().lower()
     if not _NAME.match(name):
-        raise McpConfigError("Nazwa serwera MCP: male litery, cyfry, '-', '_' (do 24 znakow).")
+        raise McpConfigError(tr("Nazwa serwera MCP: male litery, cyfry, '-', '_' (do 24 znakow).",
+                                "MCP server name: lowercase letters, digits, '-', '_' (up to 24 characters)."))
     clean: dict[str, Any] = {}
     if cfg.get("url"):
         url = str(cfg["url"]).strip()
         if not re.match(r"^https?://", url):
-            raise McpConfigError("url musi zaczynac sie od http:// albo https://")
+            raise McpConfigError(tr("url musi zaczynac sie od http:// albo https://",
+                                    "url must start with http:// or https://"))
         clean["url"] = url
         headers = cfg.get("headers") or {}
         if not isinstance(headers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
-            raise McpConfigError("headers: slownik napisow.")
+            raise McpConfigError(tr("headers: slownik napisow.", "headers: a dictionary of strings."))
         clean["headers"] = headers
     elif cfg.get("command"):
         command = cfg["command"]
@@ -82,19 +85,21 @@ def validate_server(name: str, cfg: dict[str, Any]) -> dict[str, Any]:
         if isinstance(command, str) and not args and " " in command.strip():
             command, *args = shlex.split(command)
         if not isinstance(command, str) or not all(isinstance(a, str) for a in args):
-            raise McpConfigError("command: napis, args: lista napisow.")
+            raise McpConfigError(tr("command: napis, args: lista napisow.", "command: a string, args: a list of strings."))
         clean["command"], clean["args"] = command, list(args)
         env = cfg.get("env") or {}
         if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
-            raise McpConfigError("env: slownik napisow.")
+            raise McpConfigError(tr("env: slownik napisow.", "env: a dictionary of strings."))
         clean["env"] = env
         if cfg.get("cwd"):
             clean["cwd"] = str(cfg["cwd"])
     else:
-        raise McpConfigError("Podaj command (serwer stdio) albo url (serwer HTTP).")
+        raise McpConfigError(tr("Podaj command (serwer stdio) albo url (serwer HTTP).",
+                                "Give command (stdio server) or url (HTTP server)."))
     auto = cfg.get("autoApprove") or []
     if not isinstance(auto, list) or not all(isinstance(p, str) for p in auto):
-        raise McpConfigError("autoApprove: lista wzorcow nazw narzedzi, np. [\"get_*\", \"list_*\"].")
+        raise McpConfigError(tr("autoApprove: lista wzorcow nazw narzedzi, np. [\"get_*\", \"list_*\"].",
+                                "autoApprove: a list of tool-name patterns, e.g. [\"get_*\", \"list_*\"]."))
     clean["autoApprove"] = auto
     clean["trustReadOnly"] = bool(cfg.get("trustReadOnly", False))
     clean["enabled"] = bool(cfg.get("enabled", True))
@@ -106,17 +111,18 @@ def validate_server(name: str, cfg: dict[str, Any]) -> dict[str, Any]:
 def describe_server(name: str, cfg: dict[str, Any]) -> str:
     """Opis do potwierdzenia — wartosci env/headers ukryte (tylko nazwy)."""
     if "url" in cfg:
-        where = f"HTTP {cfg['url']}" + (f", naglowki: {', '.join(cfg['headers'])}" if cfg.get("headers") else "")
+        where = f"HTTP {cfg['url']}" + (tr(", naglowki: ", ", headers: ") + ", ".join(cfg["headers"]) if cfg.get("headers") else "")
     else:
         where = "program: " + " ".join(shlex.quote(p) for p in [cfg["command"], *cfg.get("args", [])])
         if cfg.get("env"):
-            where += f", zmienne: {', '.join(cfg['env'])}"
+            where += tr(", zmienne: ", ", variables: ") + ", ".join(cfg["env"])
     policy = []
     if cfg.get("autoApprove"):
-        policy.append("bez pytania: " + ", ".join(cfg["autoApprove"]))
+        policy.append(tr("bez pytania: ", "without asking: ") + ", ".join(cfg["autoApprove"]))
     if cfg.get("trustReadOnly"):
-        policy.append("bez pytania: narzedzia oznaczone jako tylko-odczyt")
-    return f"{name}: {where}" + (f" ({'; '.join(policy)})" if policy else " (kazde wywolanie z potwierdzeniem)")
+        policy.append(tr("bez pytania: narzedzia oznaczone jako tylko-odczyt",
+                         "without asking: tools marked read-only"))
+    return f"{name}: {where}" + (f" ({'; '.join(policy)})" if policy else tr(" (kazde wywolanie z potwierdzeniem)", " (every call needs confirmation)"))
 
 
 def add_server(name: str, cfg: dict[str, Any]) -> bool:
@@ -124,7 +130,7 @@ def add_server(name: str, cfg: dict[str, Any]) -> bool:
     servers = load_config()
     created = name not in servers
     if created and len(servers) >= MAX_SERVERS:
-        raise McpConfigError(f"Za duzo serwerow MCP (limit {MAX_SERVERS}).")
+        raise McpConfigError(tr(f"Za duzo serwerow MCP (limit {MAX_SERVERS}).", f"Too many MCP servers (limit {MAX_SERVERS})."))
     servers[name.strip().lower()] = clean
     _save(servers)
     return created
@@ -237,7 +243,8 @@ class McpManager:
         schemas = []
         for function, (server, tool) in sorted(self.functions.items()):
             cfg = self.servers[server].config
-            ask = "wymaga potwierdzenia" if needs_confirmation(cfg, tool) else "bez potwierdzenia"
+            ask = tr("wymaga potwierdzenia", "requires confirmation") if needs_confirmation(cfg, tool) \
+                else tr("bez potwierdzenia", "no confirmation")
             description = " ".join(str(tool.get("description", "") or tool.get("title", "") or "").split())[:900]
             schemas.append({"type": "function", "function": {
                 "name": function,
@@ -253,14 +260,16 @@ class McpManager:
 
     async def call(self, state: ServerState, tool: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
         if state.client is None:
-            raise McpError(f"Serwer MCP {state.name} nie jest polaczony: {state.error or state.status}")
+            raise McpError(tr(f"Serwer MCP {state.name} nie jest polaczony: {state.error or state.status}",
+                              f"MCP server {state.name} is not connected: {state.error or state.status}"))
         try:
             return await state.client.call_tool(tool["name"], arguments)
         except (McpError, OSError) as exc:
             # jedna proba ponownego polaczenia (np. podproces sie zakonczyl)
             fresh = await self._connect(state.name, state.config)
             if fresh.client is None:
-                raise McpError(f"{exc}; ponowne polaczenie nieudane: {fresh.error}") from exc
+                raise McpError(tr(f"{exc}; ponowne polaczenie nieudane: {fresh.error}",
+                                  f"{exc}; reconnect failed: {fresh.error}")) from exc
             await state.client.close()
             self.servers[state.name] = fresh
             return await fresh.client.call_tool(tool["name"], arguments)

@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -34,7 +34,8 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
 | `core/posture.py` | Audyt bezpieczenstwa hosta (ocena, poprawki), straznik zmian bezpieczenstwa, log SSH |
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
-| `skills_builtin/` | Wbudowane skille, instalowane do `data/skills` przy starcie |
+| `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
+| `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
 | `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
 | `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
 | `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI) |
@@ -278,6 +279,7 @@ Powinienes zobaczyc:
 | Zmienna | Domyslnie | Opis |
 |---------|-----------|------|
 | `PIPE_RUNTIME` | `auto` | `docker` / `native` / `kubernetes` |
+| `PIPE_LANG` | `pl` | Jezyk agenta: `pl` albo `en` (prompty, opisy narzedzi, komunikaty, alerty, raporty, wbudowane skille, kreator). Bot Telegrama czyta te sama zmienna ze swojego `.env`, CLI -- `--lang` / `PIPE_LANG` |
 | `HOST_ROOT`, `HOST_PROC` | wg trybu | Nadpisanie sciezek hosta |
 | `AGENT_MAX_ITERATIONS` | 15 | Limit krokow petli na jedna wiadomosc |
 | `CONFIRMED_COMMAND_TIMEOUT` | 900 | Limit czasu (s) komend zatwierdzonych przez uzytkownika; odczyty maja 30 s |

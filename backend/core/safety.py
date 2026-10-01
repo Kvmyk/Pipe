@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Awaitable, Callable
 
 from backend.core import runtime
+from backend.core.i18n import tr
 from backend.core.events import Progress
 from backend.core.security import split_command
 
@@ -98,29 +99,34 @@ class Plan:
         """Plan dla uzytkownika — czesc potwierdzenia."""
         from backend.core.text import visible
 
-        lines = ["Bezpiecznik:"]
+        lines = [tr("Bezpiecznik:", "Safety fuse:")]
         copies = [visible(f) for f in self.files] + [label for _, label in self.local_files]
         if self.git_repos:
-            copies.append("stan repozytorium git (HEAD)")
+            copies.append(tr("stan repozytorium git (HEAD)", "git repository state (HEAD)"))
         if self.crontab:
             copies.append("crontab")
         if copies:
-            lines.append("- kopia przed zmiana: " + ", ".join(copies[:8]) + (" ..." if len(copies) > 8 else ""))
+            lines.append(tr("- kopia przed zmiana: ", "- backup before the change: ") + ", ".join(copies[:8])
+                         + (" ..." if len(copies) > 8 else ""))
         if self.pre:
-            lines.append("- sprawdzenie przed (niepowodzenie = nie wykonam): " + "; ".join(c.label for c in self.pre))
-        post = [c.label for c in self.post] + (["strony, ktore dzialaja teraz, maja dzialac po zmianie"]
+            lines.append(tr("- sprawdzenie przed (niepowodzenie = nie wykonam): ",
+                            "- check before (failure = I will not run it): ") + "; ".join(c.label for c in self.pre))
+        post = [c.label for c in self.post] + ([tr("strony, ktore dzialaja teraz, maja dzialac po zmianie",
+                                                   "sites that work now must still work after the change")]
                                                if self.sites else [])
         if post:
-            lines.append("- weryfikacja po: " + "; ".join(post))
+            lines.append(tr("- weryfikacja po: ", "- verification after: ") + "; ".join(post))
         if self.auto_restore:
-            lines.append("- jesli weryfikacja nie przejdzie: przywroce pliki z kopii automatycznie"
-                         + (" i przeladuje ponownie" if self.reload_after_restore else ""))
+            lines.append(tr("- jesli weryfikacja nie przejdzie: przywroce pliki z kopii automatycznie",
+                            "- if verification fails: I restore the files from the backup automatically")
+                         + (tr(" i przeladuje ponownie", " and reload again") if self.reload_after_restore else ""))
         if self.inverse:
-            lines.append("- cofniecie pozniej (/cofnij): " + "; ".join(visible(c) for c in self.inverse))
+            lines.append(tr("- cofniecie pozniej (/cofnij): ", "- undo later (/undo): ")
+                         + "; ".join(visible(c) for c in self.inverse))
         elif copies:
-            lines.append("- cofniecie pozniej: /cofnij")
+            lines.append(tr("- cofniecie pozniej: /cofnij", "- undo later: /undo"))
         for note in self.notes:
-            lines.append(f"- uwaga: {note}")
+            lines.append(tr(f"- uwaga: {note}", f"- note: {note}"))
         return "\n".join(lines) if len(lines) > 1 else ""
 
 
@@ -198,7 +204,8 @@ def _files_for_program(tokens: list[str], cwd_host: str) -> tuple[list[str], lis
     elif program in ("rm", "unlink", "shred", "truncate", "touch"):
         files = _positional(args, ("-s", "--size", "-r", "--reference", "-d", "--date", "-t"))
         if program == "rm" and any(a.startswith("-") and ("r" in a.lower() or a == "--recursive") for a in args):
-            notes.append("rm -r: katalogi nie sa kopiowane (tylko pojedyncze pliki)")
+            notes.append(tr("rm -r: katalogi nie sa kopiowane (tylko pojedyncze pliki)",
+                            "rm -r: directories are not backed up (single files only)"))
     elif program in ("chmod", "chown", "chgrp"):
         positional = _positional(args, ("--reference",))
         files = positional[1:] if not any(a.startswith("--reference") for a in args) else positional
@@ -240,7 +247,7 @@ def validators_for_file(host_path: str, containers: list[Any] | None = None) -> 
                 continue
             for source, _destination in getattr(container, "mounts", []):
                 if host_path == source or host_path.startswith(source.rstrip("/") + "/"):
-                    return Check(f"{command} w kontenerze {container.name}", "shell",
+                    return Check(tr(f"{command} w kontenerze {container.name}", f"{command} in container {container.name}"), "shell",
                                  f"docker exec {shlex.quote(container.name)} {command}")
         return None
 
@@ -265,7 +272,7 @@ def validators_for_file(host_path: str, containers: list[Any] | None = None) -> 
     elif name in COMPOSE_FILES:
         checks.append(Check("docker compose config", "shell", f"docker compose -f {shlex.quote(local)} config -q"))
     elif name.endswith(".json"):
-        checks.append(Check(f"poprawny JSON: {name}", "json", target=local))
+        checks.append(Check(tr(f"poprawny JSON: {name}", f"valid JSON: {name}"), "json", target=local))
     return checks
 
 
@@ -273,8 +280,10 @@ def _unsupported_validation_note(host_path: str) -> str:
     if runtime.kind() == "native":
         return ""
     if host_path.startswith(("/etc/nginx/", "/etc/ssh/sshd_config", "/etc/sudoers", "/etc/caddy/")):
-        return (f"skladni {host_path} nie sprawdze z kontenera Pipe (program dziala na hoscie) — "
-                "po zmianie zweryfikuj ja na hoscie, zanim przeladujesz usluge")
+        return tr(f"skladni {host_path} nie sprawdze z kontenera Pipe (program dziala na hoscie) — "
+                  "po zmianie zweryfikuj ja na hoscie, zanim przeladujesz usluge",
+                  f"I cannot check the syntax of {host_path} from the Pipe container (the program runs on the host) — "
+                  "verify it on the host after the change, before you reload the service")
     return ""
 
 
@@ -317,7 +326,7 @@ def plan_command(command: str, cwd_host: str = "/", containers: list[Any] | None
                     validator = SERVICE_VALIDATORS.get(base)
                     if validator:
                         plan.pre.append(Check(validator, "shell", validator))
-                    plan.post.append(Check(f"usluga {base} aktywna", "active", target=unit, retries=5, delay=2))
+                    plan.post.append(Check(tr(f"usluga {base} aktywna", f"service {base} active"), "active", target=unit, retries=5, delay=2))
                 if action in SYSTEMCTL_RELOADS:
                     plan.reload_after_restore.append(f"systemctl {action} {shlex.quote(unit)}")
                 if base in WEB_UNITS:
@@ -347,15 +356,18 @@ def plan_command(command: str, cwd_host: str = "/", containers: list[Any] | None
             if sub in GIT_MUTATING:
                 plan.git_repos.append(runtime.to_local(repo))
                 if sub == "clean":
-                    plan.notes.append("git clean usuwa nieśledzone pliki — tego nie cofne")
+                    plan.notes.append(tr("git clean usuwa nieśledzone pliki — tego nie cofne",
+                                          "git clean deletes untracked files — I cannot undo that"))
 
         elif program in PACKAGE_MANAGERS and any(t in tokens for t in ("install", "remove", "purge", "upgrade",
                                                                       "dist-upgrade", "full-upgrade", "add", "del")):
-            plan.notes.append("pakietow nie cofam automatycznie — co sie zmienilo, pokaze /zmiany")
+            plan.notes.append(tr("pakietow nie cofam automatycznie — co sie zmienilo, pokaze /zmiany",
+                                  "packages are not rolled back automatically — /changes shows what changed"))
 
         elif program == "kubectl" and any(t in tokens for t in ("apply", "delete", "scale", "set", "patch", "edit",
                                                                 "replace")):
-            plan.notes.append("zmian w klastrze nie cofam automatycznie (dla deploymentu: kubectl rollout undo)")
+            plan.notes.append(tr("zmian w klastrze nie cofam automatycznie (dla deploymentu: kubectl rollout undo)",
+                                  "cluster changes are not rolled back automatically (for a deployment: kubectl rollout undo)"))
 
     # zmienione pliki konfiguracji: walidacja po zmianie + automatyczne przywrocenie
     seen: set[str] = set()
@@ -389,16 +401,18 @@ def _plan_docker(tokens: list[str], segment: str, plan: Plan, by_name: dict[str,
         if sub in ("up", "restart", "start", "create", "run"):
             plan.pre.append(Check("docker compose config", "shell", f"{base.rstrip()} config -q"))
         if sub in ("up", "restart", "start"):
-            plan.post.append(Check("kontenery projektu dzialaja", "compose",
+            plan.post.append(Check(tr("kontenery projektu dzialaja", "project containers are running"), "compose",
                                    target=" ".join(shlex.quote(f) for f in flags), retries=12, delay=5))
             plan.sites = True
         if sub in ("down", "stop"):
             plan.inverse.append(f"{base.rstrip()} up -d")
             plan.sites = True
         if sub in ("down",) and ("-v" in tokens or "--volumes" in tokens):
-            plan.notes.append("down -v usuwa wolumeny z danymi — tego nie cofne")
+            plan.notes.append(tr("down -v usuwa wolumeny z danymi — tego nie cofne",
+                                  "down -v deletes data volumes — I cannot undo that"))
         if sub in ("up", "pull"):
-            plan.notes.append("poprzedniej wersji obrazow nie przywracam automatycznie — /zmiany pokaze, co sie zmienilo")
+            plan.notes.append(tr("poprzedniej wersji obrazow nie przywracam automatycznie — /zmiany pokaze, co sie zmienilo",
+                                  "previous image versions are not restored automatically — /changes shows what changed"))
         return
     sub = tokens[1] if len(tokens) > 1 else ""
     names = [t for t in _positional(tokens[2:], ("-t", "--time", "-s", "--signal"))]
@@ -411,7 +425,7 @@ def _plan_docker(tokens: list[str], segment: str, plan: Plan, by_name: dict[str,
         if i < len(rest):
             container, inner = rest[i], rest[i + 1:]
             if inner[:1] == ["nginx"] and "-s" in inner:
-                plan.pre.append(Check(f"nginx -t w kontenerze {container}", "shell",
+                plan.pre.append(Check(tr(f"nginx -t w kontenerze {container}", f"nginx -t in container {container}"), "shell",
                                       f"docker exec {shlex.quote(container)} nginx -t"))
                 plan.reload_after_restore.append(segment)
                 plan.sites = True
@@ -424,9 +438,10 @@ def _plan_docker(tokens: list[str], segment: str, plan: Plan, by_name: dict[str,
         elif sub == "start":
             plan.inverse.append(f"docker stop {shlex.quote(name)}")
         if sub in ("start", "restart"):
-            plan.post.append(Check(f"kontener {name} dziala", "container", target=name, retries=10, delay=3))
+            plan.post.append(Check(tr(f"kontener {name} dziala", f"container {name} is running"), "container", target=name, retries=10, delay=3))
         if sub == "rm":
-            plan.notes.append(f"usunietego kontenera {name} nie odtworze (dane w wolumenach zostaja)")
+            plan.notes.append(tr(f"usunietego kontenera {name} nie odtworze (dane w wolumenach zostaja)",
+                                  f"I cannot recreate the removed container {name} (data in volumes stays)"))
         if sub in ("stop", "kill", "restart", "rm") or is_proxy:
             plan.sites = True
 
@@ -483,11 +498,11 @@ async def run_check(check: Check, cwd: str | None = None) -> tuple[str, str]:
         if check.kind == "active":
             out, err, code = await executor.execute(f"systemctl is-active {shlex.quote(check.target)}", timeout=15)
             if code == 127:
-                return "skip", "brak systemctl"
+                return "skip", tr("brak systemctl", "no systemctl")
             state = out.strip()
             if code == 0 and state == "active":
                 return "ok", ""
-            detail = f"stan: {state or err.strip()}"
+            detail = tr(f"stan: {state or err.strip()}", f"state: {state or err.strip()}")
             continue
         if check.kind == "container":
             fmt = "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}"
@@ -519,7 +534,7 @@ async def run_check(check: Check, cwd: str | None = None) -> tuple[str, str]:
             continue
         out, err, code = await executor.execute(check.command, cwd=cwd, timeout=60)
         if code == 127:
-            return "skip", f"brak programu ({check.command.split()[0]})"
+            return "skip", tr(f"brak programu ({check.command.split()[0]})", f"program not found ({check.command.split()[0]})")
         if code == 0:
             return "ok", ""
         detail = (err or out).strip()[-600:]
@@ -564,12 +579,14 @@ async def guarded(
     source = f"bezpiecznik:{entry.id}"
 
     for check in plan.pre:
-        yield Progress(f"sprawdzam przed zmiana: {check.label}", source=source)
+        yield Progress(tr(f"sprawdzam przed zmiana: {check.label}", f"checking before the change: {check.label}"), source=source)
         status, detail = await run_check(check, cwd)
         if status == "fail":
             journal.finish(entry, "aborted", verify=f"{check.label}: {detail}")
-            yield Outcome(f"NIE WYKONANO: sprawdzenie przed zmiana nie przeszlo ({check.label}).\n{detail}\n"
-                          "Stan serwera sie nie zmienil. Popraw przyczyne i sprobuj ponownie.", 1, entry.id)
+            yield Outcome(tr(f"NIE WYKONANO: sprawdzenie przed zmiana nie przeszlo ({check.label}).\n{detail}\n"
+                             "Stan serwera sie nie zmienil. Popraw przyczyne i sprobuj ponownie.",
+                             f"NOT EXECUTED: the pre-change check failed ({check.label}).\n{detail}\n"
+                             "The server state did not change. Fix the cause and try again."), 1, entry.id)
             return
 
     domains: list[str] = []
@@ -578,7 +595,8 @@ async def guarded(
         try:
             domains = (await checks.discover_domains(site_ignore))[:MAX_SITES]
             if domains:
-                yield Progress("sprawdzam strony przed zmiana: " + ", ".join(domains), source=source)
+                yield Progress(tr("sprawdzam strony przed zmiana: ", "checking sites before the change: ") + ", ".join(domains),
+                               source=source)
                 before = await _site_states(domains)
         except Exception:
             domains = []
@@ -588,7 +606,7 @@ async def guarded(
     failures: list[str] = []
     skipped: list[str] = []
     for check in plan.post:
-        yield Progress(f"weryfikuje: {check.label}", source=source)
+        yield Progress(tr(f"weryfikuje: {check.label}", f"verifying: {check.label}"), source=source)
         status, detail = await run_check(check, cwd)
         if status == "fail":
             failures.append(f"{check.label}: {detail}".rstrip(": "))
@@ -596,7 +614,7 @@ async def guarded(
             skipped.append(f"{check.label} ({detail})")
     working_before = [d for d in domains if before.get(d)]
     if working_before:
-        yield Progress("sprawdzam strony po zmianie", source=source)
+        yield Progress(tr("sprawdzam strony po zmianie", "checking sites after the change"), source=source)
         after: dict[str, bool] = {}
         for attempt in range(4):
             if attempt:
@@ -604,35 +622,40 @@ async def guarded(
             after = await _site_states(working_before)
             if all(after.values()):
                 break
-        failures += [f"strona {d} dzialala przed zmiana, a teraz nie odpowiada poprawnie"
+        failures += [tr(f"strona {d} dzialala przed zmiana, a teraz nie odpowiada poprawnie",
+                        f"site {d} worked before the change and does not respond correctly now")
                      for d in working_before if not after.get(d)]
 
     lines = [result]
     status = "done" if exit_code == 0 else "failed"
     if failures:
-        lines.append("WERYFIKACJA NIE PRZESZLA:\n" + "\n".join(f"- {f}" for f in failures))
+        lines.append(tr("WERYFIKACJA NIE PRZESZLA:\n", "VERIFICATION FAILED:\n") + "\n".join(f"- {f}" for f in failures))
         backed = any(f.blob or not f.existed for f in entry.files)
         if plan.auto_restore and auto_restore and backed:
-            yield Progress("przywracam poprzednia wersje plikow", source=source)
+            yield Progress(tr("przywracam poprzednia wersje plikow", "restoring the previous file versions"), source=source)
             restored = journal.restore_files(entry)
-            lines.append("Przywrocilem pliki z kopii:\n" + "\n".join(f"- {r}" for r in restored))
+            lines.append(tr("Przywrocilem pliki z kopii:\n", "Restored files from the backup:\n")
+                         + "\n".join(f"- {r}" for r in restored))
             from backend.core import executor
             for command in plan.reload_after_restore:
                 out, err, code = await executor.execute(command, cwd=cwd, timeout=120)
-                lines.append(f"Ponownie: {command} -> exit {code}")
+                lines.append(tr(f"Ponownie: {command} -> exit {code}", f"Again: {command} -> exit {code}"))
             status = "restored"
         else:
-            lines.append(f"Zmiana zostala. Cofniecie: /cofnij {entry.id}"
-                         + (f" (odwroci: {'; '.join(plan.inverse)})" if plan.inverse else ""))
+            lines.append(tr(f"Zmiana zostala. Cofniecie: /cofnij {entry.id}",
+                            f"The change was kept. Undo: /undo {entry.id}")
+                         + (tr(f" (odwroci: {'; '.join(plan.inverse)})", f" (reverses: {'; '.join(plan.inverse)})")
+                            if plan.inverse else ""))
             status = "failed"
     elif plan.post or working_before:
         verified = [c.label for c in plan.post if not any(c.label in s for s in skipped)]
         if working_before:
-            verified.append(f"strony dzialaja ({len(working_before)})")
-        lines.append("Zweryfikowano: " + "; ".join(verified) + ".")
+            verified.append(tr(f"strony dzialaja ({len(working_before)})", f"sites work ({len(working_before)})"))
+        lines.append(tr("Zweryfikowano: ", "Verified: ") + "; ".join(verified) + ".")
     if skipped:
-        lines.append("Nie sprawdzono: " + "; ".join(skipped) + ".")
+        lines.append(tr("Nie sprawdzono: ", "Not checked: ") + "; ".join(skipped) + ".")
     if status != "restored":
-        lines.append(f"Dziennik zmian: #{entry.id} — cofniecie: /cofnij {entry.id}.")
+        lines.append(tr(f"Dziennik zmian: #{entry.id} — cofniecie: /cofnij {entry.id}.",
+                        f"Change journal: #{entry.id} — undo: /undo {entry.id}."))
     journal.finish(entry, status, exit_code, "; ".join(failures))
     yield Outcome("\n".join(lines), exit_code if not failures else (exit_code or 1), entry.id)

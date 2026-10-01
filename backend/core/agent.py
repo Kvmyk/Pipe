@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -28,6 +28,7 @@ from openai.types.chat import ChatCompletion
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
 from backend.core import audit, executor, memory, runtime, usage
+from backend.core.i18n import tr
 from backend.core.events import Event
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.tools import TOOLS
@@ -42,9 +43,16 @@ SKIPPED_FOR_CONFIRMATION = (
     "NIE WYKONANO: poprzednie narzedzie czeka na potwierdzenie uzytkownika. "
     "Jesli to wywolanie jest nadal potrzebne, powtorz je po jego decyzji."
 )
+SKIPPED_FOR_CONFIRMATION_EN = (
+    "NOT EXECUTED: the previous tool is waiting for the user's confirmation. "
+    "If this call is still needed, repeat it after their decision."
+)
 VIEWER_NOTICE = "Twoja rola pozwala tylko na odczyt — tej zmiany nie wykonam. Moze ja zatwierdzic administrator."
+VIEWER_NOTICE_EN = "Your role is read-only — I will not make this change. An administrator can approve it."
 VIEWER_REFUSAL = ("ODMOWA SYSTEMOWA: uzytkownik ma role viewer (tylko odczyt). Operacja nie zostala wykonana — "
                   "opisz, co trzeba zrobic; zmiane moze zatwierdzic administrator.")
+VIEWER_REFUSAL_EN = ("SYSTEM REFUSAL: the user has the viewer role (read-only). The operation was not executed — "
+                     "describe what needs to be done; an administrator can approve the change.")
 # Operacje, ktore zmieniaja pamiec/rejestry Pipe bez potwierdzenia — dla viewera zablokowane z gory.
 VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "write_file": None,
@@ -58,9 +66,14 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "mcp_manage": frozenset({"add", "remove", "reload"}),
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
+INTERRUPTED_TOOL_EN = "INTERRUPTED: the client disconnected before the tool finished. Result unknown."
 ABANDONED_CONFIRMATION = (
     "Uzytkownik nie potwierdzil tej operacji -- zamiast odpowiedziec TAK/NIE napisal nowa wiadomosc. "
     "Operacja NIE zostala wykonana."
+)
+ABANDONED_CONFIRMATION_EN = (
+    "The user did not confirm this operation -- instead of answering YES/NO they wrote a new message. "
+    "The operation was NOT executed."
 )
 
 
@@ -130,7 +143,7 @@ class VPSAgent:
             pending = session.pending_confirmation
             session.pending_confirmation = None
             session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
-                                     "content": ABANDONED_CONFIRMATION})
+                                     "content": tr(ABANDONED_CONFIRMATION, ABANDONED_CONFIRMATION_EN)})
 
         _repair_history(session)
         message: dict[str, Any] = {"role": "user", "content": user_message}
@@ -144,13 +157,14 @@ class VPSAgent:
             async for event in self.run_loop(session):
                 yield event
         except Exception as exc:
-            yield f"[BLAD] Blad wykonania: {exc}"
+            yield tr(f"[BLAD] Blad wykonania: {exc}", f"[BLAD] Execution error: {exc}")
 
     async def confirm(self, session_id: str, confirmed: bool) -> AsyncGenerator[Event, None]:
         """Obsluguje TAK/NIE dla oczekujacej operacji i kontynuuje petle."""
         session = self._sessions.get(session_id)
         if not session or not session.pending_confirmation:
-            yield "[OSTRZEZENIE] Brak oczekujacej operacji do potwierdzenia."
+            yield tr("[OSTRZEZENIE] Brak oczekujacej operacji do potwierdzenia.",
+                     "[OSTRZEZENIE] There is no pending operation to confirm.")
             return
 
         pending = session.pending_confirmation
@@ -164,16 +178,17 @@ class VPSAgent:
                 # Klient rozlaczyl sie w trakcie weryfikacji — wywolanie i tak musi dostac odpowiedz.
                 if not _answered(session, pending.tool_call_id, 0):
                     session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
-                                             "content": INTERRUPTED_TOOL})
+                                             "content": tr(INTERRUPTED_TOOL, INTERRUPTED_TOOL_EN)})
         else:
             session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id,
-                                     "content": "Uzytkownik odmowil wykonania tej operacji."})
+                                     "content": tr("Uzytkownik odmowil wykonania tej operacji.",
+                                                   "The user declined this operation.")})
 
         try:
             async for event in self.run_loop(session):
                 yield event
         except Exception as exc:
-            yield f"[BLAD] Blad po potwierdzeniu: {exc}"
+            yield tr(f"[BLAD] Blad po potwierdzeniu: {exc}", f"[BLAD] Error after confirmation: {exc}")
 
     # ─── Petla ──────────────────────────────────────────────────────────────
 
@@ -211,7 +226,7 @@ class VPSAgent:
                 if session.pending_confirmation:
                     # Kazde wywolanie musi dostac odpowiedz, nawet gdy nie zostalo wykonane.
                     session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                             "content": SKIPPED_FOR_CONFIRMATION})
+                                             "content": tr(SKIPPED_FOR_CONFIRMATION, SKIPPED_FOR_CONFIRMATION_EN)})
                     continue
                 async for event in self._handle_tool_call(session, tool_call, dispatch):
                     yield event
@@ -219,9 +234,11 @@ class VPSAgent:
             if session.pending_confirmation:
                 return
 
-        yield (
+        yield tr(
             "[OSTRZEZENIE] Agent osiagnal limit krokow. "
-            "Napisz \"kontynuuj\", zebym dokonczyl, albo podziel zadanie na mniejsze kroki."
+            "Napisz \"kontynuuj\", zebym dokonczyl, albo podziel zadanie na mniejsze kroki.",
+            "[OSTRZEZENIE] The agent reached its step limit. "
+            "Write \"continue\" so I can finish, or split the task into smaller steps."
         )
 
     async def call_llm(
@@ -276,14 +293,18 @@ class VPSAgent:
             page = await asyncio.wait_for(self._client.models.list(), timeout=15)
             available = chat_model_ids([m.model_dump() for m in page.data])
         except Exception as exc:
-            return f"Nie udalo sie pobrac listy modeli od {llm.provider_name} ({exc}) — pomijam weryfikacje modelu."
+            return tr(f"Nie udalo sie pobrac listy modeli od {llm.provider_name} ({exc}) — pomijam weryfikacje modelu.",
+                      f"Could not fetch the model list from {llm.provider_name} ({exc}) — skipping model verification.")
 
         if not available or model_available(llm.model, available):
             return None
-        return (
+        return tr(
             f"Model {llm.model!r} nie wystepuje na liscie modeli {llm.provider_name} — "
             f"mogl zostac wycofany. Najnowsze dostepne: {', '.join(available[:5])}. "
-            "Zmien model: python3 -m backend.configure"
+            "Zmien model: python3 -m backend.configure",
+            f"Model {llm.model!r} is not on {llm.provider_name}'s model list — "
+            f"it may have been retired. Newest available: {', '.join(available[:5])}. "
+            "Change the model: python3 -m backend.configure"
         )
 
     # ─── Narzedzia ──────────────────────────────────────────────────────────
@@ -297,7 +318,8 @@ class VPSAgent:
                 raise json.JSONDecodeError("argumenty nie sa obiektem", "", 0)
         except json.JSONDecodeError as exc:
             session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                     "content": f"Blad: argumenty narzedzia nie sa poprawnym JSON-em ({exc})."})
+                                     "content": tr(f"Blad: argumenty narzedzia nie sa poprawnym JSON-em ({exc}).",
+                                                   f"Error: the tool arguments are not valid JSON ({exc}).")})
             return
 
         if dispatch is not None:
@@ -311,13 +333,15 @@ class VPSAgent:
 
         if handler is None:
             session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                     "content": f"Nieznane narzedzie: {tool_call.function.name}"})
+                                     "content": tr(f"Nieznane narzedzie: {tool_call.function.name}",
+                                                   f"Unknown tool: {tool_call.function.name}")})
             return
 
         viewer = session.role == "viewer" and dispatch is None
         if viewer and viewer_blocked(tool_call.function.name, args):
-            session.messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": VIEWER_REFUSAL})
-            yield f"[ODMOWA] {VIEWER_NOTICE}"
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                     "content": tr(VIEWER_REFUSAL, VIEWER_REFUSAL_EN)})
+            yield f"[ODMOWA] {tr(VIEWER_NOTICE, VIEWER_NOTICE_EN)}"
             return
 
         buffered: list[Event] = []
@@ -330,16 +354,18 @@ class VPSAgent:
         except Exception as exc:  # blad handlera nie moze zostawic wywolania bez odpowiedzi
             if not _answered(session, tool_call.id, before) and session.pending_confirmation is None:
                 session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                         "content": f"Blad narzedzia: {exc}"})
-            yield f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}"
+                                         "content": tr(f"Blad narzedzia: {exc}", f"Tool error: {exc}")})
+            yield tr(f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}",
+                     f"[BLAD] Tool {tool_call.function.name} raised an error: {exc}")
 
         if viewer:
             pending = session.pending_confirmation
             if pending is not None and pending.tool_call_id == tool_call.id:
                 session.pending_confirmation = None
-                session.messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": VIEWER_REFUSAL})
+                session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                         "content": tr(VIEWER_REFUSAL, VIEWER_REFUSAL_EN)})
                 buffered = [e for e in buffered if not (isinstance(e, str) and "[POTWIERDZ]" in e)]
-                buffered.append(f"[ODMOWA] {VIEWER_NOTICE}")
+                buffered.append(f"[ODMOWA] {tr(VIEWER_NOTICE, VIEWER_NOTICE_EN)}")
             for event in buffered:
                 yield event
 
@@ -347,7 +373,7 @@ class VPSAgent:
             session.pending_confirmation is None or session.pending_confirmation.tool_call_id != tool_call.id
         ):
             session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                     "content": "Narzedzie nie zwrocilo wyniku."})
+                                     "content": tr("Narzedzie nie zwrocilo wyniku.", "The tool returned no result.")})
         _sanitize_new_results(session, before)
 
     async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> AsyncGenerator[Event, None]:
@@ -379,13 +405,14 @@ class VPSAgent:
             try:
                 await executor.write_file(path, pending.file_content or "")
                 await audit.log_file_write(session.interface, path, 0)
-                return f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie.", 0
+                return tr(f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie.",
+                          f"File {runtime.to_host(path)} was written successfully."), 0
             except PermissionError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                return f"Blad zapisu (brak uprawnien): {exc}", 1
+                return tr(f"Blad zapisu (brak uprawnien): {exc}", f"Write error (permission denied): {exc}"), 1
             except OSError as exc:
                 await audit.log_file_write(session.interface, path, 1)
-                return f"Blad zapisu pliku: {exc}", 1
+                return tr(f"Blad zapisu pliku: {exc}", f"File write error: {exc}"), 1
 
         async def run_command() -> tuple[str, int]:
             stdout, stderr, exit_code = await executor.execute(
@@ -433,7 +460,7 @@ def _record_usage(model: str, response_usage: Any, who: str) -> None:
     try:
         usage.record(model, response_usage, usage.who_from_interface(who), prices)
     except OSError as exc:
-        print(f"[usage] Nie zapisano zuzycia tokenow: {exc}", flush=True)
+        print(tr(f"[usage] Nie zapisano zuzycia tokenow: {exc}", f"[usage] Token usage not saved: {exc}"), flush=True)
 
 
 def tools_for_agent() -> list[dict]:
@@ -480,7 +507,8 @@ def _repair_history(session: Session) -> None:
             answered = {m.get("tool_call_id") for m in session.messages[index + 1:] if m.get("role") == "tool"}
             for call in message["tool_calls"]:
                 if call.get("id") not in answered:
-                    session.messages.append({"role": "tool", "tool_call_id": call["id"], "content": INTERRUPTED_TOOL})
+                    session.messages.append({"role": "tool", "tool_call_id": call["id"],
+                                             "content": tr(INTERRUPTED_TOOL, INTERRUPTED_TOOL_EN)})
             return
         if message.get("role") == "user":
             return
@@ -492,7 +520,8 @@ def truncate_result(text: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
         return text
     head = limit * 2 // 3
     tail = limit - head
-    return f"{text[:head]}\n\n[... pominieto {len(text) - limit} znakow ...]\n\n{text[-tail:]}"
+    skipped = tr(f"[... pominieto {len(text) - limit} znakow ...]", f"[... {len(text) - limit} characters omitted ...]")
+    return f"{text[:head]}\n\n{skipped}\n\n{text[-tail:]}"
 
 
 def _sanitize_new_results(session: Session, since: int) -> None:
@@ -504,7 +533,8 @@ def _sanitize_new_results(session: Session, since: int) -> None:
         if settings.REDACT_SECRETS:
             content, count = memory.redact_secrets(content)
             if count:
-                content += f"\n[System: ukryto {count} sekret(ow) przed wyslaniem do modelu.]"
+                content += tr(f"\n[System: ukryto {count} sekret(ow) przed wyslaniem do modelu.]",
+                              f"\n[System: {count} secret(s) hidden before sending to the model.]")
         message["content"] = truncate_result(content)
 
 

@@ -12,6 +12,11 @@ import os
 import signal
 from pathlib import Path
 
+from backend.core.i18n import is_en, tr
+
+# Tekst zwracany, gdy komenda nic nie wypisala (obie wersje jezykowe — do porownan).
+NO_OUTPUT = ("Komenda wykonana bez outputu", "Command produced no output")
+
 
 # Limit dla odczytow wykonywanych bez pytania. Operacje zatwierdzone przez
 # uzytkownika (aktualizacje, buildy) dostaja dluzszy limit od wywolujacego.
@@ -34,7 +39,7 @@ async def execute(cmd: str, cwd: str | None = None, timeout: float | None = None
     """
     limit = timeout or TIMEOUT_SECONDS
     if cwd is not None and not os.path.isdir(cwd):
-        return "", f"Katalog roboczy nie istnieje: {cwd}", 1
+        return "", tr(f"Katalog roboczy nie istnieje: {cwd}", f"Working directory does not exist: {cwd}"), 1
     try:
         proc = await asyncio.create_subprocess_shell(
             cmd,
@@ -63,7 +68,7 @@ async def execute(cmd: str, cwd: str | None = None, timeout: float | None = None
                 pass
             return (
                 "",
-                f"Timeout: komenda przekroczyła {int(limit)} sekund",
+                tr(f"Timeout: komenda przekroczyła {int(limit)} sekund", f"Timeout: the command exceeded {int(limit)} seconds"),
                 124,
             )
         stdout_bytes = stdout_bytes[:MAX_OUTPUT_BYTES]
@@ -75,16 +80,16 @@ async def execute(cmd: str, cwd: str | None = None, timeout: float | None = None
 
         # Jeśli brak outputu — zwróć informację
         if not stdout.strip() and not stderr.strip():
-            stdout = "Komenda wykonana bez outputu"
+            stdout = NO_OUTPUT[1] if is_en() else NO_OUTPUT[0]
 
         return stdout, stderr, exit_code
 
     except FileNotFoundError as exc:
-        return "", f"Komenda nie znaleziona: {exc}", 127
+        return "", tr(f"Komenda nie znaleziona: {exc}", f"Command not found: {exc}"), 127
     except PermissionError as exc:
-        return "", f"Brak uprawnień: {exc}", 1
+        return "", tr(f"Brak uprawnień: {exc}", f"Permission denied: {exc}"), 1
     except Exception as exc:
-        return "", f"Błąd wykonania: {exc}", 1
+        return "", tr(f"Błąd wykonania: {exc}", f"Execution error: {exc}"), 1
 
 
 async def read_file(path: str) -> str:
@@ -104,16 +109,16 @@ async def read_file(path: str) -> str:
     """
     file_path = Path(path)
     if not file_path.exists():
-        raise FileNotFoundError(f"Plik nie istnieje: {path}")
+        raise FileNotFoundError(tr(f"Plik nie istnieje: {path}", f"File does not exist: {path}"))
     if not file_path.is_file():
-        raise ValueError(f"Ścieżka nie wskazuje na plik: {path}")
+        raise ValueError(tr(f"Ścieżka nie wskazuje na plik: {path}", f"Path is not a file: {path}"))
 
     try:
         return file_path.read_text(encoding="utf-8", errors="replace")
     except PermissionError:
-        raise PermissionError(f"Brak uprawnień do odczytu: {path}")
+        raise PermissionError(tr(f"Brak uprawnień do odczytu: {path}", f"No permission to read: {path}"))
     except OSError as exc:
-        raise OSError(f"Błąd odczytu pliku {path}: {exc}") from exc
+        raise OSError(tr(f"Błąd odczytu pliku {path}: {exc}", f"Error reading file {path}: {exc}")) from exc
 
 
 async def write_file(path: str, content: str) -> None:
@@ -133,6 +138,6 @@ async def write_file(path: str, content: str) -> None:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
     except PermissionError:
-        raise PermissionError(f"Brak uprawnień do zapisu: {path}")
+        raise PermissionError(tr(f"Brak uprawnień do zapisu: {path}", f"No permission to write: {path}"))
     except OSError as exc:
-        raise OSError(f"Błąd zapisu pliku {path}: {exc}") from exc
+        raise OSError(tr(f"Błąd zapisu pliku {path}: {exc}", f"Error writing file {path}: {exc}")) from exc

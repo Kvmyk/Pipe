@@ -26,7 +26,7 @@ AUDIT_HINT_EN = (
     "\n\nPresent the score and the most important points to the user (numbering as above). When they ask for a fix "
     "('fix 1'), run its command with execute_command (or write_file) — they will get it to approve with the "
     "safety-fuse plan. Give commands marked 'in the host shell' to the user to run themselves. "
-    "For SSH follow the order from the harden-ssh skill (utwardz-ssh)."
+    "For SSH follow the order from the harden-ssh skill."
 )
 
 

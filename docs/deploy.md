@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -78,9 +78,16 @@ do projektu. Jesli to istotne, po instalacji zmien klucz albo skonfiguruj go rec
 
 `python3 -m backend.configure --from-env [--test]` przepisuje do `backend/.env` ustawione zmienne:
 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_REASONING_EFFORT`, `LLM_TIMEOUT`,
-`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
+`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `PIPE_LANG`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
 konfiguracja LLM jest kompletna (`--test` od razu testuje tool calling). Uzywaja go `install-server.sh -y`
 i cloud-init; przyda sie w Ansible czy CI.
+
+## Jezyk (`PIPE_LANG`)
+
+`pl` (domyslnie) albo `en`. Interaktywny kreator pyta o jezyk jako pierwszy; bez pytan: `--lang en` albo zmienna
+`PIPE_LANG=en` przy `install-server.sh` (instalator przepisuje ja tez do `clients/telegram/.env`). W Kubernetesie
+dodaj `--from-literal=PIPE_LANG=en` do sekretow `pipe-env` i `pipe-telegram`. Na dzialajacej instalacji wystarczy
+dopisac `PIPE_LANG=en` do obu plikow `.env` i zrestartowac backend oraz bota.
 
 ## Budowanie obrazow
 

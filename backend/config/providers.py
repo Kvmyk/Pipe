@@ -27,6 +27,8 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Mapping
 
+from backend.core.i18n import tr
+
 DEFAULT_PROVIDER_ID = "gemini"
 DEFAULT_TIMEOUT_SECONDS = 120.0
 
@@ -188,7 +190,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     ),
     Provider(
         id="ollama",
-        name="Ollama (lokalnie)",
+        name="Ollama (local)",
         # Z wnetrza kontenera host jest widoczny jako host.docker.internal
         # (patrz extra_hosts w docker-compose.yml).
         base_url="http://host.docker.internal:11434/v1",
@@ -196,6 +198,25 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         notes="Ollama musi nasluchiwac na 0.0.0.0 (OLLAMA_HOST=0.0.0.0), zeby kontener ja widzial.",
     ),
 )
+
+
+# Angielskie uwagi do presetow (PIPE_LANG=en) — po id providera.
+NOTES_EN: dict[str, str] = {
+    "gemini": "Free tier for all Flash models.",
+    "openai": "GPT-6 needs the Responses API for tool calling — over Chat Completions use the GPT-5.6 family.",
+    "anthropic": "Through the OpenAI SDK compatibility layer; LLM_REASONING_EFFORT is ignored.",
+    "openrouter": "One key, several hundred models (DeepSeek, Qwen, GLM, Kimi, Llama and more).",
+    "groq": "Very fast inference of open-weight models.",
+    "mistral": "EU-based provider.",
+    "ollama": "Ollama must listen on 0.0.0.0 (OLLAMA_HOST=0.0.0.0) so the container can reach it.",
+}
+
+
+def provider_notes(provider: Provider) -> str:
+    """Uwagi do providera w jezyku Pipe."""
+    if provider.builtin and provider.id in NOTES_EN:
+        return tr(provider.notes, NOTES_EN[provider.id])
+    return provider.notes
 
 
 # ─── Pliki uzytkownika ──────────────────────────────────────────────────────
@@ -219,17 +240,20 @@ def load_user_providers(path: Path) -> list[Provider]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ProviderConfigError(f"Plik providerow {path} nie jest poprawnym JSON-em: {exc}") from exc
+        raise ProviderConfigError(tr(f"Plik providerow {path} nie jest poprawnym JSON-em: {exc}",
+                                     f"Providers file {path} is not valid JSON: {exc}")) from exc
 
     entries = raw.get("providers", []) if isinstance(raw, dict) else raw
     if not isinstance(entries, list):
-        raise ProviderConfigError(f"Plik providerow {path}: oczekiwano listy pod kluczem 'providers'.")
+        raise ProviderConfigError(tr(f"Plik providerow {path}: oczekiwano listy pod kluczem 'providers'.",
+                                     f"Providers file {path}: expected a list under the 'providers' key."))
 
     known_fields = {f.name for f in fields(Provider)}
     providers: list[Provider] = []
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict) or not entry.get("id") or not entry.get("base_url"):
-            print(f"[providers] Pomijam wpis #{i} w {path}: wymagane pola 'id' i 'base_url'.", file=sys.stderr)
+            print(tr(f"[providers] Pomijam wpis #{i} w {path}: wymagane pola 'id' i 'base_url'.",
+                     f"[providers] Skipping entry #{i} in {path}: fields 'id' and 'base_url' are required."), file=sys.stderr)
             continue
         data = {k: v for k, v in entry.items() if k in known_fields}
         data["id"] = str(data["id"]).strip().lower()
@@ -292,11 +316,14 @@ def resolve_llm_config(env: Mapping[str, str], path: Path | None = None) -> LLMC
     if provider_id:
         provider = providers.get(provider_id)
         if provider is None:
-            raise ProviderConfigError(
+            raise ProviderConfigError(tr(
                 f"Nieznany provider LLM_PROVIDER={provider_id!r}. "
                 f"Dostepni: {', '.join(sorted(providers))}. "
-                "Wlasnego providera dodasz kreatorem: python3 -m backend.configure"
-            )
+                "Wlasnego providera dodasz kreatorem: python3 -m backend.configure",
+                f"Unknown provider LLM_PROVIDER={provider_id!r}. "
+                f"Available: {', '.join(sorted(providers))}. "
+                "Add your own provider with the wizard: python3 -m backend.configure"
+            ))
     elif explicit_url:
         provider = find_provider_by_url(explicit_url, providers)
     else:
@@ -306,10 +333,12 @@ def resolve_llm_config(env: Mapping[str, str], path: Path | None = None) -> LLMC
     model = get("LLM_MODEL") or (provider.default_model if provider else "")
     if not model:
         name = provider.name if provider else base_url
-        raise ProviderConfigError(
+        raise ProviderConfigError(tr(
             f"Brak modelu dla providera {name}. Ustaw LLM_MODEL w .env "
-            "albo wybierz model kreatorem: python3 -m backend.configure"
-        )
+            "albo wybierz model kreatorem: python3 -m backend.configure",
+            f"No model for provider {name}. Set LLM_MODEL in .env "
+            "or pick a model with the wizard: python3 -m backend.configure"
+        ))
 
     # Endpoint spoza presetow traktujemy jako niewymagajacy klucza — jesli go
     # jednak wymaga, provider zwroci czytelny blad 401 przy pierwszym zapytaniu.
@@ -322,11 +351,12 @@ def resolve_llm_config(env: Mapping[str, str], path: Path | None = None) -> LLMC
     try:
         timeout = float(timeout_raw) if timeout_raw else DEFAULT_TIMEOUT_SECONDS
     except ValueError as exc:
-        raise ProviderConfigError(f"LLM_TIMEOUT musi byc liczba sekund, a jest: {timeout_raw!r}") from exc
+        raise ProviderConfigError(tr(f"LLM_TIMEOUT musi byc liczba sekund, a jest: {timeout_raw!r}",
+                                     f"LLM_TIMEOUT must be a number of seconds, got: {timeout_raw!r}")) from exc
 
     return LLMConfig(
         provider_id=provider.id if provider else "custom",
-        provider_name=provider.name if provider else "Wlasny endpoint",
+        provider_name=provider.name if provider else tr("Wlasny endpoint", "Custom endpoint"),
         base_url=base_url,
         api_key=api_key,
         model=model,

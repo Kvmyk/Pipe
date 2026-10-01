@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -106,6 +106,9 @@ AGENT_SOCKET=/tmp/vps-agent.sock
 # Musi byc identyczny z AGENT_TOKEN w backend/.env.
 # Zostaw pusty, jesli backend nie wymaga tokenu.
 AGENT_TOKEN=
+
+# Jezyk bota: pl (domyslnie) albo en -- tak samo jak PIPE_LANG w backend/.env.
+# PIPE_LANG=en
 ```
 
 Mozesz dodac wiele ID oddzielonych przecinkami: `123456789,987654321`
@@ -135,6 +138,9 @@ Pelna lista ponizej (sekcja *Komendy*). Mozesz tez pisac bezposrednio, np.:
 Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia. Dzieki temu nie ujawnia swojego istnienia nieautoryzowanym osobom.
 
 ## Komendy
+
+Przy `PIPE_LANG=en` menu `/` pokazuje angielskie nazwy (`/report`, `/changes`, `/undo`...). Polskie i angielskie
+nazwy dzialaja w obu jezykach.
 
 | Komenda | Dzialanie |
 |---|---|

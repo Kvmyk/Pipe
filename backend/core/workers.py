@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 from backend.config import settings
-from backend.core.i18n import prompt
+from backend.core.i18n import prompt, tr
 from backend.core import audit, executor, runtime, targets
 from backend.core.events import Event, Progress
 from backend.core.handlers.common import format_result, reply
@@ -47,6 +47,23 @@ WORKER_TOOLS: list[dict] = [
         },
     }
 ]
+WORKER_TOOLS_EN: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run",
+            "description": (
+                "Runs a shell command on your target and returns the result. Reads only — state-changing "
+                "commands will not run (put them in the PROPOSALS of the report). Always limit the output."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string", "description": "Shell command to run on the target."}},
+                "required": ["command"],
+            },
+        },
+    }
+]
 
 _WORKER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
@@ -61,15 +78,17 @@ class WorkerResult:
     error: str = ""
 
     def render(self) -> str:
-        head = f"=== WORKER {self.name} (cel: {self.target}, komend: {self.commands}) ==="
+        head = tr(f"=== WORKER {self.name} (cel: {self.target}, komend: {self.commands}) ===",
+                  f"=== WORKER {self.name} (target: {self.target}, commands: {self.commands}) ===")
         if self.error:
-            body = f"BLAD: {self.error}"
+            body = tr(f"BLAD: {self.error}", f"ERROR: {self.error}")
             if self.report:
-                body += f"\nCzesciowy raport:\n{self.report}"
+                body += tr("\nCzesciowy raport:\n", "\nPartial report:\n") + self.report
         else:
-            body = self.report.strip() or "(worker nie zwrocil raportu)"
+            body = self.report.strip() or tr("(worker nie zwrocil raportu)", "(the worker returned no report)")
         if self.proposals:
-            body += "\nKomendy zablokowane jako zmieniajace stan (do wykonania przez remote_exec za zgoda uzytkownika):\n"
+            body += tr("\nKomendy zablokowane jako zmieniajace stan (do wykonania przez remote_exec za zgoda uzytkownika):\n",
+                       "\nCommands blocked as state-changing (run them with remote_exec once the user approves):\n")
             body += "\n".join(f"- {p}" for p in self.proposals)
         return f"{head}\n{body}"
 
@@ -122,7 +141,8 @@ async def run_worker(
     async def dispatch(session_: Session, tool_call: Any, args: dict[str, Any]) -> AsyncGenerator[Event, None]:
         command = str(args.get("command", "")).strip()
         if tool_call.function.name != "run" or not command:
-            reply(session_, tool_call, "Blad: jedyne narzedzie to run z parametrem command.")
+            reply(session_, tool_call, tr("Blad: jedyne narzedzie to run z parametrem command.",
+                                          "Error: the only tool is run with the command parameter."))
             return
         try:
             wrapped = targets.wrap(target, command)
@@ -132,12 +152,15 @@ async def run_worker(
         classification = classify_command(command)
         if classification == "forbidden":
             await audit.log_blocked(session_.interface, f"worker({wrapped})")
-            reply(session_, tool_call, "ODMOWA SYSTEMOWA: komenda jest zakazana.")
+            reply(session_, tool_call, tr("ODMOWA SYSTEMOWA: komenda jest zakazana.",
+                                          "SYSTEM REFUSAL: the command is forbidden."))
             return
         if classification == "confirm":
             result.proposals.append(command)
-            reply(session_, tool_call, "NIE WYKONANO: komenda zmienia stan albo nie jest rozpoznanym odczytem. "
-                                       "Jesli jest potrzebna, umiesc ja w PROPOZYCJACH raportu.")
+            reply(session_, tool_call, tr("NIE WYKONANO: komenda zmienia stan albo nie jest rozpoznanym odczytem. "
+                                          "Jesli jest potrzebna, umiesc ja w PROPOZYCJACH raportu.",
+                                          "NOT EXECUTED: the command changes state or is not a recognised read. "
+                                          "If it is needed, put it in the PROPOSALS of the report."))
             return
         result.commands += 1
         await notify(f"{name} $ {command[:160]}")
@@ -154,7 +177,7 @@ async def run_worker(
         async for event in agent.run_loop(
             session,
             system_prompt=system,
-            tools=WORKER_TOOLS,
+            tools=tr(WORKER_TOOLS, WORKER_TOOLS_EN),
             model=settings.WORKER_MODEL or None,
             max_iterations=settings.WORKER_MAX_ITERATIONS,
             dispatch=dispatch,
@@ -163,7 +186,9 @@ async def run_worker(
                 result.report = event
     except Exception as exc:
         result.error = str(exc) or type(exc).__name__
-    await notify(f"{name}: gotowe ({result.commands} komend" + (f", {len(result.proposals)} propozycji)" if result.proposals else ")"))
+    await notify(tr(f"{name}: gotowe ({result.commands} komend", f"{name}: done ({result.commands} commands")
+                 + (tr(f", {len(result.proposals)} propozycji)", f", {len(result.proposals)} proposals)")
+                    if result.proposals else ")"))
     return result
 
 
@@ -187,7 +212,8 @@ async def run_many(
                 timeout=settings.WORKER_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            return WorkerResult(name, target.name, error=f"przekroczono limit czasu {settings.WORKER_TIMEOUT} s")
+            return WorkerResult(name, target.name, error=tr(f"przekroczono limit czasu {settings.WORKER_TIMEOUT} s",
+                                                         f"timed out after {settings.WORKER_TIMEOUT} s"))
         except Exception as exc:
             return WorkerResult(name, target.name, error=str(exc) or type(exc).__name__)
 

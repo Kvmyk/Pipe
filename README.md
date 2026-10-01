@@ -1,9 +1,12 @@
 # Pipe
 
-**v0.14.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.15.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+
+**Polski** · [English](./README.en.md)
 
 Pipe dziala na serwerze na stale: zna go (SERVER.md, mapa katalogow), czuwa nad nim i odzywa sie pierwszy,
-gdy cos sie psuje. Rozmawiasz z nim z terminala (CLI przez tunel SSH) albo z telefonu (Telegram) -- po polsku.
+gdy cos sie psuje. Rozmawiasz z nim z terminala (CLI przez tunel SSH) albo z telefonu (Telegram) -- po polsku
+albo po angielsku (`PIPE_LANG=en`, patrz [Jezyk](#jezyk)).
 Kazda komenda przechodzi przez klasyfikator bezpieczenstwa w kodzie, a nie w prompcie: odczyty wykonuja sie
 od razu, zmiany czekaja na Twoje TAK, operacje destrukcyjne sa odrzucane.
 
@@ -88,6 +91,24 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 
 Komendy w obu klientach: `/status` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
 `/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
+
+---
+
+## Jezyk
+
+Pipe domyslnie mowi po polsku. Jeden przelacznik zmienia wszystko na angielski: prompty i opisy narzedzi agenta,
+komunikaty potwierdzen, alerty, poranny raport, audyt, wbudowane skille, kreator i obu klientow.
+
+| Gdzie | Jak |
+|-------|-----|
+| Backend | `PIPE_LANG=en` w `backend/.env` (kreator pyta o jezyk; `scripts/install-server.sh --lang en`) |
+| Bot Telegrama | `PIPE_LANG=en` w `clients/telegram/.env` (instalator przepisuje z backendu) |
+| CLI | `pipe --lang en` albo `export PIPE_LANG=en` |
+
+Komendy maja angielskie nazwy (`/report`, `/changes`, `/undo`...), a polskie dzialaja w obu jezykach.
+Znaczniki protokolu (`[POTWIERDZ]`, `[BLAD]`, `[ZREDAGOWANO: ...]`) nie zaleza od jezyka -- klienci zamieniaja je
+na etykiety. Zmiana jezyka na dzialajacym serwerze: ustaw `PIPE_LANG` i zrestartuj backend oraz bota; wbudowane
+skille w nowym jezyku dojda obok dotychczasowych. Opis po angielsku: [README.en.md](./README.en.md).
 
 ---
 

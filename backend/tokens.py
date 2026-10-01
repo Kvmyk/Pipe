@@ -28,6 +28,8 @@ import sys
 import time
 from pathlib import Path
 
+from backend.core.i18n import load_env_lang, tr
+
 ROLES = ("admin", "viewer")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,39}$")
 
@@ -62,9 +64,10 @@ def _save(entries: list[dict]) -> None:
 def add(name: str, role: str) -> str:
     name = (name or "").strip().lower()
     if not _NAME.match(name):
-        raise ValueError("Nazwa: male litery, cyfry, '.', '-', '_' (do 40 znakow).")
+        raise ValueError(tr("Nazwa: male litery, cyfry, '.', '-', '_' (do 40 znakow).",
+                            "Name: lowercase letters, digits, '.', '-', '_' (up to 40 characters)."))
     if role not in ROLES:
-        raise ValueError(f"Rola: {' albo '.join(ROLES)}.")
+        raise ValueError(tr(f"Rola: {' albo '.join(ROLES)}.", f"Role: {' or '.join(ROLES)}."))
     entries = [t for t in load() if t.get("name") != name]
     token = secrets.token_urlsafe(24)
     entries.append({"name": name, "role": role, "hash": _digest(token), "created": time.strftime("%Y-%m-%d %H:%M")})
@@ -93,34 +96,37 @@ def match(token: str) -> tuple[str, str] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python3 -m backend.tokens", description="Tokeny klientow Pipe z rolami.")
+    load_env_lang(Path(__file__).resolve().parent / ".env")
+    parser = argparse.ArgumentParser(prog="python3 -m backend.tokens", description=tr("Tokeny klientow Pipe z rolami.", "Pipe client tokens with roles."))
     sub = parser.add_subparsers(dest="cmd", required=True)
-    add_p = sub.add_parser("add", help="nowy token (pokazany raz)")
+    add_p = sub.add_parser("add", help=tr("nowy token (pokazany raz)", "new token (shown once)"))
     add_p.add_argument("name")
     add_p.add_argument("--role", choices=ROLES, default="admin")
-    sub.add_parser("list", help="lista tokenow (bez wartosci)")
-    rev = sub.add_parser("revoke", help="odwolaj token")
+    sub.add_parser("list", help=tr("lista tokenow (bez wartosci)", "list tokens (without values)"))
+    rev = sub.add_parser("revoke", help=tr("odwolaj token", "revoke a token"))
     rev.add_argument("name")
     args = parser.parse_args(argv)
     if args.cmd == "add":
         try:
             token = add(args.name, args.role)
         except ValueError as exc:
-            print(f"Blad: {exc}", file=sys.stderr)
+            print(tr(f"Blad: {exc}", f"Error: {exc}"), file=sys.stderr)
             return 1
-        print(f"Token dla {args.name} (rola {args.role}) — zapisz go teraz, nie da sie go odczytac pozniej:\n{token}")
+        print(tr(f"Token dla {args.name} (rola {args.role}) — zapisz go teraz, nie da sie go odczytac pozniej:\n{token}",
+                 f"Token for {args.name} (role {args.role}) — save it now, it cannot be read later:\n{token}"))
         return 0
     if args.cmd == "list":
         entries = load()
         for entry in entries:
-            print(f"{entry['name']:<24} {entry['role']:<7} utworzony {entry.get('created', '?')}")
+            print(f"{entry['name']:<24} {entry['role']:<7} {tr('utworzony', 'created')} {entry.get('created', '?')}")
         if not entries:
-            print("(brak tokenow — dziala AGENT_TOKEN / AGENT_VIEWER_TOKEN z .env)")
+            print(tr("(brak tokenow — dziala AGENT_TOKEN / AGENT_VIEWER_TOKEN z .env)",
+                     "(no tokens — AGENT_TOKEN / AGENT_VIEWER_TOKEN from .env apply)"))
         return 0
     if revoke(args.name):
-        print(f"Odwolano token {args.name}.")
+        print(tr(f"Odwolano token {args.name}.", f"Revoked token {args.name}."))
         return 0
-    print(f"Nie ma tokenu {args.name}.", file=sys.stderr)
+    print(tr(f"Nie ma tokenu {args.name}.", f"No token {args.name}."), file=sys.stderr)
     return 1
 
 

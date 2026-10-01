@@ -26,6 +26,7 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
 
 from backend.core import mcp
+from backend.core.i18n import is_en, tr
 from backend.core.mcp import (
     INVALID_PARAMS,
     INVALID_REQUEST,
@@ -43,6 +44,16 @@ INSTRUCTIONS = (
     "od razu, a komenda zmieniajaca stan czeka na zgode administratora — wtedy sprawdzaj wynik get_approval. "
     "Nie probuj obchodzic klasyfikatora. Przy awarii zacznij od server_changes. Sekrety sa redagowane."
 )
+INSTRUCTIONS_EN = (
+    "Pipe is the operations agent of this Linux server. Use run_command instead of your own shell: reads run "
+    "immediately, and a state-changing command waits for the administrator's approval — then poll get_approval. "
+    "Do not try to bypass the classifier. During an outage start with server_changes. Secrets are redacted."
+)
+
+
+def instructions() -> str:
+    return tr(INSTRUCTIONS, INSTRUCTIONS_EN)
+
 MAX_TEXT = 24_000
 
 
@@ -60,7 +71,8 @@ def _server_info() -> dict[str, str]:
         version = version_file.read_text().strip()
     except OSError:
         version = "?"
-    return {"name": "pipe", "title": "Pipe — agent operacyjny serwera", "version": version}
+    return {"name": "pipe", "title": tr("Pipe — agent operacyjny serwera", "Pipe — server operations agent"),
+            "version": version}
 
 
 def _schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
@@ -99,6 +111,45 @@ TOOLS: list[dict[str, Any]] = sorted([
           _schema({"question": {"type": "string"}}, ["question"])),
 ], key=lambda t: t["name"])
 
+# Angielskie tytuly, opisy i opisy parametrow narzedzi (PIPE_LANG=en).
+TOOLS_EN: dict[str, tuple[str, str, dict[str, str]]] = {
+    "server_status": ("Server status", "Uptime, load relative to cores, RAM, disks and active Pipe alerts.", {}),
+    "run_command": ("Command on the server",
+                    "A shell command through Pipe's classifier. A read runs immediately. A state-changing command does "
+                    "NOT run immediately: you get an approval id, the administrator approves it in Pipe (with the "
+                    "safety-fuse plan), and you read the result with get_approval. Forbidden commands are rejected.",
+                    {"command": "Shell command.", "target": "Pipe target ('local' by default).",
+                     "reason": "Why this change is needed — the administrator will see it."}),
+    "get_approval": ("Approval status",
+                     "State of an approval from run_command (pending/done/failed/denied/expired) and the result.", {}),
+    "read_file": ("Read file", "A file on the server (host path). Secret files are not returned; "
+                  "secrets in the content are redacted.", {}),
+    "server_changes": ("What changed", "Changes on the server (packages, images, ports, cron, accounts, SSH keys, "
+                       "configs) for a time range.", {"since": "e.g. 24h, 3d"}),
+    "security_audit": ("Security audit", "Score 0-100 and findings with fix commands.", {}),
+    "infra_map": ("Infrastructure map", "Containers, compose projects, proxy routes, ports, services (text + Mermaid).", {}),
+    "health_checks": ("Service health", "TLS certificates, domain responses, DNS, backup freshness.", {}),
+    "journal": ("Change journal", "Approved changes with backups (the administrator can undo: /undo).", {}),
+    "ask_pipe": ("Ask Pipe", "A question for the Pipe agent (knows SERVER.md, DIRECTORY, history). Read-only.", {}),
+}
+_TOOLS_EN_CACHE: list[dict[str, Any]] | None = None
+
+
+def tools() -> list[dict[str, Any]]:
+    """Lista narzedzi w jezyku Pipe."""
+    global _TOOLS_EN_CACHE
+    if not is_en():
+        return TOOLS
+    if _TOOLS_EN_CACHE is None:
+        translated = json.loads(json.dumps(TOOLS))
+        for tool in translated:
+            title, description, params = TOOLS_EN[tool["name"]]
+            tool["title"], tool["description"] = title, description
+            for param, text in params.items():
+                tool["inputSchema"]["properties"][param]["description"] = text
+        _TOOLS_EN_CACHE = translated
+    return _TOOLS_EN_CACHE
+
 
 def _clip(text: str) -> str:
     from backend.config import settings
@@ -120,7 +171,7 @@ async def _status(caller: Caller, args: dict) -> str:
     text = await asyncio.to_thread(stats_summary)
     active = list(get_watcher().active.values())
     if active:
-        text += "\n\n[AKTYWNE ALERTY]\n" + "\n".join(f"- [{a.severity}] {a.title} ({a.detail})" for a in active)
+        text += tr("\n\n[AKTYWNE ALERTY]\n", "\n\n[ACTIVE ALERTS]\n") + "\n".join(f"- [{a.severity}] {a.title} ({a.detail})" for a in active)
     return text
 
 
@@ -133,10 +184,10 @@ async def _run_command(caller: Caller, args: dict) -> tuple[str, bool]:
 
     command = str(args.get("command", "") or "").strip()
     if not command:
-        return "Pusta komenda.", True
+        return tr("Pusta komenda.", "Empty command."), True
     target = targets.get_target(str(args.get("target", "") or "local"))
     if target is None:
-        return f"Nie ma celu {args.get('target')!r}.", True
+        return tr(f"Nie ma celu {args.get('target')!r}.", f"No such target {args.get('target')!r}."), True
     try:
         wrapped = targets.wrap(target, command)
     except targets.TargetError as exc:
@@ -145,16 +196,19 @@ async def _run_command(caller: Caller, args: dict) -> tuple[str, bool]:
     classification = classify_command(command)
     if classification == "forbidden":
         await audit.log_blocked(interface, wrapped)
-        return "ODMOWA: komenda jest na liscie zakazanych operacji Pipe. Nie probuj jej obejsc.", True
+        return tr("ODMOWA: komenda jest na liscie zakazanych operacji Pipe. Nie probuj jej obejsc.",
+                  "REFUSED: the command is on Pipe's list of forbidden operations. Do not try to work around it."), True
     if classification == "safe":
         cwd = runtime.to_local("/")
         stdout, stderr, code = await executor.execute(wrapped, cwd=cwd)
         await audit.log_safe(interface, wrapped, code)
         return format_result(stdout, stderr, code), False
     if caller.role == "viewer":
-        return "ODMOWA: token ma role viewer (tylko odczyt) — komenda zmieniajaca stan nie zostanie wykonana.", True
+        return tr("ODMOWA: token ma role viewer (tylko odczyt) — komenda zmieniajaca stan nie zostanie wykonana.",
+                  "REFUSED: the token has the viewer role (read-only) — a state-changing command will not run."), True
     plan = await safety.plan_for_command(command, "/") if target.kind == "local" \
-        else safety.Plan(notes=["zdalny cel — bez kopii i weryfikacji po stronie Pipe"])
+        else safety.Plan(notes=[tr("zdalny cel — bez kopii i weryfikacji po stronie Pipe",
+                               "remote target — no backup or verification on Pipe's side")])
     try:
         approval = get_approvals().create(command=wrapped, inner=command, target=target.name,
                                           requested_by=caller.identity, reason=str(args.get("reason", "") or ""),
@@ -162,9 +216,12 @@ async def _run_command(caller: Caller, args: dict) -> tuple[str, bool]:
     except ApprovalError as exc:
         return str(exc), True
     get_watcher().notifier.publish(approval.to_event())
-    return (f"Komenda zmienia stan — czeka na zgode administratora Pipe (id: {approval.id}). "
-            f"Administrator widzi komende i plan bezpiecznika w Telegramie/CLI. Sprawdz wynik: "
-            f"get_approval(id=\"{approval.id}\") za chwile. Zgoda wygasa po 30 minutach."), False
+    return tr(f"Komenda zmienia stan — czeka na zgode administratora Pipe (id: {approval.id}). "
+              f"Administrator widzi komende i plan bezpiecznika w Telegramie/CLI. Sprawdz wynik: "
+              f"get_approval(id=\"{approval.id}\") za chwile. Zgoda wygasa po 30 minutach.",
+              f"The command changes state — it waits for the Pipe administrator's approval (id: {approval.id}). "
+              f"The administrator sees the command and the safety-fuse plan in Telegram/CLI. Check the result: "
+              f"get_approval(id=\"{approval.id}\") in a moment. The approval expires after 30 minutes."), False
 
 
 async def _get_approval(caller: Caller, args: dict) -> tuple[str, bool]:
@@ -172,7 +229,8 @@ async def _get_approval(caller: Caller, args: dict) -> tuple[str, bool]:
 
     approval = get_approvals().get(str(args.get("id", "")))
     if approval is None or approval.requested_by != caller.identity:
-        return "Nie ma takiej zgody (albo nalezy do innego klienta).", True
+        return tr("Nie ma takiej zgody (albo nalezy do innego klienta).",
+                  "No such approval (or it belongs to another client)."), True
     return approval.describe(), approval.status in ("failed", "denied", "expired")
 
 
@@ -182,21 +240,23 @@ async def _read_file(caller: Caller, args: dict) -> tuple[str, bool]:
 
     path = str(args.get("path", "") or "").strip()
     if not path.startswith("/"):
-        return "Podaj bezwzgledna sciezke hosta (np. /etc/nginx/nginx.conf).", True
+        return tr("Podaj bezwzgledna sciezke hosta (np. /etc/nginx/nginx.conf).",
+                  "Give an absolute host path (e.g. /etc/nginx/nginx.conf)."), True
     host = runtime.to_host(path)
     local = runtime.to_local(host)
     allowed, reason = validate_workspace_access(local)
     if not allowed:
-        return f"ODMOWA: {reason}", True
+        return tr(f"ODMOWA: {reason}", f"REFUSED: {reason}"), True
     resolved = resolve_local(local)
     if is_sensitive(host) or is_sensitive(runtime.to_host(resolved)):
-        return "ODMOWA: plik z sekretami — Pipe nie wydaje go przez MCP.", True
+        return tr("ODMOWA: plik z sekretami — Pipe nie wydaje go przez MCP.",
+                  "REFUSED: a secret file — Pipe does not hand it out over MCP."), True
     try:
         content = await executor.read_file(resolved)
     except (OSError, ValueError) as exc:
-        return f"Blad odczytu: {exc}", True
+        return tr(f"Blad odczytu: {exc}", f"Read error: {exc}"), True
     await audit.log_file_read(f"mcp:{caller.identity}", host)
-    return content or "(plik jest pusty)", False
+    return content or tr("(plik jest pusty)", "(the file is empty)"), False
 
 
 async def _changes(caller: Caller, args: dict) -> str:
@@ -216,7 +276,7 @@ async def _infra(caller: Caller, args: dict) -> str:
     from backend.core import infra
 
     found = await infra.discover()
-    return f"{found.summary()}\n\nMermaid:\n{infra.to_mermaid(found, 'Mapa infrastruktury')}"
+    return f"{found.summary()}\n\nMermaid:\n{infra.to_mermaid(found, tr('Mapa infrastruktury', 'Infrastructure map'))}"
 
 
 async def _health(caller: Caller, args: dict) -> str:
@@ -236,12 +296,12 @@ async def _ask(caller: Caller, args: dict) -> tuple[str, bool]:
 
     question = str(args.get("question", "") or "").strip()
     if not question:
-        return "Puste pytanie.", True
+        return tr("Puste pytanie.", "Empty question."), True
     # Rola viewer: agent Pipe odpowiada i diagnozuje, ale nie wykona zmian w imieniu zewnetrznego agenta.
     texts = [e async for e in get_agent().chat(f"mcp:{caller.identity}", question, f"mcp:{caller.identity}",
                                                owner=caller.identity, role="viewer") if isinstance(e, str)]
     answer = next((t for t in reversed(texts) if t.strip()), "")
-    return answer or "(brak odpowiedzi)", answer.startswith("[BLAD]")
+    return answer or tr("(brak odpowiedzi)", "(no answer)"), answer.startswith("[BLAD]")
 
 
 HANDLERS: dict[str, Callable[[Caller, dict], Awaitable[Any]]] = {
@@ -258,7 +318,7 @@ async def call_tool(caller: Caller, name: str, arguments: dict) -> dict[str, Any
     try:
         value = await handler(caller, arguments if isinstance(arguments, dict) else {})
     except Exception as exc:     # blad narzedzia wraca do agenta jako wynik z isError
-        value = (f"Blad narzedzia {name}: {exc}", True)
+        value = (tr(f"Blad narzedzia {name}: {exc}", f"Tool error {name}: {exc}"), True)
     text, is_error = value if isinstance(value, tuple) else (value, False)
     return {"content": [{"type": "text", "text": _clip(str(text))}], "isError": bool(is_error)}
 
@@ -276,7 +336,8 @@ def _modern_fields(value: dict[str, Any], *, cacheable: bool = False) -> dict[st
 async def handle(message: Any, caller: Caller) -> dict[str, Any] | None:
     """Jedna wiadomosc JSON-RPC -> odpowiedz (None dla powiadomien i odpowiedzi od klienta)."""
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-        return mcp.error(None, INVALID_REQUEST, "Oczekiwano pojedynczego obiektu JSON-RPC 2.0.")
+        return mcp.error(None, INVALID_REQUEST, tr("Oczekiwano pojedynczego obiektu JSON-RPC 2.0.",
+                                                    "Expected a single JSON-RPC 2.0 object."))
     method = message.get("method")
     request_id = message.get("id")
     if not isinstance(method, str):
@@ -293,7 +354,7 @@ async def handle(message: Any, caller: Caller) -> dict[str, Any] | None:
         negotiated = requested if requested in LEGACY_VERSIONS else LEGACY_VERSIONS[0]
         return mcp.result(request_id, {"protocolVersion": negotiated,
                                        "capabilities": {"tools": {"listChanged": False}},
-                                       "serverInfo": _server_info(), "instructions": INSTRUCTIONS})
+                                       "serverInfo": _server_info(), "instructions": instructions()})
     if method == "ping":
         return mcp.result(request_id, {})
     if modern and version not in SUPPORTED_VERSIONS:
@@ -302,20 +363,20 @@ async def handle(message: Any, caller: Caller) -> dict[str, Any] | None:
     if method == "server/discover":
         return mcp.result(request_id, _modern_fields({
             "supportedVersions": list(SUPPORTED_VERSIONS), "capabilities": {"tools": {}},
-            "instructions": INSTRUCTIONS}, cacheable=True))
+            "instructions": instructions()}, cacheable=True))
     if method == "tools/list":
-        value: dict[str, Any] = {"tools": TOOLS}
+        value: dict[str, Any] = {"tools": tools()}
         return mcp.result(request_id, _modern_fields(value, cacheable=True) if modern else value)
     if method == "tools/call":
         name = params.get("name")
         if not isinstance(name, str):
-            return mcp.error(request_id, INVALID_PARAMS, "Brak nazwy narzedzia.")
+            return mcp.error(request_id, INVALID_PARAMS, tr("Brak nazwy narzedzia.", "Missing tool name."))
         try:
             value = await call_tool(caller, name, params.get("arguments") or {})
         except KeyError:
-            return mcp.error(request_id, INVALID_PARAMS, f"Nieznane narzedzie: {name}")
+            return mcp.error(request_id, INVALID_PARAMS, tr(f"Nieznane narzedzie: {name}", f"Unknown tool: {name}"))
         return mcp.result(request_id, _modern_fields(value) if modern else value)
-    return mcp.error(request_id, METHOD_NOT_FOUND, f"Metoda nieobslugiwana: {method}")
+    return mcp.error(request_id, METHOD_NOT_FOUND, tr(f"Metoda nieobslugiwana: {method}", f"Method not supported: {method}"))
 
 
 # ─── Streamable HTTP ────────────────────────────────────────────────────────
@@ -382,7 +443,7 @@ class McpHttpServer:
                 await self._send(writer, 404, mcp.error(None, INVALID_REQUEST, f"Endpoint MCP: {self.path}"))
                 return
             if not origin_allowed(headers.get("origin", ""), self.extra_origins):
-                await self._send(writer, 403, mcp.error(None, INVALID_REQUEST, "Niedozwolony Origin."))
+                await self._send(writer, 403, mcp.error(None, INVALID_REQUEST, tr("Niedozwolony Origin.", "Origin not allowed.")))
                 return
             if method != "POST":
                 await self._send(writer, 405, None)
@@ -391,12 +452,12 @@ class McpHttpServer:
             token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
             identity = authorize(token)
             if identity is None:
-                await self._send(writer, 401, mcp.error(None, INVALID_REQUEST, "Brak albo zly token Pipe."))
+                await self._send(writer, 401, mcp.error(None, INVALID_REQUEST, tr("Brak albo zly token Pipe.", "Missing or wrong Pipe token.")))
                 return
             try:
                 message = json.loads(body or b"null")
             except json.JSONDecodeError:
-                await self._send(writer, 400, mcp.error(None, mcp.PARSE_ERROR, "Nieprawidlowy JSON."))
+                await self._send(writer, 400, mcp.error(None, mcp.PARSE_ERROR, tr("Nieprawidlowy JSON.", "Invalid JSON.")))
                 return
             if isinstance(message, dict):
                 problem = validate_headers(headers, message)

@@ -17,6 +17,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from backend.core.i18n import tr
 
 TTL_SECONDS = 1800
 MAX_PENDING = 50
@@ -65,7 +66,8 @@ class Approvals:
         for item in self._items.values():
             if item.expired:
                 item.status = "expired"
-                item.result = "Nikt nie zatwierdzil operacji w ciagu 30 minut."
+                item.result = tr("Nikt nie zatwierdzil operacji w ciagu 30 minut.",
+                                 "Nobody approved the operation within 30 minutes.")
         if len(self._items) > MAX_PENDING * 4:
             for key in sorted(self._items, key=lambda k: self._items[k].created)[:len(self._items) - MAX_PENDING * 2]:
                 del self._items[key]
@@ -74,7 +76,8 @@ class Approvals:
                plan: Any = None) -> Approval:
         self._expire()
         if sum(1 for a in self._items.values() if a.status == "pending") >= MAX_PENDING:
-            raise ApprovalError("Za duzo oczekujacych zgod — poczekaj na decyzje administratora.")
+            raise ApprovalError(tr("Za duzo oczekujacych zgod — poczekaj na decyzje administratora.",
+                                   "Too many pending approvals — wait for the administrator to decide."))
         approval = Approval(secrets.token_hex(4), command, inner, target, requested_by, reason[:500],
                             plan.describe() if plan is not None else "", plan=plan)
         self._items[approval.id] = approval
@@ -96,12 +99,14 @@ class Approvals:
 
         approval = self.get(approval_id)
         if approval is None:
-            raise ApprovalError("Nie ma takiej zgody (mogla wygasnac albo serwer zostal zrestartowany).")
+            raise ApprovalError(tr("Nie ma takiej zgody (mogla wygasnac albo serwer zostal zrestartowany).",
+                                   "No such approval (it may have expired or the server was restarted)."))
         if approval.status != "pending":
-            raise ApprovalError(f"Zgoda {approval.id} ma juz status {approval.status}.")
+            raise ApprovalError(tr(f"Zgoda {approval.id} ma juz status {approval.status}.",
+                                   f"Approval {approval.id} already has status {approval.status}."))
         approval.decided_by = decided_by
         if not approve:
-            approval.status, approval.result = "denied", "Administrator odrzucil operacje."
+            approval.status, approval.result = "denied", tr("Administrator odrzucil operacje.", "The administrator rejected the operation.")
             await audit.log_blocked(f"mcp:{approval.requested_by}", f"odrzucono: {approval.command}")
             return approval
         approval.status = "approved"
@@ -117,7 +122,7 @@ class Approvals:
                                          auto_restore=auto_restore, sites_enabled=sites_enabled):
             if isinstance(item, safety.Outcome):
                 outcome = item
-        approval.result = outcome.text if outcome else "Brak wyniku."
+        approval.result = outcome.text if outcome else tr("Brak wyniku.", "No result.")
         approval.status = "done" if outcome and outcome.exit_code == 0 else "failed"
         return approval
 

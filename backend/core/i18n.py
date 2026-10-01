@@ -26,6 +26,24 @@ def is_en() -> bool:
     return lang() == "en"
 
 
+def load_env_lang(env_file) -> None:
+    """
+    Dla narzedzi uruchamianych poza serwerem (kreator, tokeny): bierze PIPE_LANG
+    z pliku .env, jesli nie ma go w srodowisku. Bez zaleznosci (python-dotenv).
+    """
+    if os.getenv("PIPE_LANG"):
+        return
+    try:
+        with open(env_file, encoding="utf-8") as fh:
+            for line in fh:
+                key, sep, value = line.strip().partition("=")
+                if sep and key.strip() == "PIPE_LANG" and value.strip():
+                    os.environ["PIPE_LANG"] = value.strip().strip("'\"")
+                    return
+    except OSError:
+        return
+
+
 def tr(pl: str, en: str) -> str:
     """Tekst w jezyku Pipe."""
     return en if is_en() else pl

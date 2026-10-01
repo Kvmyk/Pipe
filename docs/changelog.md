@@ -1,5 +1,34 @@
 # Historia zmian -- Pipe
 
+## v0.15.0 (2026-10-01)
+
+Pipe po angielsku: jeden przelacznik `PIPE_LANG=en` zmienia jezyk calego produktu. Domyslnie zostaje polski --
+aktualizacja bez recznych krokow.
+
+### Jezyk angielski
+
+- `PIPE_LANG=pl|en` w `backend/.env`: system prompt, opisy narzedzi, prompty workerow i rutyn, pytania
+  o potwierdzenie z planem bezpiecznika, wyniki narzedzi, alerty czuwania, poranny raport, `/zmiany`, `/zdrowie`,
+  `/audyt` z poprawkami, powitanie, pamiec incydentow, dziennik i `/cofnij`, koszty, webhooki, narzedzia serwera MCP
+- Kreator `python3 -m backend.configure` pyta o jezyk jako pierwszy i sam sie na niego przelacza;
+  `--from-env` przyjmuje `PIPE_LANG`; `scripts/install-server.sh --lang en` (instalator przepisuje jezyk takze
+  do `.env` bota Telegrama)
+- CLI: `pipe --lang en` albo zmienna `PIPE_LANG`; bot Telegrama: `PIPE_LANG` w `clients/telegram/.env` -- menu `/`,
+  przyciski (YES/NO, Investigate, Undo, Approve) i etykiety po angielsku
+- Angielskie nazwy komend w obu klientach (`/report`, `/changes`, `/chart`, `/health`, `/audit`, `/map`,
+  `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/approvals`,
+  `/cost`, `/history`, `/help`) -- dzialaja obok polskich, niezaleznie od jezyka
+- Angielskie wersje siedmiu wbudowanych skilli (`update-container`, `harden-ssh`, `free-disk-space` i cztery
+  o tych samych nazwach)
+- `README.en.md`
+
+### Poprawki
+
+- Znaczniki protokolu (`[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`, `[PAMIEC]`, `[ZREDAGOWANO: ...]`) sa niezalezne od
+  jezyka; serwer rozpoznaje pytanie o potwierdzenie takze po angielskiej frazie
+- Komenda `/incydenty` byla opisana w dokumentacji, ale klienci jej nie obslugiwali -- dziala w CLI i na Telegramie
+- CLI po ponownym polaczeniu pisalo po angielsku (`Reconnected.`) takze w polskim interfejsie
+
 ## v0.14.0 (2026-09-29)
 
 MCP w obie strony: Pipe jako bezpieczna brama do serwera dla innych agentow AI i Pipe korzystajacy z cudzych

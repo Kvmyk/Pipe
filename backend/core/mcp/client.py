@@ -25,6 +25,7 @@ from collections import deque
 from typing import Any
 
 from backend.core import mcp
+from backend.core.i18n import tr
 from backend.core.mcp import (
     LEGACY_VERSIONS,
     META_CLIENT_CAPABILITIES,
@@ -134,12 +135,12 @@ class StdioTransport:
                 future.set_result(message)
         for future in self._pending.values():
             if not future.done():
-                future.set_exception(McpError("Serwer MCP zakonczyl dzialanie. " + " | ".join(self.stderr_tail)))
+                future.set_exception(McpError(tr("Serwer MCP zakonczyl dzialanie. ", "The MCP server exited. ") + " | ".join(self.stderr_tail)))
         self._pending.clear()
 
     async def _write(self, message: dict[str, Any]) -> None:
         if not self.process or not self.process.stdin or self.process.stdin.is_closing():
-            raise McpError("Proces serwera MCP nie dziala.")
+            raise McpError(tr("Proces serwera MCP nie dziala.", "The MCP server process is not running."))
         self.process.stdin.write(json.dumps(message, ensure_ascii=False).encode() + b"\n")
         await self.process.stdin.drain()
 
@@ -216,14 +217,16 @@ class HttpTransport:
                         continue
                     if isinstance(data, dict) and data.get("id") == message["id"]:
                         return data
-            raise McpError(f"Strumien SSE bez odpowiedzi na zadanie (HTTP {response.status_code}).")
+            raise McpError(tr(f"Strumien SSE bez odpowiedzi na zadanie (HTTP {response.status_code}).",
+                              f"SSE stream without a response to the request (HTTP {response.status_code})."))
         try:
             data = response.json()
         except ValueError:
             data = None
         if isinstance(data, dict) and ("result" in data or "error" in data):
             return data
-        raise McpError(f"HTTP {response.status_code} bez odpowiedzi JSON-RPC.", {"status": response.status_code})
+        raise McpError(tr(f"HTTP {response.status_code} bez odpowiedzi JSON-RPC.",
+                          f"HTTP {response.status_code} without a JSON-RPC response."), {"status": response.status_code})
 
     async def notify(self, message: dict[str, Any], **_: Any) -> None:
         await self._post(message, None, 15)
@@ -259,9 +262,10 @@ class McpClient:
             raise McpError(f"{method}: {err.get('message', 'blad')} (kod {err.get('code')})", response)
         result = response.get("result")
         if not isinstance(result, dict):
-            raise McpError(f"{method}: nieprawidlowa odpowiedz serwera.")
+            raise McpError(tr(f"{method}: nieprawidlowa odpowiedz serwera.", f"{method}: invalid server response."))
         if result.get("resultType") == "input_required":
-            raise McpError("Serwer MCP wymaga dodatkowej interakcji (elicitation/sampling) — Pipe tego nie obsluguje.")
+            raise McpError(tr("Serwer MCP wymaga dodatkowej interakcji (elicitation/sampling) — Pipe tego nie obsluguje.",
+                              "The MCP server needs extra interaction (elicitation/sampling) — Pipe does not support it."))
         return result
 
     async def connect(self) -> None:
@@ -280,7 +284,8 @@ class McpClient:
             self.server_info = (result.get("_meta") or {}).get(mcp.META_SERVER_INFO, {})
             self.instructions = str(result.get("instructions", "") or "")
         elif mcp.is_modern_error(response):
-            raise McpError("Serwer MCP nie obsluguje wersji protokolu Pipe: "
+            raise McpError(tr("Serwer MCP nie obsluguje wersji protokolu Pipe: ",
+                              "The MCP server does not support Pipe's protocol version: ")
                            + ", ".join((response["error"].get("data") or {}).get("supported", [])))
         else:
             self.era = "legacy"
@@ -332,14 +337,14 @@ def result_text(result: dict[str, Any]) -> tuple[str, list[tuple[str, bytes]], b
             try:
                 images.append((str(item.get("mimeType", "image/png")), base64.b64decode(item.get("data", ""))))
             except (ValueError, TypeError):
-                parts.append("[obraz — nieprawidlowe dane]")
+                parts.append(tr("[obraz — nieprawidlowe dane]", "[image — invalid data]"))
         elif kind == "resource_link":
             parts.append(f"[zasob] {item.get('name', '')} {item.get('uri', '')}".strip())
         elif kind == "resource":
             resource = item.get("resource") or {}
-            parts.append(str(resource.get("text", "")) or f"[zasob binarny] {resource.get('uri', '')}")
+            parts.append(str(resource.get("text", "")) or tr("[zasob binarny] ", "[binary resource] ") + str(resource.get("uri", "")))
         else:
             parts.append(f"[{kind} — pominieto]")
     if not parts and "structuredContent" in result:
         parts.append(json.dumps(result["structuredContent"], ensure_ascii=False)[:20_000])
-    return "\n".join(parts).strip() or "(narzedzie nie zwrocilo tresci)", images, bool(result.get("isError"))
+    return "\n".join(parts).strip() or tr("(narzedzie nie zwrocilo tresci)", "(the tool returned no content)"), images, bool(result.get("isError"))

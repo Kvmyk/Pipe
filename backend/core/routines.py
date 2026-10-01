@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.core import memory
+from backend.core.i18n import tr
 
 MAX_ROUTINES = 30
 MAX_TASK_CHARS = 2_000
@@ -46,23 +47,24 @@ def _field_values(expr: str, low: int, high: int) -> set[int]:
         if has_step:
             part, step_text = part.split("/", 1)
             if not step_text.isdigit() or int(step_text) == 0:
-                raise RoutineError(f"Nieprawidlowy krok w {expr!r}.")
+                raise RoutineError(tr(f"Nieprawidlowy krok w {expr!r}.", f"Invalid step in {expr!r}."))
             step = int(step_text)
         if part == "*":
             start, end = low, high
         elif "-" in part:
             a, b = part.split("-", 1)
             if not (a.isdigit() and b.isdigit()):
-                raise RoutineError(f"Nieprawidlowy zakres w {expr!r}.")
+                raise RoutineError(tr(f"Nieprawidlowy zakres w {expr!r}.", f"Invalid range in {expr!r}."))
             start, end = int(a), int(b)
         elif part.isdigit():
             start = end = int(part)
             if has_step:
                 end = high  # `5/15` = od 5 co 15
         else:
-            raise RoutineError(f"Nieprawidlowe pole cron {expr!r}.")
+            raise RoutineError(tr(f"Nieprawidlowe pole cron {expr!r}.", f"Invalid cron field {expr!r}."))
         if start < low or end > high or start > end:
-            raise RoutineError(f"Wartosc poza zakresem {low}-{high} w {expr!r}.")
+            raise RoutineError(tr(f"Wartosc poza zakresem {low}-{high} w {expr!r}.",
+                                  f"Value out of range {low}-{high} in {expr!r}."))
         values.update(range(start, end + 1, step))
     return values
 
@@ -93,7 +95,8 @@ def parse_schedule(expr: str) -> Schedule:
     text = _ALIASES.get((expr or "").strip().lower(), (expr or "").strip())
     parts = text.split()
     if len(parts) != 5:
-        raise RoutineError("Harmonogram to 5 pol cron (np. '0 7 * * *') albo @hourly/@daily/@weekly/@monthly.")
+        raise RoutineError(tr("Harmonogram to 5 pol cron (np. '0 7 * * *') albo @hourly/@daily/@weekly/@monthly.",
+                              "A schedule is 5 cron fields (e.g. '0 7 * * *') or @hourly/@daily/@weekly/@monthly."))
     sets = [_field_values(p, lo, hi) for p, (lo, hi) in zip(parts, _RANGES)]
     weekdays = {0 if d == 7 else d for d in sets[4]}
     return Schedule(frozenset(sets[0]), frozenset(sets[1]), frozenset(sets[2]), frozenset(sets[3]),
@@ -114,10 +117,12 @@ class Routine:
     last_status: str = ""
 
     def describe(self) -> str:
-        state = "" if self.enabled else " [wylaczona]"
-        last = f", ostatnio {self.last_run} {self.last_status}".rstrip() if self.last_run else ""
-        notify = "zawsze" if self.notify == "always" else "tylko przy problemie"
-        return f"{self.name}{state}: '{self.schedule}' na celu {self.target}, raport {notify}{last} — {self.task[:160]}"
+        state = "" if self.enabled else tr(" [wylaczona]", " [disabled]")
+        last = tr(f", ostatnio {self.last_run} {self.last_status}",
+                  f", last run {self.last_run} {self.last_status}").rstrip() if self.last_run else ""
+        notify = tr("zawsze", "always") if self.notify == "always" else tr("tylko przy problemie", "only on problems")
+        return tr(f"{self.name}{state}: '{self.schedule}' na celu {self.target}, raport {notify}{last} — {self.task[:160]}",
+                  f"{self.name}{state}: '{self.schedule}' on target {self.target}, report {notify}{last} — {self.task[:160]}")
 
 
 def routines_path() -> Path:
@@ -151,18 +156,21 @@ def _save(routines: list[Routine]) -> None:
 def validate(routine: Routine) -> Routine:
     routine.name = (routine.name or "").strip().lower()
     if not _NAME.match(routine.name):
-        raise RoutineError("Nazwa rutyny: male litery, cyfry, '-' i '_' (1-32 znaki).")
+        raise RoutineError(tr("Nazwa rutyny: male litery, cyfry, '-' i '_' (1-32 znaki).",
+                              "Routine name: lowercase letters, digits, '-' and '_' (1-32 characters)."))
     parse_schedule(routine.schedule)
     routine.task = (routine.task or "").strip()
     if not routine.task:
-        raise RoutineError("Podaj zadanie (task): co sprawdzic i co zawrzec w raporcie.")
+        raise RoutineError(tr("Podaj zadanie (task): co sprawdzic i co zawrzec w raporcie.",
+                              "Give the task: what to check and what the report should contain."))
     if len(routine.task) > MAX_TASK_CHARS:
-        raise RoutineError(f"Zadanie za dlugie (limit {MAX_TASK_CHARS} znakow).")
+        raise RoutineError(tr(f"Zadanie za dlugie (limit {MAX_TASK_CHARS} znakow).",
+                              f"Task too long (limit {MAX_TASK_CHARS} characters)."))
     if routine.notify not in ("always", "problems"):
-        raise RoutineError("notify: always albo problems.")
+        raise RoutineError(tr("notify: always albo problems.", "notify: always or problems."))
     label = memory.find_secret(routine.task)
     if label:
-        raise RoutineError(f"Zadanie wyglada na sekret ({label}).")
+        raise RoutineError(tr(f"Zadanie wyglada na sekret ({label}).", f"The task looks like a secret ({label})."))
     return routine
 
 
@@ -171,7 +179,7 @@ def save_routine(routine: Routine) -> bool:
     routines = load_routines()
     existing = next((r for r in routines if r.name == routine.name), None)
     if existing is None and len(routines) >= MAX_ROUTINES:
-        raise RoutineError(f"Za duzo rutyn (limit {MAX_ROUTINES}).")
+        raise RoutineError(tr(f"Za duzo rutyn (limit {MAX_ROUTINES}).", f"Too many routines (limit {MAX_ROUTINES})."))
     if existing:
         routine.last_run, routine.last_status = existing.last_run, existing.last_status
     _save([r for r in routines if r.name != routine.name] + [routine])

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -13,7 +13,8 @@ Funkcje:
   - Czuwanie: alerty i raporty rutyn przychodza same, z przyciskiem "Zbadaj"
   - InlineKeyboard dla potwierdzen (TAK / NIE)
   - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
-    /cele /vibe /koszt /dziennik /cofnij /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
+    /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
+    (angielskie aliasy: /report /changes /chart /health /map /undo ... — dzialaja w obu jezykach)
   - Poranny raport przychodzi sam (DIGEST_TIME w backendzie) razem z wykresem obciazenia
   - Menu '/' ustawiane per czat dozwolonego uzytkownika (opisy skilli nie wyciekaja do obcych)
   - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
@@ -73,6 +74,7 @@ from tg_format import (
     SCAN_WORDS,
     build_menu,
     collect_response_text,
+    command_names,
     format_alert,
     format_alerts,
     format_approval,
@@ -91,6 +93,7 @@ from tg_format import (
     split_message,
     to_plain_text,
     to_telegram_html,
+    tr,
 )
 
 # --- Konfiguracja ---
@@ -213,14 +216,14 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Tworzy klawiature inline z przyciskami TAK/NIE."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("TAK", callback_data=f"confirm:yes:{user_id}"),
-            InlineKeyboardButton("NIE", callback_data=f"confirm:no:{user_id}"),
+            InlineKeyboardButton(tr("TAK", "YES"), callback_data=f"confirm:yes:{user_id}"),
+            InlineKeyboardButton(tr("NIE", "NO"), callback_data=f"confirm:no:{user_id}"),
         ]
     ])
 
 
 def _investigate_keyboard(alert_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Zbadaj", callback_data=f"investigate:{alert_id}")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(tr("Zbadaj", "Investigate"), callback_data=f"investigate:{alert_id}")]])
 
 
 async def _send_html(bot, chat_id: int, text: str, reply_markup=None) -> None:
@@ -235,7 +238,8 @@ async def _send_html(bot, chat_id: int, text: str, reply_markup=None) -> None:
             try:
                 await bot.send_message(chat_id, to_plain_text(chunk), reply_markup=markup)
             except Exception:
-                await bot.send_message(chat_id, "Blad formatowania odpowiedzi. Sprobuj ponownie.", reply_markup=markup)
+                await bot.send_message(chat_id, tr("Blad formatowania odpowiedzi. Sprobuj ponownie.",
+                                                    "Could not format the answer. Try again."), reply_markup=markup)
 
 
 async def _send_attachment(bot, chat_id: int, attachment: dict) -> None:
@@ -323,9 +327,10 @@ async def _backend_call(update: Update, context: ContextTypes.DEFAULT_TYPE, coro
     try:
         await coro
     except FileNotFoundError:
-        await update.effective_message.reply_text("Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.")
+        await update.effective_message.reply_text(tr("Backend niedostepny. Upewnij sie, ze Pipe jest uruchomiony.",
+                                                     "Backend unavailable. Make sure Pipe is running."))
     except Exception as exc:
-        await update.effective_message.reply_text(f"Blad: {html.escape(str(exc))}")
+        await update.effective_message.reply_text(tr("Blad: ", "Error: ") + html.escape(str(exc)))
 
 
 # --- Handlery komend ---
@@ -335,7 +340,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _guard(update):
         return  # Milcz dla nieautoryzowanych
 
-    welcome = (
+    welcome = tr(
         "<b>Witaj, tutaj Pipe.</b>\n\n"
         "Jestem agentem AI do zarzadzania Twoim serwerem (i innymi, jesli je dodasz).\n"
         "Czuwam w tle: jesli cos sie zepsuje, napisze pierwszy.\n\n"
@@ -347,7 +352,19 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/status - szybki przeglad obciazenia\n"
         "/pomoc - wszystkie komendy\n\n"
         "Mozesz tez pisac do mnie normalnie, np. "
-        "<i>\"dlaczego sklep dziala wolno?\"</i> albo <i>\"sprawdz dyski na wszystkich serwerach\"</i>."
+        "<i>\"dlaczego sklep dziala wolno?\"</i> albo <i>\"sprawdz dyski na wszystkich serwerach\"</i>.",
+        "<b>Hi, this is Pipe.</b>\n\n"
+        "I am an AI agent that manages your server (and others, if you add them).\n"
+        "I keep watch in the background: if something breaks, I write first.\n\n"
+        "<b>To get started:</b>\n"
+        "/map - a diagram of what runs on the server\n"
+        "/report - health, changes since yesterday, certificates and backups (arrives every morning)\n"
+        "/audit - a security score with ready-made fixes\n"
+        "/server - what I know about the server (SERVER.md)\n"
+        "/status - a quick look at the load\n"
+        "/help - all commands\n\n"
+        "You can also just write to me, e.g. "
+        "<i>\"why is the shop slow?\"</i> or <i>\"check the disks on all servers\"</i>."
     )
     await update.message.reply_text(welcome, parse_mode=ParseMode.HTML)
 
@@ -377,12 +394,13 @@ async def cmd_mapa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 got_image = True
                 await _send_attachment(context.bot, update.effective_chat.id, frame["attachment"])
             elif frame.get("status") == "error":
-                await update.message.reply_text(to_plain_text(frame.get("response", "Blad")))
+                await update.message.reply_text(to_plain_text(frame.get("response", tr("Blad", "Error"))))
             elif frame.get("response"):
                 await _send_html(context.bot, update.effective_chat.id, to_telegram_html(frame["response"]))
         if got_image:
-            await update.message.reply_text(
-                "Chcesz inny widok? Napisz np. \"narysuj przeplyw zapytania do sklepu\" albo \"pokaz tylko bazy danych\".")
+            await update.message.reply_text(tr(
+                "Chcesz inny widok? Napisz np. \"narysuj przeplyw zapytania do sklepu\" albo \"pokaz tylko bazy danych\".",
+                "Want a different view? Write e.g. \"draw how a request reaches the shop\" or \"show only the databases\"."))
 
     await _backend_call(update, context, go())
 
@@ -412,7 +430,8 @@ async def cmd_zmiany(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """/zmiany [24h|3d] -- co sie zmienilo na serwerze (migawki, bez LLM)."""
     args = " ".join(context.args or []).strip()
     await _command_with_image(update, context, "changes", args,
-                              lambda d: format_pre(f"Zmiany na serwerze ({args or '24h'})", d.get("text", "")))
+                              lambda d: format_pre(tr(f"Zmiany na serwerze ({args or '24h'})",
+                                                         f"Changes on the server ({args or '24h'})"), d.get("text", "")))
 
 
 async def cmd_wykres(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -425,7 +444,7 @@ async def cmd_wykres(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_zdrowie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/zdrowie -- certyfikaty, strony, DNS, backupy."""
     await _command_with_image(update, context, "health", "",
-                              lambda d: format_pre("Zdrowie uslug", d.get("text", "")))
+                              lambda d: format_pre(tr("Zdrowie uslug", "Service health"), d.get("text", "")))
 
 
 async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -440,19 +459,26 @@ async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/koszt -- zuzycie tokenow LLM."""
-    await _command_with_image(update, context, "usage", "", lambda d: format_pre("Koszt LLM", d.get("text", "")))
+    await _command_with_image(update, context, "usage", "", lambda d: format_pre(tr("Koszt LLM", "LLM cost"), d.get("text", "")))
+
+
+async def cmd_incydenty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/incydenty -- pamiec incydentow: rozwiazane alerty z ustaleniami i tym, co pomoglo (bez LLM)."""
+    await _command_with_image(update, context, "incidents", "",
+                              lambda d: format_pre(tr("Pamiec incydentow", "Incident memory"), d.get("text", "")))
 
 
 async def cmd_dziennik(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/dziennik -- zatwierdzone zmiany z kopiami (bez LLM)."""
     await _command_with_image(update, context, "journal", "",
-                              lambda d: format_pre("Dziennik zmian", d.get("text", "")) + "\n<i>/cofnij &lt;id&gt; — cofnij wybrana</i>")
+                              lambda d: format_pre(tr("Dziennik zmian", "Change journal"), d.get("text", ""))
+                              + tr("\n<i>/cofnij &lt;id&gt; — cofnij wybrana</i>", "\n<i>/undo &lt;id&gt; — undo the chosen one</i>"))
 
 
 def _undo_keyboard(entry_id: str, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Cofnij", callback_data=f"undo:yes:{entry_id}:{user_id}"),
-        InlineKeyboardButton("Anuluj", callback_data=f"undo:no:{entry_id}:{user_id}"),
+        InlineKeyboardButton(tr("Cofnij", "Undo"), callback_data=f"undo:yes:{entry_id}:{user_id}"),
+        InlineKeyboardButton(tr("Anuluj", "Cancel"), callback_data=f"undo:no:{entry_id}:{user_id}"),
     ]])
 
 
@@ -463,7 +489,8 @@ async def cmd_cofnij(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     entry_id = " ".join(context.args or []).strip()
     if not _is_admin(user_id):
-        await update.message.reply_text("Cofanie zmian jest dostepne tylko dla administratora.")
+        await update.message.reply_text(tr("Cofanie zmian jest dostepne tylko dla administratora.",
+                                           "Only an administrator can undo changes."))
         return
 
     async def go() -> None:
@@ -479,7 +506,7 @@ async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
     parts = data.split(":")
     if len(parts) != 4 or not user or not _is_admin(user.id) or str(user.id) != parts[3]:
-        await query.answer("Nie mozesz cofac cudzych operacji.", show_alert=True)
+        await query.answer(tr("Nie mozesz cofac cudzych operacji.", "You cannot undo someone else's operations."), show_alert=True)
         return
     await query.answer()
     try:
@@ -487,12 +514,12 @@ async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception:
         pass
     if parts[1] != "yes":
-        await query.message.reply_text("Anulowano — nic nie zmienilem.")
+        await query.message.reply_text(tr("Anulowano — nic nie zmienilem.", "Cancelled — I changed nothing."))
         return
 
     async def go() -> None:
         result = response_data([f async for f in get_client(user.id).command("undo", id=parts[2], execute=True)])
-        await _send_html(context.bot, query.message.chat_id, format_pre("Cofniecie", result.get("text", "")))
+        await _send_html(context.bot, query.message.chat_id, format_pre(tr("Cofniecie", "Undo"), result.get("text", "")))
 
     await _backend_call(update, context, go())
 
@@ -502,9 +529,9 @@ async def _handle_approval_callback(update: Update, context: ContextTypes.DEFAUL
     user = update.effective_user
     parts = data.split(":")
     if len(parts) != 3 or not user or not _is_admin(user.id):
-        await query.answer("Zgody zatwierdza tylko administrator.", show_alert=True)
+        await query.answer(tr("Zgody zatwierdza tylko administrator.", "Only an administrator can approve."), show_alert=True)
         return
-    await query.answer("Wykonuje..." if parts[1] == "yes" else "Odrzucono")
+    await query.answer(tr("Wykonuje...", "Running...") if parts[1] == "yes" else tr("Odrzucono", "Rejected"))
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
@@ -513,7 +540,7 @@ async def _handle_approval_callback(update: Update, context: ContextTypes.DEFAUL
     async def go() -> None:
         result = response_data([f async for f in get_client(user.id).command(
             "approve", id=parts[2], decision=parts[1] == "yes")])
-        await _send_html(context.bot, query.message.chat_id, format_pre(f"Zgoda {parts[2]}", result.get("text", "")))
+        await _send_html(context.bot, query.message.chat_id, format_pre(tr(f"Zgoda {parts[2]}", f"Approval {parts[2]}"), result.get("text", "")))
 
     await _backend_call(update, context, go())
 
@@ -527,7 +554,7 @@ async def cmd_zgody(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     async def go() -> None:
         pending = (await get_client(user_id).data("approvals")).get("pending", [])
         if not pending:
-            await update.message.reply_text("Nic nie czeka na zgode.")
+            await update.message.reply_text(tr("Nic nie czeka na zgode.", "Nothing is waiting for approval."))
         for item in pending:
             await _send_html(context.bot, update.effective_chat.id, format_approval(item),
                              _approval_keyboard(item["id"]) if _is_admin(user_id) else None)
@@ -537,8 +564,9 @@ async def cmd_zgody(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_data(update, context, "mcp_servers", lambda d: format_list(
-        "Serwery MCP", d.get("servers", []),
-        "Brak. Napisz np. <i>\"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github\"</i>."))
+        tr("Serwery MCP", "MCP servers"), d.get("servers", []),
+        tr("Brak. Napisz np. <i>\"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github\"</i>.",
+           "None. Write e.g. <i>\"add the MCP server github: npx -y @modelcontextprotocol/server-github\"</i>.")))
 
 
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -549,7 +577,7 @@ async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     async def go() -> None:
         entries = (await get_client(user_id).data("history")).get("entries", [])
-        body = "\n".join(entries) or "(pusto)"
+        body = "\n".join(entries) or tr("(pusto)", "(empty)")
         await _send_html(context.bot, update.effective_chat.id,
                          f"<b>Audit log</b>\n<pre>{html.escape(body)}</pre>")
 
@@ -578,14 +606,16 @@ async def cmd_alerty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_cele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_data(update, context, "targets", lambda d: format_list(
-        "Zdalne cele", d.get("targets", []),
-        "Brak. Napisz np. <i>\"dodaj serwer 10.0.0.5 jako web-2 (ssh, root)\"</i>."))
+        tr("Zdalne cele", "Remote targets"), d.get("targets", []),
+        tr("Brak. Napisz np. <i>\"dodaj serwer 10.0.0.5 jako web-2 (ssh, root)\"</i>.",
+           "None. Write e.g. <i>\"add the server 10.0.0.5 as web-2 (ssh, root)\"</i>.")))
 
 
 async def cmd_rutyny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_data(update, context, "routines", lambda d: format_list(
-        "Rutyny", d.get("routines", []),
-        "Brak. Napisz np. <i>\"codziennie o 7 sprawdzaj backupy i certyfikaty\"</i>."))
+        tr("Rutyny", "Routines"), d.get("routines", []),
+        tr("Brak. Napisz np. <i>\"codziennie o 7 sprawdzaj backupy i certyfikaty\"</i>.",
+           "None. Write e.g. <i>\"check the backups and certificates every day at 7\"</i>.")))
 
 
 async def cmd_vibe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -593,13 +623,17 @@ async def cmd_vibe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     def render(data: dict) -> str:
         if "reset" in data:
-            return "Wyczyscilem notatke o Twoim stylu. Zaczynam obserwowac od nowa." if data["reset"] \
-                else "Nie mialem jeszcze notatki o Twoim stylu."
+            return tr("Wyczyscilem notatke o Twoim stylu. Zaczynam obserwowac od nowa.",
+                      "I cleared the note about your style. I start observing afresh.") if data["reset"] \
+                else tr("Nie mialem jeszcze notatki o Twoim stylu.", "I had no note about your style yet.")
         content = (data.get("content") or "").strip()
         if not content:
-            return ("Jeszcze nie znam Twojego stylu — ucze sie z rozmow. Mozesz tez powiedziec wprost, "
-                    "np. <i>\"odpowiadaj krocej i bez wstepow\"</i>.")
-        return f"<b>VIBE</b> — tak sie do Ciebie dopasowuje:\n<pre>{html.escape(content)}</pre>\n<i>/vibe reset — wyczysc</i>"
+            return tr("Jeszcze nie znam Twojego stylu — ucze sie z rozmow. Mozesz tez powiedziec wprost, "
+                      "np. <i>\"odpowiadaj krocej i bez wstepow\"</i>.",
+                      "I do not know your style yet — I learn from our conversations. You can also say it outright, "
+                      "e.g. <i>\"answer shorter and without preambles\"</i>.")
+        return (tr("<b>VIBE</b> — tak sie do Ciebie dopasowuje:\n", "<b>VIBE</b> — this is how I adapt to you:\n")
+                + f"<pre>{html.escape(content)}</pre>\n" + tr("<i>/vibe reset — wyczysc</i>", "<i>/vibe reset — clear it</i>"))
 
     await _show_data(update, context, "vibe", render, args=args)
 
@@ -637,7 +671,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if media is None:
         return
     if (media.file_size or 0) > MAX_VOICE_BYTES:
-        await update.message.reply_text("Nagranie jest za dlugie — nagraj krotsze albo napisz.")
+        await update.message.reply_text(tr("Nagranie jest za dlugie — nagraj krotsze albo napisz.",
+                                           "The recording is too long — record a shorter one or write."))
         return
 
     async def go() -> None:
@@ -648,7 +683,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         client = get_client(user_id)
         text = response_data([f async for f in client.command(
             "transcribe", audio=base64.b64encode(data).decode("ascii"), filename=name)]).get("text", "")
-        await update.message.reply_text(f"Uslyszalem: {text}")
+        await update.message.reply_text(tr(f"Uslyszalem: {text}", f"I heard: {text}"))
         await _run_and_reply(context, update.effective_chat.id, user_id, client.chat(text))
 
     await _backend_call(update, context, go())
@@ -672,7 +707,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not user or not _is_allowed(user.id):
             await query.answer()
             return
-        await query.answer("Badam...")
+        await query.answer(tr("Badam...", "Investigating..."))
         try:
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
@@ -693,7 +728,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Tylko oryginalny uzytkownik moze potwierdzic — i tylko administrator
     if not user or user.id != requesting_user_id or not _is_admin(user.id):
-        await query.answer("Nie mozesz potwierdzac cudzych operacji.", show_alert=True)
+        await query.answer(tr("Nie mozesz potwierdzac cudzych operacji.",
+                              "You cannot confirm someone else's operations."), show_alert=True)
         return
 
     confirmed = parts[1] == "yes"
@@ -701,7 +737,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await query.message.reply_text("Operacja zatwierdzona." if confirmed else "Operacja anulowana.")
+    await query.message.reply_text(tr("Operacja zatwierdzona.", "Operation approved.") if confirmed
+                                   else tr("Operacja anulowana.", "Operation cancelled."))
     await _backend_call(update, context, _run_and_reply(
         context, query.message.chat_id, user.id, get_client(user.id).confirm(confirmed)))
 
@@ -721,11 +758,14 @@ async def cmd_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         content = "" if mode in SCAN_WORDS else (await client.data("server_md")).get("content", "")
         if content.strip():
             await _send_html(context.bot, update.effective_chat.id, to_telegram_html(
-                "<b>SERVER.md</b>\n\n" + content + "\n\n<i>/server aktualizuj -- zbadaj serwer ponownie</i>"))
+                "<b>SERVER.md</b>\n\n" + content + tr("\n\n<i>/server aktualizuj -- zbadaj serwer ponownie</i>",
+                                                         "\n\n<i>/server update -- explore the server again</i>")))
             return
         await update.message.reply_text(
-            "Badam serwer i aktualizuje SERVER.md..." if mode in SCAN_WORDS
-            else "SERVER.md jeszcze nie istnieje. Badam serwer i tworze go..."
+            tr("Badam serwer i aktualizuje SERVER.md...", "Exploring the server and updating SERVER.md...")
+            if mode in SCAN_WORDS
+            else tr("SERVER.md jeszcze nie istnieje. Badam serwer i tworze go...",
+                    "SERVER.md does not exist yet. Exploring the server to create it...")
         )
         await _run_and_reply(context, update.effective_chat.id, user_id, client.command("scan_server"))
 
@@ -770,7 +810,8 @@ async def handle_other_command(update: Update, context: ContextTypes.DEFAULT_TYP
         entry = next((s for s in await client.list_skills() if s.get("command") == name), None)
         if entry is None:
             await update.message.reply_text(
-                f"Nieznana komenda /{html.escape(name)}. Lista komend: /pomoc, skille: /skille"
+                tr(f"Nieznana komenda /{html.escape(name)}. Lista komend: /pomoc, skille: /skille",
+                   f"Unknown command /{html.escape(name)}. Command list: /help, skills: /skills")
             )
             return
         await _run_and_reply(context, update.effective_chat.id, user_id,
@@ -783,8 +824,8 @@ async def handle_other_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def _approval_keyboard(approval_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Zatwierdz", callback_data=f"appr:yes:{approval_id}"),
-        InlineKeyboardButton("Odrzuc", callback_data=f"appr:no:{approval_id}"),
+        InlineKeyboardButton(tr("Zatwierdz", "Approve"), callback_data=f"appr:yes:{approval_id}"),
+        InlineKeyboardButton(tr("Odrzuc", "Reject"), callback_data=f"appr:no:{approval_id}"),
     ]])
 
 
@@ -897,13 +938,14 @@ async def _post_init(app: Application) -> None:
 def main() -> None:
     """Punkt wejscia Telegram bota."""
     if not BOT_TOKEN:
-        print("Blad: TELEGRAM_BOT_TOKEN nie jest ustawiony w .env", file=sys.stderr)
+        print(tr("Blad: TELEGRAM_BOT_TOKEN nie jest ustawiony w .env",
+                 "Error: TELEGRAM_BOT_TOKEN is not set in .env"), file=sys.stderr)
         sys.exit(1)
 
     if not ALLOWED_USER_IDS:
         print(
-            "Ostrzezenie: TELEGRAM_ALLOWED_USER_IDS jest pusty -- "
-            "nikt nie bedzie mogl uzywac bota.",
+            tr("Ostrzezenie: TELEGRAM_ALLOWED_USER_IDS jest pusty -- nikt nie bedzie mogl uzywac bota.",
+               "Warning: TELEGRAM_ALLOWED_USER_IDS is empty -- nobody will be able to use the bot."),
             file=sys.stderr,
         )
 
@@ -920,26 +962,16 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("raport", cmd_raport))
-    app.add_handler(CommandHandler("audyt", cmd_audyt))
-    app.add_handler(CommandHandler("zmiany", cmd_zmiany))
-    app.add_handler(CommandHandler("wykres", cmd_wykres))
-    app.add_handler(CommandHandler("zdrowie", cmd_zdrowie))
-    app.add_handler(CommandHandler("koszt", cmd_koszt))
-    app.add_handler(CommandHandler("cofnij", cmd_cofnij))
-    app.add_handler(CommandHandler("dziennik", cmd_dziennik))
-    app.add_handler(CommandHandler("zgody", cmd_zgody))
-    app.add_handler(CommandHandler("mcp", cmd_mcp))
-    app.add_handler(CommandHandler("mapa", cmd_mapa))
-    app.add_handler(CommandHandler("historia", cmd_historia))
-    app.add_handler(CommandHandler("server", cmd_server))
-    app.add_handler(CommandHandler("katalogi", cmd_katalogi))
-    app.add_handler(CommandHandler("skille", cmd_skille))
-    app.add_handler(CommandHandler("alerty", cmd_alerty))
-    app.add_handler(CommandHandler("cele", cmd_cele))
-    app.add_handler(CommandHandler("rutyny", cmd_rutyny))
-    app.add_handler(CommandHandler("vibe", cmd_vibe))
-    app.add_handler(CommandHandler(["pomoc", "help"], cmd_pomoc))
+    # Polskie nazwy i ich angielskie aliasy (/raport i /report) dzialaja w obu jezykach.
+    for polish, handler in (
+        ("raport", cmd_raport), ("audyt", cmd_audyt), ("zmiany", cmd_zmiany), ("wykres", cmd_wykres),
+        ("zdrowie", cmd_zdrowie), ("koszt", cmd_koszt), ("cofnij", cmd_cofnij), ("dziennik", cmd_dziennik),
+        ("zgody", cmd_zgody), ("mcp", cmd_mcp), ("mapa", cmd_mapa), ("historia", cmd_historia),
+        ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
+        ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
+        ("incydenty", cmd_incydenty),
+    ):
+        app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))

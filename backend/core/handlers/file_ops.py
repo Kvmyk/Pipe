@@ -78,7 +78,7 @@ async def handle_read_file(
     if target is None:
         await audit.log_blocked(session.interface, f"read_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
-        reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
+        reply(session, tool_call, tr(f"ODMOWA SYSTEMOWA: {reason}", f"SYSTEM REFUSAL: {reason}"))
         return
 
     real_host = runtime.to_host(target)
@@ -132,7 +132,7 @@ async def handle_write_file(
     if target is None:
         await audit.log_blocked(session.interface, f"write_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
-        reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
+        reply(session, tool_call, tr(f"ODMOWA SYSTEMOWA: {reason}", f"SYSTEM REFUSAL: {reason}"))
         return
     local = target  # zapis idzie tam, dokad prowadzi symlink na hoscie
 

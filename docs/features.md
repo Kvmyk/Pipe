@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.14.0
+Pipe v0.15.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -338,6 +338,9 @@ Instalowane przy starcie do `backend/data/skills/` jak zwykle skille -- masz je 
 (`/nginx_vhost`). Mozesz je edytowac i usuwac: nowa wersja z aktualizacji Pipe zastapi tylko skill, ktorego
 nie zmieniales, a usunietego nie przywroci.
 
+Przy `PIPE_LANG=en` instalowane sa angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`
+(pozostale cztery maja te sama nazwe w obu jezykach).
+
 ---
 
 ## Pamiec incydentow
@@ -399,6 +402,27 @@ i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- prz
 - CLI i inne klienty: osobny token na osobe albo laptop, odwolywalny:
   `python3 -m backend.tokens add laptop-kuba --role admin`, `list`, `revoke laptop-kuba`.
 - Role egzekwuje backend. Sesja nalezy do tokenu, ktory ja zalozyl.
+
+---
+
+## Jezyk: polski albo angielski
+
+`PIPE_LANG=pl` (domyslnie) albo `PIPE_LANG=en` przelacza caly produkt, nie tylko jezyk odpowiedzi modelu:
+
+| Warstwa | Co sie zmienia |
+|---------|----------------|
+| Agent | system prompt, opisy 22 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
+| Komunikaty | pytania o potwierdzenie, plan bezpiecznika, wyniki narzedzi, bledy walidacji |
+| Czuwanie | tytuly alertow, poranny raport, `/zmiany`, `/zdrowie`, `/audyt` z poprawkami, powitanie |
+| MCP | tytuly i opisy narzedzi serwera MCP, instrukcje dla zewnetrznego agenta |
+| Klienci | CLI (`--lang en`), bot Telegrama (menu `/`, przyciski, etykiety), kreator i instalator |
+| Skille | wbudowane skille w wersji angielskiej |
+
+Znaczniki protokolu -- `[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`, `[PAMIEC]`, `[ZREDAGOWANO: ...]` -- sa takie same
+w obu jezykach: serwer rozpoznaje po nich status ramki, a klienci zamieniaja je na etykiety w swoim jezyku.
+Komendy maja angielskie aliasy (`/report`, `/changes`, `/undo`, ...), ktore dzialaja obok polskich.
+
+Dane zapisane wczesniej (SERVER.md, VIBE, wlasne skille, wpisy dziennika) zostaja w jezyku, w ktorym powstaly.
 
 ---
 

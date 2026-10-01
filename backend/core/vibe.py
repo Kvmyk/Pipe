@@ -81,7 +81,7 @@ class VibeLearner:
         try:
             await self.distill(key, messages)
         except Exception as exc:  # nauka stylu nigdy nie psuje rozmowy
-            print(f"[VIBE] Nie zaktualizowano notatki {key}: {exc}", flush=True)
+            print(tr(f"[VIBE] Nie zaktualizowano notatki {key}: {exc}", f"[VIBE] Note {key} not updated: {exc}"), flush=True)
         finally:
             self._running.discard(key)
 
