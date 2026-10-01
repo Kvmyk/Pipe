@@ -70,6 +70,8 @@ class Container:
     domains: list[str] = field(default_factory=list)   # z etykiet Traefika / VIRTUAL_HOST
     image_id: str = ""                                  # sha256:... — zmienia sie po pull + recreate
     mounts: list[tuple[str, str]] = field(default_factory=list)   # (sciezka hosta, sciezka w kontenerze)
+    privileged: bool = False
+    network_mode: str = ""
 
     @property
     def kind(self) -> str:
@@ -201,6 +203,8 @@ def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
             image_id=str(item.get("Image", ""))[:19],
             mounts=[(str(m.get("Source", "")), str(m.get("Destination", ""))) for m in item.get("Mounts") or []
                     if m.get("Source") and m.get("Destination")],
+            privileged=bool((item.get("HostConfig") or {}).get("Privileged")),
+            network_mode=str((item.get("HostConfig") or {}).get("NetworkMode", "")),
         ))
     return sorted(result, key=lambda c: (c.project, c.name))
 

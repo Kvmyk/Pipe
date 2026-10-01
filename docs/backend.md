@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -32,6 +32,9 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/checks.py` | Sprawdzenia bez konfiguracji: certyfikaty, strony, DNS, swiezosc backupow |
 | `core/digest.py` | Poranny raport (bez LLM) |
 | `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
+| `core/posture.py` | Audyt bezpieczenstwa hosta (ocena, poprawki), straznik zmian bezpieczenstwa, log SSH |
+| `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
+| `skills_builtin/` | Wbudowane skille, instalowane do `data/skills` przy starcie |
 | `core/safety.py` | Bezpiecznik: plan zmiany (kopie, sprawdzenie przed, weryfikacja po) i strzezone wykonanie |
 | `core/journal.py` | Dziennik zmian: kopie plikow, stan gita i crontaba, komendy odwrotne, `/cofnij` |
 | `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
@@ -257,6 +260,7 @@ Powinienes zobaczyc:
 | `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
@@ -280,6 +284,8 @@ Powinienes zobaczyc:
 | `CHECKS_INTERVAL` | 3600 | Co ile sekund sprawdzac certyfikaty, strony, DNS i backupy |
 | `WATCH_SITES` | 1 | 0 wylacza sprawdzenia sieciowe (certyfikaty, strony, DNS) |
 | `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS` | 14, 26 | Progi: dni do wygasniecia certyfikatu, wiek najnowszego backupu |
+| `WATCH_SSH_FAILURES` | 60 | Alert przy tylu nieudanych logowaniach SSH w 10 min (0 = wylaczone) |
+| `WATCH_SSH_LOGINS` | 1 | Alert przy logowaniu SSH z nowego adresu |
 | `WATCH_IGNORE` | -- | Domeny i sciezki pomijane w sprawdzeniach (po przecinku) |
 | `DIGEST_TIME` | `07:00` | Godzina porannego raportu (czas serwera); `off` wylacza |
 | `LLM_PRICE_IN`, `LLM_PRICE_OUT` | -- | Ceny modelu w USD za milion tokenow -- `/koszt` pokaze koszt |

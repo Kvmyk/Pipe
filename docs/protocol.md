@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 ## Opis
 
@@ -68,6 +68,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
 | `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
 | `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
+| `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
+| `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
@@ -77,7 +79,7 @@ Tresc wiadomosci dla agenta (`scan_server`, `status`, `run_skill`, `investigate`
 wysyla tylko komende. Wiadomosci zbudowane przez backend nie ucza VIBE.
 Pole `command` skilla to nazwa zgodna z zasadami Telegrama (male litery, cyfry, `_`, do 32 znakow). Jest puste,
 gdy nazwa skilla jest zarezerwowana (`status`, `mapa`, `server`, `skille`, `katalogi`, `vibe`, `alerty`,
-`cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, ...) albo po skroceniu koliduje z innym skillem.
+`cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, `cofnij`, `dziennik`, `audyt`, ...) albo po skroceniu koliduje z innym skillem.
 
 ### Odpowiedz
 
@@ -132,10 +134,15 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
   "attachment": {"name": "wykres-load.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
+`{"type": "welcome", "title", "sections", "score", "grade", "text", "attachment"?}` -- raz po instalacji, gdy
+podlaczy sie pierwszy subskrybent.
+
 `state`: `new` -- nowy albo eskalowany alert, `resolved` -- problem minal, `event` -- zdarzenie jednorazowe
 (nowy publiczny port, zatrzymany kontener). `investigate` z `id` prosi agenta o zbadanie alertu.
 Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
 oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
+`auth:ssh` (seria nieudanych logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
+to zdarzenia jednorazowe.
 `digest` przychodzi raz dziennie o `DIGEST_TIME`.
 
 ### Autoryzacja tokenem

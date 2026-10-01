@@ -118,6 +118,9 @@ CHECKS_INTERVAL: int = _int("CHECKS_INTERVAL", 3600)
 WATCH_SITES: bool = os.getenv("WATCH_SITES", "1").strip().lower() not in ("0", "false", "no", "nie")
 WATCH_CERT_DAYS: int = _int("WATCH_CERT_DAYS", 14)
 WATCH_BACKUP_HOURS: int = _int("WATCH_BACKUP_HOURS", 26)
+# Log SSH: alert przy tylu nieudanych logowaniach w 10 min (0 = wylaczone) i przy logowaniu z nowego adresu.
+WATCH_SSH_FAILURES: int = _int("WATCH_SSH_FAILURES", 60)
+WATCH_SSH_LOGINS: bool = os.getenv("WATCH_SSH_LOGINS", "1").strip().lower() not in ("0", "false", "no", "nie")
 # Domeny i sciezki pomijane przez te sprawdzenia (po przecinku).
 WATCH_IGNORE: str = os.getenv("WATCH_IGNORE", "")
 # Poranny raport (HH:MM, czas serwera); pusty albo "off" wylacza.

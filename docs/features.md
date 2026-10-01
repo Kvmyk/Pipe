@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.11.0
+Pipe v0.12.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -280,3 +280,60 @@ provider nie odpowiada albo skonczyl sie dzienny limit. Cofniecie tez trafia do 
 
 Czego Pipe nie cofa automatycznie (i mowi to w planie): instalacji pakietow, zmian w klastrze Kubernetes,
 usunietych kontenerow i wolumenow, `git clean`, katalogow usuwanych `rm -r`, poprzednich wersji obrazow.
+
+---
+
+## Audyt bezpieczenstwa i straznik
+
+`/audyt` (albo *"jak bezpieczny jest ten serwer?"*) -- ocena 0-100 bez LLM, kazdy punkt z poprawka:
+
+| Obszar | Co sprawdza |
+|--------|-------------|
+| SSH | logowanie haslem (z uwzglednieniem `sshd_config.d` i zasady "pierwsza wartosc wygrywa"), root z haslem, klucze |
+| Zapora | ufw, firewalld, nftables, iptables (zapora w panelu dostawcy -- Pipe tego nie widzi i mowi to) |
+| Porty | bazy danych, Redis, Elasticsearch, API Dockera/Kubernetesa na publicznym adresie; port publikowany przez kontener dostaje poprawke w compose, bo **Docker omija ufw** |
+| Kontenery | `privileged`, zamontowany `docker.sock`, siec hosta |
+| Konta | uid 0 poza rootem, konta bez hasla (z `/etc/shadow` odczytywane sa tylko nazwy kont) |
+| Aktualizacje | unattended-upgrades, oczekujace poprawki bezpieczenstwa, wymagany restart |
+| Ochrona | fail2ban / CrowdSec (wazniejsze, gdy SSH przyjmuje hasla) |
+| Sekrety | pliki `.env` czytelne dla wszystkich w katalogach aplikacji z DIRECTORY |
+| Higiena | synchronizacja czasu, swap na malej maszynie, certyfikaty |
+
+*"napraw 1"* -- agent wykonuje poprawke zwyklym narzedziem, wiec dostajesz ja do zatwierdzenia z planem
+bezpiecznika (kopia, `sshd -t` przed przeladowaniem, `/cofnij`). Poprawka SSH trafia do wlasnego pliku
+`sshd_config.d/00-pipe-*.conf`, zeby wygrac z ustawieniami cloud-init. Bez klucza w `authorized_keys` Pipe
+**nie proponuje** wylaczenia hasel -- najpierw klucz (skill `utwardz-ssh`). W trybie docker komendy sa oznaczone
+*w powloce hosta* (system plikow hosta jest tylko do odczytu).
+
+**Straznik** (co `WATCH_INTERVAL`, bez LLM) porownuje konta, klucze SSH, programy SUID/SGID i konfiguracje
+uwierzytelniania (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). Nowe konto z uid 0, nowy klucz, nowy
+SUID albo `ld.so.preload` -- alert krytyczny. Zmiany zrobione przez Pipe (sa w dzienniku) nie alarmuja.
+
+**Log SSH** (`/var/log/auth.log` albo `/var/log/secure`, czytany przyrostowo): seria nieudanych logowan,
+udane logowanie haslem z adresu, ktory wczesniej zgadywal hasla, logowanie z nowego adresu.
+
+---
+
+## Pierwsze 5 minut
+
+Po instalacji, gdy bot Telegram polaczy sie pierwszy raz, Pipe sam pisze: mapa serwera jako obraz, ocena
+bezpieczenstwa z trzema najwazniejszymi poprawkami i lista tego, czego od teraz pilnuje. CLI pokazuje to samo
+przy pierwszym polaczeniu z danym serwerem. Bez LLM.
+
+---
+
+## Wbudowane skille
+
+| Skill | Co robi |
+|-------|---------|
+| `nginx-vhost` | nowa domena w nginx jako reverse proxy + certyfikat Let's Encrypt |
+| `swap` | plik swap z wpisem w fstab (tez btrfs) |
+| `fail2ban-ssh` | fail2ban z jailem SSH, bez blokowania wlasnego adresu |
+| `backup-postgres` | nocny `pg_dump` z rotacja, wpis `[backup]` w DIRECTORY (czuwanie pilnuje swiezosci) |
+| `aktualizuj-kontener` | pull + up uslugi compose z planem powrotu do poprzedniego obrazu |
+| `utwardz-ssh` | wylaczenie hasel w SSH w kolejnosci, ktora nie odetnie dostepu |
+| `wolne-miejsce` | co zajmuje dysk i bezpieczne sprzatanie, krok po kroku |
+
+Instalowane przy starcie do `backend/data/skills/` jak zwykle skille -- masz je w `/skille` i jako komendy
+(`/nginx_vhost`). Mozesz je edytowac i usuwac: nowa wersja z aktualizacji Pipe zastapi tylko skill, ktorego
+nie zmieniales, a usunietego nie przywroci.

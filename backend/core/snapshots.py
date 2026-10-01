@@ -12,6 +12,7 @@ plikow i `docker inspect`, bez LLM):
   cron        wpisy crona hosta (linie, sekrety zredagowane)
   users       konta z powloka logowania albo uid 0
   ssh_keys    klucze w authorized_keys (odcisk + komentarz, bez samego klucza)
+  suid        programy z bitem SUID/SGID w katalogach binarek (nowy = klasyczny slad wlamania)
   configs     skroty waznych konfiguracji: sshd, sudoers, nginx, Caddy, compose...
 
 Migawka jest zapisywana tylko, gdy cos sie zmienilo — najnowsza starsza niz
@@ -36,11 +37,11 @@ from typing import Any
 
 from backend.core import hostinfo, memory, runtime
 
-SECTIONS = ("system", "packages", "containers", "ports", "services", "cron", "users", "ssh_keys", "configs")
+SECTIONS = ("system", "packages", "containers", "ports", "services", "cron", "users", "ssh_keys", "suid", "configs")
 # Sekcje, ktorych wartosci to wiele linii — roznica jest pokazywana linia po linii.
 LINE_SECTIONS = frozenset({"cron", "ssh_keys"})
 # Zmiany w tych sekcjach sa istotne dla bezpieczenstwa (nowe konto, klucz SSH, sudoers).
-SECURITY_SECTIONS = frozenset({"users", "ssh_keys"})
+SECURITY_SECTIONS = frozenset({"users", "ssh_keys", "suid"})
 SECURITY_CONFIGS = ("/etc/sudoers", "/etc/ssh/sshd_config", "/etc/passwd")
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -154,6 +155,39 @@ def ssh_keys() -> dict[str, str]:
     return result
 
 
+SUID_DIRS = ("/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin", "/bin", "/sbin", "/usr/libexec",
+             "/usr/lib/openssh", "/opt")
+SUID_MAX_FILES = 50_000
+
+
+def suid() -> dict[str, str]:
+    """Pliki z bitem SUID/SGID (skrot tresci — podmieniona binarka tez jest zmiana)."""
+    import stat
+
+    result: dict[str, str] = {}
+    seen = 0
+    for directory in SUID_DIRS:
+        local_dir = runtime.to_local(directory)
+        if os.path.islink(local_dir) or not os.path.isdir(local_dir):
+            continue                        # /bin -> usr/bin na nowych systemach — bez duplikatow
+        for current, dirs, files in os.walk(local_dir):
+            if directory == "/opt" and current.count("/") - local_dir.count("/") >= 3:
+                dirs[:] = []
+            for name in files:
+                seen += 1
+                if seen > SUID_MAX_FILES:
+                    return result
+                path = os.path.join(current, name)
+                try:
+                    info = os.lstat(path)
+                except OSError:
+                    continue
+                if stat.S_ISREG(info.st_mode) and info.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                    kind = "suid" if info.st_mode & stat.S_ISUID else "sgid"
+                    result[runtime.to_host(path)] = f"{kind} {info.st_size} B {int(info.st_mtime)}"
+    return result
+
+
 def cron() -> dict[str, str]:
     result = {}
     for pattern in CRON_GLOBS:
@@ -253,6 +287,7 @@ def capture_sync(containers: list[Any] | None, proc: str | None = None) -> dict[
         "cron": cron,
         "users": users,
         "ssh_keys": ssh_keys,
+        "suid": suid,
         "configs": lambda: configs(compose_files(containers)),
     }
     if runtime.kind() == "kubernetes" and not runtime.host_root():
@@ -453,6 +488,10 @@ def describe(change: Change) -> str:
     if s == "users":
         return {"added": f"nowe konto {key} ({d})", "removed": f"usunieto konto {key}",
                 "changed": f"konto {key}: {d}"}[k]
+    if s == "suid":
+        kind = (d.split(" -> ")[-1] if k == "changed" else d).split(" ")[0] or "suid"
+        return {"added": f"nowy program z bitem {kind.upper()}: {key}", "removed": f"{key} nie ma juz bitu SUID/SGID",
+                "changed": f"zmienil sie program {kind.upper()} {key} (rozmiar/czas modyfikacji)"}[k]
     if s == "ssh_keys":
         if k == "added":
             return f"nowy plik authorized_keys {key}:\n" + "\n".join(f"+ {l}" for l in d.splitlines())
@@ -464,7 +503,7 @@ def describe(change: Change) -> str:
 
 SECTION_TITLES = {
     "system": "System", "packages": "Pakiety", "containers": "Kontenery", "ports": "Porty",
-    "services": "Uslugi systemd", "cron": "Cron", "users": "Konta", "ssh_keys": "Klucze SSH",
+    "services": "Uslugi systemd", "cron": "Cron", "users": "Konta", "ssh_keys": "Klucze SSH", "suid": "SUID/SGID",
     "configs": "Konfiguracja",
 }
 MAX_PACKAGES_LISTED = 12

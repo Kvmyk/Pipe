@@ -313,6 +313,58 @@ def delete_skill(name: str) -> bool:
     return True
 
 
+# ─── Skille wbudowane ───────────────────────────────────────────────────────
+# Gotowe przepisy z repozytorium (backend/skills_builtin). Przy starcie serwera trafiaja
+# do DATA_DIR/skills jako zwykle skille — uzytkownik moze je edytowac i usuwac.
+# Rejestr .builtin.json pamieta skrot zainstalowanej wersji: nowa wersja z repozytorium
+# zastepuje tylko skill, ktorego uzytkownik nie zmienil; usunietego nie przywracamy.
+
+BUILTIN_SKILLS_DIR = _BACKEND_DIR / "skills_builtin"
+
+
+def _builtin_registry_path() -> Path:
+    return skills_dir() / ".builtin.json"
+
+
+def seed_builtin_skills(source: Path | None = None) -> list[str]:
+    """Instaluje/aktualizuje skille wbudowane. Zwraca nazwy zmienionych. Nigdy nie nadpisuje zmian uzytkownika."""
+    import hashlib
+
+    source = source or BUILTIN_SKILLS_DIR
+    if not source.is_dir():
+        return []
+    try:
+        registry = json.loads(_builtin_registry_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        registry = {}
+    changed = []
+    for entry in sorted(source.iterdir()):
+        path = entry / "SKILL.md"
+        if not (entry.is_dir() and _SKILL_NAME.match(entry.name) and path.is_file()):
+            continue
+        skill = parse_skill(path.read_text(encoding="utf-8"), entry.name)
+        try:
+            description, content = validate_skill_content(entry.name, skill.description, skill.content)
+        except MemoryWriteError:
+            continue
+        text = render_skill(Skill(entry.name, description, content))
+        new_hash = hashlib.sha256(text.encode()).hexdigest()
+        target = _skill_file(entry.name)
+        known = registry.get(entry.name)
+        if target.exists():
+            current_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+            if known is None or current_hash != known or current_hash == new_hash:
+                continue                     # skill uzytkownika albo przez niego zmieniony — nie ruszamy
+        elif known is not None:
+            continue                         # uzytkownik usunal skill — nie przywracamy
+        _write_atomic(target, text)
+        registry[entry.name] = new_hash
+        changed.append(entry.name)
+    if changed:
+        _write_atomic(_builtin_registry_path(), json.dumps(registry, indent=1, sort_keys=True) + "\n")
+    return changed
+
+
 # ─── DIRECTORY — mapa katalogow i repozytoriow ──────────────────────────────
 # Uzupelnienie SERVER.md: zamiast prozy — lista konkretnych miejsc na serwerze
 # (repozytoria, katalogi aplikacji, projekty compose, konfiguracje, dane, logi,
@@ -485,7 +537,7 @@ def reset_vibe(key: str) -> bool:
 RESERVED_COMMANDS = frozenset({
     "start", "status", "server", "skille", "historia", "pomoc", "help", "exit",
     "mapa", "mermaid", "katalogi", "vibe", "alerty", "cele", "rutyny",
-    "zmiany", "wykres", "zdrowie", "raport", "koszt", "cofnij", "dziennik",
+    "zmiany", "wykres", "zdrowie", "raport", "koszt", "cofnij", "dziennik", "audyt",
 })
 MAX_COMMAND_CHARS = 32  # limit Telegrama
 

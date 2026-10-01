@@ -41,7 +41,7 @@ from backend.core import hostinfo, memory, metrics, routines, targets
 
 MAX_HISTORY = 50
 # Zakresy alertow (prefiks klucza przed ':') — kazda petla rozwiazuje tylko swoje.
-RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port"})
+RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port", "auth"})
 CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
@@ -185,6 +185,8 @@ class Watcher:
         self.checks_report: Any = None          # ostatni checks.Report
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
+        from backend.core.posture import AuthWatch
+        self._auth = AuthWatch()
 
     # --- alerty -------------------------------------------------------------
 
@@ -248,11 +250,35 @@ class Watcher:
             findings += port_findings(public, previous_ports)
             state["public_ports"] = sorted(public)
 
+        findings += await self._security_findings(state)
+
         try:
             save_state(state)
         except OSError:
             pass
         return self._publish(self.apply(findings, RESOURCE_SCOPE))
+
+    async def _security_findings(self, state: dict[str, Any]) -> list[Finding]:
+        """Straznik (konta, klucze SSH, SUID, sudoers/sshd) i przyrost logu SSH."""
+        from backend.core import journal, posture
+
+        findings: list[Finding] = []
+        try:
+            current = await asyncio.to_thread(posture.sentinel_state)
+            recent = [e for e in journal.entries(20) if time.time() - e.at < max(600, 3 * settings.WATCH_INTERVAL)]
+            pipe_changed = {f.label for e in recent for f in e.files}
+            findings += posture.sentinel_findings(state.get("sentinel"), current, pipe_changed)
+            state["sentinel"] = current
+        except Exception as exc:
+            print(f"[Czuwanie] Straznik bezpieczenstwa: {exc}", flush=True)
+        try:
+            events = await asyncio.to_thread(posture.read_auth_increment, state)
+            if events is not None:
+                findings += posture.auth_findings(events, self._auth, state, threshold=settings.WATCH_SSH_FAILURES,
+                                                  notify_logins=settings.WATCH_SSH_LOGINS)
+        except Exception as exc:
+            print(f"[Czuwanie] Log SSH: {exc}", flush=True)
+        return findings
 
     def _publish(self, events: list[Alert]) -> list[Alert]:
         for alert in events:
@@ -395,6 +421,20 @@ class Watcher:
                     asyncio.create_task(self._safe(self.publish_digest(), "raport"))
             await asyncio.sleep(15)
 
+    async def _welcome_loop(self) -> None:
+        """Powitanie po instalacji — raz, gdy podlaczy sie pierwszy subskrybent (bot Telegram)."""
+        from backend.core import welcome
+
+        if welcome.already_sent():
+            return
+        await asyncio.sleep(90)            # niech migawka i sprawdzenia zdaza sie wykonac
+        while self.notifier.subscribers == 0:
+            await asyncio.sleep(30)
+        event = await welcome.build(checks_report=self.checks_report, digest_time=settings.DIGEST_TIME,
+                                    cert_days=settings.WATCH_CERT_DAYS)
+        self.notifier.publish(event)
+        welcome.mark_sent()
+
     @staticmethod
     async def _safe(coro, name: str) -> None:
         try:
@@ -412,6 +452,7 @@ class Watcher:
             self._tasks.append(asyncio.create_task(
                 self._periodic("sprawdzenia", self.checks_once, settings.CHECKS_INTERVAL, 60)))
         self._tasks.append(asyncio.create_task(self._clock_loop()))
+        self._tasks.append(asyncio.create_task(self._safe(self._welcome_loop(), "powitanie")))
 
 
 _watcher: Watcher | None = None

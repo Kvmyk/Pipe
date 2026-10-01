@@ -238,6 +238,19 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             event = result.to_event()
             event.pop("attachment", None)
             await _send(writer, _data(event))
+        elif command == "audit":
+            from backend.core.handlers.audit import run_audit_text
+            audit, _ = await run_audit_text()
+            await _send(writer, _data(audit.to_data()))
+        elif command == "welcome":
+            from backend.core import welcome
+            watcher = get_watcher()
+            event = await welcome.build(checks_report=watcher.checks_report, digest_time=settings.DIGEST_TIME,
+                                        cert_days=settings.WATCH_CERT_DAYS)
+            attachment = event.pop("attachment", None)
+            if attachment:
+                await _send(writer, {"response": "", "status": "ok", "done": False, "attachment": attachment})
+            await _send(writer, _data(event))
         elif command == "journal":
             await _send(writer, _data({"entries": [journal.as_data(e) for e in journal.entries(15)],
                                        "text": journal.render_list()}))
@@ -399,6 +412,14 @@ async def main() -> None:
     print(f"[VPS Agent] Diagramy    : {'mermaidx' if diagram.available() else 'brak renderera (tylko kod Mermaid)'}", flush=True)
     print(f"[VPS Agent] Czuwanie    : {'co ' + str(settings.WATCH_INTERVAL) + ' s' if settings.WATCH_ENABLED else 'wylaczone'}", flush=True)
     print(f"[VPS Agent] Serwer gotowy. Ctrl+C aby zatrzymać.", flush=True)
+
+    # Skille wbudowane (backend/skills_builtin) — nowe i zaktualizowane, bez nadpisywania zmian uzytkownika
+    try:
+        seeded = memory.seed_builtin_skills()
+        if seeded:
+            print(f"[VPS Agent] Skille wbudowane: {', '.join(seeded)}", flush=True)
+    except OSError as exc:
+        print(f"[VPS Agent] [OSTRZEZENIE] Nie zainstalowano skilli wbudowanych: {exc}", flush=True)
 
     # Weryfikacja modelu w tle — nie blokuje startu, a wycofany model
     # (np. po latach bez aktualizacji .env) od razu widac w logach.
