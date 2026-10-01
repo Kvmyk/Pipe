@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -158,12 +158,54 @@ TOOLS: list[dict] = [
         "sshd, sudoers, compose), restart serwera — z przedzialem czasu kazdej zmiany. UZYJ NAJPIERW przy "
         "awarii ('przestalo dzialac', 'od wczoraj'). chart: wykres load/RAM/dyskow z historii czuwania, "
         "wysylany uzytkownikowi jako obraz. checks: waznosc certyfikatow TLS i odpowiedz domen z konfiguracji "
-        "proxy, rekordy DNS, swiezosc backupow z DIRECTORY.",
+        "proxy, rekordy DNS, swiezosc backupow z DIRECTORY. incidents: pamiec incydentow — co sie juz zdarzalo, "
+        "co ustalono i co pomoglo (uzyj, gdy uzytkownik pyta 'czy to juz bylo').",
         {
-            "operation": {"type": "string", "enum": ["changes", "chart", "checks"]},
+            "operation": {"type": "string", "enum": ["changes", "chart", "checks", "incidents"]},
             "since": {"type": "string",
                       "description": "Okres wstecz: '24h' (domyslnie), '3h', '7d'. Dla changes i chart."},
             "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "security_audit",
+        "Audyt bezpieczenstwa hosta z ocena 0-100: logowanie SSH haslem/rootem, zapora, bazy danych i API Dockera "
+        "wystawione publicznie, kontenery uprzywilejowane i z docker.sock, konta z uid 0 i bez hasla, "
+        "automatyczne aktualizacje, fail2ban, pliki .env czytelne dla wszystkich, certyfikaty. Kazde znalezisko "
+        "ma poprawke z dokladna komenda. Same odczyty. Uzyj, gdy uzytkownik pyta o bezpieczenstwo serwera.",
+        {},
+    ),
+    _tool(
+        "mcp_manage",
+        "Zewnetrzne serwery MCP, z ktorych korzystasz (ich narzedzia maja nazwy mcp__<serwer>__<narzedzie>). "
+        "list: stan serwerow; add: nowy serwer — stdio (command, args, env) albo HTTP (url, headers) — ZAWSZE "
+        "z potwierdzeniem; autoApprove to wzorce narzedzi bez pytania, trustReadOnly ufa adnotacji tylko-odczyt; "
+        "remove; reload: polacz ponownie.",
+        {
+            "operation": {"type": "string", "enum": ["list", "add", "remove", "reload"]},
+            "name": {"type": "string", "description": "Nazwa serwera: male litery, cyfry, '-', '_'."},
+            "command": {"type": "string", "description": "stdio: program, np. 'npx'."},
+            "args": {"type": "array", "items": {"type": "string"}, "description": "stdio: argumenty."},
+            "env": {"type": "object", "description": "stdio: zmienne srodowiskowe dla serwera."},
+            "url": {"type": "string", "description": "HTTP: adres endpointu MCP."},
+            "headers": {"type": "object", "description": "HTTP: naglowki (np. Authorization)."},
+            "autoApprove": {"type": "array", "items": {"type": "string"},
+                            "description": "Wzorce nazw narzedzi wywolywanych bez pytania, np. ['get_*', 'list_*']."},
+            "trustReadOnly": {"type": "boolean"},
+            "description": {"type": "string"},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "journal",
+        "Dziennik zatwierdzonych zmian: przed kazda zmiana Pipe robi kopie plikow, stanu gita i crontaba oraz "
+        "zapisuje komendy odwrotne (docker start/stop, systemctl enable/disable). list: ostatnie wpisy. "
+        "undo: cofniecie wpisu (domyslnie ostatniego) — zawsze z potwierdzeniem. Uzyj, gdy uzytkownik mowi "
+        "'cofnij', 'przywroc jak bylo', albo gdy zmiana okazala sie bledna.",
+        {
+            "operation": {"type": "string", "enum": ["list", "undo"]},
+            "id": {"type": "string", "description": "Dla undo: identyfikator wpisu (np. 3f2a9c1d); pusty = ostatni."},
         },
         ["operation"],
     ),

@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, executor, runtime
+from backend.core import audit, executor, runtime, safety
 from backend.core.events import Event
 from backend.core.security import Classification, classify_command
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
+from backend.core.i18n import tr
 
 
 def reply(session: Session, tool_call: Any, content: str) -> None:
@@ -46,7 +47,7 @@ async def run_classified(
     tool_name: str,
     cwd: str | None = None,
     classification: Classification | None = None,
-    what: str = "Operacja",
+    what: str = "",
     inner: str | None = None,
 ) -> AsyncGenerator[Event, None]:
     """
@@ -61,18 +62,30 @@ async def run_classified(
 
     if classification == "forbidden":
         await audit.log_blocked(session.interface, f"{tool_name}({command})")
-        yield f"[ODMOWA] Komenda {as_code(inner or command)} jest zabroniona przez polityke bezpieczenstwa."
-        reply(session, tool_call, "ODMOWA SYSTEMOWA: komenda jest na liscie zakazanych operacji. Nie probuj jej obejsc.")
+        yield tr(f"[ODMOWA] Komenda {as_code(inner or command)} jest zabroniona przez polityke bezpieczenstwa.",
+                 f"[ODMOWA] The command {as_code(inner or command)} is forbidden by the security policy.")
+        reply(session, tool_call, tr("ODMOWA SYSTEMOWA: komenda jest na liscie zakazanych operacji. Nie probuj jej obejsc.",
+                                     "SYSTEM REFUSAL: the command is on the list of forbidden operations. "
+                                     "Do not try to get around it."))
         return
 
     if classification == "confirm":
+        # Plan bezpiecznika tylko dla komend wykonywanych lokalnie — na zdalnym celu
+        # (ssh/kubectl exec) pliki i uslugi sa po drugiej stronie.
+        plan = await safety.plan_for_command(command, session.cwd) if inner is None or inner == command \
+            else safety.Plan(notes=[tr("zdalny cel — bez kopii i weryfikacji po stronie Pipe",
+                                       "remote target — no backup or verification on the Pipe side")])
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name=tool_name,
             command=command,
             classification="confirm",
+            plan=plan,
         )
-        yield f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(command)}"
+        described = plan.describe()
+        what = what or tr("Operacja", "Operation")
+        yield tr(f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(command)}",
+                 f"[POTWIERDZ] {what} requires confirmation: {as_code(command)}") + (f"\n{described}" if described else "")
         return
 
     stdout, stderr, exit_code = await executor.execute(command, cwd=cwd if cwd is not None else local_cwd(session))

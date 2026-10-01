@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Literal
 
 from backend.core import runtime
+from backend.core.i18n import tr
 
 Classification = Literal["safe", "confirm", "forbidden"]
 
@@ -606,7 +607,7 @@ def resolve_local(path: str, workspace: str | None = None) -> str:
         if os.path.islink(candidate):
             hops += 1
             if hops > _MAX_SYMLINKS:
-                raise OSError(f"Za duzo dowiazan symbolicznych: {path}")
+                raise OSError(tr(f"Za duzo dowiazan symbolicznych: {path}", f"Too many symbolic links: {path}"))
             target = os.readlink(candidate)
             if target.startswith("/"):
                 resolved = []
@@ -628,23 +629,24 @@ def validate_workspace_access(path: str, workspace: str | None = None) -> tuple[
         (dozwolone, powod)
     """
     if not path or not path.strip():
-        return False, "Pusta sciezka"
+        return False, tr("Pusta sciezka", "Empty path")
     root = workspace if workspace is not None else runtime.workspace_root()
     try:
         resolved = Path(resolve_local(path, root))
         workspace_path = Path(root).resolve()
     except (ValueError, OSError):
-        return False, f"Nieprawidlowa sciezka: {path}"
+        return False, tr(f"Nieprawidlowa sciezka: {path}", f"Invalid path: {path}")
 
     if not resolved.is_relative_to(workspace_path):
-        return False, f"Dostep poza workspace ({root}) jest zabroniony dla {path}"
+        return False, tr(f"Dostep poza workspace ({root}) jest zabroniony dla {path}",
+                         f"Access outside the workspace ({root}) is forbidden for {path}")
 
     # Sciezka widziana z perspektywy hosta: /hostfs/etc/x -> /etc/x
     rel = "/" + str(resolved.relative_to(workspace_path))
     host = "/" if rel == "/." else rel
     for forbidden in FORBIDDEN_HOST_PATHS:
         if host == forbidden or host.startswith(forbidden + "/"):
-            return False, f"Dostep do {forbidden} jest zabroniony"
+            return False, tr(f"Dostep do {forbidden} jest zabroniony", f"Access to {forbidden} is forbidden")
     if re.match(r"^/home/[^/]+/\.ssh(/|$)", host):
-        return False, "Dostep do kluczy SSH uzytkownikow jest zabroniony"
+        return False, tr("Dostep do kluczy SSH uzytkownikow jest zabroniony", "Access to users' SSH keys is forbidden")
     return True, "OK"

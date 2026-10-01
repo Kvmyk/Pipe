@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
-from backend.core import audit, executor, runtime
+from backend.core import audit, executor, runtime, safety
 from backend.core.events import Event
 from backend.core.handlers.common import reply
 from backend.core.memory import REDACTION_MARK
 from backend.core.security import classify_file_write, is_sensitive, resolve_local, validate_workspace_access
 from backend.core.session import ConfirmationRequest, Session
 from backend.core.text import as_code
+from backend.core.i18n import tr
 
 MAX_READ_CHARS = 200_000
 
@@ -39,7 +40,7 @@ def checked_local(local: str) -> tuple[str | None, str]:
     try:
         return resolve_local(local), ""
     except (OSError, ValueError) as exc:
-        return None, f"Nieprawidlowa sciezka: {exc}"
+        return None, tr(f"Nieprawidlowa sciezka: {exc}", f"Invalid path: {exc}")
 
 
 async def _read_for_model(session: Session, local: str, host: str) -> str:
@@ -48,14 +49,16 @@ async def _read_for_model(session: Session, local: str, host: str) -> str:
         content = await executor.read_file(local)
         await audit.log_file_read(session.interface, host)
         if len(content) > MAX_READ_CHARS:
-            content = content[:MAX_READ_CHARS] + f"\n[... plik ma {len(content)} znakow, pokazano poczatek — uzyj tail/grep ...]"
-        return content if content else "(plik jest pusty)"
+            content = content[:MAX_READ_CHARS] + tr(
+                f"\n[... plik ma {len(content)} znakow, pokazano poczatek — uzyj tail/grep ...]",
+                f"\n[... the file has {len(content)} characters, showing the beginning — use tail/grep ...]")
+        return content if content else tr("(plik jest pusty)", "(the file is empty)")
     except FileNotFoundError:
-        return f"Blad: plik nie istnieje: {host}"
+        return tr(f"Blad: plik nie istnieje: {host}", f"Error: file does not exist: {host}")
     except PermissionError:
-        return f"Blad: brak uprawnien do odczytu: {host}"
+        return tr(f"Blad: brak uprawnien do odczytu: {host}", f"Error: no permission to read: {host}")
     except Exception as exc:
-        return f"Blad odczytu pliku: {exc}"
+        return tr(f"Blad odczytu pliku: {exc}", f"Error reading the file: {exc}")
 
 
 async def handle_read_file(
@@ -67,7 +70,7 @@ async def handle_read_file(
     """Obsluguje narzedzie read_file."""
     path = str(args.get("path", "")).strip()
     if not path:
-        reply(session, tool_call, "Blad: pusta sciezka")
+        reply(session, tool_call, tr("Blad: pusta sciezka", "Error: empty path"))
         return
 
     host, local = resolve_path(path, session)
@@ -75,7 +78,7 @@ async def handle_read_file(
     if target is None:
         await audit.log_blocked(session.interface, f"read_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
-        reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
+        reply(session, tool_call, tr(f"ODMOWA SYSTEMOWA: {reason}", f"SYSTEM REFUSAL: {reason}"))
         return
 
     real_host = runtime.to_host(target)
@@ -88,8 +91,10 @@ async def handle_read_file(
             tool_call_id=tool_call.id, tool_name="read_file", command=f"read_file({host})",
             classification="confirm", action=read_confirmed,
         )
-        yield (f"[POTWIERDZ] Odczyt pliku {as_code(host)} wymaga potwierdzenia — to plik z sekretami, "
-               "jego tresc trafi do providera LLM.")
+        yield tr(f"[POTWIERDZ] Odczyt pliku {as_code(host)} wymaga potwierdzenia — to plik z sekretami, "
+                 "jego tresc trafi do providera LLM.",
+                 f"[POTWIERDZ] Reading the file {as_code(host)} requires confirmation — it contains secrets, "
+                 "its content will be sent to the LLM provider.")
         return
 
     # Wynik trafia wylacznie do LLM (po redakcji sekretow) — uzytkownik dostaje
@@ -110,14 +115,16 @@ async def handle_write_file(
         content = str(content)
 
     if not path:
-        reply(session, tool_call, "Blad: pusta sciezka")
+        reply(session, tool_call, tr("Blad: pusta sciezka", "Error: empty path"))
         return
 
     if REDACTION_MARK in content:
         # Model widzial plik z ukrytymi sekretami — zapis calosci nadpisalby prawdziwe wartosci znacznikami.
         reply(session, tool_call,
-              "ODMOWA SYSTEMOWA: tresc zawiera znaczniki [ZREDAGOWANO: ...]. Zapis nadpisalby prawdziwe sekrety. "
-              "Zmien plik punktowo (np. sed -i na konkretnej linii) albo popros uzytkownika o reczna edycje.")
+              tr("ODMOWA SYSTEMOWA: tresc zawiera znaczniki [ZREDAGOWANO: ...]. Zapis nadpisalby prawdziwe sekrety. "
+                 "Zmien plik punktowo (np. sed -i na konkretnej linii) albo popros uzytkownika o reczna edycje.",
+                 "SYSTEM REFUSAL: the content contains [ZREDAGOWANO: ...] markers. Writing it would overwrite the real "
+                 "secrets. Change the file surgically (e.g. sed -i on a specific line) or ask the user to edit it."))
         return
 
     host, local = resolve_path(path, session)
@@ -125,17 +132,20 @@ async def handle_write_file(
     if target is None:
         await audit.log_blocked(session.interface, f"write_file({host}): {reason}")
         yield f"[ODMOWA] {reason}"
-        reply(session, tool_call, f"ODMOWA SYSTEMOWA: {reason}")
+        reply(session, tool_call, tr(f"ODMOWA SYSTEMOWA: {reason}", f"SYSTEM REFUSAL: {reason}"))
         return
     local = target  # zapis idzie tam, dokad prowadzi symlink na hoscie
 
     if classify_file_write(host) == "forbidden" or classify_file_write(runtime.to_host(target)) == "forbidden":
         await audit.log_blocked(session.interface, f"write_file({host})")
-        yield f"[ODMOWA] Nie moge zapisac do {as_code(host)}. Ta sciezka jest chroniona."
-        reply(session, tool_call, "ODMOWA SYSTEMOWA: Zapis do tej sciezki jest zakazany.")
+        yield tr(f"[ODMOWA] Nie moge zapisac do {as_code(host)}. Ta sciezka jest chroniona.",
+                 f"[ODMOWA] I cannot write to {as_code(host)}. This path is protected.")
+        reply(session, tool_call, tr("ODMOWA SYSTEMOWA: Zapis do tej sciezki jest zakazany.",
+                                     "SYSTEM REFUSAL: writing to this path is forbidden."))
         return
 
     # Zapis pliku zawsze wymaga potwierdzenia — pokazujemy uzytkownikowi, CO sie zmieni
+    plan = await safety.plan_for_write(runtime.to_host(local))
     session.pending_confirmation = ConfirmationRequest(
         tool_call_id=tool_call.id,
         tool_name="write_file",
@@ -143,13 +153,19 @@ async def handle_write_file(
         classification="confirm",
         file_path=local,
         file_content=content,
+        plan=plan,
     )
     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-    message = [f"[POTWIERDZ] Zapis pliku {as_code(host)} ({len(content)} znakow, {lines} linii)"]
+    message = [tr(f"[POTWIERDZ] Zapis pliku {as_code(host)} ({len(content)} znakow, {lines} linii)",
+                  f"[POTWIERDZ] Writing the file {as_code(host)} ({len(content)} characters, {lines} lines) "
+                  "requires confirmation")]
     warning = startup_file_warning(host) or startup_file_warning(runtime.to_host(local))
     if warning:
-        message.append(f"UWAGA: {warning}")
+        message.append(tr(f"UWAGA: {warning}", f"WARNING: {warning}"))
     message.append(preview_change(local, content))
+    described = plan.describe()
+    if described:
+        message.append(described)
     yield "\n".join(message)
 
 
@@ -166,8 +182,10 @@ _STARTUP_PATTERNS = (
 def startup_file_warning(host: str) -> str:
     import re
     if any(re.search(p, host) for p in _STARTUP_PATTERNS):
-        return ("to plik uruchamiany automatycznie (przy logowaniu, starcie albo przez cron/systemd). "
-                "Zapis moze zalozyc trwaly dostep do serwera — potwierdzaj tylko, jesli sam o to prosiles.")
+        return tr("to plik uruchamiany automatycznie (przy logowaniu, starcie albo przez cron/systemd). "
+                  "Zapis moze zalozyc trwaly dostep do serwera — potwierdzaj tylko, jesli sam o to prosiles.",
+                  "this file runs automatically (at login, boot or via cron/systemd). Writing it can plant lasting "
+                  "access to the server — confirm only if you asked for it yourself.")
     return ""
 
 
@@ -184,12 +202,15 @@ def preview_change(local: str, content: str, max_lines: int = 40) -> str:
     if old is None:
         body = content.splitlines()
         shown = body[:max_lines]
-        text = "\n".join(shown) + (f"\n[... i {len(body) - len(shown)} linii]" if len(body) > len(shown) else "")
-        return "Nowy plik, tresc:\n" + as_code(text or "(pusty)")
+        more = len(body) - len(shown)
+        text = "\n".join(shown) + (tr(f"\n[... i {more} linii]", f"\n[... and {more} more lines]") if more > 0 else "")
+        return tr("Nowy plik, tresc:\n", "New file, content:\n") + as_code(text or tr("(pusty)", "(empty)"))
     if old == content:
-        return "Tresc bez zmian (plik nadpisany identyczna zawartoscia)."
+        return tr("Tresc bez zmian (plik nadpisany identyczna zawartoscia).",
+                  "Content unchanged (the file is overwritten with identical content).")
     diff = list(difflib.unified_diff(old.splitlines(), content.splitlines(),
-                                     fromfile="obecny", tofile="nowy", lineterm=""))
+                                     fromfile=tr("obecny", "current"), tofile=tr("nowy", "new"), lineterm=""))
     if len(diff) > max_lines:
-        diff = diff[:max_lines] + [f"[... i {len(diff) - max_lines} linii roznicy]"]
-    return "Zmiany:\n" + as_code("\n".join(diff))
+        more = len(diff) - max_lines
+        diff = diff[:max_lines] + [tr(f"[... i {more} linii roznicy]", f"[... and {more} more diff lines]")]
+    return tr("Zmiany:\n", "Changes:\n") + as_code("\n".join(diff))

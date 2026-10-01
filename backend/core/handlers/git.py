@@ -12,6 +12,7 @@ from backend.core.events import Event
 from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command
 from backend.core.session import Session
+from backend.core.i18n import tr
 
 
 async def handle_git_command(
@@ -27,7 +28,7 @@ async def handle_git_command(
         subcommand = subcommand[4:].strip()
 
     if not repo_path or not subcommand:
-        reply(session, tool_call, "Blad: repo_path lub subcommand jest pusty")
+        reply(session, tool_call, tr("Blad: repo_path lub subcommand jest pusty", "Error: repo_path or subcommand is empty"))
         return
 
     # Model podaje sciezke hosta (albo wzgledna) — git dostaje sciezke widziana przez Pipe.
@@ -38,5 +39,5 @@ async def handle_git_command(
         classification = "confirm"
 
     async for event in run_classified(session, tool_call, git_cmd, tool_name="git_command",
-                                      classification=classification, what="Operacja Git"):
+                                      classification=classification, what=tr("Operacja Git", "Git operation")):
         yield event

@@ -29,6 +29,7 @@ kubectl create namespace pipe
 kubectl -n pipe create secret generic pipe-env \
     --from-literal=LLM_PROVIDER=gemini --from-literal=LLM_API_KEY=... \
     --from-literal=AGENT_TOKEN="$(openssl rand -hex 24)"
+#   jezyk angielski: dodaj --from-literal=PIPE_LANG=en (takze w sekrecie pipe-telegram)
 # tylko z nakladka telegram:
 kubectl -n pipe create secret generic pipe-telegram \
     --from-literal=TELEGRAM_BOT_TOKEN=... --from-literal=TELEGRAM_ALLOWED_USER_IDS=123456789 \

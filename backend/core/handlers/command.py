@@ -10,6 +10,7 @@ from backend.core.events import Event
 from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command
 from backend.core.session import Session
+from backend.core.i18n import tr
 
 
 async def handle_execute_command(
@@ -25,7 +26,7 @@ async def handle_execute_command(
     """
     command = str(args.get("command", "")).strip()
     if not command:
-        reply(session, tool_call, "Blad: pusta komenda")
+        reply(session, tool_call, tr("Blad: pusta komenda", "Error: empty command"))
         return
 
     classification = classify_command(command)

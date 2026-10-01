@@ -18,6 +18,8 @@ import struct
 import threading
 from dataclasses import dataclass
 
+from backend.core.i18n import tr
+
 MAX_MERMAID_CHARS = 30_000
 # Telegram odrzuca zdjecia, ktorych szerokosc + wysokosc przekracza 10000 px.
 MAX_PNG_SIDES = 9_000
@@ -55,9 +57,10 @@ def clean_source(source: str) -> str:
     lines = [line for line in text.splitlines() if not re.match(r"^\s*click\s", line)]
     text = "\n".join(lines).strip()
     if not text:
-        raise DiagramError("Pusty kod diagramu.")
+        raise DiagramError(tr("Pusty kod diagramu.", "Empty diagram source."))
     if len(text) > MAX_MERMAID_CHARS:
-        raise DiagramError(f"Diagram za duzy ({len(text)} > {MAX_MERMAID_CHARS} znakow) — uprosc go.")
+        raise DiagramError(tr(f"Diagram za duzy ({len(text)} > {MAX_MERMAID_CHARS} znakow) — uprosc go.",
+                              f"Diagram too large ({len(text)} > {MAX_MERMAID_CHARS} characters) — simplify it."))
     return text
 
 
@@ -117,4 +120,5 @@ async def render(source: str, *, png: bool = True, ascii_art: bool = True) -> Re
         return await asyncio.wait_for(asyncio.to_thread(_render_sync, source, png, ascii_art), RENDER_TIMEOUT)
     except asyncio.TimeoutError:
         # Watek renderujacy dokonczy w tle i zwolni blokade; my nie czekamy dluzej.
-        raise DiagramError(f"Renderowanie przekroczylo {int(RENDER_TIMEOUT)} s — uprosc diagram.") from None
+        raise DiagramError(tr(f"Renderowanie przekroczylo {int(RENDER_TIMEOUT)} s — uprosc diagram.",
+                              f"Rendering exceeded {int(RENDER_TIMEOUT)} s — simplify the diagram.")) from None

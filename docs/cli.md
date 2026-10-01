@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -71,6 +71,17 @@ pipe --kube pipe                          # namespace, w ktorym dziala Pipe
 pipe --kube pipe --kube-context prod      # inny kontekst kubeconfig
 ```
 
+## Most MCP (`--mcp`)
+
+`pipe --mcp --host root@serwer` zamienia CLI w serwer MCP (stdio) dla Claude Code, Cursora i innych agentow:
+narzedzia Pipe przez ten sam tunel SSH i token. Na stdout idzie tylko protokol MCP; tunel ma wlasny wolny port
+i nie pyta o haslo (`BatchMode` -- potrzebny klucz SSH). Konfiguracja np. w Claude Code:
+
+```json
+{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
+                         "env": {"AGENT_TOKEN": "<token z python3 -m backend.tokens add claude-code>"}}}}
+```
+
 ## Diagramy
 
 Diagram (np. `/mapa` albo *"narysuj architekture"*) CLI zapisuje jako PNG w `~/.pipe/diagrams/`
@@ -92,6 +103,7 @@ Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent o
 | `PIPE_KUBE_NAMESPACE` | Jak `--kube` | -- |
 | `PIPE_KUBE_CONTEXT` | Jak `--kube-context` | biezacy kontekst |
 | `PIPE_DIAGRAMS_DIR` | Gdzie zapisywac diagramy | `~/.pipe/diagrams` |
+| `PIPE_LANG` | Jezyk CLI: `pl` albo `en` (rownowazne `--lang`) | `pl` |
 
 ## Przykladowe komendy w CLI
 
@@ -115,6 +127,11 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 
 ## Komendy
 
+Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
+`/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`,
+`/approvals`, `/cost`, `/history`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski (jezyk
+odpowiedzi agenta ustawia `PIPE_LANG` w backendzie).
+
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Stan serwera |
@@ -122,6 +139,12 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
+| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
+| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
+| `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
+| `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
 | `/mermaid` | Kod Mermaid ostatniego diagramu |

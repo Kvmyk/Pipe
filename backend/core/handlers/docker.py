@@ -11,6 +11,7 @@ from backend.core.events import Event
 from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command
 from backend.core.session import Session
+from backend.core.i18n import tr
 
 # operacja ze schematu -> podkomenda docker. {target} to nazwa kontenera/obrazu.
 _OPERATIONS: dict[str, str] = {
@@ -43,10 +44,12 @@ def build_docker_command(args: dict[str, Any]) -> tuple[str | None, str]:
 
     operation = str(args.get("operation", "")).strip().lower()
     if operation not in _OPERATIONS:
-        return None, f"Blad: nieznana operacja docker {operation!r}. Dostepne: {', '.join(_OPERATIONS)}."
+        return None, tr(f"Blad: nieznana operacja docker {operation!r}. Dostepne: {', '.join(_OPERATIONS)}.",
+                        f"Error: unknown docker operation {operation!r}. Available: {', '.join(_OPERATIONS)}.")
     target = str(args.get("target", "")).strip()
     if operation in _NEEDS_TARGET and not target:
-        return None, f"Blad: operacja {operation} wymaga parametru target (nazwa lub ID kontenera/obrazu)."
+        return None, tr(f"Blad: operacja {operation} wymaga parametru target (nazwa lub ID kontenera/obrazu).",
+                        f"Error: operation {operation} requires the target parameter (container/image name or ID).")
     if operation == "logs" and "--tail" not in str(args.get("options", "")):
         args = {**args, "options": f"--tail 200 {args.get('options', '')}".strip()}
 
@@ -78,5 +81,5 @@ async def handle_docker_manage(
         classification = "confirm"
 
     async for event in run_classified(session, tool_call, command, tool_name="docker_manage",
-                                      classification=classification, what="Operacja Docker"):
+                                      classification=classification, what=tr("Operacja Docker", "Docker operation")):
         yield event

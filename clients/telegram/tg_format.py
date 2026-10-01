@@ -16,7 +16,19 @@ Zasady:
 from __future__ import annotations
 
 import html
+import os
 import re
+
+
+def lang() -> str:
+    """Jezyk bota: PIPE_LANG=pl (domyslnie) albo en — ten sam przelacznik co w backendzie."""
+    return "en" if os.getenv("PIPE_LANG", "pl").strip().lower().startswith("en") else "pl"
+
+
+def tr(pl, en):
+    """Tekst w jezyku bota."""
+    return en if lang() == "en" else pl
+
 
 # Tagi HTML obslugiwane przez Telegram.
 _ALLOWED_TAG = re.compile(
@@ -109,14 +121,16 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
             # nawet gdy nizej wybierzemy zwiezle podsumowanie modelu — inaczej injection
             # moglby zmienic pamiec bez wiedzy uzytkownika. Zbieramy je osobno.
             if text.lstrip().startswith("[PAMIEC]"):
-                notices.append("<b>Pamiec:</b> " + text.split("]", 1)[1].strip())
+                notices.append(tr("<b>Pamiec:</b> ", "<b>Memory:</b> ") + text.split("]", 1)[1].strip())
                 continue
             # Tagi statusowe -- tylko ODMOWA jest widoczna
             # [SUKCES] -- usuniety calkowicie
             text = text.replace("[SUKCES]", "")
-            text = text.replace("[BLAD]", "<b>BLAD:</b>")
-            text = text.replace("[POTWIERDZ]", "<b>WYMAGA POTWIERDZENIA:</b>")
-            text = text.replace("[ODMOWA]", "<b>ODMOWA:</b>")
+            text = text.replace("[BLAD]", tr("<b>BLAD:</b>", "<b>ERROR:</b>"))
+            text = text.replace("[POTWIERDZ]", tr("<b>WYMAGA POTWIERDZENIA:</b>", "<b>NEEDS CONFIRMATION:</b>"))
+            text = text.replace("[ODMOWA]", tr("<b>ODMOWA:</b>", "<b>REFUSED:</b>"))
+            if lang() == "en":
+                text = text.replace("[OSTRZEZENIE]", "<b>WARNING:</b>")
 
             parts.append(text)
         if status == "confirm":
@@ -130,7 +144,7 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
     if parts:
         # Jeśli ostatni fragment jest prostym komunikatem o błędzie, zwróć go
         last = parts[-1].strip()
-        if last.lower().startswith("błąd:") or last.lower().startswith("blad:"):
+        if last.lower().startswith(("błąd:", "blad:", "error:")):
             return _with_notices(last), needs_confirm
 
         # W przeciwnym razie wybierz ostatni fragment który nie zaczyna się od '['
@@ -173,22 +187,71 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
     ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
+    ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
     ("skille", "Lista zapisanych skilli"),
     ("alerty", "Aktywne alerty czuwania"),
+    ("incydenty", "Pamiec incydentow: przyczyny i co pomoglo"),
     ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
     ("cele", "Zdalne serwery, kontenery i klastry"),
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
+    ("cofnij", "Cofnij ostatnia zmiane (/cofnij <id> - wybrana)"),
+    ("dziennik", "Dziennik zatwierdzonych zmian"),
+    ("zgody", "Operacje agentow MCP czekajace na zgode"),
+    ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("pomoc", "Lista komend"),
 )
+BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
+    ("status", "Quick look at the server load"),
+    ("report", "Morning report: health, changes, certificates, backups"),
+    ("changes", "What changed on the server (/changes 3d)"),
+    ("chart", "Chart of load/ram/disk (/chart ram 7d)"),
+    ("health", "Certificates, sites, DNS and backups"),
+    ("audit", "Security audit with a score and fixes"),
+    ("map", "Server infrastructure diagram (image)"),
+    ("server", "Show SERVER.md (/server update - explore the server again)"),
+    ("directory", "Map of repositories and directories (DIRECTORY)"),
+    ("skills", "List of saved skills"),
+    ("alerts", "Active watcher alerts"),
+    ("incidents", "Incident memory: causes and what helped"),
+    ("routines", "Tasks run on a schedule"),
+    ("targets", "Remote servers, containers and clusters"),
+    ("vibe", "What I know about your conversation style (/vibe reset - clear)"),
+    ("undo", "Undo the last change (/undo <id> - a chosen one)"),
+    ("journal", "Journal of approved changes"),
+    ("approvals", "MCP agent operations waiting for approval"),
+    ("mcp", "MCP servers Pipe uses"),
+    ("cost", "Token usage and LLM cost"),
+    ("history", "Latest audit-log entries"),
+    ("help", "List of commands"),
+)
+# Angielskie nazwy komend -> polskie (handlery sa rejestrowane pod obiema nazwami w obu jezykach).
+COMMAND_ALIASES: dict[str, str] = {
+    "report": "raport", "changes": "zmiany", "chart": "wykres", "health": "zdrowie", "audit": "audyt",
+    "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
+    "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
+    "history": "historia", "help": "pomoc", "incidents": "incydenty",
+}
+
+
+def builtin_commands() -> tuple[tuple[str, str], ...]:
+    """Komendy wbudowane w jezyku bota."""
+    return tr(BUILTIN_COMMANDS, BUILTIN_COMMANDS_EN)
+
+
+def command_names(polish: str) -> list[str]:
+    """Polska nazwa komendy + jej angielskie aliasy — do rejestracji handlera."""
+    return [polish] + [en for en, pl in COMMAND_ALIASES.items() if pl == polish]
+
+
 MAX_MENU_COMMANDS = 100        # limit Telegrama
 MAX_COMMAND_DESCRIPTION = 256  # limit Telegrama
 
-SCAN_WORDS = frozenset({"aktualizuj", "odswiez", "odśwież", "skanuj"})
+SCAN_WORDS = frozenset({"aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan"})
 
 
 def parse_command(text: str) -> tuple[str, str]:
@@ -202,7 +265,7 @@ def parse_command(text: str) -> tuple[str, str]:
 
 def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
     """Menu '/' Telegrama: komendy wbudowane, potem skille, ktore maja komende."""
-    menu = list(BUILTIN_COMMANDS)
+    menu = list(builtin_commands())
     for skill in skills:
         if skill.get("command"):
             description = " ".join((skill.get("description") or "").split()) or "Skill"
@@ -213,9 +276,10 @@ def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
 def format_skill_list(skills: list[dict]) -> str:
     """Lista skilli jako HTML Telegrama."""
     if not skills:
-        return ("Brak zapisanych skilli. Po wykonaniu wieloetapowej procedury popros: "
-                "<i>\"zapisz to jako skill\"</i>.")
-    lines = ["<b>Skille</b>"]
+        return tr("Brak zapisanych skilli. Po wykonaniu wieloetapowej procedury popros: "
+                  "<i>\"zapisz to jako skill\"</i>.",
+                  "No saved skills. After a multi-step procedure ask: <i>\"save this as a skill\"</i>.")
+    lines = [tr("<b>Skille</b>", "<b>Skills</b>")]
     for skill in skills:
         description = html.escape(skill.get("description") or "")
         if skill.get("command"):
@@ -223,21 +287,25 @@ def format_skill_list(skills: list[dict]) -> str:
         else:
             name = html.escape(skill["name"])
             lines.append(f"• <code>{name}</code> — {description} "
-                         f"<i>(bez komendy — napisz: uruchom skill {name})</i>")
+                         + tr(f"<i>(bez komendy — napisz: uruchom skill {name})</i>",
+                              f"<i>(no command — write: run the skill {name})</i>"))
     example = next((s["command"] for s in skills if s.get("command")), None)
     if example:
-        lines.append(f"\nDo komendy mozesz dopisac wskazowki, np. <code>/{example} tylko dla example.com</code>")
+        lines.append(tr(f"\nDo komendy mozesz dopisac wskazowki, np. <code>/{example} tylko dla example.com</code>",
+                        f"\nYou can add hints to a command, e.g. <code>/{example} only for example.com</code>"))
     return "\n".join(lines)
 
 
 def format_help(skills: list[dict]) -> str:
     """Pomoc (/pomoc) jako HTML Telegrama."""
-    lines = ["<b>Komendy</b>"]
-    lines += [f"/{command} — {html.escape(description)}" for command, description in BUILTIN_COMMANDS]
+    lines = [tr("<b>Komendy</b>", "<b>Commands</b>")]
+    lines += [f"/{command} — {html.escape(description)}" for command, description in builtin_commands()]
     with_command = [s for s in skills if s.get("command")]
     if with_command:
-        lines.append(f"\n<b>Skille ({len(with_command)})</b> — kazdy ma wlasna komende, pelna lista: /skille")
-    lines.append("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>")
+        lines.append(tr(f"\n<b>Skille ({len(with_command)})</b> — kazdy ma wlasna komende, pelna lista: /skille",
+                        f"\n<b>Skills ({len(with_command)})</b> — each has its own command, full list: /skills"))
+    lines.append(tr("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>",
+                    "\nYou can also just write, e.g. <i>\"how much free space do I have?\"</i>"))
     return "\n".join(lines)
 
 
@@ -246,7 +314,7 @@ def response_data(responses: list[dict]) -> dict:
     for resp in reversed(responses):
         if "data" in resp:
             return resp["data"]
-    error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or "brak danych"
+    error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or tr("brak danych", "no data")
     raise RuntimeError(error)
 
 
@@ -254,6 +322,7 @@ def response_data(responses: list[dict]) -> dict:
 # ─── Czuwanie, rutyny, listy ────────────────────────────────────────────────
 
 SEVERITY_LABEL = {"critical": "KRYTYCZNY", "warning": "OSTRZEZENIE"}
+SEVERITY_LABEL_EN = {"critical": "CRITICAL", "warning": "WARNING"}
 
 
 def format_alert(event: dict) -> str:
@@ -261,9 +330,12 @@ def format_alert(event: dict) -> str:
     title = html.escape(str(event.get("title", "")))
     detail = html.escape(str(event.get("detail", "")))
     if event.get("state") == "resolved":
-        return f"<b>ROZWIAZANE</b> — {title}"
-    label = SEVERITY_LABEL.get(str(event.get("severity")), "ALERT")
-    return f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+        return tr(f"<b>ROZWIAZANE</b> — {title}", f"<b>RESOLVED</b> — {title}")
+    label = tr(SEVERITY_LABEL, SEVERITY_LABEL_EN).get(str(event.get("severity")), "ALERT")
+    text = f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+    if event.get("history"):
+        text += tr("\n<b>Poprzednio:</b> ", "\n<b>Previously:</b> ") + html.escape(str(event["history"]))
+    return text
 
 
 def format_routine(event: dict, limit: int = 3000) -> str:
@@ -273,7 +345,7 @@ def format_routine(event: dict, limit: int = 3000) -> str:
     report = str(event.get("report", "")).strip()
     if len(report) > limit:
         report = report[:limit] + "\n[...]"
-    return f"<b>Rutyna {name}</b> — {html.escape(status)}\n<pre>{html.escape(report)}</pre>"
+    return tr(f"<b>Rutyna {name}</b>", f"<b>Routine {name}</b>") + f" — {html.escape(status)}\n<pre>{html.escape(report)}</pre>"
 
 
 def format_list(title: str, items: list[str], empty: str) -> str:
@@ -284,21 +356,24 @@ def format_list(title: str, items: list[str], empty: str) -> str:
 
 def format_alerts(data: dict) -> str:
     if not data.get("enabled", True):
-        return "Czuwanie jest wylaczone (WATCH_ENABLED=0 w backend/.env)."
+        return tr("Czuwanie jest wylaczone (WATCH_ENABLED=0 w backend/.env).",
+                  "The watcher is disabled (WATCH_ENABLED=0 in backend/.env).")
     active = data.get("active") or []
-    lines = ["<b>Aktywne alerty</b>"]
-    lines += [format_alert(a) for a in active] or ["Brak — wszystko w normie."]
+    lines = [tr("<b>Aktywne alerty</b>", "<b>Active alerts</b>")]
+    lines += [format_alert(a) for a in active] or [tr("Brak — wszystko w normie.", "None — everything is normal.")]
     recent = [e for e in (data.get("recent") or []) if e.get("type") == "alert" and e.get("state") != "new"]
     if recent:
-        lines.append("\n<b>Ostatnie zdarzenia</b>")
+        lines.append(tr("\n<b>Ostatnie zdarzenia</b>", "\n<b>Recent events</b>"))
         lines += [f"{html.escape(str(e.get('at', '')))} — {format_alert(e)}" for e in recent[-5:]]
     return "\n".join(lines)
 
 
 def format_directory(entries: list[dict]) -> str:
     if not entries:
-        return ("<b>DIRECTORY</b>\nMapa katalogow jest pusta. Napisz np. <i>\"znajdz repozytoria na serwerze\"</i> "
-                "albo uzyj /server aktualizuj.")
+        return tr("<b>DIRECTORY</b>\nMapa katalogow jest pusta. Napisz np. <i>\"znajdz repozytoria na serwerze\"</i> "
+                  "albo uzyj /server aktualizuj.",
+                  "<b>DIRECTORY</b>\nThe directory map is empty. Write e.g. <i>\"find the repositories on the server\"</i> "
+                  "or use /server update.")
     lines = ["<b>DIRECTORY</b>"]
     for e in entries:
         extra = f" ({html.escape(e['branch'])})" if e.get("branch") else ""
@@ -311,26 +386,77 @@ def progress_text(lines: list[str], limit: int = 12) -> str:
     """Tresc wiadomosci-statusu aktualizowanej na biezaco (workery, rutyny)."""
     shown = lines[-limit:]
     skipped = len(lines) - len(shown)
-    head = f"<i>... i {skipped} wczesniej</i>\n" if skipped else ""
-    return "<b>W toku</b>\n" + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
+    head = tr(f"<i>... i {skipped} wczesniej</i>\n", f"<i>... and {skipped} earlier</i>\n") if skipped else ""
+    return tr("<b>W toku</b>\n", "<b>In progress</b>\n") + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
 
 
 def format_digest(event: dict) -> str:
     """Poranny raport (zdarzenie albo dane z /raport) jako HTML Telegrama."""
-    lines = [f"<b>{html.escape(str(event.get('title', 'Raport')))}</b>"]
+    lines = [f"<b>{html.escape(str(event.get('title', tr('Raport', 'Report'))))}</b>"]
     for section in event.get("sections") or []:
         lines.append(f"\n<b>{html.escape(str(section.get('title', '')))}</b>")
         for line in section.get("lines") or []:
             text = html.escape(str(line))
-            if text.startswith("[BEZPIECZENSTWO]"):
-                text = "<b>[BEZPIECZENSTWO]</b>" + text[len("[BEZPIECZENSTWO]"):]
+            for mark in ("[BEZPIECZENSTWO]", "[SECURITY]"):
+                if text.startswith(mark):
+                    text = f"<b>{mark}</b>" + text[len(mark):]
             lines.append(f"• {text}")
     return "\n".join(lines)
 
 
 def format_pre(title: str, text: str, limit: int = 3500) -> str:
     """Tekst od backendu (bez LLM) w bloku <pre> — /zmiany, /zdrowie, /koszt."""
-    body = (text or "").strip() or "(pusto)"
+    body = (text or "").strip() or tr("(pusto)", "(empty)")
     if len(body) > limit:
         body = body[:limit] + "\n[...]"
     return f"<b>{html.escape(title)}</b>\n<pre>{html.escape(body)}</pre>"
+
+
+AUDIT_SEVERITY = {"high": "WYSOKIE", "medium": "SREDNIE", "low": "NISKIE"}
+AUDIT_SEVERITY_EN = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"}
+
+
+def format_audit(data: dict) -> str:
+    """Audyt bezpieczenstwa (/audyt) jako HTML Telegrama."""
+    lines = [f"<b>{tr('Bezpieczenstwo', 'Security')}: {int(data.get('score', 0))}/100 "
+             f"({html.escape(str(data.get('grade', '?')))})</b>"]
+    for index, finding in enumerate(data.get("findings") or [], start=1):
+        label = tr(AUDIT_SEVERITY, AUDIT_SEVERITY_EN).get(finding.get("severity"), "")
+        lines.append(f"\n<b>{index}. [{label}]</b> {html.escape(str(finding.get('title', '')))}")
+        if finding.get("detail"):
+            lines.append(f"<i>{html.escape(str(finding['detail']))}</i>")
+        if finding.get("fix"):
+            lines.append(tr("Poprawka: ", "Fix: ") + html.escape(str(finding["fix"])))
+        if finding.get("command"):
+            where = tr(" (na hoscie)", " (on the host)") if finding.get("host_only") else ""
+            lines.append(f"<code>{html.escape(str(finding['command']))}</code>{where}")
+    if data.get("passed"):
+        lines.append(tr("\n<b>W porzadku:</b> ", "\n<b>OK:</b> ") + html.escape("; ".join(data["passed"])))
+    if data.get("findings"):
+        lines.append(tr("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.",
+                        "\nWrite <i>\"fix 1\"</i> — I will prepare the fix for your approval."))
+    return "\n".join(lines)
+
+
+def format_investigation(event: dict, limit: int = 3000) -> str:
+    """Raport workera, ktory sam zbadal alert z zewnatrz (webhook)."""
+    report = str(event.get("report", "")).strip()
+    if len(report) > limit:
+        report = report[:limit] + "\n[...]"
+    return (tr("<b>Zbadalem alert</b>", "<b>I investigated the alert</b>")
+            + f" — {html.escape(str(event.get('title', '')))}\n<pre>{html.escape(report)}</pre>")
+
+
+def format_approval(event: dict) -> str:
+    """Prosba o zgode dla zewnetrznego agenta (MCP) — komenda doslownie, plan bezpiecznika."""
+    agent = html.escape(str(event.get("requested_by", "?")))
+    target = html.escape(str(event.get("target", "local")))
+    lines = [tr(f"<b>ZGODA</b> — agent <code>{agent}</code> chce wykonac na celu <code>{target}</code>:",
+                f"<b>APPROVAL</b> — agent <code>{agent}</code> wants to run on target <code>{target}</code>:"),
+             f"<pre>{html.escape(str(event.get('command', '')))}</pre>"]
+    if event.get("reason"):
+        lines.append(f"<i>{tr('Powod', 'Reason')}: {html.escape(str(event['reason']))}</i>")
+    if event.get("plan"):
+        lines.append(html.escape(str(event["plan"])))
+    lines.append(tr("<i>Zgoda wygasa po 30 minutach.</i>", "<i>The approval expires after 30 minutes.</i>"))
+    return "\n".join(lines)

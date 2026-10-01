@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -23,10 +23,32 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
 - **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
 - **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
   aktualizacje i wykres obciazenia. Skladany bez LLM.
+- **Zmiana bezpieczenstwa** -- nowe konto (uid 0 = krytyczny), nowy klucz w `authorized_keys`, nowy program SUID,
+  zmiana sudoers/sshd/PAM/`ld.so.preload`, ktorej nie zrobil Pipe. Sprawdzane co 2 minuty.
+- **Logowania SSH** -- seria nieudanych logowan (`WATCH_SSH_FAILURES` w 10 min), udane logowanie haslem z adresu,
+  ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
+- **Zbadalem alert** -- raport workera dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba (webhooki).
+- Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
+- **ZGODA** -- zewnetrzny agent (np. Claude Code przez MCP) chce wykonac zmiane: komenda doslownie, plan
+  bezpiecznika i przyciski *Zatwierdz* / *Odrzuc* (tylko administratorzy). Wygasa po 30 minutach.
+- **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
 - Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
 
 `TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
+
+## Wiadomosci glosowe
+
+Nagraj wiadomosc glosowa -- bot odpisze *Uslyszalem: ...* i przekaze tekst agentowi. Transkrypcja idzie przez
+endpoint zgodny z OpenAI (Whisper): przy providerze `openai` albo `groq` dziala od razu, przy innych ustaw w
+`backend/.env` `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy klucz Groq albo lokalny faster-whisper).
+
+## Role
+
+- `TELEGRAM_ALLOWED_USER_IDS` -- administratorzy: wszystko, lacznie z TAK/NIE i `/cofnij`.
+- `TELEGRAM_VIEWER_IDS` -- tylko odczyt: rozmowa, diagnoza, raporty, wykresy i alerty; bez przyciskow TAK/NIE
+  i `/cofnij`. Wymaga `AGENT_VIEWER_TOKEN` w `clients/telegram/.env` i tego samego w `backend/.env`. Backend
+  egzekwuje role sam -- nawet gdyby bot sie pomylil, zmiana z tokenem viewera nie zostanie wykonana.
 
 ## Diagramy
 
@@ -84,6 +106,9 @@ AGENT_SOCKET=/tmp/vps-agent.sock
 # Musi byc identyczny z AGENT_TOKEN w backend/.env.
 # Zostaw pusty, jesli backend nie wymaga tokenu.
 AGENT_TOKEN=
+
+# Jezyk bota: pl (domyslnie) albo en -- tak samo jak PIPE_LANG w backend/.env.
+# PIPE_LANG=en
 ```
 
 Mozesz dodac wiele ID oddzielonych przecinkami: `123456789,987654321`
@@ -114,6 +139,9 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 
 ## Komendy
 
+Przy `PIPE_LANG=en` menu `/` pokazuje angielskie nazwy (`/report`, `/changes`, `/undo`...). Polskie i angielskie
+nazwy dzialaja w obu jezykach.
+
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Szybki przeglad obciazenia serwera |
@@ -121,6 +149,12 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
+| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
+| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
+| `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
+| `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
 | `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |

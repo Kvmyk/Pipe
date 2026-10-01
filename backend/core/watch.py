@@ -36,12 +36,12 @@ from datetime import datetime
 from typing import Any
 
 from backend.config import settings
-from backend.config.prompts import ROUTINE_REPORT_INSTRUCTION
 from backend.core import hostinfo, memory, metrics, routines, targets
+from backend.core.i18n import prompt, tr
 
 MAX_HISTORY = 50
 # Zakresy alertow (prefiks klucza przed ':') — kazda petla rozwiazuje tylko swoje.
-RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port"})
+RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port", "auth"})
 CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
@@ -69,6 +69,7 @@ class Alert:
     detail: str
     since: str
     state: str = "new"      # new | resolved | event
+    history: str = ""       # ostatnie wystapienie tego problemu (pamiec incydentow)
 
     def to_event(self) -> dict[str, Any]:
         return {"type": "alert", **asdict(self)}
@@ -128,18 +129,21 @@ def resource_findings(proc: str | None = None) -> list[Finding]:
         pct = disk.used_pct
         if pct >= settings.WATCH_DISK_PCT:
             severity = "critical" if pct >= max(97, settings.WATCH_DISK_PCT) else "warning"
+            free, total = hostinfo.human_bytes(disk.available), hostinfo.human_bytes(disk.total)
             findings.append(Finding(
-                f"disk:{disk.mount}", severity, f"Dysk {disk.mount} zapelniony w {pct}%",
-                f"wolne {hostinfo.human_bytes(disk.available)} z {hostinfo.human_bytes(disk.total)} ({disk.device})"))
+                f"disk:{disk.mount}", severity, tr(f"Dysk {disk.mount} zapelniony w {pct}%", f"Disk {disk.mount} is {pct}% full"),
+                tr(f"wolne {free} z {total} ({disk.device})", f"{free} free of {total} ({disk.device})")))
     mem = hostinfo.memory(proc)
     if mem and mem.used_pct >= settings.WATCH_MEM_PCT:
-        findings.append(Finding("memory", "warning", f"RAM zajety w {mem.used_pct}%",
-                                f"dostepne {mem.available_mb} MB z {mem.total_mb} MB"
+        findings.append(Finding("memory", "warning", tr(f"RAM zajety w {mem.used_pct}%", f"RAM is {mem.used_pct}% used"),
+                                tr(f"dostepne {mem.available_mb} MB z {mem.total_mb} MB",
+                                   f"{mem.available_mb} MB available of {mem.total_mb} MB")
                                 + (f", swap {mem.swap_used_mb}/{mem.swap_total_mb} MB" if mem.swap_total_mb else "")))
     load = hostinfo.loadavg(proc)
     cpus = hostinfo.cpu_count(proc)
     if load and load[1] > cpus * settings.WATCH_LOAD_FACTOR:
-        findings.append(Finding("load", "warning", f"Wysokie obciazenie: load 5m {load[1]:.1f} przy {cpus} rdzeniach",
+        findings.append(Finding("load", "warning", tr(f"Wysokie obciazenie: load 5m {load[1]:.1f} przy {cpus} rdzeniach",
+                                                      f"High load: 5m load {load[1]:.1f} on {cpus} cores"),
                                 f"load 1/5/15 min: {load[0]:.1f} / {load[1]:.1f} / {load[2]:.1f}"))
     return findings
 
@@ -150,25 +154,30 @@ def container_findings(containers: list[Any], previous_running: set[str] | None)
     for c in containers:
         if c.state == "restarting":
             findings.append(Finding(f"container:{c.name}:restarting", "critical",
-                                    f"Kontener {c.name} restartuje sie w petli",
-                                    f"obraz {c.image}, restartow: {c.restart_count}"))
+                                    tr(f"Kontener {c.name} restartuje sie w petli", f"Container {c.name} is in a restart loop"),
+                                    tr(f"obraz {c.image}, restartow: {c.restart_count}",
+                                       f"image {c.image}, restarts: {c.restart_count}")))
         elif c.health == "unhealthy":
             findings.append(Finding(f"container:{c.name}:unhealthy", "warning",
-                                    f"Kontener {c.name} jest unhealthy", f"obraz {c.image}"))
+                                    tr(f"Kontener {c.name} jest unhealthy", f"Container {c.name} is unhealthy"),
+                                    tr(f"obraz {c.image}", f"image {c.image}")))
     if previous_running is not None:
         for name in sorted(previous_running):
             c = by_name.get(name)
             if c is not None and c.state in ("exited", "dead"):
-                findings.append(Finding(f"container:{name}:stopped", "critical", f"Kontener {name} przestal dzialac",
-                                        f"stan {c.state}, obraz {c.image}", transient=True))
+                findings.append(Finding(f"container:{name}:stopped", "critical",
+                                        tr(f"Kontener {name} przestal dzialac", f"Container {name} stopped"),
+                                        tr(f"stan {c.state}, obraz {c.image}", f"state {c.state}, image {c.image}"),
+                                        transient=True))
     return findings
 
 
 def port_findings(public_now: dict[str, str], previous: set[str] | None) -> list[Finding]:
     if previous is None:
         return []
-    return [Finding(f"port:{key}", "warning", f"Nowy publiczny port: {key}",
-                    f"na hoscie pojawila sie usluga nasluchujaca na {address} — sprawdz, czy to zamierzone",
+    return [Finding(f"port:{key}", "warning", tr(f"Nowy publiczny port: {key}", f"New public port: {key}"),
+                    tr(f"na hoscie pojawila sie usluga nasluchujaca na {address} — sprawdz, czy to zamierzone",
+                       f"a service listening on {address} appeared on the host — check whether it is intended"),
                     transient=True)
             for key, address in sorted(public_now.items()) if key not in previous]
 
@@ -185,6 +194,8 @@ class Watcher:
         self.checks_report: Any = None          # ostatni checks.Report
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
+        from backend.core.posture import AuthWatch
+        self._auth = AuthWatch()
 
     # --- alerty -------------------------------------------------------------
 
@@ -229,7 +240,7 @@ class Watcher:
             point = await asyncio.to_thread(metrics.sample)
             await asyncio.to_thread(metrics.record, point, settings.METRICS_KEEP_DAYS)
         except OSError as exc:
-            print(f"[Czuwanie] Nie zapisano probki pomiarow: {exc}", flush=True)
+            print(tr(f"[Czuwanie] Nie zapisano probki pomiarow: {exc}", f"[Watcher] Metric sample not saved: {exc}"), flush=True)
 
         containers = await infra.docker_containers()
         if containers is not None:
@@ -248,16 +259,94 @@ class Watcher:
             findings += port_findings(public, previous_ports)
             state["public_ports"] = sorted(public)
 
+        findings += await self._security_findings(state)
+
         try:
             save_state(state)
         except OSError:
             pass
         return self._publish(self.apply(findings, RESOURCE_SCOPE))
 
+    async def _security_findings(self, state: dict[str, Any]) -> list[Finding]:
+        """Straznik (konta, klucze SSH, SUID, sudoers/sshd) i przyrost logu SSH."""
+        from backend.core import journal, posture
+
+        findings: list[Finding] = []
+        try:
+            current = await asyncio.to_thread(posture.sentinel_state)
+            recent = [e for e in journal.entries(20) if time.time() - e.at < max(600, 3 * settings.WATCH_INTERVAL)]
+            pipe_changed = {f.label for e in recent for f in e.files}
+            findings += posture.sentinel_findings(state.get("sentinel"), current, pipe_changed)
+            state["sentinel"] = current
+        except Exception as exc:
+            print(tr(f"[Czuwanie] Straznik bezpieczenstwa: {exc}", f"[Watcher] Security sentinel: {exc}"), flush=True)
+        try:
+            events = await asyncio.to_thread(posture.read_auth_increment, state)
+            if events is not None:
+                findings += posture.auth_findings(events, self._auth, state, threshold=settings.WATCH_SSH_FAILURES,
+                                                  notify_logins=settings.WATCH_SSH_LOGINS)
+        except Exception as exc:
+            print(tr(f"[Czuwanie] Log SSH: {exc}", f"[Watcher] SSH log: {exc}"), flush=True)
+        return findings
+
     def _publish(self, events: list[Alert]) -> list[Alert]:
         for alert in events:
+            if alert.state in ("new", "resolved"):
+                self._track_incident(alert)
             self.notifier.publish(alert.to_event())
         return events
+
+    @staticmethod
+    def _track_incident(alert: Alert) -> None:
+        """Pamiec incydentow: otwarcie przy nowym alercie (z historia), zamkniecie przy rozwiazaniu."""
+        from backend.core import incidents, journal
+
+        try:
+            if alert.state == "new":
+                past = incidents.history(alert.key, limit=1)
+                if past:
+                    alert.history = past[0].short()
+                incidents.opened(alert)
+            else:
+                incidents.closed(alert.key, journal.entries(50))
+        except (OSError, ValueError) as exc:
+            print(tr(f"[Czuwanie] Pamiec incydentow: {exc}", f"[Watcher] Incident memory: {exc}"), flush=True)
+
+    # --- alerty z zewnatrz (webhooki) --------------------------------------
+
+    def external(self, alerts: list[Any]) -> list[Alert]:
+        """Alerty z webhookow: firing -> aktywny alert (bez rozwiazywania innych), resolved -> zamkniecie."""
+        firing = [Finding(a.key, a.severity, a.title, a.detail) for a in alerts if a.firing]
+        events = self.apply(firing, frozenset())
+        for alert in alerts:
+            if not alert.firing and alert.key in self.active:
+                resolved = self.active.pop(alert.key)
+                resolved.state = "resolved"
+                events.append(resolved)
+        return self._publish(events)
+
+    async def investigate_external(self, alert: Alert) -> None:
+        """Worker (tylko odczyty) bada alert z zewnatrz; raport idzie do subskrybentow i pamieci incydentow."""
+        from backend.core import incidents, workers
+        from backend.core.session import Session
+
+        if self.agent is None:
+            return
+        target = targets.get_target("local")
+        task = prompt("EXTERNAL_ALERT_TASK").format(title=alert.title, detail=alert.detail or "-")
+        task += incidents.context_for(alert.key)
+        parent = Session(session_id=f"hook:{alert.key}", interface="webhook", learns_vibe=False)
+        try:
+            result = await asyncio.wait_for(
+                workers.run_worker(self.agent, parent, "zbadaj-alert", target, task), timeout=settings.WORKER_TIMEOUT)
+            report = result.render()
+        except asyncio.TimeoutError:
+            report = tr(f"Badanie przekroczylo {settings.WORKER_TIMEOUT} s.",
+                        f"The investigation exceeded {settings.WORKER_TIMEOUT} s.")
+        except Exception as exc:
+            report = tr(f"Badanie nie powiodlo sie: {exc}", f"The investigation failed: {exc}")
+        incidents.note_investigation(alert.key, report)
+        self.notifier.publish({"type": "investigation", "key": alert.key, "title": alert.title, "report": report})
 
     # --- migawki, sprawdzenia bez konfiguracji, raport ---------------------
 
@@ -293,7 +382,8 @@ class Watcher:
                 report = await checks.run_checks(sites=settings.WATCH_SITES,
                                                  ignore=checks.parse_ignore(settings.WATCH_IGNORE))
             except Exception as exc:
-                print(f"[Czuwanie] Sprawdzenia do raportu nie powiodly sie: {exc}", flush=True)
+                print(tr(f"[Czuwanie] Sprawdzenia do raportu nie powiodly sie: {exc}",
+                         f"[Watcher] Checks for the report failed: {exc}"), flush=True)
         try:
             current = await snapshots.capture()
         except Exception:
@@ -324,26 +414,27 @@ class Watcher:
 
         if routine.name in self._routines_running:
             return {"type": "routine", "name": routine.name, "status": "PROBLEM",
-                    "report": "Poprzednie uruchomienie jeszcze trwa."}
+                    "report": tr("Poprzednie uruchomienie jeszcze trwa.", "The previous run is still in progress.")}
         target = targets.get_target(routine.target)
         started = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._routines_running.add(routine.name)
         try:
             if target is None:
-                report, status = f"Cel {routine.target!r} nie istnieje.", "PROBLEM"
+                report, status = tr(f"Cel {routine.target!r} nie istnieje.", f"Target {routine.target!r} does not exist."), "PROBLEM"
             else:
                 parent = Session(session_id=f"routine:{routine.name}", interface=f"routine:{routine.name}",
                                  learns_vibe=False)
                 result = await asyncio.wait_for(
                     workers.run_worker(self.agent, parent, routine.name, target, routine.task,
-                                       extra_instructions=ROUTINE_REPORT_INSTRUCTION),
+                                       extra_instructions=prompt("ROUTINE_REPORT_INSTRUCTION")),
                     timeout=settings.WORKER_TIMEOUT)
                 report = result.render()
                 status = "PROBLEM" if result.error else routines.report_status(result.report)
         except asyncio.TimeoutError:
-            report, status = f"Przekroczono limit czasu {settings.WORKER_TIMEOUT} s.", "PROBLEM"
+            report, status = tr(f"Przekroczono limit czasu {settings.WORKER_TIMEOUT} s.",
+                                f"Time limit of {settings.WORKER_TIMEOUT} s exceeded."), "PROBLEM"
         except Exception as exc:
-            report, status = f"Blad: {exc}", "PROBLEM"
+            report, status = tr(f"Blad: {exc}", f"Error: {exc}"), "PROBLEM"
         finally:
             self._routines_running.discard(routine.name)
         routines.update_routine(routine.name, last_run=started, last_status=status)
@@ -361,7 +452,7 @@ class Watcher:
             try:
                 await self.check_once()
             except Exception as exc:
-                print(f"[Czuwanie] Blad sprawdzenia: {exc}", flush=True)
+                print(tr(f"[Czuwanie] Blad sprawdzenia: {exc}", f"[Watcher] Check error: {exc}"), flush=True)
             await asyncio.sleep(max(30, settings.WATCH_INTERVAL))
 
     async def _periodic(self, name: str, action, interval: int, delay: float) -> None:
@@ -370,7 +461,7 @@ class Watcher:
             try:
                 await action()
             except Exception as exc:
-                print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
+                print(tr(f"[Czuwanie] Blad ({name}): {exc}", f"[Watcher] Error ({name}): {exc}"), flush=True)
             await asyncio.sleep(max(300, interval))
 
     async def publish_digest(self) -> None:
@@ -395,12 +486,26 @@ class Watcher:
                     asyncio.create_task(self._safe(self.publish_digest(), "raport"))
             await asyncio.sleep(15)
 
+    async def _welcome_loop(self) -> None:
+        """Powitanie po instalacji — raz, gdy podlaczy sie pierwszy subskrybent (bot Telegram)."""
+        from backend.core import welcome
+
+        if welcome.already_sent():
+            return
+        await asyncio.sleep(90)            # niech migawka i sprawdzenia zdaza sie wykonac
+        while self.notifier.subscribers == 0:
+            await asyncio.sleep(30)
+        event = await welcome.build(checks_report=self.checks_report, digest_time=settings.DIGEST_TIME,
+                                    cert_days=settings.WATCH_CERT_DAYS)
+        self.notifier.publish(event)
+        welcome.mark_sent()
+
     @staticmethod
     async def _safe(coro, name: str) -> None:
         try:
             await coro
         except Exception as exc:
-            print(f"[Czuwanie] Blad ({name}): {exc}", flush=True)
+            print(tr(f"[Czuwanie] Blad ({name}): {exc}", f"[Watcher] Error ({name}): {exc}"), flush=True)
 
     def start(self) -> None:
         if self._tasks:
@@ -412,6 +517,7 @@ class Watcher:
             self._tasks.append(asyncio.create_task(
                 self._periodic("sprawdzenia", self.checks_once, settings.CHECKS_INTERVAL, 60)))
         self._tasks.append(asyncio.create_task(self._clock_loop()))
+        self._tasks.append(asyncio.create_task(self._safe(self._welcome_loop(), "powitanie")))
 
 
 _watcher: Watcher | None = None
@@ -430,7 +536,10 @@ def prompt_alerts() -> str:
     """Aktywne alerty dla system promptu (pusty napis, gdy ich nie ma)."""
     if _watcher is None or not _watcher.active:
         return ""
-    lines = [f"- [{a.severity}] {a.title} ({a.detail}) od {a.since}" for a in _watcher.active.values()]
-    return ("\n\n--- CZUWANIE: AKTYWNE ALERTY ---\n"
-            "Problemy wykryte automatycznie na hoscie. Jesli rozmowa dotyczy zdrowia serwera, uwzglednij je.\n"
-            + "\n".join(lines))
+    lines = [f"- [{a.severity}] {a.title} ({a.detail}) " + tr(f"od {a.since}", f"since {a.since}")
+             for a in _watcher.active.values()]
+    return tr("\n\n--- CZUWANIE: AKTYWNE ALERTY ---\n"
+              "Problemy wykryte automatycznie na hoscie. Jesli rozmowa dotyczy zdrowia serwera, uwzglednij je.\n",
+              "\n\n--- MONITORING: ACTIVE ALERTS ---\n"
+              "Problems detected automatically on the host. If the conversation is about server health, take them "
+              "into account.\n") + "\n".join(lines)

@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -29,7 +29,9 @@ Recznie: `python3 -m backend.configure && cd backend && docker compose up -d --b
 
 Montowania (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/hostfs/root` (rw),
 `/proc` -> `/hostproc:ro`, `docker.sock`, `/root/.ssh:ro` (git, cele ssh), opcjonalnie `/root/.kube:ro`
-(cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH.
+(cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH; 7380 (webhooki,
+dziala po ustawieniu `WEBHOOK_PORT` i `WEBHOOK_TOKEN`) -- tez tylko na 127.0.0.1. Caly `backend/.env` trafia do
+kontenera (`env_file`), wiec kazde ustawienie z `backend/.env.example` dziala bez edycji compose.
 
 ## Native (systemd, bez Dockera)
 
@@ -76,9 +78,16 @@ do projektu. Jesli to istotne, po instalacji zmien klucz albo skonfiguruj go rec
 
 `python3 -m backend.configure --from-env [--test]` przepisuje do `backend/.env` ustawione zmienne:
 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_REASONING_EFFORT`, `LLM_TIMEOUT`,
-`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
+`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `PIPE_LANG`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
 konfiguracja LLM jest kompletna (`--test` od razu testuje tool calling). Uzywaja go `install-server.sh -y`
 i cloud-init; przyda sie w Ansible czy CI.
+
+## Jezyk (`PIPE_LANG`)
+
+`pl` (domyslnie) albo `en`. Interaktywny kreator pyta o jezyk jako pierwszy; bez pytan: `--lang en` albo zmienna
+`PIPE_LANG=en` przy `install-server.sh` (instalator przepisuje ja tez do `clients/telegram/.env`). W Kubernetesie
+dodaj `--from-literal=PIPE_LANG=en` do sekretow `pipe-env` i `pipe-telegram`. Na dzialajacej instalacji wystarczy
+dopisac `PIPE_LANG=en` do obu plikow `.env` i zrestartowac backend oraz bota.
 
 ## Budowanie obrazow
 

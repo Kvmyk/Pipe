@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 ## Model
 
@@ -110,6 +110,51 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
   uruchamianych automatycznie (`.bashrc`, `authorized_keys`, cron, systemd, `.gitconfig`) dodaje ostrzezenie
   o trwalym dostepie.
 - Potwierdzenie jest przypiete do `tool_call_id` w sesji; nowa wiadomosc zamiast TAK anuluje operacje.
+- Plan bezpiecznika (kopie, sprawdzenia, weryfikacja) jest czescia potwierdzenia i jest przechowywany w nim --
+  po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
+  sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
+
+## Role i tokeny
+
+- `AGENT_TOKEN` -- admin, `AGENT_VIEWER_TOKEN` -- viewer, tokeny klientow z `python3 -m backend.tokens`
+  (plik `tokens.json` 0600, tylko skroty SHA-256; odwolanie: `revoke`). Porownanie w stalym czasie, na bajtach.
+- Viewer: backend odrzuca `confirm: true` i `undo` z `execute`, a narzedzia zmieniajace stan (takze zapis pamieci
+  Pipe) zwracaja modelowi odmowe -- pytanie o TAK nie powstaje. Egzekwuje to backend, nie klient.
+- Sesja jest przypieta do tozsamosci tokenu, ktora ja zalozyla: inny token nie odczyta jej historii ani nie
+  zatwierdzi cudzej operacji, nawet znajac `session_id`.
+
+## MCP
+
+**Pipe jako serwer MCP.** Zewnetrzny agent dostaje narzedzia Pipe zamiast powloki: kazda komenda przechodzi przez
+klasyfikator, odczyt wykonuje sie od razu, zmiana czeka na zgode administratora (Telegram/CLI) i po niej idzie przez
+bezpiecznik i dziennik. Zakazane komendy sa odrzucane, pliki z sekretami nie sa wydawane, wyniki sa redagowane.
+Token viewer nie tworzy zgod. Zgode moze sprawdzic tylko agent, ktory ja utworzyl; zgody zyja w pamieci i wygasaja
+po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: tylko localhost, token Pipe
+(`Authorization: Bearer`), walidacja `Origin` (403) i naglowkow 2026-07-28 (`-32020`).
+
+**Pipe jako klient MCP.** Serwer MCP to cudzy kod: dodanie serwera zawsze wymaga potwierdzenia (widac program albo
+URL; wartosci `env`/`headers` sa ukryte), `mcp.json` ma prawa 0600, a podproces stdio dostaje minimalne srodowisko
+(PATH, HOME, LANG... i to, co podano) -- nigdy klucza LLM ani tokenow Pipe. Kazde wywolanie narzedzia wymaga TAK
+z widocznymi argumentami, chyba ze uzytkownik oznaczyl je jako bezpieczne (`autoApprove`, `trustReadOnly`) --
+adnotacje serwera same z siebie nie wystarczaja. Wyniki narzedzi MCP sa danymi dla modelu, przechodza redakcje
+sekretow, a viewer nie zatwierdzi zadnego wywolania.
+
+## Webhooki
+
+- Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
+  (w Dockerze port publikowany tylko na localhost) -- nadawcy spoza serwera przez odwrotne proxy z TLS.
+- Tresc alertu pochodzi z zewnatrz: trafia do modelu jako dane, a automatyczne badanie robi worker, ktory
+  wykonuje wylacznie odczyty. Limit badan: raz na godzine na alert, 10 dziennie.
+
+## Dziennik zmian i cofanie
+
+- Kopie plikow sprzed zmian leza w `backend/data/journal/` (katalogi `0700`, pliki `0600`). Edytowany `.env`
+  trafia tam w calosci -- to kopia na dysku serwera, nie wysylana do LLM. Limit: 50 wpisow, 14 dni, 5 MB na plik.
+- `/cofnij` pokazuje roznice i komendy odwrotne przed TAK. Komendy odwrotne przechodza przez klasyfikator:
+  zakazana komenda jest pomijana i logowana. Identyfikator wpisu jest walidowany (tylko hex), wiec nie wskaze
+  sciezki poza katalogiem dziennika. Przywracanie i komendy odwrotne trafiaja do audit logu.
+- `/cofnij` z klienta dziala bez LLM -- tak jak inne komendy wymaga tokenu (`AGENT_TOKEN`), a w Telegramie
+  przycisk *Cofnij* zadziala tylko dla dozwolonego uzytkownika, ktory otworzyl podglad.
 
 ## Workery, cele i rutyny
 

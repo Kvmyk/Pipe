@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -244,3 +244,235 @@ Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `ba
   osobno `WORKER_PRICE_IN/OUT` dla `WORKER_MODEL`.
 - `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT` -- po przekroczeniu agent odpowiada komunikatem o limicie do polnocy
   i nie wysyla zapytan do providera. Czuwanie, raport i komendy bez LLM (`/mapa`, `/zmiany`, `/wykres`) dzialaja dalej.
+
+---
+
+## Zmiany z bezpiecznikiem i `/cofnij`
+
+Kazda operacja, ktora zatwierdzasz, dostaje **plan** -- widoczny w potwierdzeniu, zanim nacisniesz TAK:
+
+```
+WYMAGA POTWIERDZENIA: `sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx`
+Bezpiecznik:
+- kopia przed zmiana: /etc/nginx/sites-enabled/shop
+- sprawdzenie przed (niepowodzenie = nie wykonam): nginx -t
+- weryfikacja po: nginx -t; usluga nginx aktywna; strony, ktore dzialaja teraz, maja dzialac po zmianie
+- jesli weryfikacja nie przejdzie: przywroce pliki z kopii automatycznie i przeladuje ponownie
+- cofniecie pozniej: /cofnij
+```
+
+| Krok | Co Pipe robi |
+|------|--------------|
+| Kopia | pliki zmieniane przez `sed -i`, `tee`, `>`/`>>`, `cp`, `mv`, `rm`, `chmod`/`chown`, `write_file`; HEAD repozytorium przy `git pull/checkout/reset/commit`; crontab; pliki pamieci Pipe przy zmianie celow, rutyn, skilli i SERVER.md |
+| Przed | walidacja konfiguracji przed (prze)ladowaniem: `nginx -t`, `sshd -t` (chroni przed odcieciem SSH), `caddy validate`, `apachectl configtest`, `haproxy -c`, `postfix check`, `docker compose config -q`; w kontenerze -- `docker exec <nginx> nginx -t`. **Nieudane sprawdzenie = operacja nie jest wykonywana** |
+| Po | usluga `active`, kontener `running` i nie `unhealthy`, wszystkie kontenery projektu compose wstaly, zmieniony plik przechodzi walidacje (nginx, sshd, sudoers `visudo -c`, fstab, compose, JSON), **strony, ktore odpowiadaly przed zmiana, odpowiadaja po niej** |
+| Przywrocenie | nieudana weryfikacja zmiany plikow konfiguracji -> kopia wraca automatycznie (`SAFE_AUTO_ROLLBACK=1`), a usluga jest przeladowana ponownie. Inne operacje -- wynik trafia do agenta, a Ty mozesz `/cofnij` |
+
+Plan powstaje z analizy komendy w kodzie (bez LLM); wykonywany jest dokladnie plan, ktory widziales.
+Program, ktorego nie ma w miejscu dzialania Pipe (np. `sshd` w kontenerze), jest pomijany i zglaszany jako
+*nie sprawdzono* -- wtedy plan mowi to wprost.
+
+**Dziennik i cofanie.** `/dziennik` pokazuje ostatnie zmiany (`backend/data/journal/`, 50 wpisow, 14 dni).
+`/cofnij` (albo *"cofnij ostatnia zmiane"*) pokazuje roznice plikow i komendy odwrotne -- `docker stop` ->
+`docker start`, `systemctl disable` -> `enable`, `git pull` -> `git reset --keep <poprzedni HEAD>`,
+`docker compose down` -> `up -d` -- i czeka na TAK. `/cofnij` dziala bez LLM, wiec pomaga tez wtedy, gdy
+provider nie odpowiada albo skonczyl sie dzienny limit. Cofniecie tez trafia do dziennika -- mozna je cofnac.
+
+Czego Pipe nie cofa automatycznie (i mowi to w planie): instalacji pakietow, zmian w klastrze Kubernetes,
+usunietych kontenerow i wolumenow, `git clean`, katalogow usuwanych `rm -r`, poprzednich wersji obrazow.
+
+---
+
+## Audyt bezpieczenstwa i straznik
+
+`/audyt` (albo *"jak bezpieczny jest ten serwer?"*) -- ocena 0-100 bez LLM, kazdy punkt z poprawka:
+
+| Obszar | Co sprawdza |
+|--------|-------------|
+| SSH | logowanie haslem (z uwzglednieniem `sshd_config.d` i zasady "pierwsza wartosc wygrywa"), root z haslem, klucze |
+| Zapora | ufw, firewalld, nftables, iptables (zapora w panelu dostawcy -- Pipe tego nie widzi i mowi to) |
+| Porty | bazy danych, Redis, Elasticsearch, API Dockera/Kubernetesa na publicznym adresie; port publikowany przez kontener dostaje poprawke w compose, bo **Docker omija ufw** |
+| Kontenery | `privileged`, zamontowany `docker.sock`, siec hosta |
+| Konta | uid 0 poza rootem, konta bez hasla (z `/etc/shadow` odczytywane sa tylko nazwy kont) |
+| Aktualizacje | unattended-upgrades, oczekujace poprawki bezpieczenstwa, wymagany restart |
+| Ochrona | fail2ban / CrowdSec (wazniejsze, gdy SSH przyjmuje hasla) |
+| Sekrety | pliki `.env` czytelne dla wszystkich w katalogach aplikacji z DIRECTORY |
+| Higiena | synchronizacja czasu, swap na malej maszynie, certyfikaty |
+
+*"napraw 1"* -- agent wykonuje poprawke zwyklym narzedziem, wiec dostajesz ja do zatwierdzenia z planem
+bezpiecznika (kopia, `sshd -t` przed przeladowaniem, `/cofnij`). Poprawka SSH trafia do wlasnego pliku
+`sshd_config.d/00-pipe-*.conf`, zeby wygrac z ustawieniami cloud-init. Bez klucza w `authorized_keys` Pipe
+**nie proponuje** wylaczenia hasel -- najpierw klucz (skill `utwardz-ssh`). W trybie docker komendy sa oznaczone
+*w powloce hosta* (system plikow hosta jest tylko do odczytu).
+
+**Straznik** (co `WATCH_INTERVAL`, bez LLM) porownuje konta, klucze SSH, programy SUID/SGID i konfiguracje
+uwierzytelniania (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). Nowe konto z uid 0, nowy klucz, nowy
+SUID albo `ld.so.preload` -- alert krytyczny. Zmiany zrobione przez Pipe (sa w dzienniku) nie alarmuja.
+
+**Log SSH** (`/var/log/auth.log` albo `/var/log/secure`, czytany przyrostowo): seria nieudanych logowan,
+udane logowanie haslem z adresu, ktory wczesniej zgadywal hasla, logowanie z nowego adresu.
+
+---
+
+## Pierwsze 5 minut
+
+Po instalacji, gdy bot Telegram polaczy sie pierwszy raz, Pipe sam pisze: mapa serwera jako obraz, ocena
+bezpieczenstwa z trzema najwazniejszymi poprawkami i lista tego, czego od teraz pilnuje. CLI pokazuje to samo
+przy pierwszym polaczeniu z danym serwerem. Bez LLM.
+
+---
+
+## Wbudowane skille
+
+| Skill | Co robi |
+|-------|---------|
+| `nginx-vhost` | nowa domena w nginx jako reverse proxy + certyfikat Let's Encrypt |
+| `swap` | plik swap z wpisem w fstab (tez btrfs) |
+| `fail2ban-ssh` | fail2ban z jailem SSH, bez blokowania wlasnego adresu |
+| `backup-postgres` | nocny `pg_dump` z rotacja, wpis `[backup]` w DIRECTORY (czuwanie pilnuje swiezosci) |
+| `aktualizuj-kontener` | pull + up uslugi compose z planem powrotu do poprzedniego obrazu |
+| `utwardz-ssh` | wylaczenie hasel w SSH w kolejnosci, ktora nie odetnie dostepu |
+| `wolne-miejsce` | co zajmuje dysk i bezpieczne sprzatanie, krok po kroku |
+
+Instalowane przy starcie do `backend/data/skills/` jak zwykle skille -- masz je w `/skille` i jako komendy
+(`/nginx_vhost`). Mozesz je edytowac i usuwac: nowa wersja z aktualizacji Pipe zastapi tylko skill, ktorego
+nie zmieniales, a usunietego nie przywroci.
+
+Przy `PIPE_LANG=en` instalowane sa angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`
+(pozostale cztery maja te sama nazwe w obu jezykach).
+
+---
+
+## Pamiec incydentow
+
+Kazdy rozwiazany alert zostaje w `backend/data/incidents.json`: co sie stalo, kiedy i jak dlugo, co ustalil agent
+po *Zbadaj* (albo worker przy alercie z webhooka) i co pomoglo -- zmiany z dziennika wykonane w czasie trwania
+problemu. Bez dodatkowych zapytan do LLM.
+
+Gdy ten sam problem wraca, alert na Telegramie ma linie **Poprzednio: 2026-09-12 (40 min) — ustalenia: logi
+nginx bez rotacji... — pomoglo: journalctl --vacuum-size=200M**, a polecenie *Zbadaj* dostaje te historie: agent
+najpierw sprawdza, czy to ta sama przyczyna, i proponuje sprawdzona naprawe (dalej do zatwierdzenia).
+`/incydenty` pokazuje historie; agent siega po nia sam (*"czy to juz sie zdarzalo?"*).
+
+---
+
+## Alerty z zewnatrz (webhooki)
+
+Pipe dolacza do monitoringu, ktory juz masz, zamiast go zastepowac:
+
+```bash
+# backend/.env
+WEBHOOK_PORT=7380
+WEBHOOK_TOKEN=$(openssl rand -hex 24)
+```
+
+| Zrodlo | Adres | Konfiguracja po stronie nadawcy |
+|--------|-------|---------------------------------|
+| Prometheus Alertmanager | `/hook/alertmanager` | `webhook_configs: - url: http://127.0.0.1:7380/hook/alertmanager` + `http_config.authorization.credentials: <token>` |
+| Grafana | `/hook/grafana` | contact point typu Webhook, naglowek `Authorization: Bearer <token>` |
+| Uptime Kuma | `/hook/uptime-kuma?token=<token>` | powiadomienie typu Webhook (application/json) |
+| GitHub | `/hook/github` | webhook repozytorium, *Secret* = token; zdarzenia *Workflow runs*, *Deployment statuses* |
+| Wszystko inne | `/hook/generic` | `{"title", "message", "severity", "status": "firing|resolved", "name"}` |
+
+Alert trafia do czuwania (znika po `resolved`) i na Telegram z przyciskiem *Zbadaj*. Z `WEBHOOK_INVESTIGATE=1`
+nowy alert od razu bada worker (tylko odczyty: uslugi, kontenery, logi, zasoby, ostatnie zmiany) i raport
+przychodzi chwile po alercie -- ten sam alert najwyzej raz na godzine, 10 badan dziennie.
+
+W Dockerze port jest publikowany tylko na `127.0.0.1:7380`; nadawcy spoza serwera -- przez odwrotne proxy z TLS.
+
+---
+
+## Wiadomosci glosowe
+
+Na Telegramie wystarczy nagrac wiadomosc: *"sprawdz, czemu sklep nie dziala"*. Bot odpisze *Uslyszalem: ...*
+i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- przy `LLM_PROVIDER=openai` albo
+`groq` dziala bez konfiguracji; przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`
+(np. darmowy Groq `whisper-large-v3-turbo` albo lokalny faster-whisper). Nagranie OGG idzie bez konwersji.
+
+---
+
+## Role i wielu uzytkownikow
+
+| Rola | Moze | Nie moze |
+|------|------|----------|
+| admin | wszystko | -- |
+| viewer | rozmowa, diagnoza, odczyty, wykresy, raporty, audyt, alerty | zatwierdzac zmian, `/cofnij`, zapisywac pamieci Pipe (SERVER.md, skille, cele, rutyny) |
+
+- Telegram: `TELEGRAM_ALLOWED_USER_IDS` (admini) i `TELEGRAM_VIEWER_IDS` (tylko odczyt, z `AGENT_VIEWER_TOKEN`).
+- CLI i inne klienty: osobny token na osobe albo laptop, odwolywalny:
+  `python3 -m backend.tokens add laptop-kuba --role admin`, `list`, `revoke laptop-kuba`.
+- Role egzekwuje backend. Sesja nalezy do tokenu, ktory ja zalozyl.
+
+---
+
+## Jezyk: polski albo angielski
+
+`PIPE_LANG=pl` (domyslnie) albo `PIPE_LANG=en` przelacza caly produkt, nie tylko jezyk odpowiedzi modelu:
+
+| Warstwa | Co sie zmienia |
+|---------|----------------|
+| Agent | system prompt, opisy 22 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
+| Komunikaty | pytania o potwierdzenie, plan bezpiecznika, wyniki narzedzi, bledy walidacji |
+| Czuwanie | tytuly alertow, poranny raport, `/zmiany`, `/zdrowie`, `/audyt` z poprawkami, powitanie |
+| MCP | tytuly i opisy narzedzi serwera MCP, instrukcje dla zewnetrznego agenta |
+| Klienci | CLI (`--lang en`), bot Telegrama (menu `/`, przyciski, etykiety), kreator i instalator |
+| Skille | wbudowane skille w wersji angielskiej |
+
+Znaczniki protokolu -- `[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`, `[PAMIEC]`, `[ZREDAGOWANO: ...]` -- sa takie same
+w obu jezykach: serwer rozpoznaje po nich status ramki, a klienci zamieniaja je na etykiety w swoim jezyku.
+Komendy maja angielskie aliasy (`/report`, `/changes`, `/undo`, ...), ktore dzialaja obok polskich.
+
+Dane zapisane wczesniej (SERVER.md, VIBE, wlasne skille, wpisy dziennika) zostaja w jezyku, w ktorym powstaly.
+
+---
+
+## MCP -- Pipe jako brama dla innych agentow i klient cudzych serwerow
+
+### Pipe jako serwer MCP
+
+Claude Code, Cursor albo wlasny agent dostaje narzedzia Pipe zamiast golej powloki na produkcji:
+
+| Narzedzie | Co robi |
+|-----------|---------|
+| `run_command` | komenda przez klasyfikator Pipe: odczyt od razu; zmiana -> **zgoda administratora**, potem bezpiecznik i dziennik; zakazana -> odmowa |
+| `get_approval` | stan zgody i wynik (tylko dla agenta, ktory o nia prosil) |
+| `read_file` | plik hosta; pliki z sekretami nie sa wydawane, sekrety w tresci -- redagowane |
+| `server_status`, `server_changes`, `infra_map`, `health_checks`, `security_audit`, `journal` | wiedza Pipe o serwerze |
+| `ask_pipe` | pytanie do agenta Pipe (zna SERVER.md, DIRECTORY, historie) -- w roli tylko do odczytu |
+
+Zgoda przychodzi na Telegram z komenda i planem bezpiecznika (kopia, `nginx -t`, weryfikacja) oraz przyciskami
+*Zatwierdz* / *Odrzuc*; w CLI -- `/zgody`. Agent dowiaduje sie o wyniku przez `get_approval`.
+
+**Polaczenie z laptopa** -- most stdio w CLI, przez ten sam tunel SSH i tokeny:
+
+```json
+{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
+                         "env": {"AGENT_TOKEN": "<token>"}}}}
+```
+
+Osobny token dla agenta: `python3 -m backend.tokens add claude-code --role admin` (albo `--role viewer`:
+agent tylko czyta, nie moze prosic o zgody). **Na serwerze** -- endpoint Streamable HTTP: `MCP_PORT=7381`,
+`http://127.0.0.1:7381/mcp`, token w `Authorization: Bearer`.
+
+Obslugiwane wersje protokolu: 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`)
+i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
+
+### Pipe jako klient MCP
+
+Narzedzia innych serwerow MCP staja sie narzedziami agenta (`mcp__github__create_issue`...). Dodasz je zdaniem --
+*"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github, token w GITHUB_PERSONAL_ACCESS_TOKEN,
+bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
+
+```json
+{"servers": {
+  "github":  {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
+              "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "..."}, "autoApprove": ["get_*", "list_*", "search_*"]},
+  "grafana": {"url": "http://127.0.0.1:8000/mcp", "headers": {"Authorization": "Bearer ..."}, "trustReadOnly": true}
+}}
+```
+
+- Kazde wywolanie wymaga TAK z widocznymi argumentami, chyba ze narzedzie pasuje do `autoApprove` albo serwer ma
+  `trustReadOnly`, a narzedzie deklaruje `readOnlyHint`. Zatwierdzone wywolanie trafia do dziennika zmian.
+- Dodanie serwera zawsze wymaga potwierdzenia. Podproces stdio nie dostaje klucza LLM ani tokenow Pipe.
+- stdio i Streamable HTTP; wersja protokolu wykrywana sama (2026-07-28 albo `initialize`).
+- `/mcp` pokazuje serwery i ich stan; *"polacz ponownie serwery MCP"* -- `mcp_manage reload`.

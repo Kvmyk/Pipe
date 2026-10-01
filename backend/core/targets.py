@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from backend.core import memory
+from backend.core.i18n import tr
 
 TARGET_KINDS = ("ssh", "docker", "kubernetes", "local")
 MAX_TARGETS = 100
@@ -58,21 +59,26 @@ class Target:
         if self.kind == "ssh":
             where = f"ssh {self.user + '@' if self.user else ''}{self.host}{':' + str(self.port) if self.port else ''}"
         elif self.kind == "docker":
-            where = f"kontener Docker {self.container} na tym hoscie"
+            where = tr(f"kontener Docker {self.container} na tym hoscie", f"Docker container {self.container} on this host")
         elif self.kind == "kubernetes":
-            scope = f"kontekst {self.context or '(domyslny)'}, namespace {self.namespace or '(domyslny)'}"
-            where = f"pod {self.pod} ({scope})" if self.pod else f"klaster Kubernetes ({scope})"
+            scope = tr(f"kontekst {self.context or '(domyslny)'}, namespace {self.namespace or '(domyslny)'}",
+                       f"context {self.context or '(default)'}, namespace {self.namespace or '(default)'}")
+            where = f"pod {self.pod} ({scope})" if self.pod else \
+                tr(f"klaster Kubernetes ({scope})", f"Kubernetes cluster ({scope})")
         else:
-            where = "ten host (lokalnie)"
+            where = tr("ten host (lokalnie)", "this host (local)")
         return f"{self.name}: {where}" + (f" — {self.description}" if self.description else "")
 
     def command_hint(self) -> str:
         if self.kind == "kubernetes" and not self.pod:
-            return ("Komendy musza zaczynac sie od `kubectl` albo `helm`; kontekst i namespace sa dodawane "
-                    "automatycznie (inny namespace: -n, wszystkie: -A).")
+            return tr("Komendy musza zaczynac sie od `kubectl` albo `helm`; kontekst i namespace sa dodawane "
+                      "automatycznie (inny namespace: -n, wszystkie: -A).",
+                      "Commands must start with `kubectl` or `helm`; context and namespace are added "
+                      "automatically (another namespace: -n, all: -A).")
         if self.kind == "local":
-            return "Komendy wykonuja sie na hoscie Pipe, tak jak execute_command."
-        return "Komendy wykonuja sie w powloce sh po stronie celu."
+            return tr("Komendy wykonuja sie na hoscie Pipe, tak jak execute_command.",
+                      "Commands run on the Pipe host, just like execute_command.")
+        return tr("Komendy wykonuja sie w powloce sh po stronie celu.", "Commands run in an sh shell on the target.")
 
 
 # ─── Walidacja ──────────────────────────────────────────────────────────────
@@ -81,9 +87,11 @@ def validate(target: Target) -> Target:
     target.name = (target.name or "").strip().lower()
     target.kind = (target.kind or "").strip().lower()
     if not _NAME.match(target.name):
-        raise TargetError(f"Nazwa celu {target.name!r}: male litery, cyfry, '-' i '_' (1-32 znaki).")
+        raise TargetError(tr(f"Nazwa celu {target.name!r}: male litery, cyfry, '-' i '_' (1-32 znaki).",
+                             f"Target name {target.name!r}: lowercase letters, digits, '-' and '_' (1-32 characters)."))
     if target.kind not in TARGET_KINDS:
-        raise TargetError(f"Rodzaj celu {target.kind!r} — dozwolone: {', '.join(TARGET_KINDS)}.")
+        raise TargetError(tr(f"Rodzaj celu {target.kind!r} — dozwolone: {', '.join(TARGET_KINDS)}.",
+                             f"Target kind {target.kind!r} — allowed: {', '.join(TARGET_KINDS)}."))
     target.description = " ".join((target.description or "").split())[:300]
     for field_name, pattern in (("host", _HOST), ("user", _USER), ("identity_file", _PATH),
                                 ("container", _CONTAINER), ("context", _KUBE), ("namespace", _KUBE),
@@ -91,20 +99,22 @@ def validate(target: Target) -> Target:
         value = str(getattr(target, field_name) or "").strip()
         setattr(target, field_name, value)
         if value and not pattern.match(value):
-            raise TargetError(f"Nieprawidlowa wartosc pola {field_name}: {value!r}.")
+            raise TargetError(tr(f"Nieprawidlowa wartosc pola {field_name}: {value!r}.",
+                                 f"Invalid value for field {field_name}: {value!r}."))
     try:
         target.port = int(target.port or 0)
     except (TypeError, ValueError):
-        raise TargetError("Port musi byc liczba.") from None
+        raise TargetError(tr("Port musi byc liczba.", "Port must be a number.")) from None
     if not 0 <= target.port <= 65535:
-        raise TargetError("Port poza zakresem 1-65535.")
+        raise TargetError(tr("Port poza zakresem 1-65535.", "Port out of range 1-65535."))
     if target.kind == "ssh" and not target.host:
-        raise TargetError("Cel ssh wymaga pola host.")
+        raise TargetError(tr("Cel ssh wymaga pola host.", "An ssh target needs the host field."))
     if target.kind == "docker" and not target.container:
-        raise TargetError("Cel docker wymaga pola container.")
+        raise TargetError(tr("Cel docker wymaga pola container.", "A docker target needs the container field."))
     label = memory.find_secret(f"{target.description} {target.host} {target.user}")
     if label:
-        raise TargetError(f"Opis celu wyglada na sekret ({label}) — sekrety trzymaj poza Pipe.")
+        raise TargetError(tr(f"Opis celu wyglada na sekret ({label}) — sekrety trzymaj poza Pipe.",
+                             f"The target description looks like a secret ({label}) — keep secrets out of Pipe."))
     return target
 
 
@@ -140,7 +150,7 @@ def load_targets() -> list[Target]:
 def get_target(name: str) -> Target | None:
     name = (name or "").strip().lower()
     if name in ("local", "localhost", "host"):
-        return Target("local", "local", "ten host")
+        return Target("local", "local", tr("ten host", "this host"))
     return next((t for t in load_targets() if t.name == name), None)
 
 
@@ -148,11 +158,11 @@ def save_target(target: Target) -> bool:
     """Dodaje albo zastepuje cel. Zwraca True, jesli cel jest nowy."""
     target = validate(target)
     if target.name == "local":
-        raise TargetError("Nazwa 'local' jest zarezerwowana dla tego hosta.")
+        raise TargetError(tr("Nazwa 'local' jest zarezerwowana dla tego hosta.", "The name 'local' is reserved for this host."))
     targets = [t for t in load_targets() if t.name != target.name]
     created = len(targets) == len(load_targets())
     if len(targets) >= MAX_TARGETS:
-        raise TargetError(f"Za duzo celow (limit {MAX_TARGETS}).")
+        raise TargetError(tr(f"Za duzo celow (limit {MAX_TARGETS}).", f"Too many targets (limit {MAX_TARGETS})."))
     targets.append(target)
     memory._write_atomic(targets_path(), json.dumps([asdict(t) for t in sorted(targets, key=lambda t: t.name)],
                                                     ensure_ascii=False, indent=2) + "\n")
@@ -183,7 +193,7 @@ def wrap(target: Target, command: str) -> str:
     """Komenda, ktora wykonuje `command` na celu. Wynik to dokladnie to, co uruchomi Pipe."""
     command = (command or "").strip()
     if not command:
-        raise TargetError("Pusta komenda.")
+        raise TargetError(tr("Pusta komenda.", "Empty command."))
     if target.kind == "local":
         return command
     if target.kind == "ssh":
@@ -206,9 +216,12 @@ def wrap(target: Target, command: str) -> str:
     segments, _writes, _dynamic = split_command(command)
     for segment in segments[1:]:
         if segment.split()[0] in ("kubectl", "helm"):
-            raise TargetError("Na celu-klastrze wykonuj jedna komende kubectl/helm naraz (dalsze segmenty, np. "
-                              "| grep, dzialaja lokalnie na jej wyniku) — inaczej druga komenda poszlaby do "
-                              "domyslnego kontekstu.")
+            raise TargetError(tr("Na celu-klastrze wykonuj jedna komende kubectl/helm naraz (dalsze segmenty, np. "
+                                 "| grep, dzialaja lokalnie na jej wyniku) — inaczej druga komenda poszlaby do "
+                                 "domyslnego kontekstu.",
+                                 "On a cluster target run one kubectl/helm command at a time (later segments, e.g. "
+                                 "| grep, work locally on its output) — otherwise the second command would go to "
+                                 "the default context."))
     tokens = command.split(None, 1)
     program = tokens[0]
     rest = tokens[1] if len(tokens) > 1 else ""
@@ -216,7 +229,8 @@ def wrap(target: Target, command: str) -> str:
         return f"kubectl{_kube_flags(target)} {rest}".rstrip()
     if program == "helm":
         return f"helm{_kube_flags(target, helm=True)} {rest}".rstrip()
-    raise TargetError(f"Cel {target.name} to klaster Kubernetes — komenda musi zaczynac sie od kubectl albo helm.")
+    raise TargetError(tr(f"Cel {target.name} to klaster Kubernetes — komenda musi zaczynac sie od kubectl albo helm.",
+                         f"Target {target.name} is a Kubernetes cluster — the command must start with kubectl or helm."))
 
 
 def test_command(target: Target) -> str:

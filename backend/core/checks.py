@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.core import hostinfo, memory, runtime
+from backend.core.i18n import tr
 
 MAX_DOMAINS = 30
 TLS_TIMEOUT = 8.0
@@ -76,6 +77,7 @@ class CertResult:
     not_after: str = ""
     issuer: str = ""
     error: str = ""
+    rejected: bool = False        # certyfikat odrzucony przy weryfikacji (nie: brak polaczenia)
 
 
 @dataclass
@@ -105,10 +107,12 @@ async def check_cert(domain: str, port: int = 443, now: float | None = None) -> 
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(domain, port, ssl=context, server_hostname=domain), TLS_TIMEOUT)
     except ssl.SSLCertVerificationError as exc:
-        result.error = f"certyfikat odrzucony: {exc.verify_message or exc.reason or exc}"
+        reason = exc.verify_message or exc.reason or exc
+        result.error = tr(f"certyfikat odrzucony: {reason}", f"certificate rejected: {reason}")
+        result.rejected = True
         return result
     except (OSError, asyncio.TimeoutError, ssl.SSLError) as exc:
-        result.error = f"brak polaczenia TLS: {type(exc).__name__}: {exc}".rstrip(": ")
+        result.error = (tr("brak polaczenia TLS: ", "no TLS connection: ") + f"{type(exc).__name__}: {exc}").rstrip(": ")
         return result
     try:
         cert = writer.get_extra_info("peercert") or {}
@@ -120,7 +124,7 @@ async def check_cert(domain: str, port: int = 443, now: float | None = None) -> 
             pass
     not_after = cert.get("notAfter")
     if not not_after:
-        result.error = "serwer nie pokazal certyfikatu"
+        result.error = tr("serwer nie pokazal certyfikatu", "the server did not present a certificate")
         return result
     expires = ssl.cert_time_to_seconds(not_after)
     result.days_left = round((expires - (now if now is not None else time.time())) / 86400, 1)
@@ -209,7 +213,7 @@ async def check_dns(domain: str, local: set[str]) -> DnsResult:
     try:
         infos = await asyncio.wait_for(loop.getaddrinfo(domain, None, type=socket.SOCK_STREAM), TLS_TIMEOUT)
     except (OSError, asyncio.TimeoutError) as exc:
-        result.error = f"nie rozwiazuje sie ({exc})"
+        result.error = tr(f"nie rozwiazuje sie ({exc})", f"does not resolve ({exc})")
         return result
     result.addresses = sorted({info[4][0] for info in infos})
     public_local = {a for a in local if _is_public(a)}
@@ -242,7 +246,7 @@ def check_backup(host_path: str) -> BackupResult:
         result.newest, result.newest_name, result.files = stat.st_mtime, os.path.basename(local), 1
         return result
     if not os.path.isdir(local):
-        result.error = "sciezka nie istnieje"
+        result.error = tr("sciezka nie istnieje", "path does not exist")
         return result
     base_depth = local.rstrip("/").count("/")
     seen = 0
@@ -261,7 +265,7 @@ def check_backup(host_path: str) -> BackupResult:
         if seen >= BACKUP_WALK_LIMIT:
             break
     if not result.files:
-        result.error = "katalog jest pusty"
+        result.error = tr("katalog jest pusty", "the directory is empty")
     return result
 
 
@@ -289,54 +293,66 @@ class Report:
 
         out = []
         for cert in self.certs:
-            if cert.error and "odrzucony" in cert.error:
-                out.append(Finding(f"cert:{cert.domain}", "critical", f"Certyfikat {cert.domain} jest nieprawidlowy",
+            if cert.rejected:
+                out.append(Finding(f"cert:{cert.domain}", "critical",
+                                   tr(f"Certyfikat {cert.domain} jest nieprawidlowy", f"The certificate for {cert.domain} is invalid"),
                                    cert.error))
             elif cert.days_left is not None and cert.days_left <= cert_days:
                 severity = "critical" if cert.days_left <= 3 else "warning"
-                when = "wygasl" if cert.days_left < 0 else f"wygasa za {max(0, int(cert.days_left))} dni"
-                out.append(Finding(f"cert:{cert.domain}", severity, f"Certyfikat {cert.domain} {when}",
-                                   f"wazny do {cert.not_after}" + (f", wystawca {cert.issuer}" if cert.issuer else "")))
+                days = max(0, int(cert.days_left))
+                when = tr("wygasl", "has expired") if cert.days_left < 0 else tr(f"wygasa za {days} dni", f"expires in {days} days")
+                out.append(Finding(f"cert:{cert.domain}", severity, tr(f"Certyfikat {cert.domain} {when}",
+                                                                       f"The certificate for {cert.domain} {when}"),
+                                   tr(f"wazny do {cert.not_after}", f"valid until {cert.not_after}")
+                                   + (tr(f", wystawca {cert.issuer}", f", issuer {cert.issuer}") if cert.issuer else "")))
         for site in self.sites:
             if not site.ok:
-                what = f"HTTP {site.status}" if site.status else site.error or "brak odpowiedzi"
-                out.append(Finding(f"site:{site.domain}", "warning", f"Strona {site.domain} nie dziala poprawnie",
+                what = f"HTTP {site.status}" if site.status else site.error or tr("brak odpowiedzi", "no response")
+                out.append(Finding(f"site:{site.domain}", "warning", tr(f"Strona {site.domain} nie dziala poprawnie",
+                                                                        f"The site {site.domain} is not working correctly"),
                                    f"https://{site.domain}/ -> {what}"))
         for entry in self.dns:
             if entry.error:
-                out.append(Finding(f"dns:{entry.domain}", "warning", f"Domena {entry.domain} nie ma rekordu DNS",
+                out.append(Finding(f"dns:{entry.domain}", "warning", tr(f"Domena {entry.domain} nie ma rekordu DNS",
+                                                                         f"The domain {entry.domain} has no DNS record"),
                                    entry.error))
         for backup in self.backups:
             age = backup.age_hours(self.at)
             if backup.error:
                 out.append(Finding(f"backup:{backup.path}", "warning", f"Backup {backup.path}: {backup.error}",
-                                   "wpis [backup] w DIRECTORY"))
+                                   tr("wpis [backup] w DIRECTORY", "[backup] entry in DIRECTORY")))
             elif age is not None and age > backup_hours:
                 out.append(Finding(f"backup:{backup.path}", "warning",
-                                   f"Backup {backup.path} jest nieaktualny ({_age(age)})",
-                                   f"najnowszy plik: {backup.newest_name}"))
+                                   tr(f"Backup {backup.path} jest nieaktualny ({_age(age)})",
+                                      f"The backup {backup.path} is stale ({_age(age)})"),
+                                   tr(f"najnowszy plik: {backup.newest_name}", f"newest file: {backup.newest_name}")))
         return out
 
     def render(self, *, cert_days: int, backup_hours: int) -> str:
         lines: list[str] = []
         if not self.sites_enabled:
-            lines.append("Sprawdzenia sieciowe sa wylaczone (WATCH_SITES=0).")
+            lines.append(tr("Sprawdzenia sieciowe sa wylaczone (WATCH_SITES=0).", "Network checks are disabled (WATCH_SITES=0)."))
         elif not (self.certs or self.sites or self.dns):
-            lines.append("Nie znalazlem domen w konfiguracji reverse proxy (nginx, Caddy, Traefik) — "
-                         "nie ma czego sprawdzac przez HTTPS.")
+            lines.append(tr("Nie znalazlem domen w konfiguracji reverse proxy (nginx, Caddy, Traefik) — "
+                            "nie ma czego sprawdzac przez HTTPS.",
+                            "I found no domains in the reverse proxy configuration (nginx, Caddy, Traefik) — "
+                            "nothing to check over HTTPS."))
         if self.certs:
-            lines.append("Certyfikaty TLS:")
+            lines.append(tr("Certyfikaty TLS:", "TLS certificates:"))
             for cert in self.certs:
                 if cert.error:
                     lines.append(f"  - {cert.domain}: {cert.error}")
                 else:
                     mark = " (!)" if cert.days_left is not None and cert.days_left <= cert_days else ""
-                    lines.append(f"  - {cert.domain}: wazny jeszcze {int(cert.days_left or 0)} dni "
-                                 f"(do {cert.not_after}){', ' + cert.issuer if cert.issuer else ''}{mark}")
+                    issuer = f", {cert.issuer}" if cert.issuer else ""
+                    days = int(cert.days_left or 0)
+                    lines.append(tr(f"  - {cert.domain}: wazny jeszcze {days} dni (do {cert.not_after}){issuer}{mark}",
+                                    f"  - {cert.domain}: valid for {days} more days (until {cert.not_after}){issuer}{mark}"))
         if self.sites:
-            lines.append("Odpowiedz HTTPS:")
+            lines.append(tr("Odpowiedz HTTPS:", "HTTPS responses:"))
             for site in self.sites:
-                what = f"HTTP {site.status} w {site.millis} ms" if site.status else f"blad: {site.error}"
+                what = tr(f"HTTP {site.status} w {site.millis} ms", f"HTTP {site.status} in {site.millis} ms") \
+                    if site.status else tr(f"blad: {site.error}", f"error: {site.error}")
                 lines.append(f"  - {site.domain}: {what}{'' if site.ok else ' (!)'}")
         if self.dns:
             lines.append("DNS:")
@@ -344,22 +360,29 @@ class Report:
                 if entry.error:
                     lines.append(f"  - {entry.domain}: {entry.error} (!)")
                     continue
-                where = {True: "ten serwer", False: "INNY adres niz ten serwer (CDN/proxy albo stary rekord?)",
-                         None: "nie znam publicznego IP serwera — pomijam porownanie"}[entry.points_here]
+                where = {True: tr("ten serwer", "this server"),
+                         False: tr("INNY adres niz ten serwer (CDN/proxy albo stary rekord?)",
+                                   "a DIFFERENT address than this server (CDN/proxy or a stale record?)"),
+                         None: tr("nie znam publicznego IP serwera — pomijam porownanie",
+                                  "the server's public IP is unknown — skipping the comparison")}[entry.points_here]
                 lines.append(f"  - {entry.domain} -> {', '.join(entry.addresses[:4])} ({where})")
         if self.backups:
-            lines.append("Backupy (wpisy [backup] w DIRECTORY):")
+            lines.append(tr("Backupy (wpisy [backup] w DIRECTORY):", "Backups ([backup] entries in DIRECTORY):"))
             for backup in self.backups:
                 if backup.error:
                     lines.append(f"  - {backup.path}: {backup.error} (!)")
                     continue
                 age = backup.age_hours(self.at) or 0
                 mark = " (!)" if age > backup_hours else ""
-                lines.append(f"  - {backup.path}: najnowszy plik {_age(age)} temu ({backup.newest_name}), "
-                             f"plikow: {backup.files}{mark}")
+                lines.append(tr(f"  - {backup.path}: najnowszy plik {_age(age)} temu ({backup.newest_name}), "
+                                f"plikow: {backup.files}{mark}",
+                                f"  - {backup.path}: newest file {_age(age)} ago ({backup.newest_name}), "
+                                f"files: {backup.files}{mark}"))
         else:
-            lines.append("Backupy: brak wpisow [backup] w DIRECTORY — dopisz katalog backupow "
-                         "(directory upsert kind=backup), a bede pilnowal jego swiezosci.")
+            lines.append(tr("Backupy: brak wpisow [backup] w DIRECTORY — dopisz katalog backupow "
+                            "(directory upsert kind=backup), a bede pilnowal jego swiezosci.",
+                            "Backups: no [backup] entries in DIRECTORY — add the backup directory "
+                            "(directory upsert kind=backup) and I will watch its freshness."))
         return "\n".join(lines)
 
 
@@ -368,7 +391,7 @@ def _age(hours: float) -> str:
         return f"{int(hours * 60)} min"
     if hours < 48:
         return f"{int(hours)} h"
-    return f"{int(hours / 24)} dni"
+    return tr(f"{int(hours / 24)} dni", f"{int(hours / 24)} days")
 
 
 def parse_ignore(raw: str) -> set[str]:

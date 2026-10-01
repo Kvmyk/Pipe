@@ -1,5 +1,142 @@
 # Historia zmian -- Pipe
 
+## v0.15.0 (2026-10-01)
+
+Pipe po angielsku: jeden przelacznik `PIPE_LANG=en` zmienia jezyk calego produktu. Domyslnie zostaje polski --
+aktualizacja bez recznych krokow.
+
+### Jezyk angielski
+
+- `PIPE_LANG=pl|en` w `backend/.env`: system prompt, opisy narzedzi, prompty workerow i rutyn, pytania
+  o potwierdzenie z planem bezpiecznika, wyniki narzedzi, alerty czuwania, poranny raport, `/zmiany`, `/zdrowie`,
+  `/audyt` z poprawkami, powitanie, pamiec incydentow, dziennik i `/cofnij`, koszty, webhooki, narzedzia serwera MCP
+- Kreator `python3 -m backend.configure` pyta o jezyk jako pierwszy i sam sie na niego przelacza;
+  `--from-env` przyjmuje `PIPE_LANG`; `scripts/install-server.sh --lang en` (instalator przepisuje jezyk takze
+  do `.env` bota Telegrama)
+- CLI: `pipe --lang en` albo zmienna `PIPE_LANG`; bot Telegrama: `PIPE_LANG` w `clients/telegram/.env` -- menu `/`,
+  przyciski (YES/NO, Investigate, Undo, Approve) i etykiety po angielsku
+- Angielskie nazwy komend w obu klientach (`/report`, `/changes`, `/chart`, `/health`, `/audit`, `/map`,
+  `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/approvals`,
+  `/cost`, `/history`, `/help`) -- dzialaja obok polskich, niezaleznie od jezyka
+- Angielskie wersje siedmiu wbudowanych skilli (`update-container`, `harden-ssh`, `free-disk-space` i cztery
+  o tych samych nazwach)
+- `README.en.md`
+
+### Poprawki
+
+- Znaczniki protokolu (`[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`, `[PAMIEC]`, `[ZREDAGOWANO: ...]`) sa niezalezne od
+  jezyka; serwer rozpoznaje pytanie o potwierdzenie takze po angielskiej frazie
+- Komenda `/incydenty` byla opisana w dokumentacji, ale klienci jej nie obslugiwali -- dziala w CLI i na Telegramie
+- CLI po ponownym polaczeniu pisalo po angielsku (`Reconnected.`) takze w polskim interfejsie
+
+## v0.14.0 (2026-09-29)
+
+MCP w obie strony: Pipe jako bezpieczna brama do serwera dla innych agentow AI i Pipe korzystajacy z cudzych
+serwerow MCP. Aktualizacja bez recznych krokow; nowe porty i serwery MCP sa domyslnie wylaczone.
+
+### Pipe jako serwer MCP
+
+- Claude Code, Cursor i inni agenci dostaja narzedzia Pipe: `run_command` (przez klasyfikator), `read_file`
+  (bez plikow z sekretami), stan, zmiany, mapa, zdrowie, audyt, dziennik i `ask_pipe`
+- Zmiana od zewnetrznego agenta czeka na **zgode** administratora -- Telegram (przyciski) albo `/zgody` w CLI --
+  i po niej idzie przez bezpiecznik, z kopia i `/cofnij`
+- Most stdio `pipe --mcp --host root@serwer` (tunel SSH, tokeny Pipe) i endpoint Streamable HTTP (`MCP_PORT`)
+- Protokol 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`) i starsze wersje
+  z `initialize`
+
+### Pipe jako klient MCP
+
+- Narzedzia serwerow MCP (stdio i HTTP) jako narzedzia agenta: `mcp__<serwer>__<narzedzie>`; konfiguracja zdaniem
+  albo w `backend/data/mcp.json`
+- Kazde wywolanie z potwierdzeniem, chyba ze narzedzie jest na liscie `autoApprove` albo zaufane jako tylko-odczyt;
+  dodanie serwera zawsze z potwierdzeniem; podproces nie dostaje klucza LLM ani tokenow Pipe
+- Nowe narzedzie `mcp_manage`, komenda `/mcp`
+
+## v0.13.0 (2026-09-29)
+
+Pamiec incydentow, alerty z zewnatrz, wiadomosci glosowe i role. Aktualizacja w Dockerze: `docker compose up -d`
+przebuduje kontener z nowym `env_file` -- bez innych recznych krokow.
+
+### Pamiec incydentow
+
+- Rozwiazany alert zostaje w pamieci: ustalenia z *Zbadaj* i zmiany z dziennika wykonane w czasie problemu
+- Powtorny alert przychodzi z linia *Poprzednio: ...*, a *Zbadaj* zaczyna od sprawdzonej przyczyny i naprawy
+- `/incydenty` i `server_history operation=incidents`
+
+### Alerty z zewnatrz
+
+- Webhooki (`WEBHOOK_PORT`, `WEBHOOK_TOKEN`): Alertmanager, Grafana, Uptime Kuma, GitHub (nieudany workflow,
+  wdrozenie) i format ogolny. Alert na Telegram z *Zbadaj*, znika po `resolved`
+- `WEBHOOK_INVESTIGATE=1` -- worker od razu bada alert na serwerze (tylko odczyty) i przysyla raport
+
+### Glos i role
+
+- Wiadomosci glosowe na Telegramie: transkrypcja (Whisper przez API zgodne z OpenAI; openai/groq bez konfiguracji,
+  inni -- `STT_*`) i odpowiedz jak na tekst
+- Rola viewer: `TELEGRAM_VIEWER_IDS` + `AGENT_VIEWER_TOKEN` oraz tokeny klientow `python3 -m backend.tokens`
+  (admin/viewer, odwolywalne). Viewer diagnozuje i czyta, nie zatwierdza zmian -- egzekwuje to backend
+- Sesja jest przypieta do tokenu, ktory ja zalozyl
+
+### Poprawki
+
+- Docker: caly `backend/.env` trafia do kontenera (`env_file`) -- wczesniej czesc ustawien (np. progi, raport,
+  ceny, `WORKER_TIMEOUT`) byla pomijana, bo nie bylo ich na liscie `environment`
+- Token z niestandardowymi znakami nie przerywa juz polaczenia wyjatkiem (porownanie na bajtach)
+
+## v0.12.0 (2026-09-29)
+
+Pipe pilnuje bezpieczenstwa serwera, wita sie po instalacji i przychodzi z gotowymi przepisami.
+Aktualizacja bez recznych krokow -- skille wbudowane instaluja sie same przy starcie.
+
+### Audyt bezpieczenstwa
+
+- `/audyt` -- ocena 0-100 bez LLM: logowanie SSH haslem i rootem, zapora, bazy danych i API Dockera
+  wystawione na swiat (z poprawka w compose, bo Docker omija ufw), kontenery `privileged` i z `docker.sock`,
+  konta z uid 0 i bez hasla, automatyczne aktualizacje, fail2ban, pliki `.env` czytelne dla wszystkich,
+  synchronizacja czasu, swap, certyfikaty
+- Kazdy punkt ma gotowa komende; *"napraw 1"* przechodzi przez potwierdzenie z bezpiecznikiem. Wylaczenie hasel
+  SSH trafia do `sshd_config.d/00-pipe-*.conf` i nie jest proponowane bez klucza w `authorized_keys`
+- Nowe narzedzie agenta `security_audit`
+
+### Straznik i logowania SSH
+
+- Co 2 minuty: nowe konta (uid 0 = krytyczny), nowe klucze SSH, nowe programy SUID, zmiany sudoers, sshd, PAM
+  i `ld.so.preload` -- alert, chyba ze zmiane zrobil Pipe (dziennik)
+- Log SSH: seria nieudanych logowan (`WATCH_SSH_FAILURES`), udane logowanie haslem z adresu, ktory zgadywal
+  hasla, logowanie z nowego adresu (`WATCH_SSH_LOGINS`)
+- Migawki zapisuja programy SUID/SGID
+
+### Pierwsze 5 minut i skille
+
+- Powitanie po instalacji na Telegramie (i w CLI przy pierwszym polaczeniu): mapa, ocena bezpieczenstwa,
+  trzy najwazniejsze poprawki i to, czego Pipe pilnuje
+- Wbudowane skille: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `aktualizuj-kontener`,
+  `utwardz-ssh`, `wolne-miejsce` -- edytowalne; aktualizacja nie nadpisuje zmian uzytkownika
+
+## v0.11.0 (2026-09-29)
+
+Zmiany z bezpiecznikiem: kazda zatwierdzona operacja ma kopie, sprawdzenie przed, weryfikacje po i da sie ja
+cofnac. Aktualizacja bez recznych krokow.
+
+### Bezpiecznik
+
+- Potwierdzenie pokazuje plan: co zostanie skopiowane, co Pipe sprawdzi przed zmiana i co zweryfikuje po niej
+- Przed przeladowaniem uslugi -- walidacja konfiguracji (`nginx -t`, `sshd -t`, `caddy validate`,
+  `apachectl configtest`, `haproxy -c`, `docker compose config -q`, takze `docker exec <nginx> nginx -t`).
+  Nieudane sprawdzenie = operacja nie jest wykonywana
+- Po zmianie: usluga aktywna, kontener dziala i nie jest unhealthy, projekt compose wstal, zmieniony plik
+  konfiguracji przechodzi walidacje, a strony, ktore odpowiadaly przed zmiana, odpowiadaja po niej
+- Nieudana weryfikacja zmiany plikow konfiguracji przywraca kopie automatycznie i przeladowuje usluge ponownie
+  (`SAFE_AUTO_ROLLBACK=1`)
+
+### Dziennik zmian i `/cofnij`
+
+- Kopie plikow (`sed -i`, `tee`, `>`, `cp`, `mv`, `rm`, `chmod`, `write_file`), HEAD repozytorium przy operacjach
+  gita, crontab i pliki pamieci Pipe (cele, rutyny, skille, SERVER.md) trafiaja do dziennika przed zmiana
+- `/dziennik` i `/cofnij [id]` w obu klientach -- podglad roznic i komend odwrotnych (`docker start`,
+  `systemctl enable`, `git reset --keep`, `docker compose up -d`), potem TAK. Dziala bez LLM
+- Agent cofa zmiany sam, gdy o to poprosisz (nowe narzedzie `journal`); cofniecie tez mozna cofnac
+
 ## v0.10.0 (2026-09-29)
 
 Pipe pamieta, jak serwer sie zmienia, i sam wie, co sprawdzac. Aktualizacja bez recznych krokow -- nowe

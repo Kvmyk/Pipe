@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.10.0
+Pipe v0.15.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -32,6 +32,19 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/checks.py` | Sprawdzenia bez konfiguracji: certyfikaty, strony, DNS, swiezosc backupow |
 | `core/digest.py` | Poranny raport (bez LLM) |
 | `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
+| `core/posture.py` | Audyt bezpieczenstwa hosta (ocena, poprawki), straznik zmian bezpieczenstwa, log SSH |
+| `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
+| `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
+| `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
+| `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
+| `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
+| `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI) |
+| `tokens.py` | Tokeny klientow z rolami admin/viewer (`python3 -m backend.tokens`) |
+| `core/mcp/` | MCP: `server.py` (Pipe jako serwer, obie ery protokolu, Streamable HTTP), `client.py` (stdio/HTTP), `registry.py` (`mcp.json`, polityka) |
+| `core/approvals.py` | Zgody administratora dla operacji zewnetrznych agentow |
+| `core/auth.py` | Uwierzytelnienie tokenem (JSON lines i MCP HTTP) |
+| `core/safety.py` | Bezpiecznik: plan zmiany (kopie, sprawdzenie przed, weryfikacja po) i strzezone wykonanie |
+| `core/journal.py` | Dziennik zmian: kopie plikow, stan gita i crontaba, komendy odwrotne, `/cofnij` |
 | `core/memory.py` | SERVER.md, DIRECTORY, skille, VIBE, wykrywanie i redakcja sekretow |
 | `core/vibe.py` | Nauka stylu rozmowy w tle |
 | `core/events.py` | Zdarzenia strumienia: tekst, `Attachment`, `Progress` |
@@ -255,6 +268,9 @@ Powinienes zobaczyc:
 | `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
+| `mcp_manage` | Serwery MCP, z ktorych korzysta Pipe; ich narzedzia `mcp__<serwer>__<narzedzie>` | Dodanie: tak; narzedzia wg polityki |
+| `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
 
@@ -263,6 +279,7 @@ Powinienes zobaczyc:
 | Zmienna | Domyslnie | Opis |
 |---------|-----------|------|
 | `PIPE_RUNTIME` | `auto` | `docker` / `native` / `kubernetes` |
+| `PIPE_LANG` | `pl` | Jezyk agenta: `pl` albo `en` (prompty, opisy narzedzi, komunikaty, alerty, raporty, wbudowane skille, kreator). Bot Telegrama czyta te sama zmienna ze swojego `.env`, CLI -- `--lang` / `PIPE_LANG` |
 | `HOST_ROOT`, `HOST_PROC` | wg trybu | Nadpisanie sciezek hosta |
 | `AGENT_MAX_ITERATIONS` | 15 | Limit krokow petli na jedna wiadomosc |
 | `CONFIRMED_COMMAND_TIMEOUT` | 900 | Limit czasu (s) komend zatwierdzonych przez uzytkownika; odczyty maja 30 s |
@@ -277,10 +294,18 @@ Powinienes zobaczyc:
 | `CHECKS_INTERVAL` | 3600 | Co ile sekund sprawdzac certyfikaty, strony, DNS i backupy |
 | `WATCH_SITES` | 1 | 0 wylacza sprawdzenia sieciowe (certyfikaty, strony, DNS) |
 | `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS` | 14, 26 | Progi: dni do wygasniecia certyfikatu, wiek najnowszego backupu |
+| `WATCH_SSH_FAILURES` | 60 | Alert przy tylu nieudanych logowaniach SSH w 10 min (0 = wylaczone) |
+| `WATCH_SSH_LOGINS` | 1 | Alert przy logowaniu SSH z nowego adresu |
 | `WATCH_IGNORE` | -- | Domeny i sciezki pomijane w sprawdzeniach (po przecinku) |
 | `DIGEST_TIME` | `07:00` | Godzina porannego raportu (czas serwera); `off` wylacza |
 | `LLM_PRICE_IN`, `LLM_PRICE_OUT` | -- | Ceny modelu w USD za milion tokenow -- `/koszt` pokaze koszt |
 | `WORKER_PRICE_IN`, `WORKER_PRICE_OUT` | jak LLM | Ceny `WORKER_MODEL` |
+| `AGENT_VIEWER_TOKEN` | -- | Token roli viewer (tylko odczyt); wymaga `AGENT_TOKEN` |
+| `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Serwer alertow z zewnatrz (0 = wylaczony; bez tokenu nie wystartuje) |
+| `WEBHOOK_INVESTIGATE` | 1 | Nowy alert z webhooka bada worker (tylko odczyty), raport na Telegram; limit 1/h na alert, 10/dzien |
+| `MCP_PORT`, `MCP_HOST`, `MCP_ALLOWED_ORIGINS` | 0, 127.0.0.1, -- | Pipe jako serwer MCP po HTTP (`/mcp`, token Pipe jako Bearer) |
+| `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (openai/groq -- automatycznie) |
+| `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 
 ## Zatrzymanie

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from backend.core import executor, hostinfo, runtime
+from backend.core.i18n import tr
 
 WELL_KNOWN_PORTS: dict[int, str] = {
     22: "ssh", 25: "smtp", 53: "dns", 80: "http", 443: "https", 465: "smtps", 587: "smtp", 993: "imaps",
@@ -69,6 +70,9 @@ class Container:
     restart_count: int = 0
     domains: list[str] = field(default_factory=list)   # z etykiet Traefika / VIRTUAL_HOST
     image_id: str = ""                                  # sha256:... — zmienia sie po pull + recreate
+    mounts: list[tuple[str, str]] = field(default_factory=list)   # (sciezka hosta, sciezka w kontenerze)
+    privileged: bool = False
+    network_mode: str = ""
 
     @property
     def kind(self) -> str:
@@ -120,33 +124,33 @@ class Infra:
 
     def summary(self) -> str:
         """Tekstowe podsumowanie dla modelu."""
-        lines = [f"Host: {self.hostname or '?'} ({self.os_name or 'system nieznany'})"]
+        lines = [f"Host: {self.hostname or '?'} ({self.os_name or tr('system nieznany', 'unknown system')})"]
         if self.containers is None:
-            lines.append("Docker: niedostepny")
+            lines.append(tr("Docker: niedostepny", "Docker: unavailable"))
         else:
-            lines.append(f"Kontenery ({len(self.containers)}):")
+            lines.append(tr(f"Kontenery ({len(self.containers)}):", f"Containers ({len(self.containers)}):"))
             for c in self.containers:
                 ports = ", ".join(f"{p.host_ip or '*'}:{p.host_port}->{p.container_port}" for p in c.ports) or "-"
-                extra = f" projekt={c.project}" if c.project else ""
+                extra = tr(f" projekt={c.project}", f" project={c.project}") if c.project else ""
                 health = f" ({c.health})" if c.health else ""
-                lines.append(f"  - {c.name} [{c.image}] {c.state}{health} porty: {ports}{extra}")
+                lines.append(f"  - {c.name} [{c.image}] {c.state}{health} {tr('porty', 'ports')}: {ports}{extra}")
         if self.routes:
-            lines.append("Trasy reverse proxy:")
-            lines += [f"  - {r.proxy}: {', '.join(r.domains) or '(domyslny)'} -> {r.upstream}" for r in self.routes]
+            lines.append(tr("Trasy reverse proxy:", "Reverse proxy routes:"))
+            lines += [f"  - {r.proxy}: {', '.join(r.domains) or tr('(domyslny)', '(default)')} -> {r.upstream}" for r in self.routes]
         # jeden wpis na port/protokol (IPv4 i IPv6 razem), bez efemerycznych portow UDP
         public = {(s.port, s.proto.rstrip("6")) for s in self.listeners
                   if s.public and not (s.proto.startswith("udp") and s.port >= 32768)}
         if public:
-            lines.append("Porty publiczne hosta: " + ", ".join(f"{port}/{proto}" for port, proto in sorted(public)))
+            lines.append(tr("Porty publiczne hosta: ", "Public host ports: ") + ", ".join(f"{port}/{proto}" for port, proto in sorted(public)))
         if self.services:
-            lines.append("Uslugi systemd: " + ", ".join(self.services))
+            lines.append(tr("Uslugi systemd: ", "systemd services: ") + ", ".join(self.services))
         if self.kube:
             lines.append("Kubernetes:")
-            lines += [f"  - {a.namespace}/{a.name} ({a.kind} {a.replicas}) hosty: {', '.join(a.hosts) or '-'}"
+            lines += [f"  - {a.namespace}/{a.name} ({a.kind} {a.replicas}) {tr('hosty', 'hosts')}: {', '.join(a.hosts) or '-'}"
                       for a in self.kube]
         if self.targets:
-            lines.append("Zdalne cele: " + ", ".join(f"{n} ({k})" for n, k in self.targets))
-        lines += [f"Uwaga: {n}" for n in self.notes]
+            lines.append(tr("Zdalne cele: ", "Remote targets: ") + ", ".join(f"{n} ({k})" for n, k in self.targets))
+        lines += [tr(f"Uwaga: {n}", f"Note: {n}") for n in self.notes]
         return "\n".join(lines)
 
 
@@ -198,6 +202,10 @@ def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
             restart_count=int(item.get("RestartCount", 0) or 0),
             domains=sorted(set(domains)),
             image_id=str(item.get("Image", ""))[:19],
+            mounts=[(str(m.get("Source", "")), str(m.get("Destination", ""))) for m in item.get("Mounts") or []
+                    if m.get("Source") and m.get("Destination")],
+            privileged=bool((item.get("HostConfig") or {}).get("Privileged")),
+            network_mode=str((item.get("HostConfig") or {}).get("NetworkMode", "")),
         ))
     return sorted(result, key=lambda c: (c.project, c.name))
 
@@ -433,7 +441,8 @@ async def discover(include_kube: bool | None = None) -> Infra:
     except Exception:
         pass
     if infra.containers is None:
-        infra.notes.append("brak dostepu do Dockera (socket nie jest zamontowany?)")
+        infra.notes.append(tr("brak dostepu do Dockera (socket nie jest zamontowany?)",
+                              "no access to Docker (is the socket mounted?)"))
     return infra
 
 
@@ -496,7 +505,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
     lines.append('  internet(("Internet"))')
     classes["ext"].append("internet")
 
-    host_title = infra.hostname or "serwer"
+    host_title = infra.hostname or tr("serwer", "server")
     if infra.os_name:
         host_title += f" · {infra.os_name}"
     # Bez `direction` w subgrafie — inaczej Mermaid przypina krawedzie z zewnatrz do ramki
@@ -520,7 +529,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
         if collapse and project:
             node = _id("proj_node", project)
             running = sum(1 for m in members if m.state == "running")
-            lines.append(f"{indent}{node}[{label(project, f'{running}/{len(members)} kontenerow dziala')}]")
+            lines.append(f"{indent}{node}[{label(project, tr(f'{running}/{len(members)} kontenerow dziala', f'{running}/{len(members)} containers running'))}]")
             classes["app"].append(node)
             for m in members:
                 by_name[m.name] = node
@@ -576,7 +585,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
     for port, name in sorted(service_ports.items())[:15]:
         node = _id("port", str(port))
         public = any(s.port == port and s.public for s in infra.listeners)
-        lines.append(f"    {node}[/{label(f':{port}', name, 'publiczny' if public else 'lokalny')}/]")
+        lines.append(f"    {node}[/{label(f':{port}', name, tr('publiczny', 'public') if public else tr('lokalny', 'local'))}/]")
         classes["svc"].append(node)
         by_host_port.setdefault(port, node)
         if public:
@@ -585,7 +594,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
     if infra.services:
         shown = infra.services[:12]
         more = f"+{len(infra.services) - 12}" if len(infra.services) > 12 else ""
-        lines.append(f"    systemd[{label('uslugi systemd', ', '.join(shown[:6]), ', '.join(shown[6:]), more)}]")
+        lines.append(f"    systemd[{label(tr('uslugi systemd', 'systemd services'), ', '.join(shown[:6]), ', '.join(shown[6:]), more)}]")
         classes["svc"].append("systemd")
 
     lines.append("  end")
@@ -614,7 +623,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
             lines.append(f"  {node}[{label(route.upstream)}]")
             classes["ext"].append(node)
             target = node
-        edges.append(f"  {proxy_node} -->|{label(domains or 'domyslny')}| {target}")
+        edges.append(f"  {proxy_node} -->|{label(domains or tr('domyslny', 'default'))}| {target}")
 
     # Kontenery z domenami z etykiet (Traefik, nginx-proxy)
     traefik = next((n for key, n in proxy_nodes.items() if "traefik" in key or "proxy" in key), None)
@@ -663,7 +672,7 @@ def to_mermaid(infra: Infra, title: str = "") -> str:
 
     # Zdalne cele Pipe
     if infra.targets:
-        lines.append(f"  subgraph remote[{label('zdalne cele Pipe')}]")
+        lines.append(f"  subgraph remote[{label(tr('zdalne cele Pipe', 'Pipe remote targets'))}]")
         for name, kind in infra.targets[:20]:
             node = _id("t", name)
             lines.append(f"    {node}[{label(name, kind)}]")

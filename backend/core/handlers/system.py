@@ -15,6 +15,7 @@ from backend.core.events import Event
 from backend.core.handlers.common import reply, run_classified
 from backend.core.security import classify_command, resolve_local, validate_workspace_access
 from backend.core.session import Session
+from backend.core.i18n import tr
 
 # Nadpisanie katalogu /proc hosta (testy). None = runtime.host_proc().
 HOSTPROC: str | None = None
@@ -45,7 +46,7 @@ async def handle_change_directory(
     """Obsluguje narzedzie change_directory."""
     raw = str(args.get("path", "")).strip()
     if not raw:
-        reply(session, tool_call, "Błąd: pusta ścieżka")
+        reply(session, tool_call, tr("Błąd: pusta ścieżka", "Error: empty path"))
         return
 
     new_cwd = host_path(raw, session.cwd)
@@ -57,14 +58,14 @@ async def handle_change_directory(
             local = resolve_local(local)
             new_cwd = runtime.to_host(local)
         except (OSError, ValueError) as exc:
-            allowed, reason = False, f"Nieprawidlowa sciezka: {exc}"
+            allowed, reason = False, tr(f"Nieprawidlowa sciezka: {exc}", f"Invalid path: {exc}")
     if not allowed:
-        result = f"Błąd: {reason}"
+        result = tr(f"Błąd: {reason}", f"Error: {reason}")
     elif not os.path.isdir(local):
-        result = f"Błąd: katalog nie istnieje na serwerze: {new_cwd}"
+        result = tr(f"Błąd: katalog nie istnieje na serwerze: {new_cwd}", f"Error: directory does not exist on the server: {new_cwd}")
     else:
         session.cwd = new_cwd
-        result = f"Katalog zmieniony na: {new_cwd}"
+        result = tr(f"Katalog zmieniony na: {new_cwd}", f"Working directory changed to: {new_cwd}")
 
     reply(session, tool_call, result)
     return
@@ -75,24 +76,29 @@ async def handle_change_directory(
 
 def stats_summary(proc: str | None = None) -> str:
     """Podsumowanie stanu hosta dla modelu — czytane prosto z /proc hosta."""
-    lines = ["[STAN HOSTA]"]
+    lines = [tr("[STAN HOSTA]", "[HOST STATE]")]
     uptime = hostinfo.uptime_seconds(proc)
     if uptime is not None:
         lines.append(f"Uptime: {hostinfo.format_duration(uptime)}")
     load = hostinfo.loadavg(proc)
     cpus = hostinfo.cpu_count(proc)
     if load:
-        lines.append(f"Load average (1m/5m/15m): {load[0]:.2f} / {load[1]:.2f} / {load[2]:.2f} "
-                     f"przy {cpus} rdzeniach (obciazenie 5m: {round(load[1] * 100 / cpus)}%)")
+        lines.append(f"Load average (1m/5m/15m): {load[0]:.2f} / {load[1]:.2f} / {load[2]:.2f} " + tr(
+            f"przy {cpus} rdzeniach (obciazenie 5m: {round(load[1] * 100 / cpus)}%)",
+            f"on {cpus} cores (5m load: {round(load[1] * 100 / cpus)}%)"))
     mem = hostinfo.memory(proc)
     if mem:
-        lines.append(f"RAM: {mem.used_mb} MB uzyte z {mem.total_mb} MB ({mem.used_pct}%), "
-                     f"dostepne {mem.available_mb} MB")
+        lines.append(tr(f"RAM: {mem.used_mb} MB uzyte z {mem.total_mb} MB ({mem.used_pct}%), "
+                        f"dostepne {mem.available_mb} MB",
+                        f"RAM: {mem.used_mb} MB used of {mem.total_mb} MB ({mem.used_pct}%), "
+                        f"available {mem.available_mb} MB"))
         if mem.swap_total_mb:
-            lines.append(f"Swap: {mem.swap_used_mb} MB z {mem.swap_total_mb} MB")
+            lines.append(tr(f"Swap: {mem.swap_used_mb} MB z {mem.swap_total_mb} MB",
+                            f"Swap: {mem.swap_used_mb} MB of {mem.swap_total_mb} MB"))
     for disk in hostinfo.disks(proc):
-        lines.append(f"Dysk {disk.mount} ({disk.fstype}): {disk.used_pct}% zajete, wolne "
-                     f"{hostinfo.human_bytes(disk.available)} z {hostinfo.human_bytes(disk.total)}")
+        free, total = hostinfo.human_bytes(disk.available), hostinfo.human_bytes(disk.total)
+        lines.append(tr(f"Dysk {disk.mount} ({disk.fstype}): {disk.used_pct}% zajete, wolne {free} z {total}",
+                        f"Disk {disk.mount} ({disk.fstype}): {disk.used_pct}% used, {free} free of {total}"))
     return "\n".join(lines)
 
 
@@ -112,15 +118,15 @@ async def handle_system_stats(
         result = await asyncio.to_thread(stats_summary, proc)
         if stat_type in ("processes", "process", "all"):
             stdout, stderr, code = await executor.execute("ps aux --sort=-%cpu | head -15")
-            result += f"\n\n[PROCESY — najwiecej CPU]\n{stdout}{stderr}"
+            result += tr("\n\n[PROCESY — najwiecej CPU]\n", "\n\n[PROCESSES — most CPU]\n") + f"{stdout}{stderr}"
             stdout, stderr, code = await executor.execute("ps aux --sort=-%mem | head -8")
-            result += f"\n[PROCESY — najwiecej RAM]\n{stdout}{stderr}"
+            result += tr("\n[PROCESY — najwiecej RAM]\n", "\n[PROCESSES — most RAM]\n") + f"{stdout}{stderr}"
         if stat_type in ("cpu", "all"):
             result += "\n\n[/proc/stat]\n" + "\n".join(hostinfo._read(f"{proc}/stat").splitlines()[:cpu_lines(proc)])
         if stat_type in ("memory", "all"):
             result += "\n\n[/proc/meminfo]\n" + "\n".join(hostinfo._read(f"{proc}/meminfo").splitlines()[:16])
     except Exception as exc:
-        result = f"Błąd pobrania statystyk: {exc}"
+        result = tr(f"Błąd pobrania statystyk: {exc}", f"Error reading statistics: {exc}")
 
     reply(session, tool_call, result)
     return
@@ -147,15 +153,16 @@ async def handle_network_info(
         if check_type in ("ports", "listeners", "connections"):
             established = check_type == "connections"
             found = hostinfo.sockets(_proc(), established)
-            label = "POLACZENIA HOSTA" if established else "NASLUCHUJACE PORTY HOSTA"
+            label = tr("POLACZENIA HOSTA", "HOST CONNECTIONS") if established else tr("NASLUCHUJACE PORTY HOSTA",
+                                                                                          "HOST LISTENING PORTS")
             lines = []
             for sock in found:
-                note = "  (publiczny)" if (not established and sock.public) else ""
+                note = tr("  (publiczny)", "  (public)") if (not established and sock.public) else ""
                 lines.append(f"{sock}{note}")
-            result = f"[{label}]\n" + ("\n".join(lines) or "(brak)")
+            result = f"[{label}]\n" + ("\n".join(lines) or tr("(brak)", "(none)"))
         elif check_type in ("ping", "curl", "dns"):
             if not target:
-                result = f"Błąd: {check_type} wymaga parametru target"
+                result = tr(f"Błąd: {check_type} wymaga parametru target", f"Error: {check_type} requires the target parameter")
             else:
                 quoted = shlex.quote(target)
                 cmd = {
@@ -168,9 +175,9 @@ async def handle_network_info(
                 if exit_code != 0:
                     result += f"\n[EXIT CODE] {exit_code}"
         else:
-            result = f"Błąd: nieznany check_type: {check_type}"
+            result = tr(f"Błąd: nieznany check_type: {check_type}", f"Error: unknown check_type: {check_type}")
     except Exception as exc:
-        result = f"Błąd pobrania info sieciowych: {exc}"
+        result = tr(f"Błąd pobrania info sieciowych: {exc}", f"Error reading network info: {exc}")
 
     reply(session, tool_call, result)
     return
@@ -201,8 +208,8 @@ def read_host_crontabs() -> str:
                 lines = [l for l in fh.read().splitlines() if l.strip() and not l.lstrip().startswith("#")]
         except OSError:
             continue
-        sections.append(f"# {runtime.to_host(path)}\n" + ("\n".join(lines) or "(brak wpisow)"))
-    return "\n\n".join(sections) or "(nie znaleziono plikow crona na hoscie)"
+        sections.append(f"# {runtime.to_host(path)}\n" + ("\n".join(lines) or tr("(brak wpisow)", "(no entries)")))
+    return "\n\n".join(sections) or tr("(nie znaleziono plikow crona na hoscie)", "(no cron files found on the host)")
 
 
 def _cron_entry(args: dict[str, Any]) -> str:
@@ -234,14 +241,19 @@ async def handle_cron_manage(
     if operation in ("add", "remove"):
         entry = _cron_entry(args)
         if not entry.strip():
-            field = "schedule i command" if operation == "add" else "command (dokladna linia crontaba)"
-            reply(session, tool_call, f"Błąd: podaj {field} (albo cron_entry — pelna linie crontaba).")
+            field = tr("schedule i command", "schedule and command") if operation == "add" \
+                else tr("command (dokladna linia crontaba)", "command (the exact crontab line)")
+            reply(session, tool_call, tr(f"Błąd: podaj {field} (albo cron_entry — pelna linie crontaba).",
+                                         f"Error: provide {field} (or cron_entry — the full crontab line)."))
             return
         if not _can_edit_crontab():
             reply(session, tool_call,
-                  "Edycja crona hosta jest niedostepna w tym trybie (Pipe dziala w kontenerze, a system plikow "
-                  "hosta jest tylko do odczytu). Zaproponuj uzytkownikowi reczne dodanie wpisu (podaj dokladna "
-                  "linie) albo rutyne Pipe (routine_manage) dla zadan, ktore moze wykonywac agent.")
+                  tr("Edycja crona hosta jest niedostepna w tym trybie (Pipe dziala w kontenerze, a system plikow "
+                     "hosta jest tylko do odczytu). Zaproponuj uzytkownikowi reczne dodanie wpisu (podaj dokladna "
+                     "linie) albo rutyne Pipe (routine_manage) dla zadan, ktore moze wykonywac agent.",
+                     "Editing the host cron is not available in this mode (Pipe runs in a container and the host file "
+                     "system is read-only). Suggest the user adds the entry manually (give the exact line) or a Pipe "
+                     "routine (routine_manage) for tasks the agent can run."))
             return
         if operation == "add":
             # printf zamiast echo — echo w sh interpretuje backslashe.
@@ -252,7 +264,8 @@ async def handle_cron_manage(
         # Klasyfikujemy sam wpis: zakazane polecenie w cronie = zakazane polecenie.
         inner_class = classify_command(entry.split(None, 5)[-1] if not entry.startswith("@") else entry)
         classification = "forbidden" if inner_class == "forbidden" or classify_command(cmd) == "forbidden" else "confirm"
-        what = "Dodanie wpisu cron" if operation == "add" else "Usunięcie wpisu cron"
+        what = tr("Dodanie wpisu cron", "Adding a cron entry") if operation == "add" \
+            else tr("Usunięcie wpisu cron", "Removing a cron entry")
         async for event in run_classified(session, tool_call, cmd, tool_name="cron_manage",
                                           classification=classification, what=what):
             yield event
@@ -263,12 +276,13 @@ async def handle_cron_manage(
         if runtime.kind() != "native":
             cmd = f"grep -h CRON {runtime.to_local('/var/log/syslog')} {runtime.to_local('/var/log/cron')} 2>/dev/null | tail -n 60"
         stdout, stderr, code = await executor.execute(cmd)
-        reply(session, tool_call, f"[CRON — LOGI]\n{stdout}{stderr}")
+        reply(session, tool_call, tr("[CRON — LOGI]\n", "[CRON — LOGS]\n") + f"{stdout}{stderr}")
         return
 
     if _can_edit_crontab() and shutil.which("crontab"):
         stdout, stderr, code = await executor.execute("crontab -l")
-        result = f"[CRONTAB UZYTKOWNIKA]\n{stdout}{stderr}\n\n[PLIKI SYSTEMOWE]\n{read_host_crontabs()}"
+        result = tr("[CRONTAB UZYTKOWNIKA]\n", "[USER CRONTAB]\n") + f"{stdout}{stderr}\n\n" + \
+            tr("[PLIKI SYSTEMOWE]\n", "[SYSTEM FILES]\n") + read_host_crontabs()
     else:
-        result = f"[CRON HOSTA]\n{read_host_crontabs()}"
+        result = tr("[CRON HOSTA]\n", "[HOST CRON]\n") + read_host_crontabs()
     reply(session, tool_call, result)

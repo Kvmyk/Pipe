@@ -12,6 +12,7 @@ plikow i `docker inspect`, bez LLM):
   cron        wpisy crona hosta (linie, sekrety zredagowane)
   users       konta z powloka logowania albo uid 0
   ssh_keys    klucze w authorized_keys (odcisk + komentarz, bez samego klucza)
+  suid        programy z bitem SUID/SGID w katalogach binarek (nowy = klasyczny slad wlamania)
   configs     skroty waznych konfiguracji: sshd, sudoers, nginx, Caddy, compose...
 
 Migawka jest zapisywana tylko, gdy cos sie zmienilo — najnowsza starsza niz
@@ -35,12 +36,13 @@ from pathlib import Path
 from typing import Any
 
 from backend.core import hostinfo, memory, runtime
+from backend.core.i18n import tr
 
-SECTIONS = ("system", "packages", "containers", "ports", "services", "cron", "users", "ssh_keys", "configs")
+SECTIONS = ("system", "packages", "containers", "ports", "services", "cron", "users", "ssh_keys", "suid", "configs")
 # Sekcje, ktorych wartosci to wiele linii — roznica jest pokazywana linia po linii.
 LINE_SECTIONS = frozenset({"cron", "ssh_keys"})
 # Zmiany w tych sekcjach sa istotne dla bezpieczenstwa (nowe konto, klucz SSH, sudoers).
-SECURITY_SECTIONS = frozenset({"users", "ssh_keys"})
+SECURITY_SECTIONS = frozenset({"users", "ssh_keys", "suid"})
 SECURITY_CONFIGS = ("/etc/sudoers", "/etc/ssh/sshd_config", "/etc/passwd")
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -154,6 +156,39 @@ def ssh_keys() -> dict[str, str]:
     return result
 
 
+SUID_DIRS = ("/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin", "/bin", "/sbin", "/usr/libexec",
+             "/usr/lib/openssh", "/opt")
+SUID_MAX_FILES = 50_000
+
+
+def suid() -> dict[str, str]:
+    """Pliki z bitem SUID/SGID (skrot tresci — podmieniona binarka tez jest zmiana)."""
+    import stat
+
+    result: dict[str, str] = {}
+    seen = 0
+    for directory in SUID_DIRS:
+        local_dir = runtime.to_local(directory)
+        if os.path.islink(local_dir) or not os.path.isdir(local_dir):
+            continue                        # /bin -> usr/bin na nowych systemach — bez duplikatow
+        for current, dirs, files in os.walk(local_dir):
+            if directory == "/opt" and current.count("/") - local_dir.count("/") >= 3:
+                dirs[:] = []
+            for name in files:
+                seen += 1
+                if seen > SUID_MAX_FILES:
+                    return result
+                path = os.path.join(current, name)
+                try:
+                    info = os.lstat(path)
+                except OSError:
+                    continue
+                if stat.S_ISREG(info.st_mode) and info.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                    kind = "suid" if info.st_mode & stat.S_ISUID else "sgid"
+                    result[runtime.to_host(path)] = f"{kind} {info.st_size} B {int(info.st_mtime)}"
+    return result
+
+
 def cron() -> dict[str, str]:
     result = {}
     for pattern in CRON_GLOBS:
@@ -253,6 +288,7 @@ def capture_sync(containers: list[Any] | None, proc: str | None = None) -> dict[
         "cron": cron,
         "users": users,
         "ssh_keys": ssh_keys,
+        "suid": suid,
         "configs": lambda: configs(compose_files(containers)),
     }
     if runtime.kind() == "kubernetes" and not runtime.host_root():
@@ -409,70 +445,107 @@ def diff(old: dict[str, dict[str, str]], new: dict[str, dict[str, str]]) -> list
     return changes
 
 
+def _state(value: str) -> str:
+    """Stan kontenera zapisany w migawce ('dziala'/'zatrzymany' — kod wewnetrzny) w jezyku Pipe."""
+    return {"dziala": tr("dziala", "running"), "zatrzymany": tr("zatrzymany", "stopped")}.get(value, value)
+
+
+def _exposure(value: str) -> str:
+    return {"publiczny": tr("publiczny", "public"), "lokalny": tr("lokalny", "local")}.get(value, value)
+
+
+SYSTEM_KEYS_EN = {"jadro": "kernel", "system": "system", "nazwa hosta": "hostname", "rozruch": "boot"}
+
+
 def describe(change: Change) -> str:
-    """Jedna linia po polsku."""
+    """Jedna linia w jezyku Pipe. Wartosci w migawkach sa kodami wewnetrznymi — tlumaczone tutaj."""
     s, k, key, d = change.section, change.kind, change.key, change.detail
     if s == "system":
         if key == "rozruch":
-            return "serwer zostal zrestartowany (nowy rozruch)"
-        return f"{key}: {d}" if k == "changed" else f"{key}: {d or '(brak)'}"
+            return tr("serwer zostal zrestartowany (nowy rozruch)", "the server was restarted (new boot)")
+        label = tr(key, SYSTEM_KEYS_EN.get(key, key))
+        return f"{label}: {d}" if k == "changed" else f"{label}: {d or tr('(brak)', '(none)')}"
     if s == "packages":
-        return {"added": f"zainstalowano pakiet {key} {d}", "removed": f"usunieto pakiet {key} ({d})",
-                "changed": f"pakiet {key}: {d}"}[k]
+        return {"added": tr(f"zainstalowano pakiet {key} {d}", f"installed package {key} {d}"),
+                "removed": tr(f"usunieto pakiet {key} ({d})", f"removed package {key} ({d})"),
+                "changed": tr(f"pakiet {key}: {d}", f"package {key}: {d}")}[k]
     if s == "containers":
         if k == "added":
-            return f"nowy kontener {key} ({d.split(' | ')[0]})"
+            return tr(f"nowy kontener {key} ({d.split(' | ')[0]})", f"new container {key} ({d.split(' | ')[0]})")
         if k == "removed":
-            return f"kontener {key} zniknal (byl: {d.split(' | ')[0]})"
+            return tr(f"kontener {key} zniknal (byl: {d.split(' | ')[0]})", f"container {key} is gone (was: {d.split(' | ')[0]})")
         old, new = d.split(" -> ", 1)
         old_image, old_id, old_state = (old.split(" | ") + ["", "", ""])[:3]
         new_image, new_id, new_state = (new.split(" | ") + ["", "", ""])[:3]
         parts = []
         if old_image != new_image:
-            parts.append(f"obraz {old_image} -> {new_image}")
+            parts.append(tr(f"obraz {old_image} -> {new_image}", f"image {old_image} -> {new_image}"))
         elif old_id != new_id:
-            parts.append(f"nowa wersja obrazu {new_image} ({old_id[7:] or '?'} -> {new_id[7:] or '?'})")
+            ids = f"({old_id[7:] or '?'} -> {new_id[7:] or '?'})"
+            parts.append(tr(f"nowa wersja obrazu {new_image} {ids}", f"new version of image {new_image} {ids}"))
         if old_state != new_state:
-            parts.append(f"{old_state} -> {new_state}")
-        return f"kontener {key}: " + ", ".join(parts or ["zmiana"])
+            parts.append(f"{_state(old_state)} -> {_state(new_state)}")
+        return tr(f"kontener {key}: ", f"container {key}: ") + ", ".join(parts or [tr("zmiana", "change")])
     if s == "ports":
-        return {"added": f"nowy port nasluchujacy {key} ({d})", "removed": f"port {key} przestal nasluchiwac",
-                "changed": f"port {key}: {d}"}[k]
+        return {"added": tr(f"nowy port nasluchujacy {key} ({_exposure(d)})", f"new listening port {key} ({_exposure(d)})"),
+                "removed": tr(f"port {key} przestal nasluchiwac", f"port {key} stopped listening"),
+                "changed": tr(f"port {key}: {d}", f"port {key}: {d}")}[k]
     if s == "services":
         if key.startswith("wlaczona: "):
             name = key.split(": ", 1)[1]
-            return f"wlaczono usluge {name}" if k == "added" else f"wylaczono usluge {name}"
-        return {"added": f"nowy plik jednostki systemd {key}", "removed": f"usunieto jednostke systemd {key}",
-                "changed": f"zmieniono jednostke systemd {key}"}[k]
+            return tr(f"wlaczono usluge {name}", f"enabled service {name}") if k == "added" \
+                else tr(f"wylaczono usluge {name}", f"disabled service {name}")
+        return {"added": tr(f"nowy plik jednostki systemd {key}", f"new systemd unit file {key}"),
+                "removed": tr(f"usunieto jednostke systemd {key}", f"removed systemd unit {key}"),
+                "changed": tr(f"zmieniono jednostke systemd {key}", f"changed systemd unit {key}")}[k]
     if s == "cron":
         if k == "added":
-            return f"nowy plik crona {key}:\n" + "\n".join(f"+ {l}" for l in d.splitlines()[:10])
+            return tr(f"nowy plik crona {key}:\n", f"new cron file {key}:\n") + "\n".join(f"+ {l}" for l in d.splitlines()[:10])
         if k == "removed":
-            return f"usunieto plik crona {key}"
-        return f"zmieniono cron {key}:\n{d}"
+            return tr(f"usunieto plik crona {key}", f"removed cron file {key}")
+        return tr(f"zmieniono cron {key}:\n", f"changed cron {key}:\n") + d
     if s == "users":
-        return {"added": f"nowe konto {key} ({d})", "removed": f"usunieto konto {key}",
-                "changed": f"konto {key}: {d}"}[k]
+        return {"added": tr(f"nowe konto {key} ({d})", f"new account {key} ({d})"),
+                "removed": tr(f"usunieto konto {key}", f"removed account {key}"),
+                "changed": tr(f"konto {key}: {d}", f"account {key}: {d}")}[k]
+    if s == "suid":
+        kind = ((d.split(" -> ")[-1] if k == "changed" else d).split(" ")[0] or "suid").upper()
+        return {"added": tr(f"nowy program z bitem {kind}: {key}", f"new program with the {kind} bit: {key}"),
+                "removed": tr(f"{key} nie ma juz bitu SUID/SGID", f"{key} no longer has the SUID/SGID bit"),
+                "changed": tr(f"zmienil sie program {kind} {key} (rozmiar/czas modyfikacji)",
+                              f"the {kind} program {key} changed (size/modification time)")}[k]
     if s == "ssh_keys":
         if k == "added":
-            return f"nowy plik authorized_keys {key}:\n" + "\n".join(f"+ {l}" for l in d.splitlines())
+            return tr(f"nowy plik authorized_keys {key}:\n", f"new authorized_keys file {key}:\n") + \
+                "\n".join(f"+ {l}" for l in d.splitlines())
         if k == "removed":
-            return f"usunieto {key}"
-        return f"zmienily sie klucze SSH w {key}:\n{d}"
-    return {"added": f"nowy plik {key}", "removed": f"usunieto plik {key}", "changed": f"zmieniono plik {key}"}[k]
+            return tr(f"usunieto {key}", f"removed {key}")
+        return tr(f"zmienily sie klucze SSH w {key}:\n", f"SSH keys changed in {key}:\n") + d
+    return {"added": tr(f"nowy plik {key}", f"new file {key}"), "removed": tr(f"usunieto plik {key}", f"removed file {key}"),
+            "changed": tr(f"zmieniono plik {key}", f"changed file {key}")}[k]
 
 
 SECTION_TITLES = {
     "system": "System", "packages": "Pakiety", "containers": "Kontenery", "ports": "Porty",
-    "services": "Uslugi systemd", "cron": "Cron", "users": "Konta", "ssh_keys": "Klucze SSH",
+    "services": "Uslugi systemd", "cron": "Cron", "users": "Konta", "ssh_keys": "Klucze SSH", "suid": "SUID/SGID",
     "configs": "Konfiguracja",
 }
+SECTION_TITLES_EN = {
+    "system": "System", "packages": "Packages", "containers": "Containers", "ports": "Ports",
+    "services": "systemd services", "cron": "Cron", "users": "Accounts", "ssh_keys": "SSH keys", "suid": "SUID/SGID",
+    "configs": "Configuration",
+}
+SECURITY_MARK = "[BEZPIECZENSTWO]"
+
+
+def security_mark() -> str:
+    return tr(SECURITY_MARK, "[SECURITY]")
 MAX_PACKAGES_LISTED = 12
 
 
 def render(changes: list[Change], limit: int = 60) -> str:
     if not changes:
-        return "(bez zmian)"
+        return tr("(bez zmian)", "(no changes)")
     lines: list[str] = []
     for section in SECTIONS:
         items = [c for c in changes if c.section == section]
@@ -482,16 +555,17 @@ def render(changes: list[Change], limit: int = 60) -> str:
         suffix = ""
         if section == "packages" and len(items) > MAX_PACKAGES_LISTED:
             shown = items[:MAX_PACKAGES_LISTED]
-            suffix = f"  ... i {len(items) - MAX_PACKAGES_LISTED} innych pakietow"
-        lines.append(f"{SECTION_TITLES[section]} ({len(items)}):")
+            more = len(items) - MAX_PACKAGES_LISTED
+            suffix = tr(f"  ... i {more} innych pakietow", f"  ... and {more} more packages")
+        lines.append(f"{tr(SECTION_TITLES[section], SECTION_TITLES_EN[section])} ({len(items)}):")
         for change in shown:
-            mark = "[BEZPIECZENSTWO] " if change.security else ""
+            mark = f"{security_mark()} " if change.security else ""
             text = describe(change).replace("\n", "\n    ")
             lines.append(f"  - {mark}{text}")
         if suffix:
             lines.append(suffix)
     if len(lines) > limit:
-        lines = lines[:limit] + [f"[... pominieto {len(lines) - limit} linii]"]
+        lines = lines[:limit] + [tr(f"[... pominieto {len(lines) - limit} linii]", f"[... {len(lines) - limit} lines skipped]")]
     return "\n".join(lines)
 
 
@@ -508,14 +582,17 @@ def timeline(hours: float, current: dict[str, dict[str, str]], now: float | None
     start = now - hours * 3600
     snaps = list_snapshots()
     if not snaps:
-        return ("Brak migawek — historia zmian dopiero sie zbiera (pierwsza migawka powstaje po starcie "
-                "czuwania, kolejne co SNAPSHOT_INTERVAL).")
+        return tr("Brak migawek — historia zmian dopiero sie zbiera (pierwsza migawka powstaje po starcie "
+                  "czuwania, kolejne co SNAPSHOT_INTERVAL).",
+                  "No snapshots — the change history is only starting to collect (the first snapshot is taken after "
+                  "monitoring starts, then every SNAPSHOT_INTERVAL).")
     base = baseline(start)
     if base is None:
-        return "Nie udalo sie wczytac migawek."
+        return tr("Nie udalo sie wczytac migawek.", "Could not load the snapshots.")
     note = ""
     if base.t > start:
-        note = f"Uwaga: najstarsza migawka jest z {_when(base.t)} — wczesniejszych zmian nie znam.\n"
+        note = tr(f"Uwaga: najstarsza migawka jest z {_when(base.t)} — wczesniejszych zmian nie znam.\n",
+                  f"Note: the oldest snapshot is from {_when(base.t)} — I do not know earlier changes.\n")
     points: list[Snapshot] = [base]
     for t, path in snaps:
         if base.t < t <= now:
@@ -530,11 +607,13 @@ def timeline(hours: float, current: dict[str, dict[str, str]], now: float | None
         if not changes:
             continue
         total += len(changes)
-        until = "teraz" if newer is points[-1] else _when(newer.t)
-        blocks.append(f"Miedzy {_when(older.t)} a {until}:\n{render(changes)}")
+        until = tr("teraz", "now") if newer is points[-1] else _when(newer.t)
+        blocks.append(tr(f"Miedzy {_when(older.t)} a {until}:\n", f"Between {_when(older.t)} and {until}:\n")
+                      + render(changes))
     if not blocks:
-        return note + f"Brak zmian od {_when(base.t)}."
-    return note + f"Zmiany od {_when(base.t)} ({total}):\n\n" + "\n\n".join(blocks)
+        return note + tr(f"Brak zmian od {_when(base.t)}.", f"No changes since {_when(base.t)}.")
+    return note + tr(f"Zmiany od {_when(base.t)} ({total}):\n\n", f"Changes since {_when(base.t)} ({total}):\n\n") \
+        + "\n\n".join(blocks)
 
 
 def summary_since(hours: float, current: dict[str, dict[str, str]], now: float | None = None) -> tuple[list[Change], float | None]:

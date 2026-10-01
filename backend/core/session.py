@@ -23,6 +23,9 @@ class ConfirmationRequest:
     # Operacja, ktora nie jest komenda shell (np. dodanie celu albo rutyny) —
     # wykonywana po TAK zamiast `command`, ktore wtedy jest tylko opisem.
     action: Callable[[], Awaitable[str]] | None = None
+    # Plan bezpiecznika (core/safety.py) pokazany w potwierdzeniu: kopie, sprawdzenia,
+    # weryfikacja. Wykonywany jest dokladnie ten plan, ktory widzial uzytkownik.
+    plan: Any = None
 
 
 @dataclass
@@ -38,6 +41,9 @@ class Session:
     workers: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Sesje techniczne (rutyny, workery) nie ucza sie stylu uzytkownika
     learns_vibe: bool = True
+    # Kto zalozyl sesje (tozsamosc z tokenu) i z jaka rola: admin | viewer (tylko odczyty)
+    owner: str = ""
+    role: str = "admin"
 
     @property
     def is_telegram(self) -> bool:
@@ -57,16 +63,17 @@ class Session:
         baza -> tryb dzialania -> pamiec (SERVER.md, DIRECTORY, skille, VIBE)
         -> alerty czuwania -> katalog roboczy (zmienia sie najczesciej).
         """
-        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT, cwd_block
+        from backend.core.i18n import prompt, tr
         from backend.core import runtime
         from backend.core.memory import prompt_context
         from backend.core.watch import prompt_alerts
 
-        base = TELEGRAM_SYSTEM_PROMPT if self.is_telegram else BASE_SYSTEM_PROMPT
+        base = prompt("TELEGRAM_SYSTEM_PROMPT" if self.is_telegram else "BASE_SYSTEM_PROMPT")
         return (
             base
-            + "\n\n--- SRODOWISKO ---\n" + runtime.describe()
+            + tr("\n\n--- SRODOWISKO ---\n", "\n\n--- ENVIRONMENT ---\n") + runtime.describe()
             + prompt_context(self.user_key)
             + prompt_alerts()
-            + cwd_block(self.cwd, telegram=self.is_telegram)
+            + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
+            + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )
