@@ -85,6 +85,8 @@ REMOTE_SOCKET: str = "/tmp/vps-agent.sock"  # socket na serwerze
 READ_LIMIT: int = 32 * 1024 * 1024       # ramki z diagramami (base64) sa duze
 DIAGRAMS_DIR: Path = Path(os.getenv("PIPE_DIAGRAMS_DIR", str(Path.home() / ".pipe" / "diagrams")))
 OPEN_IMAGES: bool = False                # ustawiane flaga --open
+WEB_PORT: int = 7400                     # `pipe web`: port lokalnej strony (--web-port)
+WEB_OPEN_BROWSER: bool = True            # `pipe web --no-browser` wylacza otwieranie przegladarki
 
 
 # ─── SSH Tunel ────────────────────────────────────────────────────────────────
@@ -389,13 +391,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.16.2[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.17.0[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.16.2[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.17.0[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -833,6 +835,43 @@ async def _show_due_reminders(client: "RemoteClient") -> None:
         console.print(Panel(body, title=f"{title} · {escape(str(event.get('due', '')))}", border_style="yellow"))
 
 
+async def run_web(client: "RemoteClient", host: str) -> None:
+    """
+    `pipe web`: interfejs w przegladarce. Ten proces serwuje strone na 127.0.0.1 i mostkuje ja na
+    backend przez ten sam tunel co CLI — token zostaje tutaj, na serwerze nie otwiera sie zaden port.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "webui"))
+    try:
+        import server as web_server
+    except ImportError as exc:
+        console.print(tr(f"[red]Nie znaleziono interfejsu webowego (clients/webui): {exc}[/red]",
+                         f"[red]Web interface not found (clients/webui): {exc}[/red]"))
+        return
+    try:
+        await client.connect()
+        await client.disconnect()
+    except Exception as exc:
+        console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
+        return
+    bridge = web_server.WebBridge(client.host, client.port, client.token, lang=LANG, server_label=host,
+                                  port=web_server.free_port(WEB_PORT))
+    console.print(Panel.fit(
+        tr(f"[bold cyan]Pipe Web[/bold cyan] — połączono z [bold white]{escape(host)}[/bold white]\n\n"
+           "[dim]Adres poniżej zawiera jednorazowy klucz dostępu i działa tylko na tym komputerze.\n"
+           "Ctrl+C kończy.[/dim]",
+           f"[bold cyan]Pipe Web[/bold cyan] — connected to [bold white]{escape(host)}[/bold white]\n\n"
+           "[dim]The address below contains a one-time access key and works only on this computer.\n"
+           "Ctrl+C to quit.[/dim]"),
+        border_style="cyan"))
+    # Adres poza ramka, w jednej linii i jako hiperlacze terminala (OSC 8): ramka lamalaby go na dwie linie,
+    # a wtedy klikniecie otwiera uciety adres bez klucza.
+    console.print(tr("Otwórz w przeglądarce (kliknij):", "Open in your browser (click):"))
+    console.print(f"[bold underline cyan][link={bridge.url}]{bridge.url}[/link][/bold underline cyan]",
+                  soft_wrap=True, highlight=False)
+    console.print()
+    await bridge.serve(open_browser=WEB_OPEN_BROWSER)
+
+
 def _free_port() -> int:
     import socket as _socket
     with _socket.socket() as sock:
@@ -972,6 +1011,15 @@ Examples:
   python cli.py --no-tunnel --local-port 7379
         """),
     )
+    parser.add_argument("mode", nargs="?", choices=("web",), default=None,
+                        help=tr("web — interfejs w przeglądarce zamiast terminala (pipe web)",
+                                "web — browser interface instead of the terminal (pipe web)"))
+    parser.add_argument("--web-port", type=int, default=int(os.getenv("PIPE_WEB_PORT", "7400")), metavar="PORT",
+                        help=tr("pipe web: port strony na 127.0.0.1 (domyślnie 7400)",
+                                "pipe web: port of the page on 127.0.0.1 (default 7400)"))
+    parser.add_argument("--no-browser", action="store_true",
+                        help=tr("pipe web: nie otwieraj przeglądarki, tylko wypisz adres",
+                                "pipe web: do not open the browser, just print the address"))
     parser.add_argument("--lang", choices=("pl", "en"), default=LANG,
                         help=tr("Język interfejsu CLI (domyślnie z PIPE_LANG, inaczej pl).",
                                 "CLI language (defaults to PIPE_LANG, otherwise pl)."))
@@ -1071,9 +1119,10 @@ Examples:
     args = parser.parse_args()
 
     session_id = args.session or str(uuid.uuid4())
-    global OPEN_IMAGES, BRIDGE_MODE, console
+    global OPEN_IMAGES, BRIDGE_MODE, console, WEB_PORT, WEB_OPEN_BROWSER
     OPEN_IMAGES = args.open
-    runner = run_cli
+    WEB_PORT, WEB_OPEN_BROWSER = args.web_port, not args.no_browser
+    runner = run_web if args.mode == "web" else run_cli
     if args.mcp:
         BRIDGE_MODE = True
         console = Console(stderr=True)

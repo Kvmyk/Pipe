@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.16.2
+Pipe v0.17.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -70,6 +70,23 @@ Zamiast tunelu SSH CLI zestawia `kubectl port-forward svc/pipe` (potrzebny `kube
 pipe --kube pipe                          # namespace, w ktorym dziala Pipe
 pipe --kube pipe --kube-context prod      # inny kontekst kubeconfig
 ```
+
+## Interfejs w przegladarce (`pipe web`)
+
+```bash
+pipe web                  # zestawia tunel jak zwykle i otwiera http://127.0.0.1:7400/?k=...
+pipe web --no-browser     # tylko wypisz adres
+pipe web --web-port 8080  # inny port (albo zmienna PIPE_WEB_PORT)
+pipe web --lang en
+```
+
+Ten sam proces co CLI: tunel SSH (albo `--kube`, `--no-tunnel`), a zamiast REPL-a -- lokalna strona. Token backendu
+zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w adresie. Strona dziala wylacznie na
+`127.0.0.1` i odrzuca zadania z obcym naglowkiem `Host` albo `Origin`.
+
+Na stronie: rozmowa, schemat serwera na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk
+*Sledze agenta*), os czasu dzialan, zakladka *Zmiany* z roznicami i cofaniem, zakladka *Alerty* ze zdarzeniami na
+zywo. W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
 
 ## Most MCP (`--mcp`)
 

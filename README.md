@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.16.2** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.17.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -21,6 +21,7 @@ Tamte narzedzia to ogolni agenci do kodu albo "do wszystkiego". Pipe jest agente
 | **Pisze pierwszy** | Czuwanie co 2 min sprawdza dyski, RAM, obciazenie, kontenery w petli restartow i **nowe publiczne porty**. Alert przychodzi na Telegram z przyciskiem *Zbadaj*. Bez LLM, bez kosztow. Co rano -- **raport** z wykresem. |
 | **Wie, co sie zmienilo** | Co godzine migawka hosta: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje. *"Co sie zmienilo od wczoraj?"* ma odpowiedz z godzina -- a przy badaniu alertu agent dostaje ja sam. |
 | **Monitoring bez konfiguracji** | Domeny z nginx/Caddy/Traefik i backupy z mapy katalogow Pipe znajduje sam: pilnuje waznosci certyfikatow, odpowiedzi stron, DNS i swiezosci backupow. Nic nie definiujesz. |
+| **Pokazuje, co robi** | `pipe web`: obok rozmowy schemat serwera, na ktorym na zywo widac, gdzie agent pracuje -- serwery, wnetrze serwera, projekt. Kazda zmiana ma roznice "przed -> po" i przycisk cofniecia. |
 | **Widzi architekture** | `/mapa` rysuje diagram tego, co stoi na serwerze: domeny -> reverse proxy -> kontenery -> bazy, projekty compose, porty wystawione na swiat. Na Telegramie przychodzi jako obraz, w CLI jako PNG + podglad w terminalu. |
 | **Zarzadza flota** | Zdalne serwery (SSH), kontenery i klastry Kubernetes to *cele*. Agent wysyla na nie **workerow** -- pod-agentow, ktorzy rownolegle badaja kazdy cel i raportuja mu, a nie Tobie. Nic nie instaluje sie po drugiej stronie. |
 | **Brama MCP dla innych agentow** | Claude Code, Cursor czy wlasny agent podlaczaja sie do Pipe przez MCP (`pipe --mcp --host root@serwer`) i pracuja na serwerze przez klasyfikator: odczyty od razu, zmiany dopiero po Twojej zgodzie w Telegramie -- z kopia i `/cofnij`. Pipe sam tez korzysta z innych serwerow MCP (GitHub, Grafana...). |
@@ -63,6 +64,10 @@ bash install.sh
 ```
 
 Od teraz w kazdym terminalu wpisujesz `pipe`. CLI zestawia tunel SSH i laczy sie z agentem.
+
+Wolisz przegladarke? `pipe web` otwiera interfejs z rozmowa, **schematem serwera na zywo** (widac, na ktorym
+elemencie agent wlasnie pracuje) i podgladem zmian z cofaniem. Dziala lokalnie, przez ten sam tunel -- na serwerze
+nie otwiera sie zaden port.
 
 ### 3. Telegram (opcjonalnie, polecane -- tu przychodza alerty)
 
@@ -120,7 +125,8 @@ skille w nowym jezyku dojda obok dotychczasowych. Opis po angielsku: [README.en.
 | `backend/` | Serwer (Docker / systemd / Kubernetes) | -- to jest backend |
 | `clients/cli/` | Twoj laptop | tunel SSH -> TCP `127.0.0.1:7379` (albo `kubectl port-forward`) |
 | `clients/telegram/` | Serwer | Unix socket |
-| `clients/discord/`, `clients/webui/` | -- | Placeholder -- PR welcome |
+| `clients/webui/` | Twoj laptop (`pipe web`) | strona na `127.0.0.1:7400`, ten sam tunel SSH co CLI |
+| `clients/discord/` | -- | Placeholder -- PR welcome |
 
 ```
 CLI / Telegram ──JSON lines──> server.py ──> agent (petla LLM + narzedzia)

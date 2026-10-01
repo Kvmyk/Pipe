@@ -26,6 +26,8 @@ class ConfirmationRequest:
     # Plan bezpiecznika (core/safety.py) pokazany w potwierdzeniu: kopie, sprawdzenia,
     # weryfikacja. Wykonywany jest dokladnie ten plan, ktory widzial uzytkownik.
     plan: Any = None
+    # Dzialanie na schemacie (events.Activity w fazie "wait") — po TAK interfejs webowy dostaje jego ciag dalszy.
+    activity: Any = None
 
 
 @dataclass
@@ -48,6 +50,11 @@ class Session:
     @property
     def is_telegram(self) -> bool:
         return self.interface.lower().startswith("telegram")
+
+    @property
+    def shows_activity(self) -> bool:
+        """Interfejs webowy rysuje schemat na zywo — tylko on dostaje zdarzenia Activity."""
+        return self.interface.lower().startswith("web")
 
     @property
     def user_key(self) -> str:

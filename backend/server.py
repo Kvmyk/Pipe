@@ -35,7 +35,7 @@ from backend.config import settings
 from backend.core.i18n import CONFIRM_PHRASES, lang, prompt, tr
 from backend.core import audit, diagram, incidents, journal, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
-from backend.core.events import Attachment, Progress
+from backend.core.events import Activity, Attachment, Progress
 from backend.core.watch import get_watcher
 
 # Wiadomosc uzytkownika moze zawierac wklejone logi — domyslne 64 KiB to za malo.
@@ -134,7 +134,7 @@ def event_frame(event) -> dict:
     """Zdarzenie agenta -> ramka protokolu (done=false)."""
     if isinstance(event, Attachment):
         return {"response": "", "status": "ok", "done": False, "attachment": event.to_wire()}
-    if isinstance(event, Progress):
+    if isinstance(event, (Progress, Activity)):
         return {"response": "", "status": "ok", "done": False, "event": event.to_wire()}
     chunk = str(event)
     if "[POTWIERDZ]" in chunk and any(phrase in chunk for phrase in CONFIRM_PHRASES):
@@ -233,6 +233,19 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _send(writer, _data({"routines": [r.describe() for r in routines.load_routines()]}))
         elif command == "reminders":
             await _reminders(writer, request, interface, role)
+        elif command == "graph":
+            from backend.core import graph, infra
+            found = await infra.discover()
+            await _send(writer, _data(graph.build(found, [a.to_event() for a in get_watcher().active.values()])))
+        elif command == "journal_changes":
+            try:
+                entry = journal.load(str(request.get("id", ""))) if request.get("id") else None
+            except ValueError:
+                entry = None
+            if entry is None:
+                await _send(writer, _error(tr("Nie ma takiego wpisu w dzienniku.", "No such journal entry.")))
+                return
+            await _send(writer, _data(journal.changes(entry)))
         elif command == "diagram":
             await _send_infra_diagram(writer, args)
         elif command == "investigate":
