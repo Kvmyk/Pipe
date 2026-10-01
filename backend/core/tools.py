@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -150,6 +150,22 @@ TOOLS: list[dict] = [
                                    "description": "Dla mode=infra: dolacz aplikacje z klastra (kubectl)."},
         },
         ["mode"],
+    ),
+    _tool(
+        "server_history",
+        "Pamiec serwera w czasie (same odczyty, bez LLM). changes: co sie zmienilo na hoscie w podanym okresie "
+        "— pakiety, kontenery i obrazy, porty, uslugi systemd, cron, konta, klucze SSH, konfiguracje (nginx, "
+        "sshd, sudoers, compose), restart serwera — z przedzialem czasu kazdej zmiany. UZYJ NAJPIERW przy "
+        "awarii ('przestalo dzialac', 'od wczoraj'). chart: wykres load/RAM/dyskow z historii czuwania, "
+        "wysylany uzytkownikowi jako obraz. checks: waznosc certyfikatow TLS i odpowiedz domen z konfiguracji "
+        "proxy, rekordy DNS, swiezosc backupow z DIRECTORY.",
+        {
+            "operation": {"type": "string", "enum": ["changes", "chart", "checks"]},
+            "since": {"type": "string",
+                      "description": "Okres wstecz: '24h' (domyslnie), '3h', '7d'. Dla changes i chart."},
+            "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},
+        },
+        ["operation"],
     ),
     _tool(
         "server_md",

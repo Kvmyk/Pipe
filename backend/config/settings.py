@@ -106,3 +106,35 @@ WATCH_INTERVAL: int = _int("WATCH_INTERVAL", 120)
 WATCH_DISK_PCT: int = _int("WATCH_DISK_PCT", 90)
 WATCH_MEM_PCT: int = _int("WATCH_MEM_PCT", 92)
 WATCH_LOAD_FACTOR: int = _int("WATCH_LOAD_FACTOR", 2)
+# Historia pomiarow (wykresy) — probka przy kazdym sprawdzeniu czuwania.
+METRICS_KEEP_DAYS: int = _int("METRICS_KEEP_DAYS", 8)
+# Migawki stanu hosta ("co sie zmienilo?") — co ile sekund i jak dlugo trzymac.
+SNAPSHOT_INTERVAL: int = _int("SNAPSHOT_INTERVAL", 3600)
+SNAPSHOT_KEEP_DAYS: int = _int("SNAPSHOT_KEEP_DAYS", 30)
+# Sprawdzenia bez konfiguracji: certyfikaty i odpowiedz domen z konfiguracji proxy, swiezosc backupow z DIRECTORY.
+CHECKS_INTERVAL: int = _int("CHECKS_INTERVAL", 3600)
+WATCH_SITES: bool = os.getenv("WATCH_SITES", "1").strip().lower() not in ("0", "false", "no", "nie")
+WATCH_CERT_DAYS: int = _int("WATCH_CERT_DAYS", 14)
+WATCH_BACKUP_HOURS: int = _int("WATCH_BACKUP_HOURS", 26)
+# Domeny i sciezki pomijane przez te sprawdzenia (po przecinku).
+WATCH_IGNORE: str = os.getenv("WATCH_IGNORE", "")
+# Poranny raport (HH:MM, czas serwera); pusty albo "off" wylacza.
+DIGEST_TIME: str = os.getenv("DIGEST_TIME", "07:00").strip()
+
+
+# ─── Koszty LLM ─────────────────────────────────────────────────────────────
+def _float(name: str, default: float = 0.0) -> float:
+    try:
+        return float(os.getenv(name, str(default)).replace(",", "."))
+    except ValueError:
+        return default
+
+
+# Ceny w USD za milion tokenow (0 = nieznane — licznik pokazuje wtedy same tokeny).
+LLM_PRICE_IN: float = _float("LLM_PRICE_IN")
+LLM_PRICE_OUT: float = _float("LLM_PRICE_OUT")
+WORKER_PRICE_IN: float = _float("WORKER_PRICE_IN", LLM_PRICE_IN)
+WORKER_PRICE_OUT: float = _float("WORKER_PRICE_OUT", LLM_PRICE_OUT)
+# Dzienne limity (0 = bez limitu). Po przekroczeniu agent odmawia zapytan do LLM do polnocy.
+DAILY_TOKEN_LIMIT: int = _int("DAILY_TOKEN_LIMIT", 0)
+DAILY_COST_LIMIT: float = _float("DAILY_COST_LIMIT")

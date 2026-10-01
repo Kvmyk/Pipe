@@ -11,6 +11,7 @@ from .git import handle_git_command
 from .docker import handle_docker_manage
 from .memory import handle_directory, handle_server_md, handle_skill_manage, handle_vibe
 from .diagram import handle_diagram
+from .history import handle_server_history
 from .remote import handle_delegate, handle_remote_exec, handle_target_manage
 from .routines import handle_routine_manage
 from .system import (
@@ -39,4 +40,5 @@ __all__ = [
     "handle_remote_exec",
     "handle_delegate",
     "handle_routine_manage",
+    "handle_server_history",
 ]

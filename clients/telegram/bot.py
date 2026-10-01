@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.9.2
+Pipe v0.10.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -12,8 +12,9 @@ Funkcje:
   - Postep workerow na zywo w jednej, aktualizowanej wiadomosci
   - Czuwanie: alerty i raporty rutyn przychodza same, z przyciskiem "Zbadaj"
   - InlineKeyboard dla potwierdzen (TAK / NIE)
-  - Komendy: /status /mapa /server /katalogi /skille /alerty /rutyny /cele /vibe /historia /pomoc,
-    kazdy skill ma wlasna komende /<nazwa>
+  - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
+    /cele /vibe /koszt /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
+  - Poranny raport przychodzi sam (DIGEST_TIME w backendzie) razem z wykresem obciazenia
   - Menu '/' ustawiane per czat dozwolonego uzytkownika (opisy skilli nie wyciekaja do obcych)
   - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
 
@@ -72,9 +73,11 @@ from tg_format import (
     collect_response_text,
     format_alert,
     format_alerts,
+    format_digest,
     format_directory,
     format_help,
     format_list,
+    format_pre,
     format_routine,
     format_skill_list,
     parse_command,
@@ -321,6 +324,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Czuwam w tle: jesli cos sie zepsuje, napisze pierwszy.\n\n"
         "<b>Na poczatek:</b>\n"
         "/mapa - diagram tego, co stoi na serwerze\n"
+        "/raport - stan, zmiany od wczoraj, certyfikaty i backupy (przychodzi sam co rano)\n"
         "/server - co wiem o serwerze (SERVER.md)\n"
         "/status - szybki przeglad obciazenia\n"
         "/pomoc - wszystkie komendy\n\n"
@@ -363,6 +367,57 @@ async def cmd_mapa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "Chcesz inny widok? Napisz np. \"narysuj przeplyw zapytania do sklepu\" albo \"pokaz tylko bazy danych\".")
 
     await _backend_call(update, context, go())
+
+
+async def _command_with_image(update: Update, context: ContextTypes.DEFAULT_TYPE, command: str, args: str,
+                              render) -> None:
+    """Komenda bez LLM, ktora moze zwrocic obraz (wykres) i dane do pokazania tekstem."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        frames = [frame async for frame in get_client(user_id).command(command, args=args)]
+        for frame in frames:
+            if frame.get("attachment"):
+                await _send_attachment(context.bot, chat_id, frame["attachment"])
+        text = render(response_data(frames))
+        if text:
+            await _send_html(context.bot, chat_id, text)
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_zmiany(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/zmiany [24h|3d] -- co sie zmienilo na serwerze (migawki, bez LLM)."""
+    args = " ".join(context.args or []).strip()
+    await _command_with_image(update, context, "changes", args,
+                              lambda d: format_pre(f"Zmiany na serwerze ({args or '24h'})", d.get("text", "")))
+
+
+async def cmd_wykres(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/wykres [load|ram|dysk] [24h|7d] -- wykres z historii czuwania."""
+    args = " ".join(context.args or []).strip()
+    await _command_with_image(update, context, "chart", args,
+                              lambda d: "" if d.get("image") else html.escape(d.get("summary", "")))
+
+
+async def cmd_zdrowie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/zdrowie -- certyfikaty, strony, DNS, backupy."""
+    await _command_with_image(update, context, "health", "",
+                              lambda d: format_pre("Zdrowie uslug", d.get("text", "")))
+
+
+async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/raport -- poranny raport na zadanie."""
+    await _command_with_image(update, context, "digest", "", format_digest)
+
+
+async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/koszt -- zuzycie tokenow LLM."""
+    await _command_with_image(update, context, "usage", "", lambda d: format_pre("Koszt LLM", d.get("text", "")))
 
 
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -578,11 +633,15 @@ async def _broadcast(app: Application, event: dict) -> None:
         markup = _investigate_keyboard(event["id"]) if event.get("state") != "resolved" and event.get("id") else None
     elif kind == "routine":
         text, markup = format_routine(event), None
+    elif kind == "digest":
+        text, markup = format_digest(event), None
     else:
         return
     for user_id in ALLOWED_USER_IDS:
         try:
             await _send_html(app.bot, user_id, text, markup)
+            if event.get("attachment"):
+                await _send_attachment(app.bot, user_id, event["attachment"])
         except Exception as exc:
             print(f"[Pipe Telegram] Nie wyslano zdarzenia do {user_id}: {exc}", flush=True)
 
@@ -685,6 +744,11 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("raport", cmd_raport))
+    app.add_handler(CommandHandler("zmiany", cmd_zmiany))
+    app.add_handler(CommandHandler("wykres", cmd_wykres))
+    app.add_handler(CommandHandler("zdrowie", cmd_zdrowie))
+    app.add_handler(CommandHandler("koszt", cmd_koszt))
     app.add_handler(CommandHandler("mapa", cmd_mapa))
     app.add_handler(CommandHandler("historia", cmd_historia))
     app.add_handler(CommandHandler("server", cmd_server))

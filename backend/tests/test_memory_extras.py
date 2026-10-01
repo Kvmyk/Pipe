@@ -60,7 +60,7 @@ class TestVibe:
 
     def test_distill_writes_note(self):
         class Agent:
-            async def complete(self, system, user, model=None):
+            async def complete(self, system, user, model=None, who=""):
                 assert "wiadomosci uzytkownika" in user and "ile mam ramu" in user
                 return "```markdown\n# VIBE\n\n- pisze krotko, bez polskich znakow\n```"
 
@@ -70,7 +70,7 @@ class TestVibe:
 
     def test_distill_ignores_garbage(self):
         class Agent:
-            async def complete(self, system, user, model=None):
+            async def complete(self, system, user, model=None, who=""):
                 return "Nie mam obserwacji."
 
         assert asyncio.run(vibe.VibeLearner(Agent()).distill("cli", ["x"])) is None

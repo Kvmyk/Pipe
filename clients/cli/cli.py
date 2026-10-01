@@ -353,9 +353,10 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.9.2[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.10.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-            "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
+            "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
+            "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
             "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
             "[bold cyan]/exit[/bold cyan][/dim]",
             border_style="cyan",
@@ -424,6 +425,10 @@ SCAN_WORDS = ("aktualizuj", "odswiez", "odśwież", "skanuj")
 HELP_TEXT = """**Komendy**
 
 - `/status` — stan serwera
+- `/raport` — poranny raport: stan, zmiany od wczoraj, certyfikaty, backupy, aktualizacje
+- `/zmiany [24h|3d]` — co się zmieniło na serwerze (pakiety, kontenery, porty, cron, konta, konfiguracje)
+- `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
+- `/zdrowie` — certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów
 - `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
 - `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
 - `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
@@ -432,6 +437,7 @@ HELP_TEXT = """**Komendy**
 - `/rutyny` — zadania wykonywane według harmonogramu
 - `/cele` — zdalne serwery, kontenery i klastry
 - `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
+- `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
 - `/pomoc` — ta lista
 - `/exit` — wyjście
@@ -491,6 +497,37 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         for resp in responses:
             if resp.get("status") == "error":
                 console.print(f"[red]{escape(resp.get('response', ''))}[/red]")
+        return True
+
+    if name == "zmiany":
+        data = _response_data(await client.send_command("changes", args=args))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        return True
+
+    if name == "wykres":
+        data = _response_data(await client.send_command("chart", args=args))
+        console.print(f"[dim]{escape(data.get('summary', ''))}[/dim]")
+        return True
+
+    if name == "zdrowie":
+        console.print("[dim]Sprawdzam certyfikaty, strony i backupy...[/dim]")
+        data = _response_data(await client.send_command("health"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        return True
+
+    if name == "raport":
+        console.print("[dim]Składam raport...[/dim]")
+        data = _response_data(await client.send_command("digest"))
+        lines = [f"**{data.get('title', 'Raport')}**"]
+        for section in data.get("sections", []):
+            lines.append(f"\n**{section.get('title', '')}**\n")
+            lines += [f"- {line}" for line in section.get("lines", [])]
+        console.print(Markdown("\n".join(lines)))
+        return True
+
+    if name == "koszt":
+        data = _response_data(await client.send_command("usage"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
         return True
 
     if name == "mermaid":

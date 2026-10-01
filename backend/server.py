@@ -12,7 +12,7 @@ Dostęp z laptopa odbywa się przez tunel SSH:
 Protokół JSON (linia po linii) — pełny opis w docs/protocol.md:
   Żądanie:  {"message": "tekst", "session_id": "uuid", "interface": "cli|telegram:123", "token": "..."}
   Żądanie:  {"confirm": true|false, "session_id": "uuid", "token": "..."}
-  Żądanie:  {"command": "<nazwa>", "session_id": "uuid", ...}   (COMMANDS ponizej)
+  Żądanie:  {"command": "<nazwa>", "session_id": "uuid", ...}   (lista w _handle_command)
   (pole "token" wymagane tylko gdy AGENT_TOKEN jest ustawiony w .env)
   Odpowiedź: {"response": "tekst", "status": "ok|confirm|error", "done": true|false}
              + opcjonalnie "attachment" (plik, np. diagram PNG), "event" (postep, alert), "data"
@@ -40,7 +40,7 @@ from backend.config.prompts import (
     SCAN_SERVER_UPDATE,
     STATUS_MESSAGE,
 )
-from backend.core import audit, diagram, memory, routines, runtime, targets
+from backend.core import audit, diagram, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
 from backend.core.events import Attachment, Progress
 from backend.core.watch import get_watcher
@@ -219,11 +219,61 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 await _send(writer, _error("Nie znam tego alertu (serwer mogl zostac zrestartowany)."))
                 return
             message = INVESTIGATE_ALERT_MESSAGE.format(title=alert["title"], detail=alert["detail"])
+            message += await _recent_changes_context()
             await _stream_chat(writer, agent, session_id, message, interface, generated=True)
+        elif command == "changes":
+            from backend.core.handlers.history import changes_text
+            hours = metrics.parse_hours(args, default=24)
+            await _send(writer, _data({"text": await changes_text(hours), "hours": hours}))
+        elif command == "chart":
+            await _send_chart(writer, args)
+        elif command == "health":
+            from backend.core.handlers.history import checks_text
+            await _send(writer, _data({"text": await checks_text()}))
+        elif command == "digest":
+            result = await get_watcher().build_digest(fresh_checks=True)
+            if result.attachment is not None:
+                await _send(writer, {"response": "", "status": "ok", "done": False,
+                                     "attachment": result.attachment.to_wire()})
+            event = result.to_event()
+            event.pop("attachment", None)
+            await _send(writer, _data(event))
+        elif command == "usage":
+            priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
+            await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
+                                                   cost_limit=settings.DAILY_COST_LIMIT)))
         else:
             await _send(writer, _error(f"Nieznana komenda: {command!r}"))
     except OSError as exc:
         await _send(writer, _error(f"Blad odczytu pamieci agenta: {exc}"))
+
+
+async def _recent_changes_context(hours: float = 24) -> str:
+    """Zmiany na serwerze z ostatniej doby — kontekst do badania alertu (czeste zrodlo awarii)."""
+    from backend.core.handlers.history import changes_text
+    try:
+        text = await changes_text(hours)
+    except Exception as exc:
+        return f"\n\n(Nie udalo sie odczytac historii zmian: {exc})"
+    return (f"\n\nZmiany na serwerze z ostatnich {int(hours)} h (migawki Pipe — sprawdz, czy ktoras "
+            f"mogla wywolac problem):\n{text}")
+
+
+async def _send_chart(writer, args: str) -> None:
+    """/wykres [load|ram|dysk] [24h] — obraz z historii czuwania, bez LLM."""
+    from backend.core.handlers.history import chart_attachment
+
+    metric_name, hours_text = "load", ""
+    for word in args.split():
+        if metrics.normalize_metric(word):
+            metric_name = word
+        else:
+            hours_text = word
+    metric = metrics.normalize_metric(metric_name) or "load"
+    attachment, text = await chart_attachment(metric, metrics.parse_hours(hours_text, default=24))
+    if attachment is not None:
+        await _send(writer, {"response": "", "status": "ok", "done": False, "attachment": attachment.to_wire()})
+    await _send(writer, _data({"summary": text, "metric": metric, "image": attachment is not None}))
 
 
 async def _send_infra_diagram(writer, title: str) -> None:
