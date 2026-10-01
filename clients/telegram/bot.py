@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.16.1
+Pipe v0.16.2
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -85,6 +85,7 @@ from tg_format import (
     format_help,
     format_investigation,
     format_list,
+    format_listing,
     format_pre,
     format_reminder,
     format_routine,
@@ -433,7 +434,7 @@ async def cmd_zmiany(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """/zmiany [24h|3d] -- co sie zmienilo na serwerze (migawki, bez LLM)."""
     args = " ".join(context.args or []).strip()
     await _command_with_image(update, context, "changes", args,
-                              lambda d: format_pre(tr(f"Zmiany na serwerze ({args or '24h'})",
+                              lambda d: format_listing(tr(f"Zmiany na serwerze ({args or '24h'})",
                                                          f"Changes on the server ({args or '24h'})"), d.get("text", "")))
 
 
@@ -447,7 +448,7 @@ async def cmd_wykres(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_zdrowie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/zdrowie -- certyfikaty, strony, DNS, backupy."""
     await _command_with_image(update, context, "health", "",
-                              lambda d: format_pre(tr("Zdrowie uslug", "Service health"), d.get("text", "")))
+                              lambda d: format_listing(tr("Zdrowie uslug", "Service health"), d.get("text", "")))
 
 
 async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -462,19 +463,19 @@ async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/koszt -- zuzycie tokenow LLM."""
-    await _command_with_image(update, context, "usage", "", lambda d: format_pre(tr("Koszt LLM", "LLM cost"), d.get("text", "")))
+    await _command_with_image(update, context, "usage", "", lambda d: format_listing(tr("Koszt LLM", "LLM cost"), d.get("text", "")))
 
 
 async def cmd_incydenty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/incydenty -- pamiec incydentow: rozwiazane alerty z ustaleniami i tym, co pomoglo (bez LLM)."""
     await _command_with_image(update, context, "incidents", "",
-                              lambda d: format_pre(tr("Pamiec incydentow", "Incident memory"), d.get("text", "")))
+                              lambda d: format_listing(tr("Pamiec incydentow", "Incident memory"), d.get("text", "")))
 
 
 async def cmd_dziennik(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/dziennik -- zatwierdzone zmiany z kopiami (bez LLM)."""
     await _command_with_image(update, context, "journal", "",
-                              lambda d: format_pre(tr("Dziennik zmian", "Change journal"), d.get("text", ""))
+                              lambda d: format_listing(tr("Dziennik zmian", "Change journal"), d.get("text", ""))
                               + tr("\n<i>/cofnij &lt;id&gt; — cofnij wybrana</i>", "\n<i>/undo &lt;id&gt; — undo the chosen one</i>"))
 
 
@@ -522,7 +523,7 @@ async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     async def go() -> None:
         result = response_data([f async for f in get_client(user.id).command("undo", id=parts[2], execute=True)])
-        await _send_html(context.bot, query.message.chat_id, format_pre(tr("Cofniecie", "Undo"), result.get("text", "")))
+        await _send_html(context.bot, query.message.chat_id, format_listing(tr("Cofniecie", "Undo"), result.get("text", "")))
 
     await _backend_call(update, context, go())
 
@@ -630,7 +631,7 @@ async def cmd_przypomnienia(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         head = tr(f"Anulowano #{data['cancelled']}.\n", f"Cancelled #{data['cancelled']}.\n") if data.get("cancelled") else ""
         hint = tr("\n<i>Napisz np. \"przypomnij mi za 2 godziny o backupie\". Anulowanie: /przypomnienia anuluj &lt;id&gt;</i>",
                   "\n<i>Write e.g. \"remind me in 2 hours about the backup\". Cancel: /reminders cancel &lt;id&gt;</i>")
-        return html.escape(head) + format_pre(tr("Przypomnienia", "Reminders"), data.get("text", "")) + hint \
+        return html.escape(head) + format_listing("", data.get("text", "")) + hint \
             + subscription_note()
 
     await _show_data(update, context, "reminders", render, cancel=cancel)

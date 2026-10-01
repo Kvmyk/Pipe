@@ -105,7 +105,33 @@ def test_alert_broadcast_to_allowed_users(monkeypatch):
 
 def test_routine_report_is_escaped():
     text = tg_format.format_routine({"name": "backup", "status": "PROBLEM", "report": "<script> & x"})
-    assert "&lt;script&gt; &amp; x" in text and "<pre>" in text
+    assert "&lt;script&gt; &amp; x" in text and "<pre>" not in text
+
+
+def test_routine_report_is_a_readable_message_not_a_code_block():
+    report = ("=== WORKER backup (cel: local, komend: 4) ===\nSTATUS: PROBLEM\n"
+              "USTALENIA: backup w `/var/backups/pg` ma 3 dni, **dysk** 91%\n- plik a_b.dump: 0 B\n"
+              "PROPOZYCJE: `rm *.tmp`\n<a href=\"http://evil\">kliknij</a>")
+    text = tg_format.format_routine({"name": "backup", "status": "PROBLEM", "report": report})
+    assert text.startswith("<b>Rutyna backup</b> — ⚠️ PROBLEM\n\n<b>USTALENIA:</b>")
+    assert "STATUS:" not in text and "=== WORKER" not in text and text.endswith("<i>cel: local, komend: 4</i>")
+    assert "<code>/var/backups/pg</code>" in text and "<b>dysk</b>" in text and "• plik a_b.dump: 0 B" in text
+    assert "<code>rm *.tmp</code>" in text                    # komenda doslownie, gwiazdka nie staje sie pogrubieniem
+    assert "<a href" not in text and "&lt;a href=" in text    # link z raportu nie jest klikalny
+    assert tg_format.format_routine({"name": "x", "status": "OK", "report": ""}).endswith("<i>(pusty raport)</i>")
+
+
+def test_listing_uses_bullets_headers_and_literal_details():
+    text = tg_format.format_listing("Zmiany (24h)", "Pakiety (2):\n  - pakiet nginx: 1.0 -> 1.2\n"
+                                    "  - [BEZPIECZENSTWO] nowe konto <eve>\nCron (1):\n  - zmieniono cron root:\n"
+                                    "    + c\n    - b_*x*")
+    assert text.splitlines()[0] == "<b>Zmiany (24h)</b>" and "<pre>" not in text
+    assert "<b>Pakiety (2):</b>\n• pakiet nginx: 1.0 -&gt; 1.2" in text
+    assert "• <b>[BEZPIECZENSTWO]</b> nowe konto &lt;eve&gt;" in text
+    assert "    <code>+ c</code>\n    <code>- b_*x*</code>" in text
+    ids = tg_format.format_listing("", "Przypomnienia (czas serwera: 20:47):\n- #efe88c 20:57 (za 10 min): kawa")
+    assert ids == "<b>Przypomnienia (czas serwera: 20:47):</b>\n• <code>#efe88c</code> 20:57 (za 10 min): kawa"
+    assert tg_format.format_listing("Dziennik", "").endswith("(pusto)")
 
 
 # --- Kanal zdarzen: przypomnienia dochodza zawsze, a cisza ma byc wyjasniona ---
@@ -204,3 +230,13 @@ def test_missing_socket_is_recorded(monkeypatch, tmp_path):
         task.cancel()
     asyncio.run(scenario())
     assert "nie-ma.sock" in bot._subscription["error"]
+
+
+def test_report_formatting_leaves_code_untouched():
+    report = "USTALENIA: log ponizej\n```\nERROR: brak miejsca\n- linia logu\n```\n- wniosek `- x` koniec"
+    text = tg_format.report_html(report)
+    assert "<pre>ERROR: brak miejsca\n- linia logu</pre>" in text          # w bloku kodu nic sie nie zmienia
+    assert text.startswith("<b>USTALENIA:</b>") and "• wniosek <code>- x</code> koniec" in text
+    # poprawny HTML Telegrama: brak tagow wewnatrz <pre>/<code>
+    import re
+    assert not re.search(r"<(pre|code)>[^<]*<(b|i)>", text)

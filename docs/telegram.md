@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.16.1
+Pipe v0.16.2
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -83,6 +83,16 @@ Obslugiwane tagi HTML:
 Bot automatycznie konwertuje resztki Markdowna (jesli LLM je wygeneruje) na odpowiadajace tagi HTML.
 
 Tekst w backtickach -- w tym komendy w potwierdzeniach -- jest pokazywany doslownie, bez konwersji Markdowna. Przed kliknieciem TAK widzisz wiec dokladnie te komende, ktora zostanie wykonana (lacznie z `*`, `_`, `\\`, `<`, `&` i backtickami). Znaki `<`, `>` i `&` poza tagami sa escapowane automatycznie, wiec Telegram nie odrzuca wiadomosci. Kod formatowania: `clients/telegram/tg_format.py`.
+
+### Raporty i zestawienia
+
+- Raporty pisane przez workery (rutyny, badanie alertu, zadanie jednorazowe) przychodza jako zwykla wiadomosc:
+  status w naglowku, sekcje `USTALENIA:` / `PROPOZYCJE:` pogrubione, listy z wypunktowaniem, komendy w backtickach
+  doslownie. Tagi HTML z raportu sa pokazywane jako tekst -- raport powstaje bez nadzoru, wiec nie moze wstawic
+  klikalnego linku.
+- Zestawienia z backendu (`/zmiany`, `/zdrowie`, `/koszt`, `/dziennik`, `/przypomnienia`, `/incydenty`, wynik
+  `/cofnij`) to naglowki i listy; identyfikatory (`#ab12cd`) mozna skopiowac dotknieciem.
+- Blok kodu zostaje tam, gdzie tresc jest kodem albo logiem: `/historia`, roznice plikow, wynik komendy po zgodzie.
 
 ## Wymagania
 

@@ -315,7 +315,7 @@ class TestTelegram:
         text = tg_format.format_reminder({"kind": "message", "text": "sprawdz <b>dysk</b>", "set_at": "2026-10-01 19:53"})
         assert text.startswith("<b>Przypomnienie</b>") and "&lt;b&gt;dysk&lt;/b&gt;" in text
         task = tg_format.format_reminder({"kind": "task", "text": "backup", "report": "OK <x>", "set_at": ""})
-        assert "<pre>OK &lt;x&gt;</pre>" in task
+        assert "OK &lt;x&gt;" in task and "<pre>" not in task
         monkeypatch.setenv("PIPE_LANG", "en")
         assert tg_format.format_reminder({"kind": "message", "text": "x"}).startswith("<b>Reminder</b>")
 

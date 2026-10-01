@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.16.1
+Pipe v0.16.2
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """

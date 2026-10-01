@@ -63,10 +63,14 @@ def _sanitize_html(text: str) -> str:
     return "".join(out)
 
 
-def to_telegram_html(text: str) -> str:
+def to_telegram_html(text: str, allow_tags: bool = True) -> str:
     """
     Zamienia odpowiedz backendu (HTML od LLM + ewentualne resztki Markdowna
     + komunikaty protokolu z komendami w backtickach) na poprawny HTML Telegrama.
+
+    allow_tags=False: tagi HTML w tekscie sa pokazywane doslownie (escapowane), dziala tylko
+    Markdown i backticki. Dla raportow pisanych bez nadzoru (workery, rutyny) — tresc, na ktora
+    mogl wplynac cudzy tekst z serwera, nie wstawi uzytkownikowi linku ani ukrytego fragmentu.
     """
     # 1. Wytnij fragmenty kodu, zanim cokolwiek je zmieni. Zawartosc jest
     #    escapowana bez unescape — komenda ma byc pokazana znak w znak.
@@ -85,6 +89,9 @@ def to_telegram_html(text: str) -> str:
     text = _CODE_BLOCK.sub(_stash("pre"), text)
     text = _INLINE_CODE.sub(_stash("code"), text)
 
+    if not allow_tags:
+        text = html.escape(text, quote=False)
+
     # 2. Resztki Markdowna, ktore LLM moze wygenerowac mimo instrukcji.
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"<b>\1</b>", text)
@@ -93,7 +100,8 @@ def to_telegram_html(text: str) -> str:
     text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
 
     # 3. Escapuj wszystko poza dozwolonymi tagami, potem wstaw kod z powrotem.
-    text = _sanitize_html(text)
+    if allow_tags:
+        text = _sanitize_html(text)
     return _PLACEHOLDER.sub(lambda m: code[int(m.group(1))], text)
 
 
@@ -340,14 +348,58 @@ def format_alert(event: dict) -> str:
     return text
 
 
+_WORKER_HEAD = re.compile(r"^=== WORKER (?P<name>\S+) \((?P<meta>[^)]*)\) ===\s*$", re.MULTILINE)
+_STATUS_LINE = re.compile(r"\A\s*STATUS:\s*(OK|PROBLEM)\s*\n?", re.IGNORECASE)
+# Etykiety sekcji raportu workera na poczatku linii: USTALENIA:, PROPOZYCJE:, FINDINGS:, PROPOSALS: ...
+_SECTION_LABEL = re.compile(r"^([A-ZĄĆĘŁŃÓŚŹŻ][A-ZĄĆĘŁŃÓŚŹŻ ]{2,30}):", re.MULTILINE)
+_LIST_DASH = re.compile(r"^(\s*)[-*] (?=\S)", re.MULTILINE)
+
+
+def _outside_code(text: str, transform) -> str:
+    """Stosuje `transform` do fragmentow tekstu poza blokami i wstawkami kodu (backticki)."""
+    out, position = [], 0
+    spans = sorted([m.span() for m in _CODE_BLOCK.finditer(text)] + [m.span() for m in _INLINE_CODE.finditer(text)])
+    for start, end in spans:
+        if start < position:
+            continue                      # wstawka wewnatrz bloku juz pominietego
+        out.append(transform(text[position:start]))
+        out.append(text[start:end])
+        position = end
+    out.append(transform(text[position:]))
+    return "".join(out)
+
+
+def report_html(report: str, limit: int = 3000, strip_status: bool = False) -> str:
+    """
+    Raport workera (rutyna, badanie alertu, zadanie jednorazowe) jako zwykla wiadomosc: naglowek
+    techniczny `=== WORKER ... ===` trafia do stopki, etykiety sekcji sa pogrubione, listy maja
+    wypunktowanie, a komendy w backtickach zostaja doslowne. Tagi HTML z raportu sa escapowane.
+    """
+    text = str(report or "").strip()
+    footer = ""
+    head = _WORKER_HEAD.search(text)
+    if head:
+        footer = f"\n<i>{html.escape(head.group('meta'))}</i>"
+        text = (text[:head.start()] + text[head.end():]).strip()
+    if strip_status:
+        text = _STATUS_LINE.sub("", text, count=1).strip()
+    if len(text) > limit:
+        text = text[:limit] + "\n[...]"
+    if not text:
+        return tr("<i>(pusty raport)</i>", "<i>(empty report)</i>") + footer
+    # Etykiety i wypunktowania tylko poza kodem — Telegram nie pozwala na tagi wewnatrz <pre>/<code>,
+    # a tresc w backtickach ma zostac znak w znak.
+    text = _outside_code(text, lambda part: _LIST_DASH.sub(r"\1• ", _SECTION_LABEL.sub(r"**\1:**", part)))
+    return to_telegram_html(text, allow_tags=False) + footer
+
+
 def format_routine(event: dict, limit: int = 3000) -> str:
-    """Raport rutyny jako HTML Telegrama (tresc od modelu — escapowana, w bloku)."""
+    """Raport rutyny jako HTML Telegrama: status w naglowku, tresc jako zwykly tekst (nie blok kodu)."""
     name = html.escape(str(event.get("name", "")))
     status = str(event.get("status", ""))
-    report = str(event.get("report", "")).strip()
-    if len(report) > limit:
-        report = report[:limit] + "\n[...]"
-    return tr(f"<b>Rutyna {name}</b>", f"<b>Routine {name}</b>") + f" — {html.escape(status)}\n<pre>{html.escape(report)}</pre>"
+    mark = {"OK": "✅", "PROBLEM": "⚠️"}.get(status.upper(), "")
+    head = tr(f"<b>Rutyna {name}</b>", f"<b>Routine {name}</b>") + f" — {mark} {html.escape(status)}".rstrip()
+    return f"{head}\n\n{report_html(event.get('report', ''), limit, strip_status=True)}"
 
 
 def format_list(title: str, items: list[str], empty: str) -> str:
@@ -406,8 +458,51 @@ def format_digest(event: dict) -> str:
     return "\n".join(lines)
 
 
+_ENTRY_ID = re.compile(r"^#([0-9a-f]{6,10})\b")
+_SECURITY_MARKS = ("[BEZPIECZENSTWO]", "[SECURITY]")
+
+
+def _listing_line(body: str) -> str:
+    """Tresc jednej pozycji: identyfikator (#ab12cd) do skopiowania jednym dotknieciem, znacznik bezpieczenstwa pogrubiony."""
+    text = html.escape(body, quote=False)
+    for mark in _SECURITY_MARKS:
+        if text.startswith(mark):
+            return f"<b>{mark}</b>" + text[len(mark):]
+    return _ENTRY_ID.sub(r"<code>#\1</code>", text)
+
+
+def format_listing(title: str, text: str, limit: int = 3500) -> str:
+    """
+    Zestawienie od backendu (bez LLM) jako zwykla wiadomosc — /zmiany, /zdrowie, /koszt, /dziennik,
+    /przypomnienia, /incydenty. Uklad tekstu backendu: linia konczaca sie ':' to naglowek, '- ' to pozycja,
+    wciecie 4+ spacji to szczegoly (np. roznica w pliku) — te zostaja czcionka o stalej szerokosci.
+    """
+    body = (text or "").strip("\n")
+    if len(body) > limit:
+        body = body[:limit] + "\n[...]"
+    out = [f"<b>{html.escape(title)}</b>"] if title else []
+    if not body.strip():
+        return "\n".join(out + [tr("(pusto)", "(empty)")])
+    for raw in body.splitlines():
+        stripped = raw.strip()
+        indent = len(raw) - len(raw.lstrip(" "))
+        if not stripped:
+            out.append("")
+        elif indent >= 4:
+            out.append(f"    <code>{html.escape(stripped, quote=False)}</code>")
+        elif stripped.startswith("- "):
+            out.append("• " + _listing_line(stripped[2:]))
+        elif stripped.endswith(":") and not stripped.startswith("#"):
+            out.append(("\n" if len(out) > 1 and out[-1] != "" else "") + f"<b>{html.escape(stripped, quote=False)}</b>")
+        elif indent >= 2 or stripped.startswith("#"):
+            out.append("• " + _listing_line(stripped))
+        else:
+            out.append(_listing_line(stripped))
+    return "\n".join(out)
+
+
 def format_pre(title: str, text: str, limit: int = 3500) -> str:
-    """Tekst od backendu (bez LLM) w bloku <pre> — /zmiany, /zdrowie, /koszt."""
+    """Doslowny tekst w bloku <pre> — wynik komendy, log audytu. Zestawienia: format_listing()."""
     body = (text or "").strip() or tr("(pusto)", "(empty)")
     if len(body) > limit:
         body = body[:limit] + "\n[...]"
@@ -446,7 +541,7 @@ def format_investigation(event: dict, limit: int = 3000) -> str:
     if len(report) > limit:
         report = report[:limit] + "\n[...]"
     return (tr("<b>Zbadalem alert</b>", "<b>I investigated the alert</b>")
-            + f" — {html.escape(str(event.get('title', '')))}\n<pre>{html.escape(report)}</pre>")
+            + f" — {html.escape(str(event.get('title', '')))}\n\n{report_html(report, limit)}")
 
 
 def format_reminder(event: dict, limit: int = 3000) -> str:
@@ -458,8 +553,8 @@ def format_reminder(event: dict, limit: int = 3000) -> str:
         report = str(event.get("report", "")).strip()
         if len(report) > limit:
             report = report[:limit] + "\n[...]"
-        return (tr("<b>Zadanie zaplanowane</b>", "<b>Scheduled task</b>") + f" — {text}\n"
-                f"<pre>{html.escape(report)}</pre>\n{footer}").rstrip()
+        return (tr("<b>Zadanie zaplanowane</b>", "<b>Scheduled task</b>") + f" — {text}\n\n"
+                f"{report_html(report, limit, strip_status=True)}\n{footer}").rstrip()
     return (tr("<b>Przypomnienie</b>", "<b>Reminder</b>") + f"\n{text}\n{footer}").rstrip()
 
 

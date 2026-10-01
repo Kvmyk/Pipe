@@ -1,5 +1,17 @@
 # Historia zmian -- Pipe
 
+## v0.16.2 (2026-10-01)
+
+Czytelniejsze wiadomosci na Telegramie. Aktualizacja: przebuduj kontener bota (`docker compose up -d --build`).
+
+### Telegram
+
+- Raporty rutyn, badania alertow i zadan jednorazowych przychodza jako zwykla wiadomosc zamiast bloku kodu:
+  status w naglowku, pogrubione sekcje, listy, komendy doslownie; tagi HTML z raportu sa pokazywane jako tekst
+- `/zmiany`, `/zdrowie`, `/koszt`, `/dziennik`, `/przypomnienia`, `/incydenty` i wynik `/cofnij` to naglowki i listy;
+  identyfikatory wpisow mozna skopiowac dotknieciem
+- Blok kodu zostal tylko dla logu audytu (`/historia`), roznic plikow i wynikow komend
+
 ## v0.16.1 (2026-10-01)
 
 Poprawki przypomnien. W Dockerze po `git pull` zrob `docker compose up -d --build` (zmienil sie `docker-compose.yml`).
