@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.15.0** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.16.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -99,6 +99,7 @@ sudo bash ../../scripts/install-server.sh   # also starts the bot
 - *"why is the shop slow?"* -- a diagnosis: logs, resources, containers
 - *"add the server 10.0.0.5 as web-2 (ssh, root)"*, then *"check disks and updates on all servers"* -- workers in parallel
 - *"every day at 7 check the backups and certificate validity, write only when something is wrong"* -- a routine
+- *"remind me tomorrow at 9 to renew the domain"*, *"in an hour check whether the backup finished"* -- the reminder arrives by itself
 - *"where is the blog repository?"* -- an answer from DIRECTORY
 - *"answer shorter and without preambles"* -- it saves that in VIBE
 - *"the site went down overnight -- what changed?"* -- the agent starts from the change history: packages, images, ports, configs
@@ -109,7 +110,7 @@ sudo bash ../../scripts/install-server.sh   # also starts the bot
 - *"undo the last change"* or `/undo` -- restores files and reverses the operations from the journal
 
 Commands in both clients: `/status` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
-`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/help`.
+`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/help`.
 
 ---
 
@@ -151,6 +152,7 @@ events -- [docs/protocol.md](./docs/protocol.md).
 | `target_manage` / `remote_exec` | Remote targets (SSH, containers, Kubernetes) and commands on them |
 | `delegate` | Workers: parallel sub-agents, read-only, report to the agent |
 | `routine_manage` | Scheduled tasks with a report on Telegram |
+| `reminder` | A one-off reminder or task at a given time ("write in 10 minutes") |
 | `mcp_manage` | External MCP servers and their tools (`mcp__<server>__<tool>`, confirmation by default) |
 | `security_audit` | Security audit with a score and ready-made fixes |
 | `journal` | Journal of approved changes with backups, and undo (`/undo`) |
@@ -169,7 +171,7 @@ Everything lives in `backend/data/` on the server (outside git, editable by hand
   Pipe starts with: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `update-container`, `harden-ssh`,
   `free-disk-space` -- you can change and delete them.
 - **VIBE** (`vibe/<user>.md`) -- how to talk to you. Updated in the background every few messages; `/vibe` shows it, `/vibe reset` clears it.
-- **Targets, routines** (`targets.json`, `routines.json`) and the audit log.
+- **Targets, routines, reminders** (`targets.json`, `routines.json`, `reminders.json`) and the audit log.
 
 ---
 

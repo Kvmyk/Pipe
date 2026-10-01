@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -138,6 +138,27 @@ Zadania, ktore agent wykonuje sam wedlug harmonogramu i raportuje:
 - Raport zaczyna sie od `STATUS: OK` albo `STATUS: PROBLEM`. `notify=problems` wysyla tylko problemy.
 - Raporty przychodza na Telegram (subskrypcja zdarzen). `/rutyny` pokazuje liste i ostatni status.
 - Dodanie rutyny wymaga potwierdzenia. *"uruchom rutyne poranny-przeglad teraz"* -- `routine_manage run`.
+
+---
+
+## Przypomnienia
+
+Rutyna jest cykliczna; przypomnienie odpala sie **raz**, o podanym czasie, i znika:
+
+*"napisz do mnie za 10 sekund"* · *"przypomnij jutro o 9 o odnowieniu domeny"* · *"za godzine sprawdz, czy backup sie skonczyl"*
+
+- Czas wzgledny (`10s`, `15m`, `2h`, `1d`, `1h30m`) albo bezwzgledny (`HH:MM`, `RRRR-MM-DD HH:MM`, czas serwera).
+- **Wiadomosc** (`kind=message`) -- sama tresc, bez LLM i bez potwierdzenia; ustawienie widac jako notke `[PAMIEC]`.
+- **Zadanie** (`kind=task`) -- o czasie worker wykonuje je na wskazanym celu (tylko odczyty) i przysyla raport.
+  Wymaga potwierdzenia, bo wykona sie bez nadzoru.
+- Dostarczenie: Telegram, kanalem zdarzen. Przypomnienie z Telegrama wraca do osoby, ktora je ustawila; z CLI --
+  do administratorow. Gdy bot nie jest podlaczony, przypomnienie czeka i dociera po polaczeniu.
+- CLI nie odbiera zdarzen na zywo -- zalegle przypomnienia pokazuje po polaczeniu i przy najblizszej wiadomosci.
+- Rejestr `backend/data/reminders.json` przetrwa restart; limit 50 przypomnien, najdalej rok naprzod.
+- `/przypomnienia` -- lista z czasem serwera; `/przypomnienia anuluj <id>` -- anulowanie (bez LLM).
+
+Agent nie potrafi czekac w trakcie odpowiedzi. Bez tego narzedzia obietnica *"odezwe sie pozniej"* bylaby pusta --
+prompt zabrania jej, jesli nic nie zostalo zaplanowane.
 
 ---
 
@@ -411,7 +432,7 @@ i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- prz
 
 | Warstwa | Co sie zmienia |
 |---------|----------------|
-| Agent | system prompt, opisy 22 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
+| Agent | system prompt, opisy 23 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
 | Komunikaty | pytania o potwierdzenie, plan bezpiecznika, wyniki narzedzi, bledy walidacji |
 | Czuwanie | tytuly alertow, poranny raport, `/zmiany`, `/zdrowie`, `/audyt` z poprawkami, powitanie |
 | MCP | tytuly i opisy narzedzi serwera MCP, instrukcje dla zewnetrznego agenta |

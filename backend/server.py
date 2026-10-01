@@ -230,6 +230,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _send(writer, _data({"targets": [t.describe() for t in targets.load_targets()]}))
         elif command == "routines":
             await _send(writer, _data({"routines": [r.describe() for r in routines.load_routines()]}))
+        elif command == "reminders":
+            await _reminders(writer, request, interface, role)
         elif command == "diagram":
             await _send_infra_diagram(writer, args)
         elif command == "investigate":
@@ -338,6 +340,36 @@ async def _undo(writer, request: dict, interface: str) -> None:
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
 
 
+async def _reminders(writer, request: dict, interface: str, role: str) -> None:
+    """
+    Przypomnienia bez LLM: lista, anulowanie (`cancel`: id) i odbior zaleglych (`claim`: true) —
+    klient bez subskrypcji (CLI) pobiera tak przypomnienia, ktore odpalily, gdy nikt nie sluchal.
+    """
+    from backend.core import reminders
+
+    cancel_id = str(request.get("cancel", "") or "").strip()
+    if cancel_id:
+        found = reminders.get(cancel_id)
+        if found is None:
+            await _send(writer, _error(tr("Nie ma takiego przypomnienia.", "No such reminder.")))
+            return
+        if role == "viewer" and not reminders.owned_by(found, interface):
+            await _send(writer, _error(tr("Rola viewer: mozesz anulowac tylko wlasne przypomnienia.",
+                                          "Viewer role: you can cancel only your own reminders.")))
+            return
+        reminders.remove(found.id)
+        get_watcher().reminders_changed()
+        await audit.log_file_write(interface, f"reminders.json#{found.id} (cancel)", 0)
+    claimed = reminders.claim(interface.split(":", 1)[0]) if request.get("claim") else []
+    items = reminders.load_reminders()
+    await _send(writer, _data({
+        "text": reminders.render_list(items),
+        "reminders": [{"id": r.id, "due": r.when, "kind": r.kind, "text": r.text, "fired": r.fired} for r in items],
+        "claimed": [r.to_event() for r in claimed],
+        "cancelled": cancel_id if cancel_id else "",
+    }))
+
+
 async def _approve(writer, request: dict, identity: str, role: str) -> None:
     """Decyzja administratora o zgodzie dla zewnetrznego agenta (MCP)."""
     from backend.core.approvals import ApprovalError, get_approvals
@@ -433,6 +465,7 @@ async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
     notifier = get_watcher().notifier
     queue = notifier.subscribe()
     await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed"}})
+    get_watcher().reminders_changed()      # przypomnienia, ktore odpalily, gdy nikt nie sluchal
     closed = asyncio.ensure_future(reader.read(1))
     try:
         while True:

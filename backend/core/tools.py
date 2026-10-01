@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -331,6 +331,30 @@ TOOLS: list[dict] = [
             "target": {"type": "string", "description": "Cel (domyslnie local)."},
             "notify": {"type": "string", "enum": ["always", "problems"],
                        "description": "Raport zawsze albo tylko przy problemie."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "reminder",
+        "Przypomnienia: JEDNORAZOWA wiadomosc albo zadanie o okreslonym czasie — 'napisz do mnie za 10 sekund', "
+        "'przypomnij jutro o 9 o odnowieniu domeny', 'za godzine sprawdz, czy backup sie skonczyl'. To jedyny "
+        "sposob, zeby odezwac sie do uzytkownika pozniej: sam nie potrafisz czekac. kind=message wysyla tresc "
+        "(bez potwierdzenia); kind=task uruchamia o czasie workera (tylko odczyty) i przysyla raport (wymaga "
+        "potwierdzenia). Zadania cykliczne zakladaj jako rutyny (routine_manage).",
+        {
+            "operation": {"type": "string", "enum": ["add", "list", "cancel"]},
+            "delay": {"type": "string",
+                      "description": "Dla add: za ile, np. '10s', '15m', '2h', '1d', '1h30m'. Uzywaj, gdy "
+                                     "uzytkownik podaje czas wzgledny ('za 10 sekund')."},
+            "at": {"type": "string",
+                   "description": "Dla add zamiast delay: czas serwera 'HH:MM' (dzis albo jutro) lub "
+                                  "'RRRR-MM-DD HH:MM'. Aktualny czas serwera zwraca operation=list."},
+            "text": {"type": "string",
+                     "description": "Dla add: tresc przypomnienia napisana tak, jak ma ja przeczytac uzytkownik; "
+                                    "dla kind=task: co sprawdzic i co ma byc w raporcie."},
+            "kind": {"type": "string", "enum": ["message", "task"], "description": "Domyslnie message."},
+            "target": {"type": "string", "description": "Dla kind=task: cel (domyslnie local)."},
+            "id": {"type": "string", "description": "Dla cancel: identyfikator przypomnienia z list."},
         },
         ["operation"],
     ),

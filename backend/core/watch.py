@@ -194,6 +194,7 @@ class Watcher:
         self.checks_report: Any = None          # ostatni checks.Report
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
+        self._reminder_wakeup = asyncio.Event()
         from backend.core.posture import AuthWatch
         self._auth = AuthWatch()
 
@@ -444,6 +445,84 @@ class Watcher:
             self.notifier.publish(event)
         return event
 
+    # --- przypomnienia ------------------------------------------------------
+
+    def reminders_changed(self) -> None:
+        """Rejestr przypomnien sie zmienil (dodanie/anulowanie) — petla przelicza najblizszy termin."""
+        self._reminder_wakeup.set()
+
+    async def fire_reminder(self, reminder: Any) -> None:
+        """Odpala jedno przypomnienie: wiadomosc od razu, zadanie przez workera (tylko odczyty)."""
+        from backend.core import reminders, workers
+        from backend.core.session import Session
+
+        report = ""
+        if reminder.kind == "task":
+            reminders.remove(reminder.id)          # zadanie wykonuje sie najwyzej raz, takze po restarcie w trakcie
+            target = targets.get_target(reminder.target)
+            try:
+                if self.agent is None:
+                    report = tr("Agent nie jest dostepny.", "The agent is not available.")
+                elif target is None:
+                    report = tr(f"Cel {reminder.target!r} nie istnieje.", f"Target {reminder.target!r} does not exist.")
+                else:
+                    parent = Session(session_id=f"reminder:{reminder.id}", interface=f"routine:reminder-{reminder.id}",
+                                     learns_vibe=False)
+                    result = await asyncio.wait_for(
+                        workers.run_worker(self.agent, parent, f"reminder-{reminder.id}", target, reminder.text,
+                                           extra_instructions=prompt("ROUTINE_REPORT_INSTRUCTION")),
+                        timeout=settings.WORKER_TIMEOUT)
+                    report = result.render()
+            except asyncio.TimeoutError:
+                report = tr(f"Przekroczono limit czasu {settings.WORKER_TIMEOUT} s.",
+                            f"Time limit of {settings.WORKER_TIMEOUT} s exceeded.")
+            except Exception as exc:
+                report = tr(f"Blad: {exc}", f"Error: {exc}")
+            reminder.report = report
+            if self.notifier.subscribers:
+                self.notifier.publish(reminder.to_event())
+            else:                                   # nikt nie slucha — raport czeka na odbior
+                reminder.fired = True
+                reminders._save(reminders.load_reminders() + [reminder])
+            return
+        if self.notifier.subscribers:
+            reminders.remove(reminder.id)
+            self.notifier.publish(reminder.to_event())
+        else:
+            reminders.mark_fired(reminder.id)
+
+    def deliver_waiting_reminders(self) -> None:
+        """Podlaczyl sie subskrybent — dostaje przypomnienia, ktore odpalily, gdy nikt nie sluchal."""
+        from backend.core import reminders
+
+        for reminder in reminders.waiting():
+            reminders.remove(reminder.id)
+            self.notifier.publish(reminder.to_event())
+
+    async def _reminder_loop(self) -> None:
+        from backend.core import reminders
+
+        await asyncio.sleep(2)  # niech serwer wstanie; zalegle przypomnienia odpala sie zaraz po starcie
+        while True:
+            try:
+                for reminder in reminders.due():
+                    if reminder.kind == "task":
+                        asyncio.create_task(self._safe(self.fire_reminder(reminder), "przypomnienie"))
+                    else:
+                        await self.fire_reminder(reminder)
+                if self.notifier.subscribers and reminders.waiting():
+                    self.deliver_waiting_reminders()
+                wait = reminders.next_due()
+            except Exception as exc:
+                print(tr(f"[Czuwanie] Blad (przypomnienia): {exc}", f"[Watcher] Error (reminders): {exc}"), flush=True)
+                wait = 30.0
+            self._reminder_wakeup.clear()
+            try:
+                # bez terminu: czekamy na zmiane rejestru; z terminem: najwyzej do niego (i nie dluzej niz 30 s)
+                await asyncio.wait_for(self._reminder_wakeup.wait(), timeout=30.0 if wait is None else min(wait, 30.0))
+            except asyncio.TimeoutError:
+                pass
+
     # --- petle --------------------------------------------------------------
 
     async def _watch_loop(self) -> None:
@@ -517,6 +596,7 @@ class Watcher:
             self._tasks.append(asyncio.create_task(
                 self._periodic("sprawdzenia", self.checks_once, settings.CHECKS_INTERVAL, 60)))
         self._tasks.append(asyncio.create_task(self._clock_loop()))
+        self._tasks.append(asyncio.create_task(self._reminder_loop()))
         self._tasks.append(asyncio.create_task(self._safe(self._welcome_loop(), "powitanie")))
 
 

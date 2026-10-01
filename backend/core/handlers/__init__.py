@@ -16,6 +16,7 @@ from .history import handle_server_history
 from .journal import handle_journal
 from .mcp import handle_mcp_manage
 from .remote import handle_delegate, handle_remote_exec, handle_target_manage
+from .reminders import handle_reminder
 from .routines import handle_routine_manage
 from .system import (
     handle_change_directory,
@@ -42,6 +43,7 @@ __all__ = [
     "handle_target_manage",
     "handle_remote_exec",
     "handle_delegate",
+    "handle_reminder",
     "handle_routine_manage",
     "handle_server_history",
     "handle_journal",

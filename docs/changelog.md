@@ -1,5 +1,26 @@
 # Historia zmian -- Pipe
 
+## v0.16.0 (2026-10-01)
+
+Przypomnienia: agent moze odezwac sie pozniej, gdy go o to poprosisz. Aktualizacja bez recznych krokow.
+
+### Przypomnienia
+
+- *"napisz do mnie za 10 sekund"*, *"przypomnij jutro o 9 o odnowieniu domeny"* -- wiadomosc przychodzi sama
+  o czasie, z dokladnoscia do sekundy, bez udzialu LLM
+- *"za godzine sprawdz, czy backup sie skonczyl"* -- zadanie jednorazowe: o czasie worker (tylko odczyty) sprawdza
+  i przysyla raport; wymaga potwierdzenia, tak jak rutyna
+- Przypomnienie ustawione na Telegramie wraca do osoby, ktora je ustawila; ustawione w CLI -- do administratorow
+  na Telegramie
+- Przetrwa restart backendu (`backend/data/reminders.json`); gdy bot nie jest podlaczony, czeka i dociera po
+  polaczeniu. CLI pokazuje zalegle przypomnienia po polaczeniu i przy najblizszej wiadomosci
+- Nowe narzedzie `reminder`, komenda `/przypomnienia` (`/reminders`) z anulowaniem: `/przypomnienia anuluj <id>`
+
+### Poprawki
+
+- Agent obiecywal *"odezwe sie za 10 sekund"*, choc nie mial jak tego zrobic. Prompt zabrania teraz obietnic
+  na przyszlosc bez zaplanowania ich narzedziem (`reminder` albo `routine_manage`)
+
 ## v0.15.0 (2026-10-01)
 
 Pipe po angielsku: jeden przelacznik `PIPE_LANG=en` zmienia jezyk calego produktu. Domyslnie zostaje polski --

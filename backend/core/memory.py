@@ -576,6 +576,7 @@ RESERVED_COMMANDS = frozenset({
     # angielskie aliasy komend (dzialaja w obu jezykach)
     "report", "digest", "changes", "chart", "health", "audit", "map", "directory", "dirs", "skills", "alerts",
     "routines", "targets", "journal", "undo", "approvals", "cost", "usage", "history", "incidents",
+    "przypomnienia", "reminders",
 })
 MAX_COMMAND_CHARS = 32  # limit Telegrama
 

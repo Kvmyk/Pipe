@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.15.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.16.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -80,6 +80,7 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"dlaczego sklep dziala wolno?"* -- diagnoza: logi, zasoby, kontenery
 - *"dodaj serwer 10.0.0.5 jako web-2 (ssh, root)"*, potem *"sprawdz dyski i aktualizacje na wszystkich serwerach"* -- workery rownolegle
 - *"codziennie o 7 sprawdzaj backupy i waznosc certyfikatow, pisz tylko jak cos jest nie tak"* -- rutyna
+- *"przypomnij mi jutro o 9 o odnowieniu domeny"*, *"za godzine sprawdz, czy backup sie skonczyl"* -- przypomnienie przychodzi samo
 - *"gdzie lezy repozytorium bloga?"* -- odpowiedz z DIRECTORY
 - *"odpowiadaj krocej i bez wstepow"* -- zapisze to w VIBE
 - *"strona padla po nocy -- co sie zmienilo?"* -- agent zaczyna od historii zmian: pakiety, obrazy, porty, konfiguracje
@@ -90,7 +91,7 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"cofnij ostatnia zmiane"* albo `/cofnij` -- przywraca pliki i odwraca operacje z dziennika
 
 Komendy w obu klientach: `/status` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
-`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
+`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/przypomnienia` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
 
 ---
 
@@ -150,6 +151,7 @@ czuwania -- [docs/protocol.md](./docs/protocol.md).
 | `target_manage` / `remote_exec` | Zdalne cele (SSH, kontenery, Kubernetes) i komendy na nich |
 | `delegate` | Workery: rownolegli pod-agenci, tylko odczyty, raport dla agenta |
 | `routine_manage` | Zadania wedlug harmonogramu z raportem na Telegram |
+| `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie ("napisz za 10 minut") |
 | `mcp_manage` | Zewnetrzne serwery MCP i ich narzedzia (`mcp__<serwer>__<narzedzie>`, domyslnie z potwierdzeniem) |
 | `security_audit` | Audyt bezpieczenstwa z ocena i gotowymi poprawkami |
 | `journal` | Dziennik zatwierdzonych zmian z kopiami i cofanie (`/cofnij`) |
@@ -168,7 +170,7 @@ Wszystko lezy w `backend/data/` na serwerze (poza gitem, mozna edytowac recznie)
   wbudowane: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `aktualizuj-kontener`, `utwardz-ssh`,
   `wolne-miejsce` -- mozesz je zmieniac i usuwac.
 - **VIBE** (`vibe/<uzytkownik>.md`) -- jak z Toba rozmawiac. Aktualizuje sie w tle co kilka wiadomosci; `/vibe` pokazuje, `/vibe reset` czysci.
-- **Cele, rutyny** (`targets.json`, `routines.json`) i audit log.
+- **Cele, rutyny, przypomnienia** (`targets.json`, `routines.json`, `reminders.json`) i audit log.
 
 ---
 

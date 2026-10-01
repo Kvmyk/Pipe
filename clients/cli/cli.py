@@ -389,13 +389,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.15.0[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.16.0[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.15.0[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.16.0[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -472,6 +472,7 @@ COMMAND_ALIASES = {
     "audit": "audyt", "map": "mapa", "directory": "katalogi", "dirs": "katalogi", "skills": "skille",
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
+    "reminders": "przypomnienia",
 }
 
 HELP_TEXT = """**Komendy**
@@ -489,6 +490,7 @@ HELP_TEXT = """**Komendy**
 - `/alerty` — aktywne alerty czuwania
 - `/incydenty` — pamięć incydentów: co się działo, jaka była przyczyna i co pomogło
 - `/rutyny` — zadania wykonywane według harmonogramu
+- `/przypomnienia` — jednorazowe przypomnienia („przypomnij mi za 2 godziny…”); `/przypomnienia anuluj <id>`
 - `/cele` — zdalne serwery, kontenery i klastry
 - `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
 - `/dziennik` — zatwierdzone zmiany z kopiami; `/cofnij [id]` — cofnij ostatnią (albo wybraną) zmianę
@@ -517,6 +519,7 @@ HELP_TEXT_EN = """**Commands**
 - `/alerts` — active watcher alerts
 - `/incidents` — incident memory: what happened, what the cause was and what helped
 - `/routines` — tasks run on a schedule
+- `/reminders` — one-off reminders ("remind me in 2 hours…"); `/reminders cancel <id>`
 - `/targets` — remote servers, containers and clusters
 - `/vibe` — what the agent knows about your conversation style (`/vibe reset` — clear it)
 - `/journal` — approved changes with backups; `/undo [id]` — undo the last (or the chosen) change
@@ -716,6 +719,19 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
                        "None. Write e.g.: check the backups every day at 7"))
         return True
 
+    if name == "przypomnienia":
+        parts = args.split()
+        cancel = parts[1].lstrip("#") if len(parts) >= 2 and parts[0].lower() in ("anuluj", "cancel", "usun", "remove") else ""
+        data = _response_data(await client.send_command("reminders", cancel=cancel))
+        if data.get("cancelled"):
+            console.print(tr(f"Anulowano #{data['cancelled']}.", f"Cancelled #{data['cancelled']}."))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        console.print(tr("[dim]W CLI przypomnienie pokaże się przy najbliższej wiadomości albo po połączeniu; "
+                         "na Telegram przychodzi samo, o czasie.[/dim]",
+                         "[dim]In the CLI a reminder shows up with your next message or on connect; "
+                         "on Telegram it arrives by itself, on time.[/dim]"))
+        return True
+
     if name == "vibe":
         data = _response_data(await client.send_command("vibe", args=args))
         if "reset" in data:
@@ -800,6 +816,23 @@ async def run_mcp_bridge(client: "RemoteClient", host: str) -> None:
         await client.disconnect()
 
 
+async def _show_due_reminders(client: "RemoteClient") -> None:
+    """
+    CLI nie odbiera zdarzen na zywo (REPL czeka na klawiature), wiec przypomnienia, ktore odpalily bez
+    odbiorcy, pobiera przy polaczeniu i po kazdej wymianie. Cicho, gdy backend jest starszy albo nic nie czeka.
+    """
+    try:
+        claimed = _response_data(await client.send_command("reminders", claim=True)).get("claimed", [])
+    except Exception:
+        return
+    for event in claimed:
+        title = tr("Przypomnienie", "Reminder") if event.get("kind") != "task" else tr("Zadanie zaplanowane", "Scheduled task")
+        body = escape(str(event.get("text", "")))
+        if event.get("report"):
+            body += "\n\n" + escape(str(event["report"]))
+        console.print(Panel(body, title=f"{title} · {escape(str(event.get('due', '')))}", border_style="yellow"))
+
+
 def _free_port() -> int:
     import socket as _socket
     with _socket.socket() as sock:
@@ -852,6 +885,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
         return
 
     await _first_run_welcome(client, host)
+    await _show_due_reminders(client)
 
     # Status startowy ukryty na zyczenie
     console.print(Rule(style="dim"))
@@ -881,6 +915,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                     console.print(tr(f"[red]Błąd: {escape(str(exc))}[/red]", f"[red]Error: {escape(str(exc))}[/red]"))
                     handled = True
                 if handled:
+                    await _show_due_reminders(client)
                     console.print()
                     continue
 
@@ -888,6 +923,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             try:
                 responses = await client.send_message(user_input)
                 await _handle_responses(responses, client)
+                await _show_due_reminders(client)
             except Exception as exc:
                 console.print(tr(f"[red]Błąd komunikacji: {exc}[/red]", f"[red]Communication error: {exc}[/red]"))
                 # Spróbuj ponownie połączyć

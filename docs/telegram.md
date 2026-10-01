@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -163,6 +163,7 @@ nazwy dzialaja w obu jezykach.
 | `/skille` | Lista zapisanych skilli z ich komendami |
 | `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
+| `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia -- przychodza same o czasie do osoby, ktora je ustawila |
 | `/cele` | Zdalne serwery, kontenery i klastry |
 | `/vibe` | Co agent wie o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |

@@ -4,13 +4,14 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
   - Diagramy (np. /mapa albo "pokaz architekture") przychodza jako zdjecia
   - Postep workerow na zywo w jednej, aktualizowanej wiadomosci
   - Czuwanie: alerty i raporty rutyn przychodza same, z przyciskiem "Zbadaj"
+  - Przypomnienia: "napisz do mnie za 10 minut" -- wiadomosc przychodzi sama o czasie (/przypomnienia)
   - InlineKeyboard dla potwierdzen (TAK / NIE)
   - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
     /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
@@ -85,10 +86,12 @@ from tg_format import (
     format_investigation,
     format_list,
     format_pre,
+    format_reminder,
     format_routine,
     format_skill_list,
     parse_command,
     progress_text,
+    reminder_recipients,
     response_data,
     split_message,
     to_plain_text,
@@ -618,6 +621,20 @@ async def cmd_rutyny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
            "None. Write e.g. <i>\"check the backups and certificates every day at 7\"</i>.")))
 
 
+async def cmd_przypomnienia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/przypomnienia -- lista; /przypomnienia anuluj <id> -- anulowanie (bez LLM)."""
+    args = [a.lstrip("#") for a in (context.args or [])]
+    cancel = args[1] if len(args) >= 2 and args[0].lower() in ("anuluj", "cancel", "usun", "remove") else ""
+
+    def render(data: dict) -> str:
+        head = tr(f"Anulowano #{data['cancelled']}.\n", f"Cancelled #{data['cancelled']}.\n") if data.get("cancelled") else ""
+        hint = tr("\n<i>Napisz np. \"przypomnij mi za 2 godziny o backupie\". Anulowanie: /przypomnienia anuluj &lt;id&gt;</i>",
+                  "\n<i>Write e.g. \"remind me in 2 hours about the backup\". Cancel: /reminders cancel &lt;id&gt;</i>")
+        return html.escape(head) + format_pre(tr("Przypomnienia", "Reminders"), data.get("text", "")) + hint
+
+    await _show_data(update, context, "reminders", render, cancel=cancel)
+
+
 async def cmd_vibe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = " ".join(context.args or []).strip()
 
@@ -840,6 +857,13 @@ async def _broadcast(app: Application, event: dict) -> None:
             except Exception as exc:
                 print(f"[Pipe Telegram] Nie wyslano zgody do {user_id}: {exc}", flush=True)
         return
+    if kind == "reminder":
+        for user_id in reminder_recipients(event, ALLOWED_USER_IDS, VIEWER_USER_IDS):
+            try:
+                await _send_html(app.bot, user_id, format_reminder(event))
+            except Exception as exc:
+                print(f"[Pipe Telegram] Nie wyslano przypomnienia do {user_id}: {exc}", flush=True)
+        return
     if kind == "alert":
         text = format_alert(event)
         markup = _investigate_keyboard(event["id"]) if event.get("state") != "resolved" and event.get("id") else None
@@ -969,7 +993,7 @@ def main() -> None:
         ("zgody", cmd_zgody), ("mcp", cmd_mcp), ("mapa", cmd_mapa), ("historia", cmd_historia),
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
-        ("incydenty", cmd_incydenty),
+        ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

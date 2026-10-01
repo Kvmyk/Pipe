@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.15.0
+Pipe v0.16.0
 """
 
 from __future__ import annotations
@@ -153,6 +153,20 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
          "schedule": "Cron (5 fields, server time), e.g. '0 7 * * *', or @hourly/@daily/@weekly.",
          "task": "What to check and what the report should contain.", "target": "Target (local by default).",
          "notify": "Report always or only on a problem."}),
+    "reminder": (
+        "Reminders: a ONE-OFF message or task at a given time — 'write to me in 10 seconds', 'remind me tomorrow at 9 "
+        "to renew the domain', 'in an hour check whether the backup finished'. This is the only way to reach the user "
+        "later: you cannot wait by yourself. kind=message sends the text (no confirmation); kind=task starts a worker "
+        "(read-only) at that time and sends a report (requires confirmation). Set recurring tasks up as routines "
+        "(routine_manage).",
+        {"delay": "For add: how long from now, e.g. '10s', '15m', '2h', '1d', '1h30m'. Use it when the user gives a "
+                  "relative time ('in 10 seconds').",
+         "at": "For add instead of delay: server time 'HH:MM' (today or tomorrow) or 'YYYY-MM-DD HH:MM'. "
+               "operation=list returns the current server time.",
+         "text": "For add: the reminder text written the way the user should read it; for kind=task: what to check "
+                 "and what the report should contain.",
+         "kind": "message by default.", "target": "For kind=task: the target (local by default).",
+         "id": "For cancel: the reminder id from list."}),
 }
 
 

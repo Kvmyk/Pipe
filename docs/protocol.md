@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 ## Opis
 
@@ -62,6 +62,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `alerts` | -- | `"data": {"active": [alert], "recent": [zdarzenie], "enabled": bool}` |
 | `targets` | -- | `"data": {"targets": ["opis celu", ...]}` |
 | `routines` | -- | `"data": {"routines": ["opis rutyny", ...]}` |
+| `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
 | `investigate` | `id` alertu | streaming: agent bada alert czuwania; backend dolacza zmiany na serwerze z ostatniej doby |
 | `changes` | `args`: okres (`24h`, `3d`) | `"data": {"text": "...", "hours": 24}` -- co sie zmienilo (migawki), **bez LLM** |
@@ -132,6 +133,15 @@ Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`,
 {"response": "", "status": "ok", "done": false, "event": {
   "type": "routine", "name": "poranny-przeglad", "status": "OK|PROBLEM", "report": "...", "at": "..."}}
 ```
+
+```json
+{"response": "", "status": "ok", "done": false, "event": {
+  "type": "reminder", "id": "6d1546", "kind": "message|task", "text": "...", "report": "",
+  "to": "telegram:123", "set_at": "2026-10-01 20:02", "due": "2026-10-01 20:02:42", "at": "..."}}
+```
+
+`to` to interfejs, ktory ustawil przypomnienie -- klient decyduje, komu je pokazac. Dla `kind: task`
+pole `report` zawiera raport workera.
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {

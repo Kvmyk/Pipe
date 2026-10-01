@@ -195,6 +195,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("alerty", "Aktywne alerty czuwania"),
     ("incydenty", "Pamiec incydentow: przyczyny i co pomoglo"),
     ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
+    ("przypomnienia", "Jednorazowe przypomnienia (/przypomnienia anuluj <id>)"),
     ("cele", "Zdalne serwery, kontenery i klastry"),
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
     ("cofnij", "Cofnij ostatnia zmiane (/cofnij <id> - wybrana)"),
@@ -219,6 +220,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("alerts", "Active watcher alerts"),
     ("incidents", "Incident memory: causes and what helped"),
     ("routines", "Tasks run on a schedule"),
+    ("reminders", "One-off reminders (/reminders cancel <id>)"),
     ("targets", "Remote servers, containers and clusters"),
     ("vibe", "What I know about your conversation style (/vibe reset - clear)"),
     ("undo", "Undo the last change (/undo <id> - a chosen one)"),
@@ -234,7 +236,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "report": "raport", "changes": "zmiany", "chart": "wykres", "health": "zdrowie", "audit": "audyt",
     "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
-    "history": "historia", "help": "pomoc", "incidents": "incydenty",
+    "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
 }
 
 
@@ -445,6 +447,30 @@ def format_investigation(event: dict, limit: int = 3000) -> str:
         report = report[:limit] + "\n[...]"
     return (tr("<b>Zbadalem alert</b>", "<b>I investigated the alert</b>")
             + f" — {html.escape(str(event.get('title', '')))}\n<pre>{html.escape(report)}</pre>")
+
+
+def format_reminder(event: dict, limit: int = 3000) -> str:
+    """Przypomnienie, ktore wlasnie odpalilo: tresc doslownie; dla zadania — raport workera."""
+    text = html.escape(str(event.get("text", "")))
+    since = html.escape(str(event.get("set_at", "")))
+    footer = tr(f"<i>ustawione {since}</i>", f"<i>set {since}</i>") if since else ""
+    if event.get("kind") == "task":
+        report = str(event.get("report", "")).strip()
+        if len(report) > limit:
+            report = report[:limit] + "\n[...]"
+        return (tr("<b>Zadanie zaplanowane</b>", "<b>Scheduled task</b>") + f" — {text}\n"
+                f"<pre>{html.escape(report)}</pre>\n{footer}").rstrip()
+    return (tr("<b>Przypomnienie</b>", "<b>Reminder</b>") + f"\n{text}\n{footer}").rstrip()
+
+
+def reminder_recipients(event: dict, admins: set[int], viewers: set[int]) -> list[int]:
+    """Przypomnienie z Telegrama wraca do tego, kto je ustawil; ustawione gdzie indziej (CLI) — do administratorow."""
+    origin = str(event.get("to", ""))
+    if origin.startswith("telegram:") and origin.split(":", 1)[1].isdigit():
+        user_id = int(origin.split(":", 1)[1])
+        if user_id in admins or user_id in viewers:
+            return [user_id]
+    return sorted(admins)
 
 
 def format_approval(event: dict) -> str:

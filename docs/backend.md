@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.15.0
+Pipe v0.16.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -36,6 +36,7 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
 | `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
 | `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
+| `core/reminders.py` | Przypomnienia: jednorazowe wiadomosci i zadania o czasie (`reminders.json`), odpala je czuwanie |
 | `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
 | `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
 | `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI) |
@@ -177,7 +178,7 @@ AGENT_TOKEN=twoj-tajny-token
 Agent ma kilka rodzajow trwalej pamieci: SERVER.md, skille (ponizej), a takze DIRECTORY (mapa repozytoriow
 i katalogow) i VIBE (styl rozmowy) -- te dwie opisuje [features.md](./features.md). Wszystko lezy na hoscie
 w `backend/data/` (w kontenerze `/app/data`, zmienna `DATA_DIR`), przetrwa restart i przebudowe obrazu
-i nie trafia do gita. Tam sa tez `targets.json`, `routines.json`, `watch_state.json` i audit log.
+i nie trafia do gita. Tam sa tez `targets.json`, `routines.json`, `reminders.json`, `watch_state.json` i audit log.
 
 ### SERVER.md
 
@@ -268,6 +269,7 @@ Powinienes zobaczyc:
 | `remote_exec` | Komenda na zdalnym celu | Zalezne od klasyfikacji |
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
+| `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie | Zadanie: tak; wiadomosc: nie |
 | `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
 | `mcp_manage` | Serwery MCP, z ktorych korzysta Pipe; ich narzedzia `mcp__<serwer>__<narzedzie>` | Dodanie: tak; narzedzia wg polityki |
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
