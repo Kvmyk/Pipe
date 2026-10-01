@@ -54,6 +54,8 @@ except ImportError:
     sys.exit(1)
 
 console = Console()
+# `pipe --mcp`: stdout nalezy do protokolu MCP — wszystko inne idzie na stderr.
+BRIDGE_MODE = False
 
 # ─── Stałe ───────────────────────────────────────────────────────────────────
 DEFAULT_SSH_PORT: int = 22
@@ -113,13 +115,16 @@ class SSHTunnel:
 
         if self.identity_file:
             cmd.extend(["-i", self.identity_file])
+        if BRIDGE_MODE:
+            # Most MCP: stdin niesie JSON-RPC klienta — ssh nie moze go czytac ani pytac o haslo
+            cmd[1:1] = ["-n", "-o", "BatchMode=yes"]
 
         cmd.append(self.host)
 
         # NIE przekierowujemy stdin — SSH może zapytać o hasło w terminalu
         self._process = subprocess.Popen(
             cmd,
-            stdin=None,          # dziedzicz stdin z procesu rodzica (dla hasła)
+            stdin=subprocess.DEVNULL if BRIDGE_MODE else None,   # dziedzicz stdin (haslo), chyba ze most MCP
             stdout=subprocess.DEVNULL,
             stderr=None,         # dziedzicz stderr (pokazuje prompt hasła)
         )
@@ -353,7 +358,7 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.13.0[/dim]\n\n"
+            "[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.14.0[/dim]\n\n"
             f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
             "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
             "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -439,6 +444,8 @@ HELP_TEXT = """**Komendy**
 - `/cele` — zdalne serwery, kontenery i klastry
 - `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
 - `/dziennik` — zatwierdzone zmiany z kopiami; `/cofnij [id]` — cofnij ostatnią (albo wybraną) zmianę
+- `/zgody` — operacje zewnętrznych agentów (MCP) czekające na Twoją zgodę
+- `/mcp` — serwery MCP, z których korzysta Pipe
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
 - `/pomoc` — ta lista
@@ -557,6 +564,28 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             console.print("[dim]✖ Anulowano.[/dim]")
         return True
 
+    if name == "mcp":
+        _print_list("Serwery MCP", _response_data(await client.send_command("mcp_servers")).get("servers", []),
+                    "Brak. Napisz np.: dodaj serwer MCP github (npx -y @modelcontextprotocol/server-github)")
+        return True
+
+    if name == "zgody":
+        pending = _response_data(await client.send_command("approvals")).get("pending", [])
+        if not pending:
+            console.print("[dim]Nic nie czeka na zgodę.[/dim]")
+        for item in pending:
+            console.print(Rule(f"[bold]Zgoda {escape(item['id'])}[/bold] — agent {escape(item['requested_by'])}"))
+            console.print(Markdown(f"Cel `{item['target']}`: `{item['command']}`\n\n"
+                                   + (f"Powód: {item['reason']}\n\n" if item.get("reason") else "")
+                                   + (item.get("plan") or "")))
+            try:
+                decision = Confirm.ask("[yellow]Zatwierdzić?[/yellow]", default=False)
+            except (KeyboardInterrupt, EOFError):
+                decision = False
+            result = _response_data(await client.send_command("approve", id=item["id"], decision=decision))
+            console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
+        return True
+
     if name == "koszt":
         data = _response_data(await client.send_command("usage"))
         console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
@@ -623,6 +652,57 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
     console.print(f"[dim]Uruchamiam skill {escape(entry['name'])}...[/dim]")
     await _handle_responses(await client.send_command("run_skill", name=entry["name"], args=args), client)
     return True
+
+
+async def run_mcp_bridge(client: "RemoteClient", host: str) -> None:
+    """
+    Most MCP (stdio): Claude Code / Cursor uruchamia `pipe --mcp --host root@serwer`, a kazda wiadomosc
+    JSON-RPC idzie do backendu Pipe (komenda "mcp") przez tunel SSH i token Pipe. Na stdout — tylko MCP.
+    """
+    await client.connect()
+    console.print(f"[dim]Pipe MCP: polaczono z {escape(host)}[/dim]")
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader(limit=READ_LIMIT)
+    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    out = sys.stdout
+
+    def emit(message: dict) -> None:
+        out.write(json.dumps(message, ensure_ascii=False) + "\n")
+        out.flush()
+
+    try:
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            if not line.strip():
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                emit({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Nieprawidlowy JSON."}})
+                continue
+            try:
+                responses = await client.send_command("mcp", rpc=message)
+            except (OSError, RuntimeError):
+                await client.connect()                       # jedna proba ponownego polaczenia
+                responses = await client.send_command("mcp", rpc=message)
+            try:
+                reply = _response_data(responses).get("rpc")
+            except RuntimeError as exc:
+                reply = {"jsonrpc": "2.0", "id": message.get("id") if isinstance(message, dict) else None,
+                         "error": {"code": -32603, "message": f"Pipe: {exc}"}}
+            if reply is not None:
+                emit(reply)
+    finally:
+        await client.disconnect()
+
+
+def _free_port() -> int:
+    import socket as _socket
+    with _socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 def _welcome_marker(host: str) -> Path:
@@ -800,6 +880,9 @@ Przykłady:
 
     parser.add_argument("--open", action="store_true",
                         help="Otwieraj zapisane diagramy PNG w domyślnej przeglądarce obrazów.")
+    parser.add_argument("--mcp", action="store_true",
+                        help="Most MCP (stdio) dla Claude Code, Cursora i innych agentow: narzedzia Pipe "
+                             "przez tunel SSH i token Pipe. Stdout = protokol MCP.")
 
     # ─── Sesja ─────────────────────────────────────────────────────────────
     parser.add_argument(
@@ -819,8 +902,15 @@ Przykłady:
     args = parser.parse_args()
 
     session_id = args.session or str(uuid.uuid4())
-    global OPEN_IMAGES
+    global OPEN_IMAGES, BRIDGE_MODE, console
     OPEN_IMAGES = args.open
+    runner = run_cli
+    if args.mcp:
+        BRIDGE_MODE = True
+        console = Console(stderr=True)
+        runner = run_mcp_bridge
+        if not args.no_tunnel and args.local_port == DEFAULT_LOCAL_PORT:
+            args.local_port = _free_port()           # nie koliduj z otwartym CLI na 7379
 
     # ─── Kubernetes: port-forward zamiast tunelu SSH ──────────────────────
     if args.kube:
@@ -833,7 +923,7 @@ Przykłady:
                 console.print("[red]Port-forward nie odpowiada. Sprawdź: kubectl -n "
                               f"{args.kube} get pods,svc[/red]")
                 sys.exit(1)
-            asyncio.run(run_cli(client, f"kubernetes/{args.kube}"))
+            asyncio.run(runner(client, f"kubernetes/{args.kube}"))
         except RuntimeError as exc:
             console.print(f"[red]{exc}[/red]")
             sys.exit(1)
@@ -853,7 +943,7 @@ Przykłady:
         )
         display_host = f"127.0.0.1:{args.local_port} (lokalny tunel)"
         try:
-            asyncio.run(run_cli(client, display_host))
+            asyncio.run(runner(client, display_host))
         except KeyboardInterrupt:
             pass
         return
@@ -907,7 +997,7 @@ Przykłady:
             )
             sys.exit(1)
 
-        asyncio.run(run_cli(client, args.host))
+        asyncio.run(runner(client, args.host))
 
     except RuntimeError as exc:
         console.print(f"[red]Błąd tunelu SSH: {exc}[/red]")

@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -399,3 +399,56 @@ i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- prz
 - CLI i inne klienty: osobny token na osobe albo laptop, odwolywalny:
   `python3 -m backend.tokens add laptop-kuba --role admin`, `list`, `revoke laptop-kuba`.
 - Role egzekwuje backend. Sesja nalezy do tokenu, ktory ja zalozyl.
+
+---
+
+## MCP -- Pipe jako brama dla innych agentow i klient cudzych serwerow
+
+### Pipe jako serwer MCP
+
+Claude Code, Cursor albo wlasny agent dostaje narzedzia Pipe zamiast golej powloki na produkcji:
+
+| Narzedzie | Co robi |
+|-----------|---------|
+| `run_command` | komenda przez klasyfikator Pipe: odczyt od razu; zmiana -> **zgoda administratora**, potem bezpiecznik i dziennik; zakazana -> odmowa |
+| `get_approval` | stan zgody i wynik (tylko dla agenta, ktory o nia prosil) |
+| `read_file` | plik hosta; pliki z sekretami nie sa wydawane, sekrety w tresci -- redagowane |
+| `server_status`, `server_changes`, `infra_map`, `health_checks`, `security_audit`, `journal` | wiedza Pipe o serwerze |
+| `ask_pipe` | pytanie do agenta Pipe (zna SERVER.md, DIRECTORY, historie) -- w roli tylko do odczytu |
+
+Zgoda przychodzi na Telegram z komenda i planem bezpiecznika (kopia, `nginx -t`, weryfikacja) oraz przyciskami
+*Zatwierdz* / *Odrzuc*; w CLI -- `/zgody`. Agent dowiaduje sie o wyniku przez `get_approval`.
+
+**Polaczenie z laptopa** -- most stdio w CLI, przez ten sam tunel SSH i tokeny:
+
+```json
+{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
+                         "env": {"AGENT_TOKEN": "<token>"}}}}
+```
+
+Osobny token dla agenta: `python3 -m backend.tokens add claude-code --role admin` (albo `--role viewer`:
+agent tylko czyta, nie moze prosic o zgody). **Na serwerze** -- endpoint Streamable HTTP: `MCP_PORT=7381`,
+`http://127.0.0.1:7381/mcp`, token w `Authorization: Bearer`.
+
+Obslugiwane wersje protokolu: 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`)
+i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
+
+### Pipe jako klient MCP
+
+Narzedzia innych serwerow MCP staja sie narzedziami agenta (`mcp__github__create_issue`...). Dodasz je zdaniem --
+*"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github, token w GITHUB_PERSONAL_ACCESS_TOKEN,
+bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
+
+```json
+{"servers": {
+  "github":  {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
+              "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "..."}, "autoApprove": ["get_*", "list_*", "search_*"]},
+  "grafana": {"url": "http://127.0.0.1:8000/mcp", "headers": {"Authorization": "Bearer ..."}, "trustReadOnly": true}
+}}
+```
+
+- Kazde wywolanie wymaga TAK z widocznymi argumentami, chyba ze narzedzie pasuje do `autoApprove` albo serwer ma
+  `trustReadOnly`, a narzedzie deklaruje `readOnlyHint`. Zatwierdzone wywolanie trafia do dziennika zmian.
+- Dodanie serwera zawsze wymaga potwierdzenia. Podproces stdio nie dostaje klucza LLM ani tokenow Pipe.
+- stdio i Streamable HTTP; wersja protokolu wykrywana sama (2026-07-28 albo `initialize`).
+- `/mcp` pokazuje serwery i ich stan; *"polacz ponownie serwery MCP"* -- `mcp_manage reload`.

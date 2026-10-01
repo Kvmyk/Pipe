@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -71,6 +71,17 @@ pipe --kube pipe                          # namespace, w ktorym dziala Pipe
 pipe --kube pipe --kube-context prod      # inny kontekst kubeconfig
 ```
 
+## Most MCP (`--mcp`)
+
+`pipe --mcp --host root@serwer` zamienia CLI w serwer MCP (stdio) dla Claude Code, Cursora i innych agentow:
+narzedzia Pipe przez ten sam tunel SSH i token. Na stdout idzie tylko protokol MCP; tunel ma wlasny wolny port
+i nie pyta o haslo (`BatchMode` -- potrzebny klucz SSH). Konfiguracja np. w Claude Code:
+
+```json
+{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
+                         "env": {"AGENT_TOKEN": "<token z python3 -m backend.tokens add claude-code>"}}}}
+```
+
 ## Diagramy
 
 Diagram (np. `/mapa` albo *"narysuj architekture"*) CLI zapisuje jako PNG w `~/.pipe/diagrams/`
@@ -124,6 +135,8 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
+| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
+| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |

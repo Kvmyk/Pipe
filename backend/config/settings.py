@@ -141,6 +141,14 @@ WEBHOOK_TOKEN: str = os.getenv("WEBHOOK_TOKEN", "")
 WEBHOOK_INVESTIGATE: bool = os.getenv("WEBHOOK_INVESTIGATE", "1").strip().lower() not in ("0", "false", "no", "nie")
 
 
+# ─── MCP: Pipe jako serwer dla innych agentow (Streamable HTTP) ─────────────
+# 0 = wylaczone (most stdio w CLI `pipe --mcp` dziala niezaleznie). Token: jak dla klientow Pipe.
+MCP_PORT: int = _int("MCP_PORT", 0)
+MCP_HOST: str = os.getenv("MCP_HOST", "127.0.0.1")
+# Dodatkowe dozwolone naglowki Origin (po przecinku) — domyslnie tylko localhost.
+MCP_ALLOWED_ORIGINS: str = os.getenv("MCP_ALLOWED_ORIGINS", "")
+
+
 # ─── Koszty LLM ─────────────────────────────────────────────────────────────
 def _float(name: str, default: float = 0.0) -> float:
     try:

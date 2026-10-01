@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -75,6 +75,7 @@ from tg_format import (
     collect_response_text,
     format_alert,
     format_alerts,
+    format_approval,
     format_audit,
     format_digest,
     format_directory,
@@ -496,6 +497,50 @@ async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await _backend_call(update, context, go())
 
 
+async def _handle_approval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    if len(parts) != 3 or not user or not _is_admin(user.id):
+        await query.answer("Zgody zatwierdza tylko administrator.", show_alert=True)
+        return
+    await query.answer("Wykonuje..." if parts[1] == "yes" else "Odrzucono")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    async def go() -> None:
+        result = response_data([f async for f in get_client(user.id).command(
+            "approve", id=parts[2], decision=parts[1] == "yes")])
+        await _send_html(context.bot, query.message.chat_id, format_pre(f"Zgoda {parts[2]}", result.get("text", "")))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_zgody(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/zgody -- operacje agentow MCP czekajace na zgode (przyciski tylko dla administratora)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        pending = (await get_client(user_id).data("approvals")).get("pending", [])
+        if not pending:
+            await update.message.reply_text("Nic nie czeka na zgode.")
+        for item in pending:
+            await _send_html(context.bot, update.effective_chat.id, format_approval(item),
+                             _approval_keyboard(item["id"]) if _is_admin(user_id) else None)
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _show_data(update, context, "mcp_servers", lambda d: format_list(
+        "Serwery MCP", d.get("servers", []),
+        "Brak. Napisz np. <i>\"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github\"</i>."))
+
+
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/historia -- ostatnie wpisy z audit logu (bez LLM)."""
     user_id = await _guard(update)
@@ -619,6 +664,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _handle_undo_callback(update, context, data)
         return
 
+    if data.startswith("appr:"):
+        await _handle_approval_callback(update, context, data)
+        return
+
     if data.startswith("investigate:"):
         if not user or not _is_allowed(user.id):
             await query.answer()
@@ -732,9 +781,24 @@ async def handle_other_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # --- Czuwanie: alerty i raporty rutyn ---
 
+def _approval_keyboard(approval_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Zatwierdz", callback_data=f"appr:yes:{approval_id}"),
+        InlineKeyboardButton("Odrzuc", callback_data=f"appr:no:{approval_id}"),
+    ]])
+
+
 async def _broadcast(app: Application, event: dict) -> None:
     """Rozsyla zdarzenie czuwania do wszystkich dozwolonych uzytkownikow."""
     kind = event.get("type")
+    if kind == "approval":
+        # Zgody widza i zatwierdzaja tylko administratorzy
+        for user_id in sorted(ALLOWED_USER_IDS):
+            try:
+                await _send_html(app.bot, user_id, format_approval(event), _approval_keyboard(event["id"]))
+            except Exception as exc:
+                print(f"[Pipe Telegram] Nie wyslano zgody do {user_id}: {exc}", flush=True)
+        return
     if kind == "alert":
         text = format_alert(event)
         markup = _investigate_keyboard(event["id"]) if event.get("state") != "resolved" and event.get("id") else None
@@ -864,6 +928,8 @@ def main() -> None:
     app.add_handler(CommandHandler("koszt", cmd_koszt))
     app.add_handler(CommandHandler("cofnij", cmd_cofnij))
     app.add_handler(CommandHandler("dziennik", cmd_dziennik))
+    app.add_handler(CommandHandler("zgody", cmd_zgody))
+    app.add_handler(CommandHandler("mcp", cmd_mcp))
     app.add_handler(CommandHandler("mapa", cmd_mapa))
     app.add_handler(CommandHandler("historia", cmd_historia))
     app.add_handler(CommandHandler("server", cmd_server))

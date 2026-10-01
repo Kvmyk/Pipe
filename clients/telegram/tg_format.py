@@ -184,6 +184,8 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
     ("cofnij", "Cofnij ostatnia zmiane (/cofnij <id> - wybrana)"),
     ("dziennik", "Dziennik zatwierdzonych zmian"),
+    ("zgody", "Operacje agentow MCP czekajace na zgode"),
+    ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("pomoc", "Lista komend"),
@@ -372,3 +374,16 @@ def format_investigation(event: dict, limit: int = 3000) -> str:
         report = report[:limit] + "\n[...]"
     return (f"<b>Zbadalem alert</b> — {html.escape(str(event.get('title', '')))}\n"
             f"<pre>{html.escape(report)}</pre>")
+
+
+def format_approval(event: dict) -> str:
+    """Prosba o zgode dla zewnetrznego agenta (MCP) — komenda doslownie, plan bezpiecznika."""
+    lines = [f"<b>ZGODA</b> — agent <code>{html.escape(str(event.get('requested_by', '?')))}</code> "
+             f"chce wykonac na celu <code>{html.escape(str(event.get('target', 'local')))}</code>:",
+             f"<pre>{html.escape(str(event.get('command', '')))}</pre>"]
+    if event.get("reason"):
+        lines.append(f"<i>Powod: {html.escape(str(event['reason']))}</i>")
+    if event.get("plan"):
+        lines.append(html.escape(str(event["plan"])))
+    lines.append("<i>Zgoda wygasa po 30 minutach.</i>")
+    return "\n".join(lines)

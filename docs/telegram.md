@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.13.0
+Pipe v0.14.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -29,6 +29,8 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
   ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
 - **Zbadalem alert** -- raport workera dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba (webhooki).
 - Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
+- **ZGODA** -- zewnetrzny agent (np. Claude Code przez MCP) chce wykonac zmiane: komenda doslownie, plan
+  bezpiecznika i przyciski *Zatwierdz* / *Odrzuc* (tylko administratorzy). Wygasa po 30 minutach.
 - **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
 - Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
@@ -143,6 +145,8 @@ Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia.
 | `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
+| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
+| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |

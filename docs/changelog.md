@@ -1,5 +1,28 @@
 # Historia zmian -- Pipe
 
+## v0.14.0 (2026-09-29)
+
+MCP w obie strony: Pipe jako bezpieczna brama do serwera dla innych agentow AI i Pipe korzystajacy z cudzych
+serwerow MCP. Aktualizacja bez recznych krokow; nowe porty i serwery MCP sa domyslnie wylaczone.
+
+### Pipe jako serwer MCP
+
+- Claude Code, Cursor i inni agenci dostaja narzedzia Pipe: `run_command` (przez klasyfikator), `read_file`
+  (bez plikow z sekretami), stan, zmiany, mapa, zdrowie, audyt, dziennik i `ask_pipe`
+- Zmiana od zewnetrznego agenta czeka na **zgode** administratora -- Telegram (przyciski) albo `/zgody` w CLI --
+  i po niej idzie przez bezpiecznik, z kopia i `/cofnij`
+- Most stdio `pipe --mcp --host root@serwer` (tunel SSH, tokeny Pipe) i endpoint Streamable HTTP (`MCP_PORT`)
+- Protokol 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`) i starsze wersje
+  z `initialize`
+
+### Pipe jako klient MCP
+
+- Narzedzia serwerow MCP (stdio i HTTP) jako narzedzia agenta: `mcp__<serwer>__<narzedzie>`; konfiguracja zdaniem
+  albo w `backend/data/mcp.json`
+- Kazde wywolanie z potwierdzeniem, chyba ze narzedzie jest na liscie `autoApprove` albo zaufane jako tylko-odczyt;
+  dodanie serwera zawsze z potwierdzeniem; podproces nie dostaje klucza LLM ani tokenow Pipe
+- Nowe narzedzie `mcp_manage`, komenda `/mcp`
+
 ## v0.13.0 (2026-09-29)
 
 Pamiec incydentow, alerty z zewnatrz, wiadomosci glosowe i role. Aktualizacja w Dockerze: `docker compose up -d`
