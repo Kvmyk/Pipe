@@ -486,7 +486,7 @@ class TestServerCommands:
         from backend.core import infra, memory
         from backend.tests.test_server_commands import exchange
 
-        memory.write_skill("odnow-certyfikat", "Odnawia certyfikat.", "1. certbot renew\n2. sprawdz nginx")
+        memory.save_skill("odnow-certyfikat", "Odnawia certyfikat.", "1. certbot renew\n2. sprawdz nginx")
 
         async def fake_discover(include_kube=None):
             return infra.Infra(hostname="vps1", containers=[])
