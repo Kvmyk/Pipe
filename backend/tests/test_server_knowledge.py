@@ -482,6 +482,24 @@ class TestServerCommands:
         assert frame["done"] and "nginx: 1.24 -> 1.26" in frame["data"]["text"] and frame["data"]["hours"] == 3
         assert server_agent.messages == []
 
+    def test_skill_preview_and_graph_for_the_web_ui(self, server_agent, monkeypatch):
+        from backend.core import infra, memory
+        from backend.tests.test_server_commands import exchange
+
+        memory.write_skill("odnow-certyfikat", "Odnawia certyfikat.", "1. certbot renew\n2. sprawdz nginx")
+
+        async def fake_discover(include_kube=None):
+            return infra.Infra(hostname="vps1", containers=[])
+
+        monkeypatch.setattr(infra, "discover", fake_discover)
+        [[by_command], [by_name], [missing], [graph]] = exchange([
+            {"command": "skill", "name": "/odnow_certyfikat"}, {"command": "skill", "name": "odnow-certyfikat"},
+            {"command": "skill", "name": "nie-ma"}, {"command": "graph"}])
+        assert by_command["data"]["content"].startswith("1. certbot renew") and by_command["data"]["command"] == "odnow_certyfikat"
+        assert by_name["data"]["name"] == "odnow-certyfikat" and missing["status"] == "error"
+        assert graph["data"]["root"] == "host" and graph["data"]["hostname"] == "vps1"
+        assert server_agent.messages == []                           # zadna z tych komend nie uzywa LLM
+
     def test_chart_without_history(self, server_agent):
         from backend.tests.test_server_commands import exchange
 

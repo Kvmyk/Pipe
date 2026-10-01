@@ -454,6 +454,10 @@ projektu. Gdy sie nie da (np. dowolny skrypt), dzialanie jest pokazywane na caly
 pojawia sie w rozmowie i w zakladce *Zmiany* -- takze gdy plik zmienila komenda (np. `sed`), bo bezpiecznik robi kopie.
 Sekrety w roznicach sa redagowane. Kazdy wpis ma przycisk cofniecia. Roznic nie ma dla katalogow i danych w bazach.
 
+**Komendy i skille.** Wpisanie `/` w polu rozmowy rozwija liste komend (`/raport`, `/zmiany`, `/audyt`, `/koszt`...)
+i skilli z opisami -- wybor strzalkami albo kliknieciem, Tab uzupelnia komende, zeby dopisac argumenty. Zakladka
+*Skille* pokazuje zapisane procedury z podgladem tresci i przyciskiem uruchomienia.
+
 ---
 
 ## Jezyk: polski albo angielski

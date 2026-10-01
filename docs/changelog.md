@@ -17,6 +17,9 @@ zmienia w konfiguracji -- nowa komenda dziala po stronie klienta.
 - **Zmiany**: roznica pliku w karcie potwierdzenia, a po wykonaniu roznica "przed -> po" w rozmowie i w zakladce
   *Zmiany*, z przyciskiem cofniecia
 - Alerty, przypomnienia i raporty przychodza na strone na zywo; aktywne alerty maja przycisk *Zbadaj*
+- **Komendy ze slashem**: po wpisaniu `/` rozwija sie lista wszystkich komend i skilli z opisami (strzalki,
+  Enter, Tab, Esc); dzialaja te same komendy co w CLI i na Telegramie, takze angielskie aliasy
+- Zakladka **Skille**: lista z opisami, podglad tresci i uruchamianie jednym kliknieciem
 - Jasny motyw w blekitach (domyslny) i ciemny; polski i angielski (`--lang`)
 
 ### Backend
@@ -24,6 +27,7 @@ zmienia w konfiguracji -- nowa komenda dziala po stronie klienta.
 - Komenda `graph` -- schemat infrastruktury jako dane (wezly, polaczenia, trzy poziomy)
 - Zdarzenia `activity` dla klientow webowych: co agent robi i na ktorym elemencie schematu
 - Komenda `journal_changes` -- roznica "przed -> teraz" dla wpisu dziennika, z redakcja sekretow
+- Komenda `skill` -- tresc jednego skilla (podglad)
 
 ## v0.16.2 (2026-10-01)
 

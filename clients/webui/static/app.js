@@ -152,29 +152,34 @@
     }
     for (const entry of changed) await showChange(entry);
     if (changed.length) loadChanges();
+    loadSkills();
     loadGraph(true);
   }
 
   async function send(text) {
     text = text.trim();
     if (!text || busy) return;
+    closePalette();
+    input.value = ""; autosize();
+    if (text.startsWith("/") && await slash(text)) return;
     if (pendingCard) pendingCard.supersede();
     add("user", text);
-    input.value = ""; autosize();
     await run({ message: text });
   }
   function autosize() { input.style.height = "auto"; input.style.height = Math.min(160, input.scrollHeight) + "px"; }
-  input.addEventListener("input", autosize);
+  input.addEventListener("input", () => { autosize(); updatePalette(); });
   input.addEventListener("keydown", (event) => {
+    if (paletteKey(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(input.value); }
   });
+  input.addEventListener("blur", () => setTimeout(closePalette, 140));
   $("composer").addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
 
   // szybkie akcje
   const chips = [
     ["chipStatus", () => { add("user", t("chipStatus")); run({ command: "status" }, t("working")); }],
-    ["chipChanges", async () => { add("user", t("chipChanges")); await dataMessage({ command: "changes" }, (d) => plain(d.text)); }],
-    ["chipAudit", async () => { add("user", t("chipAudit")); await dataMessage({ command: "audit" }, (d) => plain(d.text)); }],
+    ["chipChanges", async () => { add("user", t("chipChanges")); await dataMessage({ command: "changes" }, (d) => listing(d.text)); }],
+    ["chipAudit", async () => { add("user", t("chipAudit")); await dataMessage({ command: "audit" }, (d) => listing(d.text)); }],
     ["chipReport", async () => { add("user", t("chipReport")); await dataMessage({ command: "digest" }, digestBody); }],
   ];
   chips.forEach(([key, action]) => {
@@ -188,6 +193,30 @@
     pre.appendChild(el("code", "", text || ""));
     body.appendChild(pre);
     return body;
+  }
+  // Zestawienie od backendu (zmiany, zdrowie, koszt, audyt...) jako czytelna lista: linia zakonczona ":" to naglowek,
+  // "- " to pozycja, wciecie 4+ spacji to szczegol (np. roznica) czcionka o stalej szerokosci, #ab12cd — identyfikator.
+  function listing(text, title) {
+    const box = el("div", "body listing");
+    if (title) box.appendChild(el("div", "lh", title));
+    const withIds = (line, node) => {
+      const match = line.match(/^(.*?)(#[0-9a-f]{6,10})\b(.*)$/);
+      if (!match) { node.appendChild(document.createTextNode(line)); return node; }
+      node.appendChild(document.createTextNode(match[1])); node.appendChild(el("code", "", match[2])); node.appendChild(document.createTextNode(match[3]));
+      return node;
+    };
+    String(text || "").replace(/\r/g, "").split("\n").forEach((raw) => {
+      const line = raw.trim(), indent = raw.length - raw.trimStart().length;
+      if (!line) return;
+      if (indent >= 4) box.appendChild(el("div", "ld", line));
+      else if (/^[-•] /.test(line)) box.appendChild(withIds(line.slice(2), el("div", "li")));
+      else if (/^\d+\. /.test(line) && indent === 0) box.appendChild(el("div", "lh", line));
+      else if (line.endsWith(":") && !line.startsWith("#")) box.appendChild(el("div", "lh", line));
+      else if (indent >= 2 || line.startsWith("#")) box.appendChild(withIds(line, el("div", "li")));
+      else box.appendChild(withIds(line, el("div", "lp")));
+    });
+    if (box.children.length === (title ? 1 : 0)) box.appendChild(el("div", "lp", t("emptyList")));
+    return box;
   }
   function digestBody(data) {
     const lines = ["**" + (data.title || t("report")) + "**"];
@@ -579,6 +608,221 @@
     source.onerror = () => setLink(false, t("reconnecting"));
   }
 
+  // ---------------------------------------------------------------- skille
+  let skills = [];
+  async function loadSkills() {
+    try { skills = (await command({ command: "list_skills" })).skills || []; } catch (_) { return; }
+    if (!$("tab-skills").hidden) renderSkills();
+  }
+  function runSkill(skill, args) {
+    if (busy) return;
+    switchPane("chat");
+    if (pendingCard) pendingCard.supersede();
+    add("user", "/" + (skill.command || skill.name) + (args ? " " + args : ""));
+    run({ command: "run_skill", name: skill.name, args: args || "" }, t("runningSkill") + " " + skill.name + "…");
+  }
+  function renderSkills() {
+    const list = $("skills");
+    list.textContent = "";
+    if (!skills.length) { list.appendChild(el("div", "empty", t("noSkills"))); return; }
+    skills.forEach((skill, index) => {
+      const card = el("div", "card-item skill");
+      card.style.animationDelay = Math.min(index, 10) * 28 + "ms";
+      const head = el("div", "head");
+      head.appendChild(el("b", "", skill.name));
+      if (skill.command) head.appendChild(el("span", "cmd-chip", "/" + skill.command));
+      card.appendChild(head);
+      card.appendChild(el("div", "desc", skill.description || ""));
+      const fold = el("div", "fold"), inner = el("div");
+      fold.appendChild(inner); card.appendChild(fold);
+      const foot = el("div", "foot");
+      const go = el("button", "btn run small", t("runSkill"));
+      go.addEventListener("click", () => runSkill(skill, ""));
+      const peek = el("button", "btn no small", t("showSkill"));
+      peek.addEventListener("click", async () => {
+        if (fold.classList.contains("open")) { fold.classList.remove("open"); peek.textContent = t("showSkill"); return; }
+        if (!inner.children.length) {
+          try { inner.appendChild(md((await command({ command: "skill", name: skill.name })).content || "")); }
+          catch (error) { inner.appendChild(el("div", "body", error.message)); }
+        }
+        requestAnimationFrame(() => fold.classList.add("open"));
+        peek.textContent = t("hideDiff");
+      });
+      foot.appendChild(go); foot.appendChild(peek);
+      card.appendChild(foot);
+      list.appendChild(card);
+    });
+  }
+
+  // ---------------------------------------------------------------- komendy "/"
+  // [nazwa polska, alias angielski, klucz opisu, czy przyjmuje argumenty]
+  const COMMANDS = [
+    ["status", "status", "c_status"], ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
+    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"],
+    ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
+    ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
+    ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
+    ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
+    ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
+    ["historia", "history", "c_history"], ["pomoc", "help", "c_help"],
+  ];
+  const english = window.PipeI18n.lang === "en";
+  const shown = (entry) => (english ? entry[1] : entry[0]);
+  function findCommand(name) { return COMMANDS.find((entry) => entry[0] === name || entry[1] === name); }
+  const SCAN_WORDS = ["aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan"];
+  const lines = (items) => (items || []).map((item) => "- " + item).join("\n");
+
+  const HANDLERS = {
+    status: () => run({ command: "status" }, t("working")),
+    raport: () => dataMessage({ command: "digest" }, digestBody),
+    zmiany: (args) => dataMessage({ command: "changes", args }, (d) => listing(d.text)),
+    wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
+    zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
+    audyt: () => dataMessage({ command: "audit" }, (d) => listing(d.text)),
+    incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
+    koszt: () => dataMessage({ command: "usage" }, (d) => listing(d.text)),
+    katalogi: () => dataMessage({ command: "directory" }, (d) => listing(d.text, "DIRECTORY")),
+    rutyny: () => dataMessage({ command: "routines" }, (d) => listing(lines(d.routines), t("c_routines"))),
+    cele: () => dataMessage({ command: "targets" }, (d) => listing(lines(d.targets), t("c_targets"))),
+    mcp: () => dataMessage({ command: "mcp_servers" }, (d) => listing(lines(d.servers), t("c_mcp"))),
+    historia: () => dataMessage({ command: "history" }, (d) => plain((d.entries || []).join("\n"))),
+    przypomnienia: (args) => {
+      const parts = args.split(/\s+/), cancel = ["anuluj", "cancel", "usun", "remove"].includes((parts[0] || "").toLowerCase()) ? (parts[1] || "").replace("#", "") : "";
+      return dataMessage({ command: "reminders", cancel }, (d) => listing(d.text));
+    },
+    vibe: (args) => dataMessage({ command: "vibe", args }, (d) => ("reset" in d ? md(d.reset ? t("vibeReset") : t("vibeNone")) : md(d.content || t("vibeEmpty")))),
+    server: async (args) => {
+      if (SCAN_WORDS.includes(args.toLowerCase())) return run({ command: "scan_server" }, t("working"));
+      let content = "";
+      try { content = (await command({ command: "server_md" })).content || ""; } catch (error) { add("agent error", md(error.message)); return; }
+      if (content.trim()) add("agent", md(content)); else await run({ command: "scan_server" }, t("working"));
+    },
+    zgody: async () => {
+      let pending = [];
+      try { pending = (await command({ command: "approvals" })).pending || []; } catch (error) { add("agent error", md(error.message)); return; }
+      if (!pending.length) { add("agent", md(t("noApprovals"))); return; }
+      pending.forEach((item) => {
+        const card = el("div", "confirm"), title = el("div", "title");
+        title.appendChild(el("span", "tag warn", t("approval")));
+        title.appendChild(document.createTextNode(item.requested_by || ""));
+        card.appendChild(title);
+        card.appendChild(md("`" + (item.target || "local") + "`: `" + String(item.command || "").replace(/`/g, "'") + "`" + (item.reason ? "\n\n" + item.reason : "") + (item.plan ? "\n\n" + item.plan : "")));
+        const actions = el("div", "actions"), yes = el("button", "btn yes", t("yes")), no = el("button", "btn no", t("no"));
+        actions.appendChild(yes); actions.appendChild(no); card.appendChild(actions);
+        const decide = async (decision) => {
+          actions.remove(); card.classList.add("done");
+          try { const result = await command({ command: "approve", id: item.id, decision }); card.appendChild(el("div", "verdict", result.text || (decision ? t("approved") : t("rejected")))); }
+          catch (error) { card.appendChild(el("div", "verdict", error.message)); }
+        };
+        yes.addEventListener("click", () => decide(true)); no.addEventListener("click", () => decide(false));
+        add("agent", card);
+      });
+    },
+    mapa: () => { switchTab("map"); loadGraph(false); },
+    skille: () => switchTab("skills"),
+    alerty: () => switchTab("alerts"),
+    dziennik: () => switchTab("changes"),
+    cofnij: () => switchTab("changes"),
+    pomoc: () => add("agent", listing(COMMANDS.map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
+      + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
+  };
+  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij"];
+
+  // Zwraca true, gdy tekst byl komenda (wbudowana albo skillem); false — idzie do agenta jako zwykla wiadomosc.
+  async function slash(text) {
+    const space = text.indexOf(" "), name = (space < 0 ? text.slice(1) : text.slice(1, space)).toLowerCase(), args = space < 0 ? "" : text.slice(space + 1).trim();
+    const entry = findCommand(name);
+    if (entry) {
+      if (!PANEL_ONLY.includes(entry[0])) { if (pendingCard) pendingCard.supersede(); add("user", text); }
+      await HANDLERS[entry[0]](args);
+      return true;
+    }
+    const skill = skills.find((s) => s.command === name || s.name === name);
+    if (skill) { runSkill(skill, args); return true; }
+    return false;
+  }
+
+  // paleta: podpowiedzi po wpisaniu "/"
+  const palette = $("palette"), paletteList = $("palette-list"), glow = $("palette-glow");
+  let options = [], active = 0, paletteOpen = false;
+  function paletteOptions(query) {
+    const q = query.toLowerCase();
+    const match = (...names) => !q || names.some((n) => n && n.toLowerCase().startsWith(q)) || (q.length > 1 && names.some((n) => n && n.toLowerCase().includes(q)));
+    const commands = COMMANDS.filter((entry) => match(entry[0], entry[1]))
+      .map((entry) => ({ group: "commands", name: shown(entry), desc: t(entry[2]), args: !!entry[3] }));
+    const owned = skills.filter((s) => s.command && match(s.command, s.name))
+      .map((s) => ({ group: "skills", name: s.command, desc: s.description, args: true }));
+    // dokladne trafienia na gorze
+    const rank = (o) => (o.name.toLowerCase() === q ? 0 : o.name.toLowerCase().startsWith(q) ? 1 : 2);
+    return [...commands, ...owned].sort((a, b) => rank(a) - rank(b));
+  }
+  function updatePalette() {
+    const value = input.value;
+    if (!value.startsWith("/") || /\s/.test(value)) { closePalette(); return; }
+    options = paletteOptions(value.slice(1));
+    active = Math.min(active, Math.max(0, options.length - 1));
+    paletteList.textContent = "";
+    let group = "";
+    options.forEach((option, index) => {
+      if (option.group !== group && !value.slice(1)) { group = option.group; paletteList.appendChild(el("div", "palette-group", t(group))); }
+      const row = el("button", "palette-item");
+      row.type = "button"; row.dataset.index = String(index); row.setAttribute("role", "option");
+      row.appendChild(el("span", "name", "/" + option.name));
+      row.appendChild(el("span", "desc", option.desc || ""));
+      row.appendChild(el("span", "hint", option.group === "skills" ? "skill" : ""));
+      row.addEventListener("mousedown", (event) => { event.preventDefault(); choose(index, true); });
+      row.addEventListener("mousemove", () => { if (active !== index) { active = index; moveGlow(); } });
+      paletteList.appendChild(row);
+    });
+    if (!options.length) paletteList.appendChild(el("div", "palette-empty", t("noCommand")));
+    else {
+      const keys = el("div", "palette-keys");
+      [["↑↓", "keyMove"], ["Enter", "keyRun"], ["Tab", "keyFill"], ["Esc", "keyClose"]].forEach(([key, label]) => {
+        const item = el("span"); item.appendChild(el("kbd", "", key)); item.appendChild(document.createTextNode(t(label))); keys.appendChild(item);
+      });
+      paletteList.appendChild(keys);
+    }
+    if (!paletteOpen) { palette.classList.remove("out"); palette.hidden = false; paletteOpen = true; glow.style.transition = "none"; }
+    moveGlow();
+    requestAnimationFrame(() => { glow.style.transition = ""; });
+  }
+  function moveGlow() {
+    const row = paletteList.querySelector(`.palette-item[data-index="${active}"]`);
+    paletteList.querySelectorAll(".palette-item").forEach((node) => node.setAttribute("aria-selected", String(node === row)));
+    if (!row) { glow.style.opacity = "0"; return; }
+    glow.style.opacity = "1";
+    glow.style.height = row.offsetHeight + "px";
+    glow.style.transform = `translateY(${row.offsetTop + paletteList.offsetTop}px)`;
+    const top = row.offsetTop + paletteList.offsetTop, bottom = top + row.offsetHeight;
+    if (top < palette.scrollTop) palette.scrollTo({ top: top - 6, behavior: "smooth" });
+    else if (bottom > palette.scrollTop + palette.clientHeight) palette.scrollTo({ top: bottom - palette.clientHeight + 6, behavior: "smooth" });
+  }
+  function closePalette() {
+    if (!paletteOpen) return;
+    paletteOpen = false; active = 0;
+    palette.classList.add("out");
+    setTimeout(() => { if (!paletteOpen) { palette.hidden = true; palette.classList.remove("out"); } }, 140);
+  }
+  function choose(index, runNow) {
+    const option = options[index];
+    if (!option) return;
+    if (runNow) { send("/" + option.name); return; }
+    input.value = "/" + option.name + " "; autosize(); closePalette(); input.focus();
+  }
+  function paletteKey(event) {
+    if (!paletteOpen || !options.length) { if (paletteOpen && event.key === "Escape") { closePalette(); return true; } return false; }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      active = (active + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+      moveGlow();
+      return true;
+    }
+    if (event.key === "Tab") { event.preventDefault(); choose(active, false); return true; }
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); choose(active, true); return true; }
+    if (event.key === "Escape") { event.preventDefault(); closePalette(); return true; }
+    return false;
+  }
+
   // ---------------------------------------------------------------- powloka
   function toast(title, text, onClick) {
     const node = el("div", "toast");
@@ -590,7 +834,8 @@
     setTimeout(close, 7000);
   }
   function switchTab(name) {
-    ["map", "changes", "alerts"].forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
+    ["map", "changes", "skills", "alerts"].forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
+    if (name === "skills") loadSkills();
     if (name === "changes") { unseenChanges = 0; badge("changes-badge", 0); loadChanges(); }
     if (name === "alerts") { unseenAlerts = 0; loadAlerts(); }
     if (name === "map") requestAnimationFrame(() => graph.fit(0));
@@ -616,6 +861,7 @@
 
   // teksty
   $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat").textContent = t("newChat");
+  $("st-skills").textContent = t("skills");
   $("st-map").textContent = t("map"); $("st-changes-label").textContent = t("changes"); $("st-alerts-label").textContent = t("alerts");
   $("theme").title = t("theme");
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
@@ -623,6 +869,7 @@
   $("server-name").textContent = config.server || "";
 
   welcome();
+  loadSkills();
   loadGraph(false);
   loadAlerts();
   connectEvents();
