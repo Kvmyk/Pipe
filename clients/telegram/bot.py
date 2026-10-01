@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.12.0
+Pipe v0.13.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -23,6 +23,8 @@ Konfiguracja w .env (clients/telegram/.env):
   TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
   AGENT_SOCKET=/tmp/vps-agent.sock
   TELEGRAM_ALERTS=1          # 0 = nie przesylaj alertow czuwania
+  TELEGRAM_VIEWER_IDS=...    # tylko odczyt (wymaga AGENT_VIEWER_TOKEN, takze w backend/.env)
+  AGENT_VIEWER_TOKEN=...
 """
 
 from __future__ import annotations
@@ -77,6 +79,7 @@ from tg_format import (
     format_digest,
     format_directory,
     format_help,
+    format_investigation,
     format_list,
     format_pre,
     format_routine,
@@ -95,10 +98,16 @@ _raw_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
 ALLOWED_USER_IDS: set[int] = {
     int(uid.strip()) for uid in _raw_ids.split(",") if uid.strip().isdigit()
 }
+# Przegladajacy: rozmowa, diagnoza, raporty, alerty — bez zatwierdzania zmian (rola viewer w backendzie).
+VIEWER_USER_IDS: set[int] = {
+    int(uid.strip()) for uid in os.getenv("TELEGRAM_VIEWER_IDS", "").split(",") if uid.strip().isdigit()
+} - ALLOWED_USER_IDS
 AGENT_SOCKET: str = os.getenv("AGENT_SOCKET", "/tmp/vps-agent.sock")
 # Token autoryzacji backendu — musi byc zgodny z AGENT_TOKEN w backend/.env.
 # Pusty = backend nie wymaga tokenu.
 AGENT_TOKEN: str = os.getenv("AGENT_TOKEN", "")
+# Token roli viewer (AGENT_VIEWER_TOKEN w backend/.env) — dla TELEGRAM_VIEWER_IDS.
+AGENT_VIEWER_TOKEN: str = os.getenv("AGENT_VIEWER_TOKEN", "")
 ALERTS_ENABLED: bool = os.getenv("TELEGRAM_ALERTS", "1").strip().lower() not in ("0", "false", "no", "nie")
 
 # Ramki z diagramami (base64) sa duze — domyslny limit linii asyncio to 64 KiB.
@@ -180,7 +189,7 @@ def get_client(user_id: int) -> TelegramSocketClient:
         _clients[user_id] = TelegramSocketClient(
             socket_path=AGENT_SOCKET,
             session_id=str(user_id),
-            token=AGENT_TOKEN,
+            token=AGENT_TOKEN if _is_admin(user_id) else AGENT_VIEWER_TOKEN,
         )
     return _clients[user_id]
 
@@ -188,10 +197,15 @@ def get_client(user_id: int) -> TelegramSocketClient:
 # --- Helpers ---
 
 def _is_allowed(user_id: int | None) -> bool:
-    """Sprawdza czy user_id jest na whiteliscie."""
+    """Sprawdza czy user_id jest na whiteliscie (administratorzy albo przegladajacy)."""
     if not user_id:
         return False
-    return user_id in ALLOWED_USER_IDS
+    return user_id in ALLOWED_USER_IDS or user_id in VIEWER_USER_IDS
+
+
+def _is_admin(user_id: int | None) -> bool:
+    """Tylko administratorzy zatwierdzaja zmiany i cofaja je."""
+    return bool(user_id) and user_id in ALLOWED_USER_IDS
 
 
 def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -294,7 +308,8 @@ async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: in
     text, needs_confirm = collect_response_text(responses)
     if text:
         # HTML Telegrama: resztki Markdowna -> tagi, komendy w backtickach doslownie
-        await _send_html(bot, chat_id, to_telegram_html(text), _confirm_keyboard(user_id) if needs_confirm else None)
+        markup = _confirm_keyboard(user_id) if needs_confirm and _is_admin(user_id) else None
+        await _send_html(bot, chat_id, to_telegram_html(text), markup)
 
 
 async def _guard(update: Update) -> int | None:
@@ -446,6 +461,9 @@ async def cmd_cofnij(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not user_id:
         return
     entry_id = " ".join(context.args or []).strip()
+    if not _is_admin(user_id):
+        await update.message.reply_text("Cofanie zmian jest dostepne tylko dla administratora.")
+        return
 
     async def go() -> None:
         data = response_data([f async for f in get_client(user_id).command("undo", id=entry_id)])
@@ -459,7 +477,7 @@ async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     user = update.effective_user
     parts = data.split(":")
-    if len(parts) != 4 or not user or not _is_allowed(user.id) or str(user.id) != parts[3]:
+    if len(parts) != 4 or not user or not _is_admin(user.id) or str(user.id) != parts[3]:
         await query.answer("Nie mozesz cofac cudzych operacji.", show_alert=True)
         return
     await query.answer()
@@ -562,6 +580,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 _last_message_time: dict[int, float] = {}
+MAX_VOICE_BYTES = 2_500_000
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Wiadomosc glosowa -> transkrypcja w backendzie -> zwykla wiadomosc do agenta."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    media = update.message.voice or update.message.audio
+    if media is None:
+        return
+    if (media.file_size or 0) > MAX_VOICE_BYTES:
+        await update.message.reply_text("Nagranie jest za dlugie — nagraj krotsze albo napisz.")
+        return
+
+    async def go() -> None:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        file = await media.get_file()
+        data = bytes(await file.download_as_bytearray())
+        name = "voice.ogg" if update.message.voice else (getattr(media, "file_name", None) or "audio.mp3")
+        client = get_client(user_id)
+        text = response_data([f async for f in client.command(
+            "transcribe", audio=base64.b64encode(data).decode("ascii"), filename=name)]).get("text", "")
+        await update.message.reply_text(f"Uslyszalem: {text}")
+        await _run_and_reply(context, update.effective_chat.id, user_id, client.chat(text))
+
+    await _backend_call(update, context, go())
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -597,8 +642,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except ValueError:
         return
 
-    # Tylko oryginalny uzytkownik moze potwierdzic
-    if not user or user.id != requesting_user_id or not _is_allowed(user.id):
+    # Tylko oryginalny uzytkownik moze potwierdzic — i tylko administrator
+    if not user or user.id != requesting_user_id or not _is_admin(user.id):
         await query.answer("Nie mozesz potwierdzac cudzych operacji.", show_alert=True)
         return
 
@@ -697,9 +742,11 @@ async def _broadcast(app: Application, event: dict) -> None:
         text, markup = format_routine(event), None
     elif kind in ("digest", "welcome"):
         text, markup = format_digest(event), None
+    elif kind == "investigation":
+        text, markup = format_investigation(event), None
     else:
         return
-    for user_id in ALLOWED_USER_IDS:
+    for user_id in sorted(ALLOWED_USER_IDS | VIEWER_USER_IDS):
         try:
             await _send_html(app.bot, user_id, text, markup)
             if event.get("attachment"):
@@ -775,9 +822,9 @@ async def refresh_menu_after_update(update: Update, context: ContextTypes.DEFAUL
 
 
 async def _post_init(app: Application) -> None:
-    for user_id in ALLOWED_USER_IDS:
+    for user_id in ALLOWED_USER_IDS | VIEWER_USER_IDS:
         await refresh_menu(app.bot, user_id)
-    if ALERTS_ENABLED and ALLOWED_USER_IDS:
+    if ALERTS_ENABLED and (ALLOWED_USER_IDS or VIEWER_USER_IDS):
         app.create_task(alerts_loop(app))
 
 
@@ -798,6 +845,9 @@ def main() -> None:
 
     print("[Pipe Telegram] Uruchamiam bota...")
     print(f"[Pipe Telegram] Dozwoleni uzytkownicy: {ALLOWED_USER_IDS}")
+    if VIEWER_USER_IDS:
+        print(f"[Pipe Telegram] Tylko odczyt: {VIEWER_USER_IDS}"
+              + ("" if AGENT_VIEWER_TOKEN else " — UWAGA: brak AGENT_VIEWER_TOKEN, backend ich odrzuci"))
     print(f"[Pipe Telegram] Backend socket: {AGENT_SOCKET}")
     print(f"[Pipe Telegram] Alerty czuwania: {'tak' if ALERTS_ENABLED else 'nie'}")
 
@@ -826,6 +876,7 @@ def main() -> None:
     app.add_handler(CommandHandler(["pomoc", "help"], cmd_pomoc))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     # Po wbudowanych -- skille jako komendy i odpowiedz na nieznana komende
     app.add_handler(MessageHandler(filters.COMMAND, handle_other_command))
     # Grupa 1 dziala po obsludze kazdej wiadomosci

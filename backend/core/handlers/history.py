@@ -4,6 +4,7 @@ Handler narzedzia server_history — pamiec serwera w czasie:
   changes  co sie zmienilo (migawki: pakiety, kontenery, porty, cron, konta, klucze SSH, konfiguracje)
   chart    wykres load / RAM / dyskow z historii czuwania (obraz dla uzytkownika, liczby dla modelu)
   checks   sprawdzenia bez konfiguracji: certyfikaty, strony, DNS, swiezosc backupow
+  incidents  pamiec incydentow: co sie juz zdarzalo, co ustalono, co pomoglo
 
 Wszystko to odczyty — bez potwierdzen.
 """
@@ -72,8 +73,13 @@ async def handle_server_history(
             reply(session, tool_call, text)
         return
 
+    if operation == "incidents":
+        from backend.core import incidents
+        reply(session, tool_call, incidents.render(25))
+        return
+
     if operation == "checks":
         reply(session, tool_call, await checks_text())
         return
 
-    reply(session, tool_call, f"Nieznana operacja {operation!r}. Dostepne: changes, chart, checks.")
+    reply(session, tool_call, f"Nieznana operacja {operation!r}. Dostepne: changes, chart, checks, incidents.")

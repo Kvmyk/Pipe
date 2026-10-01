@@ -41,6 +41,9 @@ class Session:
     workers: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Sesje techniczne (rutyny, workery) nie ucza sie stylu uzytkownika
     learns_vibe: bool = True
+    # Kto zalozyl sesje (tozsamosc z tokenu) i z jaka rola: admin | viewer (tylko odczyty)
+    owner: str = ""
+    role: str = "admin"
 
     @property
     def is_telegram(self) -> bool:
@@ -60,7 +63,7 @@ class Session:
         baza -> tryb dzialania -> pamiec (SERVER.md, DIRECTORY, skille, VIBE)
         -> alerty czuwania -> katalog roboczy (zmienia sie najczesciej).
         """
-        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT, cwd_block
+        from backend.config.prompts import BASE_SYSTEM_PROMPT, TELEGRAM_SYSTEM_PROMPT, VIEWER_BLOCK, cwd_block
         from backend.core import runtime
         from backend.core.memory import prompt_context
         from backend.core.watch import prompt_alerts
@@ -71,5 +74,6 @@ class Session:
             + "\n\n--- SRODOWISKO ---\n" + runtime.describe()
             + prompt_context(self.user_key)
             + prompt_alerts()
+            + (VIEWER_BLOCK if self.role == "viewer" else "")
             + cwd_block(self.cwd, telegram=self.is_telegram)
         )

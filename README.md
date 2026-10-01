@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.12.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.13.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 Pipe dziala na serwerze na stale: zna go (SERVER.md, mapa katalogow), czuwa nad nim i odzywa sie pierwszy,
 gdy cos sie psuje. Rozmawiasz z nim z terminala (CLI przez tunel SSH) albo z telefonu (Telegram) -- po polsku.
@@ -20,6 +20,8 @@ Tamte narzedzia to ogolni agenci do kodu albo "do wszystkiego". Pipe jest agente
 | **Monitoring bez konfiguracji** | Domeny z nginx/Caddy/Traefik i backupy z mapy katalogow Pipe znajduje sam: pilnuje waznosci certyfikatow, odpowiedzi stron, DNS i swiezosci backupow. Nic nie definiujesz. |
 | **Widzi architekture** | `/mapa` rysuje diagram tego, co stoi na serwerze: domeny -> reverse proxy -> kontenery -> bazy, projekty compose, porty wystawione na swiat. Na Telegramie przychodzi jako obraz, w CLI jako PNG + podglad w terminalu. |
 | **Zarzadza flota** | Zdalne serwery (SSH), kontenery i klastry Kubernetes to *cele*. Agent wysyla na nie **workerow** -- pod-agentow, ktorzy rownolegle badaja kazdy cel i raportuja mu, a nie Tobie. Nic nie instaluje sie po drugiej stronie. |
+| **Uczy sie na incydentach** | Rozwiazany alert zostaje w pamieci z ustaleniami i tym, co pomoglo. Gdy problem wraca, alert przychodzi z *"poprzednio: przyczyna ..., pomoglo ..."*, a agent zaczyna od sprawdzonej naprawy. Lokalnie, bez dodatkowych kosztow. |
+| **Dolacza do Twojego monitoringu** | Webhooki z Alertmanagera, Grafany, Uptime Kuma i GitHuba -- alert na Telegram, a worker od razu bada przyczyne na serwerze i przysyla raport. |
 | **Pilnuje bezpieczenstwa** | `/audyt` ocenia serwer (0-100): hasla w SSH, zapora, bazy wystawione na swiat (takze przez Dockera, ktory omija ufw), kontenery z `docker.sock`, konta z uid 0, aktualizacje -- kazdy punkt z gotowa poprawka. Co 2 minuty wypatruje nowych kont, kluczy SSH, programow SUID i podejrzanych logowan. |
 | **Zmiany, ktore da sie cofnac** | Przed kazda zatwierdzona zmiana kopia do dziennika. `nginx -t`, `sshd -t`, `docker compose config` **przed** przeladowaniem; po zmianie weryfikacja: usluga aktywna, kontener zdrowy, strony dalej odpowiadaja. Zepsuta konfiguracja wraca sama, reszta -- `/cofnij`. |
 | **Bezpieczenstwo w kodzie** | Klasyfikator fail-closed (nieznana komenda = pytanie), potwierdzenie pokazuje dokladnie to, co sie wykona, workery wykonuja tylko odczyty. Sekrety z plikow (`.env`, klucze) sa **redagowane, zanim trafia do providera LLM**. |
@@ -80,10 +82,11 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"czy RAM rosnie od tygodnia?"* -- wykres z historii czuwania
 - *"jak bezpieczny jest ten serwer?"* albo `/audyt`, potem *"napraw 1"* -- poprawka z kopia i weryfikacja
 - *"postaw strone shop.example.com na porcie 3000 z certyfikatem"* -- wbudowany skill `nginx-vhost`
+- wiadomosc glosowa na Telegramie: *"sprawdz, czemu sklep nie dziala"* -- transkrypcja i diagnoza
 - *"cofnij ostatnia zmiane"* albo `/cofnij` -- przywraca pliki i odwraca operacje z dziennika
 
 Komendy w obu klientach: `/status` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
-`/audyt` `/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
+`/audyt` `/incydenty` `/alerty` `/rutyny` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
 
 ---
 

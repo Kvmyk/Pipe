@@ -266,7 +266,10 @@ def format_alert(event: dict) -> str:
     if event.get("state") == "resolved":
         return f"<b>ROZWIAZANE</b> — {title}"
     label = SEVERITY_LABEL.get(str(event.get("severity")), "ALERT")
-    return f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+    text = f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+    if event.get("history"):
+        text += f"\n<b>Poprzednio:</b> {html.escape(str(event['history']))}"
+    return text
 
 
 def format_routine(event: dict, limit: int = 3000) -> str:
@@ -360,3 +363,12 @@ def format_audit(data: dict) -> str:
     if data.get("findings"):
         lines.append("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.")
     return "\n".join(lines)
+
+
+def format_investigation(event: dict, limit: int = 3000) -> str:
+    """Raport workera, ktory sam zbadal alert z zewnatrz (webhook)."""
+    report = str(event.get("report", "")).strip()
+    if len(report) > limit:
+        report = report[:limit] + "\n[...]"
+    return (f"<b>Zbadalem alert</b> — {html.escape(str(event.get('title', '')))}\n"
+            f"<pre>{html.escape(report)}</pre>")

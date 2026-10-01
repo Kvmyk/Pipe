@@ -104,10 +104,11 @@ class TestAuditLog:
 class TestTokenAndModes:
 
     def test_token_uses_constant_time_compare(self):
-        # server.py porownuje token przez hmac.compare_digest
+        # server.py porownuje token przez hmac.compare_digest (w _authorize, wolanym przez handle_client)
         import inspect
         import backend.server as server
-        assert "compare_digest" in inspect.getsource(server.handle_client)
+        assert "compare_digest" in inspect.getsource(server._authorize)
+        assert "_authorize(request)" in inspect.getsource(server.handle_client)
 
     @staticmethod
     def _with_key(monkeypatch):

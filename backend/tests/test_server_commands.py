@@ -27,6 +27,9 @@ class FakeAgent:
     async def confirm(self, session_id, confirmed):
         yield "potwierdzono"
 
+    def owns(self, session_id, owner):
+        return True
+
 
 @pytest.fixture
 def agent(tmp_path, monkeypatch):

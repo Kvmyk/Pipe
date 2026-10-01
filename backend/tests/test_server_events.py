@@ -25,6 +25,9 @@ class EventAgent:
     async def confirm(self, session_id, confirmed):
         yield "ok"
 
+    def owns(self, session_id, owner):
+        return True
+
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):

@@ -28,6 +28,13 @@ services:
     ports:
       # TCP dla SSH tunnel — bindowany TYLKO na localhost serwera
       - "127.0.0.1:7379:7379"
+      # Webhooki (alerty z Alertmanagera, Uptime Kuma, GitHuba...) — dziala po ustawieniu WEBHOOK_PORT=7380
+      # i WEBHOOK_TOKEN w .env; tylko localhost (odwrotne proxy z TLS, jesli nadawca jest poza serwerem)
+      - "127.0.0.1:7380:7380"
+    # Wszystkie ustawienia z backend/.env (progi czuwania, raport, ceny, webhooki...) trafiaja do kontenera;
+    # ponizsze `environment` nadpisuje to, co zalezy od kontenera (sciezki, adresy nasluchu).
+    env_file:
+      - .env
     environment:
       # Tryb dzialania: host pod /hostfs, /proc hosta pod /hostproc (patrz backend/core/runtime.py)
       - PIPE_RUNTIME=docker
@@ -55,6 +62,7 @@ services:
       - AGENT_SOCKET=/tmp/vps-agent.sock
       - TCP_HOST=0.0.0.0
       - TCP_PORT=7379
+      - WEBHOOK_HOST=0.0.0.0
     network_mode: bridge
 
   telegram:

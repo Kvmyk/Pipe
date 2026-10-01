@@ -40,7 +40,7 @@ from backend.config.prompts import (
     SCAN_SERVER_UPDATE,
     STATUS_MESSAGE,
 )
-from backend.core import audit, diagram, journal, memory, metrics, routines, runtime, targets, usage
+from backend.core import audit, diagram, incidents, journal, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
 from backend.core.events import Attachment, Progress
 from backend.core.watch import get_watcher
@@ -72,19 +72,27 @@ async def handle_client(
                 await _send(writer, {"response": f"Błąd JSON: {exc}", "status": "error", "done": True})
                 continue
 
-            session_id = request.get("session_id", "default")
-            interface = request.get("interface", "cli")
+            session_id = str(request.get("session_id", "default"))
+            interface = str(request.get("interface", "cli"))
 
-            # Sprawdź token (jeśli ustawiony) — PRZED jakąkolwiek akcją,
-            # zeby nieuwierzytelniony klient nie mogl zatwierdzic oczekujacej operacji.
-            # compare_digest — porownanie w stalym czasie, bez wycieku dlugosci/prefiksu.
-            expected_token = settings.AGENT_TOKEN
-            if expected_token and not hmac.compare_digest(str(request.get("token", "")), expected_token):
+            # Token — PRZED jakakolwiek akcja, zeby nieuwierzytelniony klient nie mogl zatwierdzic
+            # oczekujacej operacji. Token wyznacza tozsamosc i role (admin / viewer).
+            auth = _authorize(request)
+            if auth is None:
                 await _send(writer, {"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True})
+                continue
+            identity, role = auth
+            # Sesja nalezy do klienta, ktory ja zalozyl — inny token nie przeczyta jej historii
+            # ani nie zatwierdzi cudzej operacji, nawet znajac session_id.
+            if not agent.owns(session_id, identity):
+                await _send(writer, _error("Ta sesja nalezy do innego klienta."))
                 continue
 
             # Obsłuż potwierdzenie
             if "confirm" in request:
+                if role == "viewer" and request["confirm"]:
+                    await _send(writer, _error("Rola viewer: tylko odczyt — nie mozesz zatwierdzac zmian."))
+                    continue
                 await _stream(writer, agent.confirm(session_id, bool(request["confirm"])))
                 continue
 
@@ -95,7 +103,7 @@ async def handle_client(
 
             # Komendy klientow: /server, /skille, /mapa... i skille jako komendy
             if "command" in request:
-                await _handle_command(writer, agent, request, session_id, interface)
+                await _handle_command(writer, agent, request, session_id, interface, identity, role)
                 continue
 
             # Obsłuż wiadomość
@@ -104,7 +112,7 @@ async def handle_client(
                 await _send(writer, {"response": "Pusta wiadomość.", "status": "error", "done": True})
                 continue
 
-            await _stream_chat(writer, agent, session_id, message, interface)
+            await _stream_chat(writer, agent, session_id, message, interface, owner=identity, role=role)
 
     except ConnectionResetError:
         pass
@@ -119,6 +127,29 @@ async def handle_client(
             await writer.wait_closed()
         except Exception:
             pass
+
+
+def _authorize(request: dict) -> tuple[str, str] | None:
+    """
+    (tozsamosc, rola) dla tokenu z zadania albo None. Kolejno: AGENT_TOKEN (admin), AGENT_VIEWER_TOKEN
+    (viewer), tokeny z `python3 -m backend.tokens`. Bez zadnego skonfigurowanego tokenu — otwarty dostep
+    (chroni go tunel SSH / uprawnienia socketu), rola admin.
+    """
+    from backend import tokens
+
+    token = str(request.get("token", "") or "")
+    raw = token.encode("utf-8", errors="replace")
+    # compare_digest na bajtach — w stalym czasie i bez wyjatku dla znakow spoza ASCII
+    if settings.AGENT_TOKEN and hmac.compare_digest(raw, settings.AGENT_TOKEN.encode()):
+        return "admin", "admin"
+    if settings.AGENT_VIEWER_TOKEN and hmac.compare_digest(raw, settings.AGENT_VIEWER_TOKEN.encode()):
+        return "viewer", "viewer"
+    found = tokens.match(token)
+    if found:
+        return f"token:{found[0]}", found[1]
+    if not settings.AGENT_TOKEN and not settings.AGENT_VIEWER_TOKEN and not tokens.load():
+        return "open", "admin"
+    return None
 
 
 def event_frame(event) -> dict:
@@ -137,21 +168,28 @@ def event_frame(event) -> dict:
     return {"response": chunk, "status": status, "done": False}
 
 
-async def _stream(writer, events) -> int:
+async def _stream(writer, events, texts: list[str] | None = None) -> int:
     count = 0
     async for event in events:
         count += 1
+        if texts is not None and isinstance(event, str):
+            texts.append(event)
         await _send(writer, event_frame(event))
     await _send(writer, {"response": "", "status": "ok", "done": True})
     return count
 
 
-async def _stream_chat(writer, agent, session_id: str, message: str, interface: str, *, generated: bool = False) -> None:
-    """Przekazuje wiadomosc agentowi i streamuje odpowiedz (JSON lines, ostatnia z done=true)."""
+async def _stream_chat(writer, agent, session_id: str, message: str, interface: str, *,
+                       generated: bool = False, owner: str = "", role: str = "admin") -> list[str]:
+    """Przekazuje wiadomosc agentowi i streamuje odpowiedz (JSON lines, ostatnia z done=true). Zwraca teksty."""
     print(f"[server] Wiadomość od {interface}: {message[:80]}", flush=True)
-    kwargs = {"generated": True} if generated else {}
-    count = await _stream(writer, agent.chat(session_id, message, interface, **kwargs))
+    kwargs: dict = {"owner": owner, "role": role}
+    if generated:
+        kwargs["generated"] = True
+    texts: list[str] = []
+    count = await _stream(writer, agent.chat(session_id, message, interface, **kwargs), texts)
     print(f"[server] Odpowiedź wysłana ({count} fragmentów)", flush=True)
+    return texts
 
 
 def _data(data: dict) -> dict:
@@ -162,7 +200,8 @@ def _error(text: str) -> dict:
     return {"response": f"[BLAD] {text}", "status": "error", "done": True}
 
 
-async def _handle_command(writer, agent, request: dict, session_id: str, interface: str) -> None:
+async def _handle_command(writer, agent, request: dict, session_id: str, interface: str,
+                          identity: str = "open", role: str = "admin") -> None:
     """
     Komendy klientow. Czesc zwraca dane w polu "data" (bez udzialu LLM), czesc
     wysyla agentowi wiadomosc zbudowana tutaj — klient nie sklada promptow.
@@ -170,6 +209,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
     command = str(request.get("command", "")).strip()
     args = str(request.get("args", "") or "").strip()
     user_key = memory.vibe_key(interface)
+    chat_as = {"owner": identity, "role": role}
     try:
         if command == "list_skills":
             await _send(writer, _data({"skills": memory.skill_commands()}))
@@ -177,7 +217,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _send(writer, _data({"content": memory.read_server_md()}))
         elif command == "scan_server":
             message = SCAN_SERVER_UPDATE if memory.read_server_md().strip() else SCAN_SERVER_CREATE
-            await _stream_chat(writer, agent, session_id, message, interface, generated=True)
+            await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "status":
             await _stream_chat(writer, agent, session_id, STATUS_MESSAGE, interface, generated=True)
         elif command == "run_skill":
@@ -188,7 +228,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             message = RUN_SKILL_MESSAGE.format(name=entry["name"], command=entry["command"] or entry["name"])
             if args:
                 message += RUN_SKILL_EXTRA.format(args=args)
-            await _stream_chat(writer, agent, session_id, message, interface, generated=True)
+            await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "history":
             await _send(writer, _data({"entries": await audit.get_recent(15)}))
         elif command == "directory":
@@ -219,8 +259,12 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 await _send(writer, _error("Nie znam tego alertu (serwer mogl zostac zrestartowany)."))
                 return
             message = INVESTIGATE_ALERT_MESSAGE.format(title=alert["title"], detail=alert["detail"])
+            message += incidents.context_for(alert.get("key", ""))
             message += await _recent_changes_context()
-            await _stream_chat(writer, agent, session_id, message, interface, generated=True)
+            texts = await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
+            # Ustalenia agenta zostaja przy incydencie — nastepnym razem beda punktem wyjscia.
+            answer = next((t for t in reversed(texts) if t.strip() and not t.lstrip().startswith("[")), "")
+            incidents.note_investigation(alert.get("key", ""), answer)
         elif command == "changes":
             from backend.core.handlers.history import changes_text
             hours = metrics.parse_hours(args, default=24)
@@ -251,11 +295,19 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             if attachment:
                 await _send(writer, {"response": "", "status": "ok", "done": False, "attachment": attachment})
             await _send(writer, _data(event))
+        elif command == "incidents":
+            await _send(writer, _data({"text": incidents.render(),
+                                       "incidents": [i.__dict__ for i in incidents.recent(15)]}))
         elif command == "journal":
             await _send(writer, _data({"entries": [journal.as_data(e) for e in journal.entries(15)],
                                        "text": journal.render_list()}))
         elif command == "undo":
+            if role == "viewer" and request.get("execute"):
+                await _send(writer, _error("Rola viewer: tylko odczyt — cofniecie moze wykonac administrator."))
+                return
             await _undo(writer, request, interface)
+        elif command == "transcribe":
+            await _transcribe(writer, request)
         elif command == "usage":
             priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
             await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
@@ -288,6 +340,28 @@ async def _undo(writer, request: dict, interface: str) -> None:
         await _send(writer, _error("Cofniecie wymaga identyfikatora wpisu z podgladu."))
         return
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
+
+
+async def _transcribe(writer, request: dict) -> None:
+    """Wiadomosc glosowa -> tekst (klient wysyla potem tekst jak zwykla wiadomosc)."""
+    import base64
+    import binascii
+
+    from backend.core import voice
+
+    try:
+        data = base64.b64decode(str(request.get("audio", "")), validate=True)
+    except (binascii.Error, ValueError):
+        await _send(writer, _error("Nieprawidlowe nagranie (oczekiwano base64)."))
+        return
+    try:
+        usage.check_budget(settings.DAILY_TOKEN_LIMIT, settings.DAILY_COST_LIMIT)
+        text = await voice.transcribe(data, str(request.get("filename", "") or "voice.ogg"),
+                                      voice.resolve(dict(os.environ), settings.LLM))
+    except (voice.TranscriptionError, usage.BudgetExceeded) as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    await _send(writer, _data({"text": text}))
 
 
 async def _recent_changes_context(hours: float = 24) -> str:
@@ -426,6 +500,12 @@ async def main() -> None:
     asyncio.create_task(_report_model_status())
     # Czuwanie i rutyny — proaktywne alerty dla subskrybentow (bot Telegram)
     get_watcher(get_agent()).start()
+
+    from backend.core import webhooks
+    hook_server = await webhooks.start(get_watcher(), settings.WEBHOOK_HOST, settings.WEBHOOK_PORT,
+                                       settings.WEBHOOK_TOKEN, settings.WEBHOOK_INVESTIGATE)
+    if hook_server is not None:
+        print(f"[VPS Agent] Webhooki    : http://{settings.WEBHOOK_HOST}:{settings.WEBHOOK_PORT}/hook/<zrodlo>", flush=True)
 
     async with unix_server, tcp_server:
         await asyncio.gather(

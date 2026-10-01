@@ -69,6 +69,7 @@ class Alert:
     detail: str
     since: str
     state: str = "new"      # new | resolved | event
+    history: str = ""       # ostatnie wystapienie tego problemu (pamiec incydentow)
 
     def to_event(self) -> dict[str, Any]:
         return {"type": "alert", **asdict(self)}
@@ -282,8 +283,62 @@ class Watcher:
 
     def _publish(self, events: list[Alert]) -> list[Alert]:
         for alert in events:
+            if alert.state in ("new", "resolved"):
+                self._track_incident(alert)
             self.notifier.publish(alert.to_event())
         return events
+
+    @staticmethod
+    def _track_incident(alert: Alert) -> None:
+        """Pamiec incydentow: otwarcie przy nowym alercie (z historia), zamkniecie przy rozwiazaniu."""
+        from backend.core import incidents, journal
+
+        try:
+            if alert.state == "new":
+                past = incidents.history(alert.key, limit=1)
+                if past:
+                    alert.history = past[0].short()
+                incidents.opened(alert)
+            else:
+                incidents.closed(alert.key, journal.entries(50))
+        except (OSError, ValueError) as exc:
+            print(f"[Czuwanie] Pamiec incydentow: {exc}", flush=True)
+
+    # --- alerty z zewnatrz (webhooki) --------------------------------------
+
+    def external(self, alerts: list[Any]) -> list[Alert]:
+        """Alerty z webhookow: firing -> aktywny alert (bez rozwiazywania innych), resolved -> zamkniecie."""
+        firing = [Finding(a.key, a.severity, a.title, a.detail) for a in alerts if a.firing]
+        events = self.apply(firing, frozenset())
+        for alert in alerts:
+            if not alert.firing and alert.key in self.active:
+                resolved = self.active.pop(alert.key)
+                resolved.state = "resolved"
+                events.append(resolved)
+        return self._publish(events)
+
+    async def investigate_external(self, alert: Alert) -> None:
+        """Worker (tylko odczyty) bada alert z zewnatrz; raport idzie do subskrybentow i pamieci incydentow."""
+        from backend.config.prompts import EXTERNAL_ALERT_TASK
+        from backend.core import incidents, workers
+        from backend.core.session import Session
+
+        if self.agent is None:
+            return
+        target = targets.get_target("local")
+        task = EXTERNAL_ALERT_TASK.format(title=alert.title, detail=alert.detail or "-")
+        task += incidents.context_for(alert.key)
+        parent = Session(session_id=f"hook:{alert.key}", interface="webhook", learns_vibe=False)
+        try:
+            result = await asyncio.wait_for(
+                workers.run_worker(self.agent, parent, "zbadaj-alert", target, task), timeout=settings.WORKER_TIMEOUT)
+            report = result.render()
+        except asyncio.TimeoutError:
+            report = f"Badanie przekroczylo {settings.WORKER_TIMEOUT} s."
+        except Exception as exc:
+            report = f"Badanie nie powiodlo sie: {exc}"
+        incidents.note_investigation(alert.key, report)
+        self.notifier.publish({"type": "investigation", "key": alert.key, "title": alert.title, "report": report})
 
     # --- migawki, sprawdzenia bez konfiguracji, raport ---------------------
 
