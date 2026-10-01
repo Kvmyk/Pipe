@@ -857,14 +857,18 @@ async def run_web(client: "RemoteClient", host: str) -> None:
                                   port=web_server.free_port(WEB_PORT))
     console.print(Panel.fit(
         tr(f"[bold cyan]Pipe Web[/bold cyan] — połączono z [bold white]{escape(host)}[/bold white]\n\n"
-           f"Otwórz w przeglądarce:\n[bold]{bridge.url}[/bold]\n\n"
-           "[dim]Adres zawiera jednorazowy klucz dostępu i działa tylko na tym komputerze.\n"
+           "[dim]Adres poniżej zawiera jednorazowy klucz dostępu i działa tylko na tym komputerze.\n"
            "Ctrl+C kończy.[/dim]",
            f"[bold cyan]Pipe Web[/bold cyan] — connected to [bold white]{escape(host)}[/bold white]\n\n"
-           f"Open in your browser:\n[bold]{bridge.url}[/bold]\n\n"
-           "[dim]The address contains a one-time access key and works only on this computer.\n"
+           "[dim]The address below contains a one-time access key and works only on this computer.\n"
            "Ctrl+C to quit.[/dim]"),
         border_style="cyan"))
+    # Adres poza ramka, w jednej linii i jako hiperlacze terminala (OSC 8): ramka lamalaby go na dwie linie,
+    # a wtedy klikniecie otwiera uciety adres bez klucza.
+    console.print(tr("Otwórz w przeglądarce (kliknij):", "Open in your browser (click):"))
+    console.print(f"[bold underline cyan][link={bridge.url}]{bridge.url}[/link][/bold underline cyan]",
+                  soft_wrap=True, highlight=False)
+    console.print()
     await bridge.serve(open_browser=WEB_OPEN_BROWSER)
 
 
