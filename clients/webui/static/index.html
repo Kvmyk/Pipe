@@ -35,6 +35,7 @@
         <span class="orb"><i></i><i></i><i></i></span><span id="working-text"></span>
       </div>
       <div class="chips" id="chips"></div>
+      <div class="palette glass" id="palette" role="listbox" hidden><div class="palette-glow" id="palette-glow"></div><div class="palette-list" id="palette-list"></div></div>
       <form class="composer" id="composer" autocomplete="off">
         <textarea id="input" rows="1"></textarea>
         <button type="submit" id="send" class="primary" aria-label="send">
@@ -47,6 +48,7 @@
       <div class="stage-tabs" role="tablist">
         <button role="tab" data-tab="map" class="on" id="st-map"></button>
         <button role="tab" data-tab="changes" id="st-changes"><span id="st-changes-label"></span><b class="badge" id="changes-badge" hidden>0</b></button>
+        <button role="tab" data-tab="skills" id="st-skills"></button>
         <button role="tab" data-tab="alerts" id="st-alerts"><span id="st-alerts-label"></span><b class="badge warn" id="alerts-badge" hidden>0</b></button>
         <div class="spacer"></div>
       </div>
@@ -81,6 +83,7 @@
       </div>
 
       <div class="tab-body" id="tab-changes" hidden><div class="list" id="changes"></div></div>
+      <div class="tab-body" id="tab-skills" hidden><div class="list" id="skills"></div></div>
       <div class="tab-body" id="tab-alerts" hidden><div class="list" id="alerts"></div></div>
     </section>
   </main>

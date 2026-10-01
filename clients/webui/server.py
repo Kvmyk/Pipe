@@ -144,8 +144,10 @@ class WebBridge:
 
     def _authorized(self, headers: dict[str, str], query: dict[str, list[str]]) -> bool:
         cookies = dict(part.strip().split("=", 1) for part in headers.get("cookie", "").split(";") if "=" in part)
-        candidate = cookies.get(COOKIE) or (query.get("k") or [""])[0]
-        return bool(candidate) and hmac.compare_digest(candidate, self.key)
+        # Wystarczy jedno z dwojga: po ponownym uruchomieniu `pipe web` przegladarka ma jeszcze ciasteczko
+        # z poprzedniego klucza — nie moze ono uniewazniac poprawnego klucza z adresu.
+        candidates = [cookies.get(COOKIE, ""), (query.get("k") or [""])[0]]
+        return any(c and hmac.compare_digest(c.encode(), self.key.encode()) for c in candidates)
 
     async def _route(self, writer, method: str, target: str, headers: dict[str, str], body: bytes) -> None:
         self._check_origin(headers)

@@ -191,6 +191,16 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
     try:
         if command == "list_skills":
             await _send(writer, _data({"skills": memory.skill_commands()}))
+        elif command == "skill":
+            # tresc jednego skilla (podglad w interfejsie webowym); nazwa albo komenda
+            entry = memory.find_skill_command(str(request.get("name", "")))
+            skill = memory.read_skill(entry["name"]) if entry else None
+            if skill is None:
+                await _send(writer, _error(tr(f"Nie ma skilla {request.get('name', '')!r}.",
+                                              f"No skill {request.get('name', '')!r}.")))
+                return
+            await _send(writer, _data({"name": skill.name, "description": skill.description,
+                                       "content": skill.content, "command": entry["command"]}))
         elif command == "server_md":
             await _send(writer, _data({"content": memory.read_server_md()}))
         elif command == "scan_server":

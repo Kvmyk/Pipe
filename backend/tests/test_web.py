@@ -252,6 +252,15 @@ class TestWebBridge:
         assert b'"lang": "en"' in body and b"__PIPE_CONFIG__" not in body
         assert b"tok" not in body                                    # token backendu nie trafia do przegladarki
 
+    def test_stale_cookie_does_not_block_a_valid_key(self):
+        """Po restarcie `pipe web` przegladarka ma ciasteczko ze starym kluczem — nowy adres musi dzialac."""
+        async def scenario(bridge, _):
+            stale = {"Cookie": "pipe_key=stary-klucz-z-poprzedniego-uruchomienia"}
+            with_key = await self._http(bridge.port, "GET", f"/?k={bridge.key}", stale)
+            without = await self._http(bridge.port, "GET", "/", stale)
+            return with_key[0], without[0]
+        assert self._run(scenario) == (200, 401)
+
     def test_foreign_host_and_origin_are_rejected(self):
         async def scenario(bridge, received):
             cookie = {"Cookie": f"pipe_key={bridge.key}"}
