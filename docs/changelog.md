@@ -1,5 +1,32 @@
 # Historia zmian -- Pipe
 
+## v0.18.0 (2026-10-02)
+
+Wybor providera LLM w przegladarce i przelaczanie miedzy providerami w trakcie rozmowy. Po aktualizacji zaktualizuj
+tez backend na serwerze (`git pull` + `docker compose up -d --build`) -- nowe komendy dzialaja po jego stronie.
+
+### `pipe web`
+
+- **Ekran wyboru providera** przy pierwszym wejsciu: lista providerow, pole na klucz API, sprawdzenie klucza
+  u providera i wybor modelu z jego aktualnej listy. Mozna go pominac i zostac przy tym z instalacji
+- **Przelacznik w rozmowie**: nad polem wiadomosci widac, kto odpowiada (provider i model); klikniecie rozwija
+  liste providerow, do ktorych jest klucz, i przelacza jednym ruchem -- bez restartu, rozmowa trwa dalej
+- Komenda `/provider` otwiera ekran ponownie: kolejny klucz, zmiana modelu, usuniecie klucza dodanego z interfejsu
+- Provider jest gotowy, gdy ma klucz: dodany z interfejsu, `LLM_API_KEY` albo zmienna presetu w `backend/.env`
+  (`OPENAI_API_KEY`, `GROQ_API_KEY`...) -- kilka kluczy w `.env` od razu daje kilka pozycji w przelaczniku
+
+### Backend
+
+- `core/llm.py`: klucze i wybor w `DATA_DIR/llm_keys.json` (0600); `backend/.env` zostaje providerem bazowym.
+  Wybor dotyczy calego agenta -- takze Telegrama, CLI, rutyn i workerow
+- Komendy `providers`, `provider_models`, `provider_set`, `provider_forget` (zmiany tylko dla administratora).
+  Klucz nigdy nie wraca do klienta ani do logow; nowy klucz jest zapisywany dopiero, gdy provider go przyjmie
+- Po przelaczeniu `WORKER_MODEL` i `LLM_REASONING_EFFORT` z `.env` nie sa wysylane innemu providerowi, a koszt jest
+  liczony w samych tokenach (ceny z `.env` dotycza providera bazowego)
+- Historia rozmowy sprzed przelaczenia jest sprowadzana do pol standardu Chat Completions -- pola wlasne jednego
+  providera (np. podpisy rozumowania) nie trafiaja do innego
+- `llm_keys.json` jest plikiem wrazliwym: odczyt przez agenta wymaga potwierdzenia
+
 ## v0.17.0 (2026-10-01)
 
 Interfejs w przegladarce ze schematem serwera na zywo. Aktualizacja bez recznych krokow; na serwerze nic sie nie

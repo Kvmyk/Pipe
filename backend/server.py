@@ -328,6 +328,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _undo(writer, request, interface)
         elif command == "transcribe":
             await _transcribe(writer, request)
+        elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
+            await _providers(writer, command, request, interface, role)
         elif command == "usage":
             priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
             await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
@@ -362,6 +364,61 @@ async def _undo(writer, request: dict, interface: str) -> None:
                                       "Undo needs the entry id from the preview.")))
         return
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
+
+
+async def _providers(writer, command: str, request: dict, interface: str, role: str) -> None:
+    """
+    Wybor providera LLM w trakcie pracy (ekran wyboru i przelacznik w `pipe web`), bez LLM:
+    `providers` — lista i aktywny; `provider_models` — modele providera (sprawdza tez podany klucz);
+    `provider_set` — zapis klucza/modelu i przelaczenie; `provider_forget` — usuniecie klucza z interfejsu.
+    Klucz przychodzi w polu `key` i nigdy nie wraca do klienta ani do logow.
+    """
+    from backend import configure
+    from backend.core import llm
+
+    base = settings.LLM
+    state = lambda: {**llm.listing(base), "can_edit": role == "admin"}      # noqa: E731
+    if command == "providers":
+        await _send(writer, _data(state()))
+        return
+    if role != "admin":
+        await _send(writer, _error(tr("Providera moze zmieniac tylko administrator.",
+                                      "Only an administrator can change the provider.")))
+        return
+    provider_id = str(request.get("name", "") or "").strip().lower()
+    try:
+        new_key = llm.clean_key(str(request.get("key", "") or ""))
+        name, base_url, stored_key, requires_key = llm.endpoint(provider_id, base)
+
+        async def models(key: str) -> list[str]:
+            if requires_key and not key:
+                raise llm.LlmError(tr(f"Podaj klucz API providera {name}.", f"Enter the API key for {name}."))
+            try:
+                return await asyncio.to_thread(configure.fetch_models, base_url, key)
+            except configure.ApiError as exc:
+                if exc.status in (401, 403):
+                    raise llm.LlmError(tr(f"{name} odrzucil ten klucz API ({exc}).",
+                                          f"{name} rejected this API key ({exc}).")) from None
+                raise llm.LlmError(tr(f"Nie udalo sie polaczyc z {name}: {exc}",
+                                      f"Could not reach {name}: {exc}")) from None
+
+        if command == "provider_models":
+            found = await models(new_key or stored_key)
+            await _send(writer, _data({"models": found[:400], "total": len(found)}))
+        elif command == "provider_set":
+            if new_key:
+                await models(new_key)          # nowy klucz musi dzialac, zanim cokolwiek zapiszemy
+            current = llm.select(provider_id, base, key=new_key, model=str(request.get("model", "") or ""))
+            await audit.log_file_write(interface, f"{llm.STORE} (provider={current.provider_id}, model={current.model}"
+                                                  f"{', new key' if new_key else ''})", 0)
+            print(f"[server] Provider LLM: {current.provider_name} / {current.model} (zmienil {interface})", flush=True)
+            await _send(writer, _data(state()))
+        else:
+            if llm.forget(provider_id, base):
+                await audit.log_file_write(interface, f"{llm.STORE} (forget key: {provider_id})", 0)
+            await _send(writer, _data(state()))
+    except llm.LlmError as exc:
+        await _send(writer, _error(str(exc)))
 
 
 async def _reminders(writer, request: dict, interface: str, role: str) -> None:

@@ -654,6 +654,293 @@
     });
   }
 
+  // ---------------------------------------------------------------- providerzy LLM
+  // Stan z backendu: { providers, active, chosen, can_edit } — klucze nigdy tu nie trafiaja.
+  let llm = null;
+  const pill = $("model-pill"), menu = $("model-menu"), menuList = $("model-menu-list"), menuGlow = $("model-menu-glow");
+  function applyProviders(data) {
+    const changed = llm && (llm.active.id !== data.active.id || llm.active.model !== data.active.model);
+    llm = data;
+    $("model-pill-name").textContent = data.active.name;
+    $("model-pill-model").textContent = data.active.model;
+    pill.title = t("providerNow") + " " + data.active.name + " · " + data.active.model;
+    pill.hidden = false;
+    if (changed) { pill.classList.remove("swapped"); void pill.offsetWidth; pill.classList.add("swapped"); }
+    return changed;
+  }
+  async function loadProviders(first) {
+    try { applyProviders(await command({ command: "providers" })); } catch (_) { return; }   // starszy backend: bez przelacznika
+    if (first && !llm.chosen && llm.can_edit) openSetup(true);
+  }
+  function announceProvider() {
+    const text = t("switchedTo") + " " + llm.active.name + " · " + llm.active.model;
+    if (messages.querySelector(".welcome")) toast(llm.active.name, text); else add("note", text);
+  }
+
+  // przelacznik w rozmowie: gotowi providerzy (z kluczem) + wejscie do ekranu wyboru
+  let menuOpen = false, menuIndex = 0, menuItems = [];
+  function openMenu() {
+    if (!llm || menuOpen) return;
+    closePalette();
+    menuList.textContent = "";
+    menuList.appendChild(el("div", "palette-group", t("providers")));
+    menuItems = llm.providers.filter((p) => p.ready).map((provider) => ({ provider }));
+    if (llm.can_edit) menuItems.push({ manage: true });
+    menuItems.forEach((item, index) => {
+      const row = el("button", "palette-item model-item" + (item.manage ? " manage" : ""));
+      row.type = "button"; row.dataset.index = String(index); row.setAttribute("role", "option");
+      row.appendChild(el("span", "name", item.manage ? "+" : item.provider.name));
+      row.appendChild(el("span", "desc", item.manage ? t("manageProviders") : item.provider.model));
+      row.appendChild(el("span", "hint", !item.manage && item.provider.active ? "✓" : ""));
+      row.addEventListener("click", () => pickMenu(index));
+      row.addEventListener("mousemove", () => { if (menuIndex !== index) { menuIndex = index; moveMenuGlow(); } });
+      menuList.appendChild(row);
+    });
+    menuIndex = Math.max(0, menuItems.findIndex((item) => item.provider && item.provider.active));
+    menu.style.bottom = (pill.offsetParent.clientHeight - pill.offsetTop + 8) + "px";
+    menu.classList.remove("out"); menu.hidden = false; menuOpen = true;
+    pill.setAttribute("aria-expanded", "true");
+    menuGlow.style.transition = "none"; moveMenuGlow();
+    requestAnimationFrame(() => { menuGlow.style.transition = ""; });
+  }
+  function moveMenuGlow() {
+    const row = menuList.querySelector(`.palette-item[data-index="${menuIndex}"]`);
+    menuList.querySelectorAll(".palette-item").forEach((node) => node.setAttribute("aria-selected", String(node === row)));
+    if (!row) { menuGlow.style.opacity = "0"; return; }
+    menuGlow.style.opacity = "1";
+    menuGlow.style.height = row.offsetHeight + "px";
+    menuGlow.style.transform = `translateY(${row.offsetTop + menuList.offsetTop}px)`;
+  }
+  function closeMenu() {
+    if (!menuOpen) return;
+    menuOpen = false;
+    pill.setAttribute("aria-expanded", "false");
+    menu.classList.add("out");
+    setTimeout(() => { if (!menuOpen) { menu.hidden = true; menu.classList.remove("out"); } }, 140);
+  }
+  function pickMenu(index) {
+    const item = menuItems[index];
+    closeMenu();
+    if (!item) return;
+    if (item.manage) openSetup(false); else switchProvider(item.provider);
+  }
+  async function switchProvider(provider) {
+    if (provider.active) return;
+    if (!llm.can_edit) { toast(t("providers"), t("viewerProviders")); return; }
+    if (busy) { toast(t("providers"), t("providerBusy")); return; }
+    try { if (applyProviders(await command({ command: "provider_set", name: provider.id }))) announceProvider(); }
+    catch (error) { toast(t("errorPrefix"), error.message); }
+  }
+  pill.addEventListener("click", () => (menuOpen ? closeMenu() : openMenu()));
+  pill.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!menuOpen) { openMenu(); return; }
+      menuIndex = (menuIndex + (event.key === "ArrowDown" ? 1 : menuItems.length - 1)) % menuItems.length;
+      moveMenuGlow();
+    } else if (menuOpen && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); pickMenu(menuIndex); }
+    else if (menuOpen && event.key === "Escape") { event.preventDefault(); closeMenu(); }
+  });
+  document.addEventListener("mousedown", (event) => { if (menuOpen && !menu.contains(event.target) && !pill.contains(event.target)) closeMenu(); });
+
+  // ekran wyboru: krok 1 — siatka providerow, krok 2 — klucz i model wybranego
+  const setup = $("setup"), stepPick = $("step-pick"), stepKey = $("step-key");
+  let setupFirst = false, setupBusy = false;
+  function showStep(name) {
+    const pick = name === "pick";
+    stepPick.classList.toggle("away", !pick); stepKey.classList.toggle("away", pick);
+    stepPick.inert = !pick; stepKey.inert = pick;
+  }
+  function openSetup(first) {
+    if (!llm) return;
+    setupFirst = !!first;
+    closeMenu(); closePalette();
+    $("setup-title").textContent = t(first ? "setupFirstTitle" : "setupTitle");
+    $("setup-lead").textContent = t(first ? "setupFirstLead" : "setupLead");
+    $("setup-hint").textContent = t("setupHint");
+    $("setup-skip").textContent = first ? t("setupKeep") + " " + llm.active.name : t("setupClose");
+    renderGrid(); showStep("pick");
+    setup.classList.remove("out"); setup.hidden = false;
+    requestAnimationFrame(() => { const card = $("provider-grid").querySelector("button"); if (card) card.focus({ preventScroll: true }); });
+  }
+  function closeSetup() {
+    if (setup.hidden || setupBusy) return;
+    setup.classList.add("out");
+    setTimeout(() => { setup.hidden = true; setup.classList.remove("out"); stepKey.textContent = ""; input.focus(); }, 220);
+  }
+  function renderGrid() {
+    const grid = $("provider-grid");
+    grid.textContent = "";
+    llm.providers.forEach((p, index) => {
+      const card = el("button", "provider-card" + (p.active ? " active" : p.ready ? " ready" : ""));
+      card.type = "button";
+      card.style.animationDelay = Math.min(index, 14) * 24 + "ms";
+      const head = el("div", "head");
+      head.appendChild(el("b", "", p.name));
+      // etykieta tylko tam, gdzie cos mowi: uzywany / gotowy / lokalny — reszta po prostu czeka na klucz
+      if (p.active || p.ready || !p.requires_key) head.appendChild(el("span", "tag " + (p.active ? "" : p.ready ? "add" : "mute"),
+        t(p.active ? "pv_active" : p.ready ? "pv_ready" : "pv_local")));
+      card.appendChild(head);
+      if (p.ready && p.model) card.appendChild(el("div", "model", p.model));
+      if (p.notes) card.appendChild(el("div", "note", p.notes));
+      card.addEventListener("click", () => showProvider(p));
+      grid.appendChild(card);
+    });
+  }
+  function showProvider(p) {
+    stepKey.textContent = "";
+    let models = [], filter = "", ticket = 0;
+    const back = el("button", "ghost back", "← " + t("back"));
+    back.type = "button";
+    back.addEventListener("click", () => showStep("pick"));
+    stepKey.appendChild(back);
+    stepKey.appendChild(el("h2", "", p.name));
+    if (p.notes) stepKey.appendChild(el("p", "lead", p.notes));
+    const form = el("form", "provider-form");
+    form.autocomplete = "off"; form.noValidate = true;
+    stepKey.appendChild(form);
+
+    // --- klucz
+    const keyInput = el("input");
+    keyInput.type = "password"; keyInput.autocomplete = "off"; keyInput.spellcheck = false;
+    keyInput.placeholder = t("keyPlaceholder"); keyInput.setAttribute("aria-label", t("apiKey"));
+    const checkButton = el("button", "btn yes small", t("checkKey"));
+    checkButton.type = "submit";
+    const keyFold = el("div", "fold" + (p.has_key ? "" : " open")), keyInner = el("div", "fold-pad");
+    if (p.requires_key) {
+      form.appendChild(el("div", "field-label", t("apiKey")));
+      if (p.has_key) {
+        const saved = el("div", "saved");
+        saved.appendChild(el("span", "", t(p.key_source === "env" ? "keyFromEnv" : "keySaved")));
+        const change = el("button", "linkish", t("changeKey"));
+        change.type = "button";
+        change.addEventListener("click", () => { keyFold.classList.add("open"); change.remove(); keyInput.focus(); });
+        saved.appendChild(change);
+        if (p.key_source === "web") {
+          const forget = el("button", "linkish danger", t("forgetKey"));
+          forget.type = "button";
+          forget.addEventListener("click", async () => {
+            try { applyProviders(await command({ command: "provider_forget", name: p.id })); toast(t("keyForgotten"), p.name); renderGrid(); showStep("pick"); }
+            catch (error) { setStatus("bad", error.message); }
+          });
+          saved.appendChild(forget);
+        }
+        form.appendChild(saved);
+      }
+      const field = el("div", "field");
+      const reveal = el("button", "linkish", t("showKey"));
+      reveal.type = "button";
+      reveal.addEventListener("click", () => { const hide = keyInput.type === "text"; keyInput.type = hide ? "password" : "text"; reveal.textContent = t(hide ? "showKey" : "hideKey"); });
+      field.appendChild(keyInput); field.appendChild(reveal); field.appendChild(checkButton);
+      keyInner.appendChild(field);
+      if (/^https:\/\//.test(p.key_url || "")) {
+        const link = el("a", "linkish", t("whereKey") + " ↗");
+        link.href = p.key_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+        keyInner.appendChild(link);
+      }
+      keyFold.appendChild(keyInner); form.appendChild(keyFold);
+    }
+    const status = el("div", "status");
+    status.setAttribute("aria-live", "polite");
+    form.appendChild(status);
+    function setStatus(kind, text) { status.className = "status " + (kind || ""); status.textContent = text || ""; }
+
+    // --- model
+    const modelFold = el("div", "fold"), modelInner = el("div", "fold-pad");
+    const modelLabel = el("div", "field-label", t("model")), count = el("span", "count");
+    modelLabel.appendChild(count);
+    const modelField = el("div", "field"), modelInput = el("input");
+    modelInput.type = "text"; modelInput.autocomplete = "off"; modelInput.spellcheck = false;
+    modelInput.placeholder = t("modelPlaceholder"); modelInput.setAttribute("aria-label", t("model"));
+    modelField.appendChild(modelInput);
+    const list = el("div", "model-list");
+    modelInner.appendChild(modelLabel); modelInner.appendChild(modelField); modelInner.appendChild(list);
+    modelFold.appendChild(modelInner); form.appendChild(modelFold);
+
+    const foot = el("div", "sheet-foot"), label = t("useProvider") + " " + p.name;
+    const use = el("button", "btn yes", label);
+    use.type = "button"; use.disabled = true;
+    foot.appendChild(el("div", "spacer")); foot.appendChild(use);
+    form.appendChild(foot);
+    const syncUse = () => { use.disabled = setupBusy || !modelFold.classList.contains("open") || !modelInput.value.trim(); };
+
+    function renderModels() {
+      list.textContent = "";
+      const q = filter.toLowerCase(), chosen = modelInput.value.trim();
+      const found = models.filter((m) => !q || m.toLowerCase().includes(q));
+      found.slice(0, 80).forEach((m) => {
+        const row = el("button", "model-row" + (m === chosen ? " on" : ""), m);
+        row.type = "button";
+        row.addEventListener("click", () => { modelInput.value = m; filter = ""; renderModels(); syncUse(); });
+        list.appendChild(row);
+      });
+      if (models.length && !found.length) list.appendChild(el("div", "model-none", t("noModelMatch")));
+      list.hidden = !models.length;
+      const on = list.querySelector(".on");
+      // Lista bywa rysowana w trakcie rozwijania bloku (wysokosc jeszcze rosnie), wiec liczymy od docelowej.
+      const room = 208;
+      if (on) list.scrollTop = on.offsetTop + on.offsetHeight <= room ? 0 : on.offsetTop - room / 2 + on.offsetHeight / 2;
+    }
+    function offerModels(note) {
+      modelInput.value = [p.model, p.default_model].find((m) => m && (!models.length || models.includes(m))) || models[0] || "";
+      filter = "";
+      count.textContent = models.length ? models.length + " " + t("modelCount") : "";
+      if (note) setStatus("", note);
+      renderModels();
+      modelFold.classList.add("open");
+      syncUse();
+    }
+    async function check() {
+      const key = keyInput.value.trim(), mine = ++ticket, stored = !key && (p.has_key || !p.requires_key);
+      if (p.requires_key && !key && !p.has_key) { keyInput.focus(); return; }
+      setStatus("busy", t("checking"));
+      checkButton.disabled = true;
+      try {
+        const data = await command({ command: "provider_models", name: p.id, key });
+        if (mine !== ticket) return;
+        models = data.models || [];
+        setStatus(key ? "ok" : "", key ? t("keyOk") : "");
+        offerModels(models.length ? "" : t("modelsUnavailable"));
+        if (key) modelInput.focus({ preventScroll: true });
+      } catch (error) {
+        if (mine !== ticket) return;
+        setStatus("bad", error.message);
+        // zapisany klucz: lista modeli to tylko wygoda — nazwe mozna wpisac recznie
+        if (stored) { models = []; offerModels(); setStatus("bad", error.message + " " + t("modelsUnavailable")); }
+      } finally { if (mine === ticket) checkButton.disabled = false; }
+    }
+    async function save() {
+      const model = modelInput.value.trim(), key = keyInput.value.trim();
+      if (!model || setupBusy || use.disabled) return;
+      if (busy) { setStatus("bad", t("providerBusy")); return; }
+      setupBusy = true; use.disabled = true; use.textContent = t("saving");
+      let changed = false, done = false;
+      try { changed = applyProviders(await command({ command: "provider_set", name: p.id, key, model })); done = true; }
+      catch (error) { setStatus("bad", error.message); }
+      setupBusy = false; use.textContent = label; syncUse();
+      if (done) { closeSetup(); if (changed) announceProvider(); }
+    }
+    keyInput.addEventListener("input", () => { ticket++; checkButton.disabled = false; modelFold.classList.remove("open"); setStatus("", ""); syncUse(); });
+    modelInput.addEventListener("input", () => { filter = modelInput.value.trim(); renderModels(); syncUse(); });
+    modelInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); save(); } });
+    form.addEventListener("submit", (event) => { event.preventDefault(); check(); });
+    use.addEventListener("click", save);
+
+    showStep("key");
+    if (p.has_key || !p.requires_key) check(); else requestAnimationFrame(() => keyInput.focus({ preventScroll: true }));
+  }
+  $("setup-close").addEventListener("click", closeSetup);
+  $("setup-close").setAttribute("aria-label", t("close"));
+  $("setup-skip").addEventListener("click", async () => {
+    if (setupFirst) { try { applyProviders(await command({ command: "provider_set", name: llm.active.id })); } catch (_) { /* zapytamy przy nastepnym wejsciu */ } }
+    closeSetup();
+  });
+  setup.addEventListener("mousedown", (event) => { if (event.target === setup) closeSetup(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || setup.hidden) return;
+    if (stepKey.classList.contains("away")) closeSetup(); else showStep("pick");
+  });
+
   // ---------------------------------------------------------------- komendy "/"
   // [nazwa polska, alias angielski, klucz opisu, czy przyjmuje argumenty]
   const COMMANDS = [
@@ -664,7 +951,7 @@
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
     ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
     ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
-    ["historia", "history", "c_history"], ["pomoc", "help", "c_help"],
+    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["pomoc", "help", "c_help"],
   ];
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
@@ -723,10 +1010,11 @@
     alerty: () => switchTab("alerts"),
     dziennik: () => switchTab("changes"),
     cofnij: () => switchTab("changes"),
+    provider: () => { if (llm) openSetup(false); else add("agent error", md(t("offline"))); },
     pomoc: () => add("agent", listing(COMMANDS.map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
       + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
   };
-  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij"];
+  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij", "provider"];
 
   // Zwraca true, gdy tekst byl komenda (wbudowana albo skillem); false — idzie do agenta jako zwykla wiadomosc.
   async function slash(text) {
@@ -872,6 +1160,7 @@
   loadSkills();
   loadGraph(false);
   loadAlerts();
+  loadProviders(true);
   connectEvents();
   input.focus();
 })();

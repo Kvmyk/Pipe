@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.17.0
+Pipe v0.18.0
 
 ## Model
 
@@ -237,3 +237,12 @@ escapowane (`\n`), wiec komenda z `\n` nie sfalszuje kolejnych wpisow. Token por
 3. Ogranicz `TELEGRAM_ALLOWED_USER_IDS` do minimum.
 4. Dla workerow na innych serwerach uzywaj dedykowanego klucza SSH i uzytkownika z ograniczonymi uprawnieniami.
 5. Czytaj komendy przed potwierdzeniem i przegladaj audit log (`/historia`) oraz pamiec (`/skille`, `/server`).
+
+## Klucze providerow LLM dodane z interfejsu
+
+`pipe web` pozwala dodac klucz API kolejnego providera. Klucz idzie z przegladarki do lokalnego mostu (`127.0.0.1`),
+tunelem SSH do backendu i tam zostaje w `DATA_DIR/llm_keys.json` (0600). Nie wraca do klienta (lista providerow podaje
+tylko, czy klucz jest i skad), nie trafia do audit logu (logowana jest sama zmiana providera) ani do modelu. Zanim
+zostanie zapisany, backend sprawdza go u providera -- wylacznie pod adresem z presetu albo z pliku providerow, wiec
+klucza nie da sie wyslac pod dowolny adres. Zmiany moze robic tylko administrator. Odczyt `llm_keys.json` przez
+agenta jest klasyfikowany jak `.env` (wymaga potwierdzenia), a redakcja sekretow obejmuje wyniki narzedzi jak zwykle.

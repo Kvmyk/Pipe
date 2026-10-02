@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.17.0** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.18.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -85,7 +85,8 @@ From now on you type `pipe --lang en` in any terminal (or put `export PIPE_LANG=
 just type `pipe`). The CLI sets up an SSH tunnel and connects to the agent.
 
 Prefer a browser? `pipe web` opens an interface with the chat, a **live map of the server** (you see which
-element the agent is working on right now) and a view of changes with undo. It runs locally over the same
+element the agent is working on right now), a view of changes with undo and an **LLM provider switcher** (add API
+keys in the browser and jump between models mid-conversation). It runs locally over the same
 tunnel -- no port is opened on the server.
 
 ### 3. Telegram (optional, recommended -- alerts arrive here)

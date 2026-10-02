@@ -287,6 +287,14 @@ class TestWebBridge:
         assert request["token"] == "tok" and request["interface"].startswith("web")       # pola z przegladarki nie nadpisuja
         assert request["session_id"] == "web-abc" and request["message"] == "hej"
 
+    def test_provider_key_and_model_reach_the_backend(self):
+        async def scenario(bridge, received):
+            body = json.dumps({"command": "provider_set", "name": "groq", "key": "gsk-abc", "model": "llama-x"}).encode()
+            await self._http(bridge.port, "POST", "/api/request", {"Cookie": f"pipe_key={bridge.key}"}, body)
+            return received
+        (request,) = self._run(scenario, [{"response": "", "status": "ok", "done": True, "data": {}}])
+        assert (request["command"], request["name"], request["key"], request["model"]) == ("provider_set", "groq", "gsk-abc", "llama-x")
+
     def test_bad_requests(self):
         async def scenario(bridge, received):
             cookie = {"Cookie": f"pipe_key={bridge.key}"}

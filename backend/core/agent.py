@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.17.0
+Pipe v0.18.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -27,8 +27,8 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from backend.config import settings
-from backend.config.providers import NO_KEY_PLACEHOLDER, chat_model_ids, model_available
-from backend.core import audit, executor, memory, runtime, usage
+from backend.config.providers import NO_KEY_PLACEHOLDER, LLMConfig, chat_model_ids, model_available
+from backend.core import audit, executor, llm as llm_choice, memory, runtime, usage
 from backend.core.i18n import tr
 from backend.core.events import Activity, Event
 from backend.core.session import ConfirmationRequest, Session
@@ -93,6 +93,9 @@ class VPSAgent:
             base_url=llm.base_url,
             timeout=llm.timeout,  # modele rozumujace potrafia odpowiadac dluzej niz minute
         )
+        # Klienci providerow wybranych w trakcie pracy (core/llm.py), po (adres, klucz).
+        self._injected = client is not None
+        self._clients: dict[tuple[str, str], Any] = {}
         self._sessions: dict[str, Session] = {}
         from backend.core.vibe import VibeLearner
         self.vibe = VibeLearner(self)
@@ -221,7 +224,10 @@ class VPSAgent:
                 who=session.interface,
             )
             message = response.choices[0].message
-            session.messages.append(message.model_dump(exclude_unset=True, exclude_none=True))
+            entry = message.model_dump(exclude_unset=True, exclude_none=True)
+            # Skad pochodzi odpowiedz — po przelaczeniu providera jego pola wlasne nie ida do innego.
+            entry["pipe_provider"] = self.active_llm()[0].provider_id
+            session.messages.append(entry)
 
             if not message.tool_calls:
                 yield message.content or ""
@@ -246,6 +252,21 @@ class VPSAgent:
             "Write \"continue\" so I can finish, or split the task into smaller steps."
         )
 
+    def active_llm(self) -> tuple[LLMConfig, Any]:
+        """
+        (konfiguracja, klient) providera, z ktorego agent korzysta teraz — bazowy z .env albo
+        wybrany w interfejsie (core/llm.py). Wstrzykniety klient (testy) obsluguje kazdy wybor.
+        """
+        base = settings.LLM
+        config = llm_choice.resolve(base)
+        if self._injected or (config.base_url, config.api_key) == (base.base_url, base.api_key):
+            return config, self._client
+        key = (config.base_url, config.api_key)
+        if key not in self._clients:
+            self._clients[key] = AsyncOpenAI(api_key=config.api_key or NO_KEY_PLACEHOLDER, base_url=config.base_url,
+                                             timeout=config.timeout)
+        return config, self._clients[key]
+
     async def call_llm(
         self,
         system_prompt: str,
@@ -265,20 +286,22 @@ class VPSAgent:
         # tools, a czesc providerow (np. Ollama) nie obsluguje tego parametru.
         # reasoning_effort idzie przez extra_body, zeby dzialal na kazdej
         # wersji SDK; providerzy, ktorzy go nie znaja, ignoruja pole.
+        config, client = self.active_llm()
+        switched = config.provider_id != settings.LLM.provider_id
         extra_body: dict[str, Any] = {}
-        if settings.LLM.reasoning_effort:
-            extra_body["reasoning_effort"] = settings.LLM.reasoning_effort
-        # Klucze pipe_* to metadane Pipe — providerzy odrzucaja nieznane pola wiadomosci.
-        clean = [{k: v for k, v in m.items() if not k.startswith("pipe_")} for m in messages]
+        if config.reasoning_effort:
+            extra_body["reasoning_effort"] = config.reasoning_effort
+        clean = [_for_provider(m, config.provider_id) for m in messages]
         kwargs: dict[str, Any] = {
-            "model": model or settings.LLM.model,
+            # WORKER_MODEL to nazwa modelu u providera bazowego — u innego nie istnieje.
+            "model": config.model if switched or not model else model,
             "messages": [{"role": "system", "content": system_prompt}, *clean],
             "extra_body": extra_body or None,
         }
         if tools:
             kwargs["tools"] = tools
-        response = await self._client.chat.completions.create(**kwargs)
-        _record_usage(kwargs["model"], getattr(response, "usage", None), who)
+        response = await client.chat.completions.create(**kwargs)
+        _record_usage(kwargs["model"], getattr(response, "usage", None), who, priced=not switched)
         return response
 
     async def complete(self, system_prompt: str, user_message: str, model: str | None = None,
@@ -293,9 +316,9 @@ class VPSAgent:
         Sprawdza, czy skonfigurowany model jest na liscie providera.
         Zwraca tresc ostrzezenia albo None. Nigdy nie rzuca wyjatku.
         """
-        llm = settings.LLM
+        llm, client = self.active_llm()
         try:
-            page = await asyncio.wait_for(self._client.models.list(), timeout=15)
+            page = await asyncio.wait_for(client.models.list(), timeout=15)
             available = chat_model_ids([m.model_dump() for m in page.data])
         except Exception as exc:
             return tr(f"Nie udalo sie pobrac listy modeli od {llm.provider_name} ({exc}) — pomijam weryfikacje modelu.",
@@ -480,12 +503,39 @@ class VPSAgent:
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
 
-def _record_usage(model: str, response_usage: Any, who: str) -> None:
-    """Licznik kosztow nigdy nie przerywa rozmowy — blad zapisu jest tylko logowany."""
+def _for_provider(message: dict[str, Any], provider_id: str) -> dict[str, Any]:
+    """
+    Wiadomosc historii w postaci dla providera. Klucze pipe_* to metadane Pipe. Odpowiedz innego
+    providera (rozmowa sprzed przelaczenia) zostaje sprowadzona do pol standardu Chat Completions —
+    pola wlasne (np. podpisy rozumowania Gemini) inny provider odrzucilby jako nieznane.
+    """
+    origin = message.get("pipe_provider")
+    clean = {k: v for k, v in message.items() if not k.startswith("pipe_")}
+    if origin is None or origin == provider_id or message.get("role") != "assistant":
+        return clean
+    plain: dict[str, Any] = {"role": "assistant", "content": clean.get("content") or ""}
+    calls = [{"id": call.get("id"), "type": "function",
+              "function": {"name": (call.get("function") or {}).get("name"),
+                           "arguments": (call.get("function") or {}).get("arguments") or "{}"}}
+             for call in clean.get("tool_calls") or [] if isinstance(call, dict)]
+    if calls:
+        plain["tool_calls"] = calls
+    return plain
+
+
+def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = True) -> None:
+    """
+    Licznik kosztow nigdy nie przerywa rozmowy — blad zapisu jest tylko logowany.
+    `priced=False`: provider wybrany w interfejsie — ceny z .env dotycza bazowego, wiec liczymy same tokeny.
+    """
     main_model = settings.LLM.model if settings.LLM else ""
     worker = bool(settings.WORKER_MODEL) and model == settings.WORKER_MODEL and model != main_model
-    prices = usage.Prices(settings.WORKER_PRICE_IN, settings.WORKER_PRICE_OUT) if worker \
-        else usage.Prices(settings.LLM_PRICE_IN, settings.LLM_PRICE_OUT)
+    if not priced:
+        prices = usage.Prices()
+    elif worker:
+        prices = usage.Prices(settings.WORKER_PRICE_IN, settings.WORKER_PRICE_OUT)
+    else:
+        prices = usage.Prices(settings.LLM_PRICE_IN, settings.LLM_PRICE_OUT)
     try:
         usage.record(model, response_usage, usage.who_from_interface(who), prices)
     except OSError as exc:

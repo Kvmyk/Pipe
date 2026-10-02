@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.17.0
+Pipe v0.18.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -457,6 +457,15 @@ Sekrety w roznicach sa redagowane. Kazdy wpis ma przycisk cofniecia. Roznic nie 
 **Komendy i skille.** Wpisanie `/` w polu rozmowy rozwija liste komend (`/raport`, `/zmiany`, `/audyt`, `/koszt`...)
 i skilli z opisami -- wybor strzalkami albo kliknieciem, Tab uzupelnia komende, zeby dopisac argumenty. Zakladka
 *Skille* pokazuje zapisane procedury z podgladem tresci i przyciskiem uruchomienia.
+
+**Provider LLM.** Przy pierwszym wejsciu strona pyta, z ktorym providerem ma pracowac Pipe: wybierasz go z listy,
+wklejasz klucz API (jest sprawdzany u providera, zanim zostanie zapisany) i wybierasz model z jego aktualnej listy.
+Ekran mozna pominac -- zostaje provider z instalacji. Nad polem rozmowy jest przelacznik pokazujacy, kto odpowiada;
+rozwija liste providerow, do ktorych jest klucz, i przelacza bez restartu, w trakcie rozmowy. `/provider` otwiera
+ekran ponownie (kolejny klucz, inny model, usuniecie klucza). Klucze leza na serwerze w `DATA_DIR/llm_keys.json`
+(0600) i nie wracaja do przegladarki. Wybor dotyczy calego agenta: po przelaczeniu z nowego providera korzystaja tez
+Telegram, CLI, rutyny i workery; `WORKER_MODEL` i ceny z `.env` dotycza tylko providera bazowego. Kilka kluczy mozna
+tez podac od razu w `backend/.env` (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`...).
 
 ---
 

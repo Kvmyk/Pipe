@@ -40,7 +40,8 @@ MAX_BODY = 4 * 1024 * 1024
 DEFAULT_PORT = 7400
 COOKIE = "pipe_key"
 # Pola zadania, ktore przegladarka moze ustawic — reszte (token, interface) dodaje ten proces.
-ALLOWED_FIELDS = {"message", "confirm", "command", "name", "args", "id", "execute", "decision", "cancel", "claim"}
+ALLOWED_FIELDS = {"message", "confirm", "command", "name", "args", "id", "execute", "decision", "cancel", "claim",
+                  "key", "model"}
 SECURITY_HEADERS = (
     "X-Content-Type-Options: nosniff\r\n"
     "X-Frame-Options: DENY\r\n"

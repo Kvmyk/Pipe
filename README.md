@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.17.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.18.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -66,7 +66,8 @@ bash install.sh
 Od teraz w kazdym terminalu wpisujesz `pipe`. CLI zestawia tunel SSH i laczy sie z agentem.
 
 Wolisz przegladarke? `pipe web` otwiera interfejs z rozmowa, **schematem serwera na zywo** (widac, na ktorym
-elemencie agent wlasnie pracuje) i podgladem zmian z cofaniem. Dziala lokalnie, przez ten sam tunel -- na serwerze
+elemencie agent wlasnie pracuje), podgladem zmian z cofaniem i **przelacznikiem providerow LLM** (dodajesz klucze
+w przegladarce i skaczesz miedzy modelami w trakcie rozmowy). Dziala lokalnie, przez ten sam tunel -- na serwerze
 nie otwiera sie zaden port.
 
 ### 3. Telegram (opcjonalnie, polecane -- tu przychodza alerty)

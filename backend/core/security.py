@@ -101,6 +101,7 @@ SENSITIVE_PATTERNS: list[str] = [
     r"ssh_host_\w+_key\b(?!\.pub)",
     r"\.(pem|key|p12|pfx)\b",
     r"(^|[/\s'\"=])\.env(\.[\w.-]+)?\b",
+    r"\bllm_keys\.json\b",        # klucze API providerow dodane z interfejsu (core/llm.py)
     # /proc/<pid>/environ|root|cwd|mem — przy `pid: host` to sekrety i katalogi domowe procesow hosta,
     # obejscie read-only /hostfs. Dotyczy tez /hostproc.
     r"/proc/[^/\s]+/(environ|root|cwd|mem|maps|task)\b",

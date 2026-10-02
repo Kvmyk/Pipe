@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.17.0
+Pipe v0.18.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -87,7 +87,8 @@ zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w ad
 Na stronie: rozmowa, schemat serwera na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk
 *Sledze agenta*), os czasu dzialan, zakladka *Zmiany* z roznicami i cofaniem, zakladka *Alerty* ze zdarzeniami na
 zywo, zakladka *Skille* z podgladem i uruchamianiem. Po wpisaniu `/` w polu rozmowy rozwija sie lista komend
-i skilli -- dzialaja te same komendy co ponizej. W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
+i skilli -- dzialaja te same komendy co ponizej. Przy pierwszym wejsciu strona pyta o providera LLM (klucz API
+i model), a przelacznik nad polem rozmowy pozwala skakac miedzy providerami, do ktorych jest klucz (`/provider`). W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
 
 ## Most MCP (`--mcp`)
 
