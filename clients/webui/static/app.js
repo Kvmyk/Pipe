@@ -590,14 +590,39 @@
     if (text) card.appendChild(el("div", "report", String(text).slice(0, 4000)));
     return card;
   }
-  async function loadAlerts() {
-    try { const data = await command({ command: "alerts" }); activeAlerts = data.active || []; renderAlerts(); badge("alerts-badge", activeAlerts.length + unseenAlerts); }
-    catch (_) { /* pokazemy przy nastepnej probie */ }
-  }
-  function onLiveEvent(event) {
-    if (!event || event.type === "subscribed") { setLink(true); return; }
-    if (event.type === "error") { setLink(false, event.text); return; }
+  // Zdarzenia nie sa powtarzane przez backend: kto nie byl podlaczony w chwili publikacji (np. strona laczaca sie
+  // ponownie po restarcie backendu), ten je traci. Dlatego przy starcie i po kazdym ponownym polaczeniu dobieramy
+  // ostatnie zdarzenia z historii backendu ("recent") — bez duplikatow.
+  const seenEvents = new Set();
+  const eventKey = (event) => [event.type, event.at, event.id, event.key, event.title, event.text, event.name].join("|");
+  function addEvent(event, announce) {
+    const key = eventKey(event);
+    if (seenEvents.has(key)) return false;
+    seenEvents.add(key);
     liveEvents.unshift(event); liveEvents.splice(40);
+    if (!announce) return true;
+    if ($("tab-alerts").hidden) unseenAlerts++;
+    toast(eventTitle(event), event.detail || (event.type === "reminder" ? "" : String(event.report || "").slice(0, 160)), () => switchTab("alerts"));
+    return true;
+  }
+  async function loadAlerts(announce) {
+    try {
+      const data = await command({ command: "alerts" });
+      activeAlerts = data.active || [];
+      (data.recent || []).forEach((event) => addEvent(event, announce));
+      renderAlerts(); badge("alerts-badge", activeAlerts.length + unseenAlerts);
+    } catch (_) { /* pokazemy przy nastepnej probie */ }
+  }
+  let subscribedOnce = false;
+  function onLiveEvent(event) {
+    if (!event || event.type === "subscribed") {
+      setLink(true);
+      if (subscribedOnce) { loadAlerts(true); loadProviders(false); }     // po zerwaniu polaczenia: co nas ominelo
+      subscribedOnce = true;
+      return;
+    }
+    if (event.type === "error") { setLink(false, event.text); return; }
+    if (!addEvent(event, false)) return;
     if ($("tab-alerts").hidden) { unseenAlerts++; }
     toast(eventTitle(event), event.detail || (event.type === "reminder" ? "" : String(event.report || "").slice(0, 160)), () => switchTab("alerts"));
     if (event.type === "alert") { loadAlerts(); loadGraph(true); } else { renderAlerts(); badge("alerts-badge", activeAlerts.length + unseenAlerts); }
