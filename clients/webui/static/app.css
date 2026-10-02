@@ -481,3 +481,20 @@ button { cursor: pointer; border: 0; background: none; }
   .sheet { padding: 10px; } .sheet-card { padding: 22px 18px 16px; border-radius: 20px; }
   .model-pill #model-pill-model { max-width: 34vw; }
 }
+
+/* --- znaczki providerow: wlasne monogramy, nie logotypy --- */
+.pbadge { --hue: 212; flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 9px;
+  font: 700 12px/1 var(--sans); letter-spacing: -.02em; color: #fff;
+  background: linear-gradient(145deg, hsl(var(--hue) 82% 62%), hsl(calc(var(--hue) + 18) 74% 48%));
+  box-shadow: 0 4px 10px hsl(var(--hue) 70% 50% / .26), inset 0 1px 0 rgba(255, 255, 255, .34);
+  transition: transform .25s var(--ease), box-shadow .25s var(--ease); }
+.pbadge.small { width: 18px; height: 18px; border-radius: 6px; font-size: 9.5px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3); }
+.provider-card:hover .pbadge { transform: scale(1.08) rotate(-3deg); }
+.provider-card .head { justify-content: flex-start; }
+.provider-card .head b { flex: 1; min-width: 0; }
+.model-pill .swap { align-items: center; }
+#model-pill-badge { display: inline-grid; }
+.model-item .name { display: inline-flex; align-items: center; gap: 8px; }
+.model-item { align-items: center; }
+h2.with-badge { display: flex; align-items: center; gap: 10px; }
+h2.with-badge .pbadge { width: 30px; height: 30px; border-radius: 10px; font-size: 13.5px; }

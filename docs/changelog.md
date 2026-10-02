@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.19.1 (2026-10-02)
+
+### `pipe web`
+
+- Znaczki providerow na ekranie wyboru, w przelaczniku nad polem rozmowy i w jego menu -- latwiej odroznic
+  providerow na pierwszy rzut oka
+- To wlasne monogramy Pipe (litera na kolorowym tle), a nie logotypy firm: logotypy providerow sa znakami
+  towarowymi i ich uzycie wymaga zgody wlascicieli, wiec ich nie kopiujemy. Nazwy pozostaja zwyklym tekstem
+
 ## v0.19.0 (2026-10-02)
 
 Pipe potrafi zaktualizowac sam siebie. Ten jeden raz aktualizacje trzeba jeszcze zrobic recznie na serwerze

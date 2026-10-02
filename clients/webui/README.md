@@ -35,7 +35,7 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 - **Alerty** -- aktywne alerty z przyciskiem *Zbadaj* oraz zdarzenia na zywo.
 - **Provider** -- przy pierwszym wejsciu ekran wyboru providera LLM (klucz API, sprawdzenie, model). Nad polem
   rozmowy przelacznik: lista providerow, do ktorych jest klucz, i przelaczenie jednym kliknieciem. `/provider`
-  otwiera ekran ponownie. Klucze sa zapisywane na serwerze (`DATA_DIR/llm_keys.json`), nie w przegladarce.
+  otwiera ekran ponownie. Znaczki przy providerach to wlasne monogramy, nie logotypy firm (znaki towarowe). Klucze sa zapisywane na serwerze (`DATA_DIR/llm_keys.json`), nie w przegladarce.
 - **Komendy** -- wpisz `/` w polu rozmowy: rozwija sie lista wszystkich komend i skilli z opisami
   (strzalki, Enter uruchamia, Tab uzupelnia, Esc zamyka). Te same komendy co w CLI, po polsku i po angielsku.
 

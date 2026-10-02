@@ -661,6 +661,7 @@
   function applyProviders(data) {
     const changed = llm && (llm.active.id !== data.active.id || llm.active.model !== data.active.model);
     llm = data;
+    $("model-pill-badge").replaceChildren(providerBadge(data.active, true));
     $("model-pill-name").textContent = data.active.name;
     $("model-pill-model").textContent = data.active.model;
     pill.title = t("providerNow") + " " + data.active.name + " · " + data.active.model;
@@ -671,6 +672,19 @@
   async function loadProviders(first) {
     try { applyProviders(await command({ command: "providers" })); } catch (_) { return; }   // starszy backend: bez przelacznika
     if (first && !llm.chosen && llm.can_edit) openSetup(true);
+  }
+  // Znaczek providera: wlasny monogram w kolorze wyliczonym z id — NIE logo. Logotypy providerow to znaki
+  // towarowe, ktorych uzycie wymaga ich zgody (wytyczne Anthropic, OpenAI, Google), wiec ich nie kopiujemy.
+  const MONOGRAMS = { gemini: "G", openai: "O", anthropic: "A", openrouter: "OR", groq: "Gq", deepseek: "D", mistral: "M", xai: "x",
+    zai: "Z", kimi: "K", together: "T", cerebras: "C", fireworks: "F", ollama: "Ol" };
+  function providerBadge(provider, small) {
+    const id = String(provider.id || ""), name = String(provider.name || id || "?");
+    let hash = 7;
+    for (const ch of id || name) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
+    const badge = el("span", "pbadge" + (small ? " small" : ""), MONOGRAMS[id] || name.trim().charAt(0).toUpperCase());
+    badge.style.setProperty("--hue", String(168 + (hash % 13) * 10));       // od morskiego po fiolet — w tonacji strony
+    badge.setAttribute("aria-hidden", "true");
+    return badge;
   }
   function announceProvider() {
     const text = t("switchedTo") + " " + llm.active.name + " · " + llm.active.model;
@@ -689,7 +703,9 @@
     menuItems.forEach((item, index) => {
       const row = el("button", "palette-item model-item" + (item.manage ? " manage" : ""));
       row.type = "button"; row.dataset.index = String(index); row.setAttribute("role", "option");
-      row.appendChild(el("span", "name", item.manage ? "+" : item.provider.name));
+      const name = el("span", "name", item.manage ? "+" : "");
+      if (!item.manage) { name.appendChild(providerBadge(item.provider, true)); name.appendChild(document.createTextNode(item.provider.name)); }
+      row.appendChild(name);
       row.appendChild(el("span", "desc", item.manage ? t("manageProviders") : item.provider.model));
       row.appendChild(el("span", "hint", !item.manage && item.provider.active ? "✓" : ""));
       row.addEventListener("click", () => pickMenu(index));
@@ -776,6 +792,7 @@
       card.type = "button";
       card.style.animationDelay = Math.min(index, 14) * 24 + "ms";
       const head = el("div", "head");
+      head.appendChild(providerBadge(p));
       head.appendChild(el("b", "", p.name));
       // etykieta tylko tam, gdzie cos mowi: uzywany / gotowy / lokalny — reszta po prostu czeka na klucz
       if (p.active || p.ready || !p.requires_key) head.appendChild(el("span", "tag " + (p.active ? "" : p.ready ? "add" : "mute"),
@@ -794,7 +811,9 @@
     back.type = "button";
     back.addEventListener("click", () => showStep("pick"));
     stepKey.appendChild(back);
-    stepKey.appendChild(el("h2", "", p.name));
+    const title = el("h2", "with-badge");
+    title.appendChild(providerBadge(p)); title.appendChild(document.createTextNode(p.name));
+    stepKey.appendChild(title);
     if (p.notes) stepKey.appendChild(el("p", "lead", p.notes));
     const form = el("form", "provider-form");
     form.autocomplete = "off"; form.noValidate = true;
