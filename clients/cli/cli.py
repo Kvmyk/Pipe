@@ -93,6 +93,8 @@ REMOTE_SOCKET: str = "/tmp/vps-agent.sock"  # socket na serwerze
 READ_LIMIT: int = 32 * 1024 * 1024       # ramki z diagramami (base64) sa duze
 DIAGRAMS_DIR: Path = Path(os.getenv("PIPE_DIAGRAMS_DIR", str(Path.home() / ".pipe" / "diagrams")))
 OPEN_IMAGES: bool = False                # ustawiane flaga --open
+RECONNECT_TIMEOUT: float = 180.0         # tyle CLI czeka na powrot backendu (restart po /aktualizuj)
+RECONNECT_DELAY: float = 2.0
 WEB_PORT: int = 7400                     # `pipe web`: port lokalnej strony (--web-port)
 WEB_OPEN_BROWSER: bool = True            # `pipe web --no-browser` wylacza otwieranie przegladarki
 
@@ -303,23 +305,52 @@ class RemoteClient:
                                  "interface": self.interface, **fields})
 
     async def _send(self, data: dict) -> list[dict]:
-        """Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`."""
-        if not self._writer or not self._reader:
-            raise RuntimeError(tr("Brak połączenia z backendem.", "Not connected to the backend."))
-
+        """
+        Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`. Gdy backend zniknal (restart po
+        aktualizacji, zerwane polaczenie), laczy ponownie i ponawia zadanie — rozmowa trwa bez
+        restartu CLI. Zadanie, na ktore przyszla juz czesc odpowiedzi, nie jest ponawiane.
+        """
         if self.token:
             data = {**data, "token": self.token}
 
+        deadline = 0.0
+        while True:
+            responses: list[dict] = []
+            try:
+                if not self._writer or not self._reader:
+                    await self.connect()
+                await self._exchange(data, responses)
+                if deadline:
+                    console.print(tr("[dim]Połączono ponownie.[/dim]", "[dim]Reconnected.[/dim]"))
+                return responses
+            except (OSError, EOFError) as exc:
+                await self.disconnect()
+                if responses:
+                    console.print(tr("[yellow]Połączenie z backendem przerwane w trakcie odpowiedzi.[/yellow]",
+                                     "[yellow]The connection to the backend dropped mid-answer.[/yellow]"))
+                    return responses
+                if not deadline:
+                    deadline = time.monotonic() + RECONNECT_TIMEOUT
+                    console.print(tr("[dim]Backend nie odpowiada (restart po aktualizacji?) — łączę ponownie...[/dim]",
+                                     "[dim]The backend is not responding (restarting after an update?) — reconnecting...[/dim]"))
+                elif time.monotonic() > deadline:
+                    raise ConnectionError(tr(
+                        f"Backend nie wrócił w ciągu {int(RECONNECT_TIMEOUT)} s. Sprawdź tunel SSH i kontener na serwerze.",
+                        f"The backend did not come back within {int(RECONNECT_TIMEOUT)} s. Check the SSH tunnel and the container on the server."
+                    )) from exc
+                await asyncio.sleep(RECONNECT_DELAY)
+
+    async def _exchange(self, data: dict, responses: list[dict]) -> None:
+        """Jedna wymiana na otwartym polaczeniu; koniec strumienia przed `done` to blad polaczenia."""
         line = json.dumps(data, ensure_ascii=False) + "\n"
         self._writer.write(line.encode("utf-8"))
         await self._writer.drain()
 
         # Postep i zalaczniki sa pokazywane od razu; reszta wraca jako lista.
-        responses: list[dict] = []
         while True:
             raw = await self._reader.readline()
             if not raw:
-                break
+                raise EOFError("backend closed the connection")
             try:
                 response = json.loads(raw.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
@@ -331,9 +362,7 @@ class RemoteClient:
             else:
                 responses.append(response)
             if response.get("done"):
-                break
-
-        return responses
+                return
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
@@ -399,13 +428,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.2[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.3[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.2[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.3[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -1134,15 +1163,8 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 await _show_due_reminders(client)
                 await _refresh_skills(client)
             except Exception as exc:
-                console.print(tr(f"[red]Błąd komunikacji: {exc}[/red]", f"[red]Communication error: {exc}[/red]"))
-                # Spróbuj ponownie połączyć
-                try:
-                    await client.connect()
-                    console.print(tr("[dim]Połączono ponownie.[/dim]", "[dim]Reconnected.[/dim]"))
-                except Exception:
-                    console.print(tr("[red]Nie można ponownie połączyć się z backendem.[/red]",
-                                     "[red]Cannot reconnect to the backend.[/red]"))
-                    break
+                # _send samo laczy ponownie; blad tutaj nie konczy rozmowy — nastepna wiadomosc sprobuje znowu
+                console.print(tr(f"[red]Błąd komunikacji: {escape(str(exc))}[/red]", f"[red]Communication error: {escape(str(exc))}[/red]"))
 
             console.print()
 

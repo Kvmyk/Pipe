@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.21.2
+Pipe v0.21.3
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.

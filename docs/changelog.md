@@ -1,5 +1,17 @@
 # Historia zmian -- Pipe
 
+## v0.21.3 (2026-10-02)
+
+### CLI
+
+- Po `/aktualizuj` nie trzeba juz uruchamiac CLI od nowa. Gdy backend znika (przebudowa kontenera po aktualizacji,
+  zerwane polaczenie), CLI samo laczy sie ponownie -- probuje co 2 s przez maksymalnie 3 minuty -- i ponawia
+  wiadomosc albo komende. Wczesniej po jednej nieudanej probie konczylo prace
+- Gdy backend nie wroci w tym czasie, CLI pokazuje blad, ale zostaje otwarte; nastepna wiadomosc probuje znowu
+- Zadanie przerwane w polowie odpowiedzi nie jest powtarzane (agent mogl juz cos wykonac) -- CLI pokazuje to,
+  co doszlo, i ostrzezenie
+- Ograniczenie bez zmian: po restarcie backendu agent nie pamieta wczesniejszej rozmowy (sesje sa w pamieci procesu)
+
 ## v0.21.2 (2026-10-02)
 
 ### CLI
