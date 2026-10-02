@@ -76,3 +76,15 @@ def test_tab_fills_the_command(monkeypatch):
     assert asyncio.run(typed("/odn\t tylko example.com\r")) == "/odnow_certyfikat tylko example.com"
     assert asyncio.run(typed("/\t\t\r")) == "/raport"
     assert asyncio.run(typed("co tam\t\r")).strip() == "co tam"
+
+
+def test_busy_local_port_is_not_reused():
+    """Zajety port lokalny = cudzy tunel; CLI nie moze uznac go za swoj (haslo ssh trafialoby do agenta)."""
+    import socket
+
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        assert cli._own_local_port(port) != port
+    assert cli._own_local_port(port) == port

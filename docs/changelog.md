@@ -1,5 +1,16 @@
 # Historia zmian -- Pipe
 
+## v0.21.1 (2026-10-02)
+
+### CLI
+
+- Haslo SSH nie trafia juz do rozmowy z agentem. Gdy lokalny port tunelu (domyslnie 7379) byl zajety -- przez
+  drugie otwarte CLI albo tunel pozostaly po wczesniejszym uruchomieniu -- CLI bralo cudzy tunel za swoj
+  i zaczynalo rozmowe, zanim jego wlasne `ssh` skonczylo logowanie; wpisywane haslo ladowalo wtedy jako wiadomosc
+  do agenta. Teraz CLI sprawdza port przed zestawieniem tunelu (takze `kubectl port-forward`) i przy zajetym
+  bierze inny wolny, o czym informuje jedna linia
+- Jesli zdarzylo Ci sie wpisac haslo w rozmowie z agentem -- zmien je
+
 ## v0.21.0 (2026-10-02)
 
 ### Zmiana jezyka w trakcie pracy

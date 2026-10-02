@@ -399,13 +399,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.0[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.1[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.0[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.1[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -1020,6 +1020,25 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _own_local_port(port: int) -> int:
+    """
+    Port dla wlasnego tunelu. Gdy `port` juz ktos trzyma (drugie otwarte CLI, osierocony tunel),
+    wait_ready() uznaloby cudzy tunel za gotowy, zanim nasz ssh skonczy logowanie — rozmowa
+    ruszylaby, a haslo wpisywane dla ssh trafiloby do agenta. Wtedy bierzemy wolny port.
+    """
+    import socket
+    with socket.socket() as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            pass
+    free = _free_port()
+    console.print(tr(f"[dim]Port {port} jest zajęty (inne otwarte CLI albo stary tunel) — używam {free}.[/dim]",
+                     f"[dim]Port {port} is taken (another open CLI or a stale tunnel) — using {free}.[/dim]"))
+    return free
+
+
 def _welcome_marker(host: str) -> Path:
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in host)[:80] or "default"
     return Path.home() / ".pipe" / f"welcomed-{safe}"
@@ -1281,6 +1300,7 @@ Examples:
 
     # ─── Kubernetes: port-forward zamiast tunelu SSH ──────────────────────
     if args.kube:
+        args.local_port = _own_local_port(args.local_port)
         forward = KubePortForward(args.kube, args.local_port, args.kube_context)
         client = RemoteClient(session_id=session_id, host="127.0.0.1", port=args.local_port, token=args.token)
         console.print(f"[dim]kubectl port-forward svc/pipe (namespace {args.kube})...[/dim]")
@@ -1328,6 +1348,7 @@ Examples:
         ))
         sys.exit(1)
 
+    args.local_port = _own_local_port(args.local_port)
     tunnel = SSHTunnel(
         host=args.host,
         ssh_port=args.ssh_port,

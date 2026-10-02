@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.21.0
+Pipe v0.21.1
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -117,7 +117,7 @@ Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent o
 | `AGENT_TOKEN` | Token autoryzacji backendu (rownowazny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN` | -- |
 | `VPS_SSH_PORT` | Port SSH | `22` |
 | `VPS_SSH_KEY` | Sciezka do klucza prywatnego | domyslny klucz |
-| `VPS_LOCAL_PORT` | Lokalny port tunelu | `7379` |
+| `VPS_LOCAL_PORT` | Lokalny port tunelu; gdy jest zajety (drugie otwarte CLI, stary tunel), CLI bierze inny wolny | `7379` |
 | `VPS_REMOTE_SOCKET` | Socket na serwerze | `/tmp/vps-agent.sock` |
 | `PIPE_KUBE_NAMESPACE` | Jak `--kube` | -- |
 | `PIPE_KUBE_CONTEXT` | Jak `--kube-context` | biezacy kontekst |
