@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.18.0
+Pipe v0.19.0
 
 ## Model
 
@@ -246,3 +246,17 @@ tylko, czy klucz jest i skad), nie trafia do audit logu (logowana jest sama zmia
 zostanie zapisany, backend sprawdza go u providera -- wylacznie pod adresem z presetu albo z pliku providerow, wiec
 klucza nie da sie wyslac pod dowolny adres. Zmiany moze robic tylko administrator. Odczyt `llm_keys.json` przez
 agenta jest klasyfikowany jak `.env` (wymaga potwierdzenia), a redakcja sekretow obejmuje wyniki narzedzi jak zwykle.
+
+## Aktualizacja samego Pipe (`pipe_update`)
+
+To narzedzie pobiera kod z sieci i uruchamia go z uprawnieniami agenta, wiec jest celowo waskie:
+
+- nie przyjmuje adresu, galezi, komendy ani sciezki -- model moze tylko wybrac `check` albo `apply`;
+- zrodlem jest wylacznie `origin` repozytorium, w ktorym Pipe jest zainstalowany, przez `git pull --ff-only`
+  (bez nadpisywania historii i bez scalania);
+- `apply` zawsze wymaga potwierdzenia, a rola viewer jest odrzucana z gory;
+- projekt, katalog i uslugi compose pochodza z etykiet Dockera wlasnego kontenera i sa cytowane pojedynczo;
+- naraz dziala jedna aktualizacja; kontener pomocniczy dostaje `docker.sock` i katalog repozytorium, nic wiecej.
+
+Zaufanie przenosi sie na zdalne repozytorium: kto moze wypchnac commit na sledzona galaz, ten po Twoim "TAK"
+uruchomi kod na serwerze. To ta sama granica co przy recznym `git pull`, ale warto o niej pamietac.

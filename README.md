@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.18.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.19.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -159,6 +159,7 @@ czuwania -- [docs/protocol.md](./docs/protocol.md).
 | `delegate` | Workery: rownolegli pod-agenci, tylko odczyty, raport dla agenta |
 | `routine_manage` | Zadania wedlug harmonogramu z raportem na Telegram |
 | `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie ("napisz za 10 minut") |
+| `pipe_update` | Aktualizacja samego Pipe: sprawdzenie wersji i przebudowa w osobnym kontenerze ("zaktualizuj sie") |
 | `mcp_manage` | Zewnetrzne serwery MCP i ich narzedzia (`mcp__<serwer>__<narzedzie>`, domyslnie z potwierdzeniem) |
 | `security_audit` | Audyt bezpieczenstwa z ocena i gotowymi poprawkami |
 | `journal` | Dziennik zatwierdzonych zmian z kopiami i cofanie (`/cofnij`) |

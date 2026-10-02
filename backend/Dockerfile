@@ -9,6 +9,9 @@ WORKDIR /app
 ARG TARGETARCH
 ARG DOCKER_VERSION=27.5.1
 # kubectl dla trybu kubernetes i celow-klastrow; "stable" = najnowsza wersja w chwili budowania
+# Samodzielny docker-compose wylacznie do aktualizacji samego Pipe (core/selfupdate.py) — celowo poza
+# katalogiem wtyczek CLI, zeby `docker compose` nie dzialal z wnetrza kontenera na projektach z /hostfs
+ARG COMPOSE_VERSION=v2.32.4
 ARG INSTALL_KUBECTL=1
 ARG KUBECTL_VERSION=stable
 
@@ -28,6 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && tar xzf docker.tgz docker/docker \
     && mv docker/docker /usr/local/bin/docker \
     && rm -rf docker docker.tgz \
+    && mkdir -p /usr/local/libexec/pipe \
+    && curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${DARCH}" \
+         -o /usr/local/libexec/pipe/docker-compose \
+    && chmod +x /usr/local/libexec/pipe/docker-compose \
     && if [ "$INSTALL_KUBECTL" = "1" ]; then \
          V="$KUBECTL_VERSION"; [ "$V" = "stable" ] && V="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"; \
          curl -fsSL "https://dl.k8s.io/release/${V}/bin/linux/${ARCH}/kubectl" -o /usr/local/bin/kubectl \

@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.18.0
+Pipe v0.19.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -356,6 +356,16 @@ TOOLS: list[dict] = [
             "target": {"type": "string", "description": "Dla kind=task: cel (domyslnie local)."},
             "id": {"type": "string", "description": "Dla cancel: identyfikator przypomnienia z list."},
         },
+        ["operation"],
+    ),
+    _tool(
+        "pipe_update",
+        "Aktualizacja samego Pipe (Ciebie): 'zaktualizuj sie', 'pobierz nowa wersje Pipe', 'jaka masz wersje, czy jest "
+        "nowsza'. check — wersja, commit i czy na zdalnym repozytorium sa nowsze zmiany (nic nie zmienia). apply — "
+        "po potwierdzeniu osobny kontener pobiera zmiany (git pull --ff-only) i przebudowuje uslugi Pipe; backend "
+        "restartuje sie, rozmowa zostaje przerwana, a wynik przychodzi sam jako wiadomosc. NIGDY nie aktualizuj Pipe "
+        "recznie przez git/docker compose — z wnetrza kontenera to sie nie uda.",
+        {"operation": {"type": "string", "enum": ["check", "apply"]}},
         ["operation"],
     ),
 ]

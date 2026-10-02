@@ -1,5 +1,28 @@
 # Historia zmian -- Pipe
 
+## v0.19.0 (2026-10-02)
+
+Pipe potrafi zaktualizowac sam siebie. Ten jeden raz aktualizacje trzeba jeszcze zrobic recznie na serwerze
+(`git pull` + `docker compose up -d --build`) -- nowy obraz zawiera narzedzie, ktorego stary nie ma.
+
+### Aktualizacja z rozmowy
+
+- **"Zaktualizuj sie"** -- nowe narzedzie agenta `pipe_update`. `check` pokazuje wersje, commit i to, czy na zdalnym
+  repozytorium sa nowsze zmiany; `apply` po potwierdzeniu pobiera je i przebudowuje uslugi Pipe
+- Przebudowe wykonuje **osobny kontener pomocniczy** -- agent nie moze wymienic kontenera, w ktorym sam dziala.
+  Kontener robi `git pull --ff-only` i `docker compose up -d --build` tylko dla uslug, ktore juz dzialaly
+- Po restarcie przychodzi wiadomosc z wynikiem ("Pipe zaktualizowany: 0.18.0 -> 0.19.0") do tego, kto zlecil
+  aktualizacje -- takze na Telegram. Gdy pobranie zmian albo budowanie sie nie uda, stara wersja dziala dalej,
+  a wiadomosc zawiera koniec logu
+- Dziala w trybie Docker. W trybie native i w Kubernetesie agent podaje kroki do wykonania recznie
+
+### Bezpieczenstwo
+
+- Narzedzie nie przyjmuje adresu, galezi ani komendy -- kod przychodzi wylacznie z `origin` repozytorium, w ktorym
+  Pipe jest zainstalowany. Wymaga potwierdzenia; rola viewer nie moze go uzyc
+- `docker compose` nadal nie jest dostepny dla agenta jako komenda: plik compose w obrazie lezy poza katalogiem
+  wtyczek i sluzy tylko aktualizacji
+
 ## v0.18.0 (2026-10-02)
 
 Wybor providera LLM w przegladarce i przelaczanie miedzy providerami w trakcie rozmowy. Po aktualizacji zaktualizuj

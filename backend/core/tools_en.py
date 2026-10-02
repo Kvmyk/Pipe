@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.18.0
+Pipe v0.19.0
 """
 
 from __future__ import annotations
@@ -167,6 +167,13 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
                  "and what the report should contain.",
          "kind": "message by default.", "target": "For kind=task: the target (local by default).",
          "id": "For cancel: the reminder id from list."}),
+    "pipe_update": (
+        "Update of Pipe itself (you): 'update yourself', 'get the new Pipe version', 'which version are you, is there a "
+        "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "
+        "apply — after confirmation a separate container pulls the changes (git pull --ff-only) and rebuilds the Pipe "
+        "services; the backend restarts, the conversation is cut and the result arrives by itself as a message. NEVER "
+        "update Pipe by hand with git/docker compose — from inside the container that cannot work.",
+        {}),
 }
 
 

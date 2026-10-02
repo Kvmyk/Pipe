@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.18.0
+Pipe v0.19.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -65,6 +65,7 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
     "mcp_manage": frozenset({"add", "remove", "reload"}),
+    "pipe_update": frozenset({"apply"}),
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 INTERRUPTED_TOOL_EN = "INTERRUPTED: the client disconnected before the tool finished. Result unknown."

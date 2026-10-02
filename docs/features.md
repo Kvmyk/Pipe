@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.18.0
+Pipe v0.19.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -475,7 +475,7 @@ tez podac od razu w `backend/.env` (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC
 
 | Warstwa | Co sie zmienia |
 |---------|----------------|
-| Agent | system prompt, opisy 23 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
+| Agent | system prompt, opisy 24 narzedzi, prompty workerow, rutyn, skanu serwera i VIBE |
 | Komunikaty | pytania o potwierdzenie, plan bezpiecznika, wyniki narzedzi, bledy walidacji |
 | Czuwanie | tytuly alertow, poranny raport, `/zmiany`, `/zdrowie`, `/audyt` z poprawkami, powitanie |
 | MCP | tytuly i opisy narzedzi serwera MCP, instrukcje dla zewnetrznego agenta |
@@ -540,3 +540,19 @@ bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
 - Dodanie serwera zawsze wymaga potwierdzenia. Podproces stdio nie dostaje klucza LLM ani tokenow Pipe.
 - stdio i Streamable HTTP; wersja protokolu wykrywana sama (2026-07-28 albo `initialize`).
 - `/mcp` pokazuje serwery i ich stan; *"polacz ponownie serwery MCP"* -- `mcp_manage reload`.
+
+---
+
+## Aktualizacja samego Pipe
+
+Napisz agentowi "zaktualizuj sie" (albo "czy jest nowsza wersja?"). Agent sprawdza zdalne repozytorium, a po Twoim
+potwierdzeniu uruchamia osobny kontener pomocniczy, ktory w katalogu instalacji wykonuje `git pull --ff-only`
+i przebudowuje uslugi Pipe (`docker compose up -d --build`). Osobny kontener jest potrzebny, bo agent nie moze
+wymienic kontenera, w ktorym sam dziala -- proces zginalby w polowie.
+
+- Backend jest niedostepny przez minute lub kilka, a trwajaca rozmowa zostaje przerwana (sesje nie przetrwaja restartu).
+- Po restarcie przychodzi wiadomosc z wynikiem do tego, kto zlecil aktualizacje. Jesli pobranie albo budowanie sie
+  nie uda, stara wersja dziala dalej, a wiadomosc zawiera koniec logu.
+- Przebudowywane sa tylko uslugi, ktore juz dzialaly (bot Telegrama nie wystartuje, jesli go nie uzywasz).
+- Lokalne zmiany w plikach repozytorium moga zablokowac `git pull` -- agent ostrzega o nich przy sprawdzaniu.
+- Tylko tryb Docker. W trybie native: `git pull` i `sudo systemctl restart pipe`; w Kubernetesie: nowy obraz.

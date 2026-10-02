@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.18.0
+Pipe v0.19.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -36,6 +36,7 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
 | `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
 | `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
+| `core/selfupdate.py` | Aktualizacja samego Pipe: kontener pomocniczy (`git pull` + `docker-compose up -d --build`), raport po restarcie |
 | `core/reminders.py` | Przypomnienia: jednorazowe wiadomosci i zadania o czasie (`reminders.json`), odpala je czuwanie |
 | `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
 | `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
@@ -276,6 +277,7 @@ Powinienes zobaczyc:
 | `delegate` | Workery (tylko odczyty) | Nie -- zmiany wracaja jako propozycje |
 | `routine_manage` | Rutyny wedlug harmonogramu | Dodanie: tak |
 | `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie | Zadanie: tak; wiadomosc: nie |
+| `pipe_update` | Aktualizacja samego Pipe (check / apply) | apply: tak |
 | `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
 | `mcp_manage` | Serwery MCP, z ktorych korzysta Pipe; ich narzedzia `mcp__<serwer>__<narzedzie>` | Dodanie: tak; narzedzia wg polityki |
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |

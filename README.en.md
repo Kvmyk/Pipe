@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.18.0** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.19.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -160,6 +160,7 @@ events -- [docs/protocol.md](./docs/protocol.md).
 | `delegate` | Workers: parallel sub-agents, read-only, report to the agent |
 | `routine_manage` | Scheduled tasks with a report on Telegram |
 | `reminder` | A one-off reminder or task at a given time ("write in 10 minutes") |
+| `pipe_update` | Update of Pipe itself: version check and rebuild in a separate container ("update yourself") |
 | `mcp_manage` | External MCP servers and their tools (`mcp__<server>__<tool>`, confirmation by default) |
 | `security_audit` | Security audit with a score and ready-made fixes |
 | `journal` | Journal of approved changes with backups, and undo (`/undo`) |

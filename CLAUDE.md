@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.18.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.19.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings). Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README.
 
@@ -71,6 +71,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 | `backend/core/workers.py` | Sub-agents: `run_worker()`, `run_many()` — read-only by construction |
 | `backend/core/routines.py` | Cron parser (`parse_schedule`), routine registry (`routines.json`) |
 | `backend/core/reminders.py` | One-off reminders (`reminders.json`): `parse_delay()`/`parse_at()`, kinds `message` (no LLM, no confirmation, `[PAMIEC]` notice) and `task` (read-only worker, confirmation); fired by `Watcher._reminder_loop()` (second precision, wakes on `reminders_changed()`), kept as `fired` when nobody subscribes and delivered on subscribe or claimed by the CLI |
+| `backend/core/selfupdate.py` | Tool `pipe_update` (check / apply): Pipe cannot rebuild the container it runs in, so `start()` launches a detached helper container from the agent's own image (repo mounted at its host path, `docker.sock`) that runs `git pull --ff-only` + the standalone `/usr/local/libexec/pipe/docker-compose -p <project> up -d --build <running services>`; install data comes from the container's compose labels, requester and old version are stored as helper labels, `follow()` / `resume()` (server start) deliver the result as a `message` reminder. The tool takes no URL/branch/command. `backend/version.py` holds `VERSION` |
 | `backend/core/watch.py` | `Watcher` (checks, alert lifecycle with per-group `scope`, snapshot/checks loops, clock loop: routines + digest), `Notifier` (pub/sub), `prompt_alerts()` |
 | `backend/core/metrics.py` | Metric samples → `metrics.jsonl`; bucketed series → Mermaid `xychart-beta` chart + numeric summary for the model |
 | `backend/core/snapshots.py` | Host snapshots (packages, containers + image id, ports, systemd, cron, users, SSH key fingerprints, config hashes), saved only on change; `diff()`, `timeline()`, `[BEZPIECZENSTWO]` marks |
@@ -90,7 +91,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 | `backend/core/usage.py` | Token/cost accounting per day/who/model (`usage.json`), `check_budget()` for daily limits — **no `settings` import** |
 | `backend/core/memory.py` | SERVER.md, DIRECTORY (`directory.json`), skills, VIBE (`vibe/<key>.md`), `find_secret()`, `redact_secrets()`, `prompt_context()` |
 | `backend/core/vibe.py` | `VibeLearner` — background style distillation every `VIBE_EVERY` user messages |
-| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 23 built-in tools (MCP tools are added at runtime by `agent.tools_for_agent()`); `tools_en.py` holds the English descriptions (`english_tools()`) |
+| `backend/core/tools.py` | `TOOLS`: OpenAI function-calling schemas for the 24 built-in tools (MCP tools are added at runtime by `agent.tools_for_agent()`); `tools_en.py` holds the English descriptions (`english_tools()`) |
 | `backend/core/i18n.py` | `lang()`, `tr(pl, en)`, `prompt(name)` (picks `config/prompts_en.py` when it has the name), `load_env_lang()` for CLIs run outside the server, `CONFIRM_PHRASES` — **stdlib only**, reads `PIPE_LANG` on every call |
 | `backend/core/llm.py` | Runtime provider choice on top of `.env` (the *base* provider): `DATA_DIR/llm_keys.json` (0600) with keys added from the web UI, per-provider model, `active`, `chosen`; `resolve(base)` is what the agent uses now, `listing()` never returns keys — **no `settings` import** |
 | `backend/config/providers.py` | Provider presets, user providers file, `resolve_llm_config()`, model-list filtering — **stdlib only** |
@@ -106,7 +107,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 
 ### Tool dispatch
 
-Twenty-three built-in tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`, `diagram`, `server_md`, `directory`, `skill_manage`, `vibe`, `target_manage`, `remote_exec`, `delegate`, `routine_manage`, `reminder`, `server_history`, `journal`, `security_audit`, `mcp_manage` — plus `mcp__<server>__<tool>` from connected MCP servers, dispatched to `handlers/mcp.handle_mcp_tool` when no `handle_<name>` exists.
+Twenty-four built-in tools: `execute_command`, `read_file`, `write_file`, `change_directory`, `git_command`, `system_stats`, `docker_manage`, `network_info`, `cron_manage`, `diagram`, `server_md`, `directory`, `skill_manage`, `vibe`, `target_manage`, `remote_exec`, `delegate`, `routine_manage`, `reminder`, `server_history`, `journal`, `security_audit`, `mcp_manage`, `pipe_update` — plus `mcp__<server>__<tool>` from connected MCP servers, dispatched to `handlers/mcp.handle_mcp_tool` when no `handle_<name>` exists.
 
 `_handle_tool_call()` dispatches by name reflection: `getattr(handlers_module, f"handle_{tool_name}")` (workers pass their own `dispatch` instead). **Adding a tool means three edits:** a schema in `core/tools.py`, a `handle_<name>` async generator in `core/handlers/`, and its export in `core/handlers/__init__.py` (`test_every_tool_has_handler` checks this).
 
@@ -209,5 +210,6 @@ The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump
 
 - Sessions (history, pending confirmations, worker histories) are in process memory — a backend restart forgets them; the Kubernetes Deployment therefore runs one replica.
 - `cron_manage` can only list host cron in docker/kubernetes mode (host root is read-only); add/remove works in native mode. Agent-run schedules belong in routines.
+- `pipe_update apply` works only in docker mode started by compose; native and Kubernetes get manual steps. `docker compose` is deliberately not a CLI plugin in the image (paths under `/hostfs` would be wrong), so the agent cannot run compose on host projects.
 - The CLI cannot receive watcher events (its REPL blocks on input); it shows them via `/alerty`. Telegram receives them live.
 - `AGENTS.md` is stale.

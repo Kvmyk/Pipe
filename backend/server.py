@@ -638,6 +638,9 @@ async def main() -> None:
     asyncio.create_task(_report_model_status())
     # Czuwanie i rutyny — proaktywne alerty dla subskrybentow (bot Telegram)
     get_watcher(get_agent()).start()
+    # Po aktualizacji samego Pipe (pipe_update): raport dla tego, kto ja zlecil
+    from backend.core import selfupdate
+    asyncio.create_task(selfupdate.resume(get_watcher()))
 
     from backend.core.mcp.registry import get_manager, load_config
     from backend.core.mcp.server import start_http as start_mcp_http
