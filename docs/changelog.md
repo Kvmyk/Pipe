@@ -1,5 +1,12 @@
 # Historia zmian -- Pipe
 
+## v0.21.4 (2026-10-02)
+
+### CLI
+
+- Lista podpowiedzi po `/` nie pokazuje juz `/jezyk` dwa razy -- wpis byl zdublowany w tabeli komend
+  (sama komenda dzialala poprawnie)
+
 ## v0.21.3 (2026-10-02)
 
 ### CLI

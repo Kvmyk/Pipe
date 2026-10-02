@@ -49,6 +49,11 @@ def test_no_options_for_plain_text_or_arguments():
     assert names("/zzz") == []
 
 
+def test_commands_are_listed_once():
+    names_pl = [entry[0] for entry in cli.COMMANDS]
+    assert len(names_pl) == len(set(names_pl))
+
+
 def test_every_command_is_handled_or_aliased():
     for name_pl, name_en, _, _ in cli.COMMANDS:
         assert name_pl not in cli.COMMAND_ALIASES
