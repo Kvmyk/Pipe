@@ -118,6 +118,12 @@ LLM_MODEL=            # pusty = domyslny model providera
 Zamiast `LLM_API_KEY` mozesz ustawic zmienna specyficzna dla providera, np. `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` -- `LLM_API_KEY` ma pierwszenstwo.
 
+Provider z `.env` jest **bazowy** -- z nim backend startuje. Kolejnych mozna dodac bez restartu w `pipe web`
+(ekran wyboru providera, `/provider`): klucz trafia do `DATA_DIR/llm_keys.json` (0600), a przelacznik w rozmowie
+zmienia providera calego agenta. Zmienne presetow ustawione obok `LLM_API_KEY` (np. `OPENAI_API_KEY`,
+`GROQ_API_KEY`) tez licza sie jako gotowi providerzy w przelaczniku. `WORKER_MODEL`, `LLM_REASONING_EFFORT`
+i ceny `LLM_PRICE_*` dotycza tylko providera bazowego.
+
 Opcjonalnie:
 
 ```env
