@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.19.1
+Pipe v0.20.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -545,7 +545,8 @@ bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
 
 ## Aktualizacja samego Pipe
 
-Napisz agentowi "zaktualizuj sie" (albo "czy jest nowsza wersja?"). Agent sprawdza zdalne repozytorium, a po Twoim
+Wpisz `/aktualizuj` (po angielsku `/update`) albo napisz agentowi "zaktualizuj sie"; `/aktualizuj sprawdz` tylko
+pokazuje wersje i to, czy jest nowsza. Agent sprawdza zdalne repozytorium, a po Twoim
 potwierdzeniu uruchamia osobny kontener pomocniczy, ktory w katalogu instalacji wykonuje `git pull --ff-only`
 i przebudowuje uslugi Pipe (`docker compose up -d --build`). Osobny kontener jest potrzebny, bo agent nie moze
 wymienic kontenera, w ktorym sam dziala -- proces zginalby w polowie.

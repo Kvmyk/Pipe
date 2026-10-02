@@ -970,7 +970,7 @@
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
     ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
     ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
-    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["pomoc", "help", "c_help"],
+    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
@@ -980,6 +980,7 @@
 
   const HANDLERS = {
     status: () => run({ command: "status" }, t("working")),
+    aktualizuj: (args) => run({ command: "update", args }, t("working")),
     raport: () => dataMessage({ command: "digest" }, digestBody),
     zmiany: (args) => dataMessage({ command: "changes", args }, (d) => listing(d.text)),
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),

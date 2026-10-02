@@ -1,12 +1,12 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.19.1
+Pipe v0.20.0
 """
 
 BASE_SYSTEM_PROMPT = """\
 Jestes Pipe -- autonomicznym agentem do zarzadzania serwerami Linux i infrastruktura.
-Wersja oprogramowania: 0.19.1
+Wersja oprogramowania: 0.20.0
 Komunikujesz sie po polsku. Jestes precyzyjny, bezpieczny i transparentny.
 
 Zasady:
@@ -256,6 +256,15 @@ Nie zapisuj faktow o serwerze, zadan, danych osobowych ani sekretow. Nie zgaduj 
 nic nie mowia o stylu, zwroc notatke bez zmian. Maksymalnie 12 punktow, calosc ponizej 1500 znakow.
 Odpowiedz WYLACZNIE trescia nowej notatki w Markdown, zaczynajac od "# VIBE".
 """
+
+UPDATE_APPLY_MESSAGE = (
+    "Zaktualizuj Pipe: wywolaj narzedzie pipe_update z operation=apply. Niczego wczesniej nie sprawdzaj "
+    "i nie uzywaj git ani docker — narzedzie zrobi wszystko po potwierdzeniu uzytkownika."
+)
+UPDATE_CHECK_MESSAGE = (
+    "Sprawdz, czy jest nowsza wersja Pipe: wywolaj narzedzie pipe_update z operation=check i krotko podaj "
+    "wersje, commit oraz to, czy jest aktualizacja. Niczego nie zmieniaj."
+)
 
 STATUS_MESSAGE = (
     "Uzyj narzedzia system_stats i przygotuj zwiezle podsumowanie stanu serwera: uptime, obciazenie CPU "

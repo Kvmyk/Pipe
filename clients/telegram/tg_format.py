@@ -191,6 +191,7 @@ def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]
 # Komendy wbudowane w menu Telegrama, w kolejnosci wyswietlania.
 BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("status", "Szybki przeglad obciazenia serwera"),
+    ("aktualizuj", "Zaktualizuj Pipe (/aktualizuj sprawdz - tylko wersja)"),
     ("raport", "Poranny raport: stan, zmiany, certyfikaty, backupy"),
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
     ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
@@ -216,6 +217,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
 )
 BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("status", "Quick look at the server load"),
+    ("update", "Update Pipe (/update check - version only)"),
     ("report", "Morning report: health, changes, certificates, backups"),
     ("changes", "What changed on the server (/changes 3d)"),
     ("chart", "Chart of load/ram/disk (/chart ram 7d)"),
@@ -245,6 +247,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
+    "update": "aktualizuj",
 }
 
 

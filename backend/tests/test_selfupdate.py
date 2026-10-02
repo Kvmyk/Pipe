@@ -155,6 +155,35 @@ class TestHelperContainer:
         assert watcher.changed == 1 and reminder.to == "telegram:7" and "Pipe zaktualizowany" in reminder.text
 
 
+class TestSlashCommand:
+
+    def test_update_command_asks_the_agent_to_use_the_tool(self, tmp_path, monkeypatch):
+        import backend.server as server
+        from backend.config import settings
+        from backend.tests.test_server_commands import FakeAgent, exchange
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        fake = FakeAgent()
+        monkeypatch.setattr(server, "get_agent", lambda: fake)
+        exchange([{"command": "update"}, {"command": "update", "args": "sprawdz"}, {"command": "update", "args": "check"}])
+        apply, check, check_en = (message for _, message, _ in fake.messages)
+        assert "operation=apply" in apply and "operation=check" in check and check == check_en
+
+    def test_commands_are_reserved_and_listed(self):
+        import importlib.util
+        from pathlib import Path
+
+        from backend.core import memory
+
+        assert {"aktualizuj", "update"} <= memory.RESERVED_COMMANDS
+        spec = importlib.util.spec_from_file_location("tg_format", Path(__file__).parents[2] / "clients/telegram/tg_format.py")
+        tg = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tg)
+        assert "aktualizuj" in dict(tg.BUILTIN_COMMANDS) and "update" in dict(tg.BUILTIN_COMMANDS_EN)
+        assert tg.COMMAND_ALIASES["update"] == "aktualizuj"
+
+
 class TestTool:
 
     def _agent(self, script):

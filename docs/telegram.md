@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.19.1
+Pipe v0.20.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -169,6 +169,7 @@ nazwy dzialaja w obu jezykach.
 | Komenda | Dzialanie |
 |---|---|
 | `/status` | Szybki przeglad obciazenia serwera |
+| `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe (potwierdzenie przyciskami); `sprawdz` tylko pokazuje wersje |
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |

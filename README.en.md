@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.19.1** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.20.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -115,7 +115,7 @@ sudo bash ../../scripts/install-server.sh   # also starts the bot
 - a voice message on Telegram: *"check why the shop is down"* -- transcription and diagnosis
 - *"undo the last change"* or `/undo` -- restores files and reverses the operations from the journal
 
-Commands in both clients: `/status` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
+Commands in both clients: `/status` `/update` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
 `/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/help`.
 
 ---

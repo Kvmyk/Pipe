@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.19.1
+Pipe v0.20.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -380,6 +380,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     await _backend_call(update, context, _run_and_reply(
         context, update.effective_chat.id, user_id, get_client(user_id).command("status")))
+
+
+async def cmd_aktualizuj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/aktualizuj [sprawdz] -- aktualizacja samego Pipe (narzedzie pipe_update; potwierdzenie przyciskami)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = " ".join(context.args or []).strip()
+    await _backend_call(update, context, _run_and_reply(
+        context, update.effective_chat.id, user_id, get_client(user_id).command("update", args=args)))
 
 
 async def cmd_mapa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1029,7 +1039,7 @@ def main() -> None:
         ("zgody", cmd_zgody), ("mcp", cmd_mcp), ("mapa", cmd_mapa), ("historia", cmd_historia),
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
-        ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia),
+        ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

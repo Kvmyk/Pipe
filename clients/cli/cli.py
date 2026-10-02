@@ -391,13 +391,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.19.1[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.20.0[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.19.1[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.20.0[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -474,12 +474,13 @@ COMMAND_ALIASES = {
     "audit": "audyt", "map": "mapa", "directory": "katalogi", "dirs": "katalogi", "skills": "skille",
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
-    "reminders": "przypomnienia",
+    "reminders": "przypomnienia", "update": "aktualizuj",
 }
 
 HELP_TEXT = """**Komendy**
 
 - `/status` — stan serwera
+- `/aktualizuj` — zaktualizuj Pipe na serwerze (po potwierdzeniu); `/aktualizuj sprawdz` — tylko sprawdź wersję
 - `/raport` — poranny raport: stan, zmiany od wczoraj, certyfikaty, backupy, aktualizacje
 - `/zmiany [24h|3d]` — co się zmieniło na serwerze (pakiety, kontenery, porty, cron, konta, konfiguracje)
 - `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
@@ -509,6 +510,7 @@ Diagramy możesz też zamawiać zwykłym tekstem: „narysuj, jak zapytanie traf
 HELP_TEXT_EN = """**Commands**
 
 - `/status` — server status
+- `/update` — update Pipe on the server (after confirmation); `/update check` — only check the version
 - `/report` — morning report: health, changes since yesterday, certificates, backups, updates
 - `/changes [24h|3d]` — what changed on the server (packages, containers, ports, cron, accounts, configs)
 - `/chart [load|ram|disk] [24h|7d]` — chart from the watcher's history (PNG)
@@ -578,6 +580,11 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
 
     if name in ("pomoc", "help"):
         console.print(Markdown(tr(HELP_TEXT, HELP_TEXT_EN)))
+        return True
+
+    if name == "aktualizuj":
+        console.print(tr("[dim]Sprawdzam aktualizację Pipe...[/dim]", "[dim]Checking the Pipe update...[/dim]"))
+        await _handle_responses(await client.send_command("update", args=args), client)
         return True
 
     if name == "status":

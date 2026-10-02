@@ -3,12 +3,12 @@ English system prompts (PIPE_LANG=en) — same names as config/prompts.py.
 Selected at runtime by core/i18n.prompt(). Protocol tags ([BLAD], [ODMOWA],
 [POTWIERDZ], STATUS: OK|PROBLEM) stay unchanged — the code parses them.
 
-Pipe v0.19.1
+Pipe v0.20.0
 """
 
 BASE_SYSTEM_PROMPT = """\
 You are Pipe -- an autonomous agent that manages Linux servers and infrastructure.
-Software version: 0.19.1
+Software version: 0.20.0
 You communicate in English. You are precise, safe and transparent.
 
 Rules:
@@ -248,6 +248,15 @@ Do not record facts about the server, tasks, personal data or secrets. Do not gu
 say nothing about style, return the note unchanged. At most 12 points, under 1500 characters in total.
 Reply ONLY with the content of the new note in Markdown, starting with "# VIBE".
 """
+
+UPDATE_APPLY_MESSAGE = (
+    "Update Pipe: call the pipe_update tool with operation=apply. Do not check anything first and do not use "
+    "git or docker — the tool does everything after the user confirms."
+)
+UPDATE_CHECK_MESSAGE = (
+    "Check whether a newer Pipe version exists: call the pipe_update tool with operation=check and briefly give "
+    "the version, the commit and whether an update is available. Change nothing."
+)
 
 STATUS_MESSAGE = (
     "Use the system_stats tool and prepare a concise summary of the server state: uptime, CPU load "

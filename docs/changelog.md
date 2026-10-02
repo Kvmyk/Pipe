@@ -1,6 +1,12 @@
 # Historia zmian -- Pipe
 
-## v0.19.1 (2026-10-02)
+## v0.20.0 (2026-10-02)
+
+### Komenda `/aktualizuj`
+
+- `/aktualizuj` (po angielsku `/update`) w CLI, na Telegramie i w `pipe web` -- aktualizuje Pipe na serwerze jednym
+  poleceniem: pyta o potwierdzenie, pobiera zmiany i przebudowuje kontenery (mechanizm z v0.19.0)
+- `/aktualizuj sprawdz` (`/update check`) tylko pokazuje wersje i to, czy jest nowsza -- niczego nie zmienia
 
 ### `pipe web`
 

@@ -208,6 +208,11 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "status":
             await _stream_chat(writer, agent, session_id, prompt("STATUS_MESSAGE"), interface, generated=True)
+        elif command == "update":
+            # /aktualizuj [sprawdz] — aktualizacja samego Pipe narzedziem pipe_update (potwierdzenie jak zwykle)
+            check = args.lower() in ("sprawdz", "sprawdź", "check", "wersja", "version")
+            message = prompt("UPDATE_CHECK_MESSAGE" if check else "UPDATE_APPLY_MESSAGE")
+            await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
         elif command == "run_skill":
             entry = memory.find_skill_command(str(request.get("name", "")))
             if entry is None:
