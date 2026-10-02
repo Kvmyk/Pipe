@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.21.4
+Pipe v0.21.5
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc

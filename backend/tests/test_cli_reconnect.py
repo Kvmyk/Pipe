@@ -107,3 +107,22 @@ def test_partial_answer_is_not_resent():
     requests, responses = asyncio.run(scenario())
     assert len(requests) == 1                             # zadna powtorka — agent mogl juz cos wykonac
     assert [r["response"] for r in responses] == ["czesc"]
+
+
+def test_probe_fails_quietly_and_recovers():
+    """Odpytywanie w tle nie czeka minutami na martwy backend, a po jego powrocie dziala dalej."""
+    async def scenario():
+        backend = Backend()
+        await backend.start()
+        client = cli.RemoteClient(session_id="s", port=backend.port)
+        await client.connect()
+        await backend.stop()
+        with pytest.raises((OSError, EOFError)):
+            await client.probe("reminders", claim=True)
+        await backend.start()
+        responses = await client.probe("reminders", claim=True)
+        await client.disconnect()
+        await backend.stop()
+        return responses
+
+    assert asyncio.run(scenario())[-1]["done"] is True

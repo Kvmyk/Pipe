@@ -481,24 +481,31 @@ class Watcher:
             except Exception as exc:
                 report = tr(f"Blad: {exc}", f"Error: {exc}")
             reminder.report = report
-            if self.notifier.subscribers:
+            published = bool(self.notifier.subscribers)
+            if published:
                 self.notifier.publish(reminder.to_event())
-            else:                                   # nikt nie slucha — raport czeka na odbior
-                reminder.fired = True
+            if not published or reminders.for_cli(reminder):   # nikt nie slucha albo czeka jeszcze CLI
+                reminder.fired, reminder.published = True, published
                 reminders._save(reminders.load_reminders() + [reminder])
             return
-        if self.notifier.subscribers:
-            reminders.remove(reminder.id)
-            self.notifier.publish(reminder.to_event())
-        else:
+        if not self.notifier.subscribers:
             reminders.mark_fired(reminder.id)
+            return
+        self.notifier.publish(reminder.to_event())
+        if reminders.for_cli(reminder):             # subskrybenci dostali; CLI odbierze samo (claim)
+            reminders.mark_fired(reminder.id, published=True)
+        else:
+            reminders.remove(reminder.id)
 
     def deliver_waiting_reminders(self) -> None:
         """Podlaczyl sie subskrybent — dostaje przypomnienia, ktore odpalily, gdy nikt nie sluchal."""
         from backend.core import reminders
 
         for reminder in reminders.waiting():
-            reminders.remove(reminder.id)
+            if reminders.for_cli(reminder):
+                reminders.mark_fired(reminder.id, reminder.report, published=True)
+            else:
+                reminders.remove(reminder.id)
             self.notifier.publish(reminder.to_event())
 
     async def _reminder_loop(self) -> None:

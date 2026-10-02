@@ -55,6 +55,7 @@ class Reminder:
     created: float = 0.0
     fired: bool = False        # czas minal, ale nikt nie sluchal — czeka na odbior
     report: str = ""           # dla task: wynik workera (gdy czeka na odbior)
+    published: bool = False    # poszlo juz do subskrybentow (Telegram, web); czeka tylko na odbior w CLI
 
     @property
     def when(self) -> str:
@@ -63,7 +64,9 @@ class Reminder:
     def describe(self, now: float | None = None) -> str:
         now = time.time() if now is None else now
         left = self.at - now
-        if self.fired:
+        if self.fired and self.published:
+            state = tr("wyslane, czeka na odbior w CLI", "sent, waiting to be picked up in the CLI")
+        elif self.fired:
             state = tr("czeka na odbior", "waiting to be delivered")
         elif left <= 0:
             state = tr("za chwile", "any moment")
@@ -230,12 +233,20 @@ def remove(reminder_id: str) -> Reminder | None:
     return found
 
 
-def mark_fired(reminder_id: str, report: str = "") -> None:
+def mark_fired(reminder_id: str, report: str = "", published: bool = False) -> None:
     items = load_reminders()
     for item in items:
         if item.id == reminder_id:
-            item.fired, item.report = True, report
+            item.fired, item.report, item.published = True, report, published
     _save(items)
+
+
+def for_cli(reminder: Reminder) -> bool:
+    """
+    Ustawione z CLI. CLI nie subskrybuje zdarzen, wiec takie przypomnienie po wyslaniu subskrybentom
+    zostaje jeszcze w rejestrze (`published`), az CLI je odbierze — inaczej widzialby je tylko Telegram.
+    """
+    return reminder.to == "cli" or reminder.to.startswith("cli:")
 
 
 def due(now: float | None = None) -> list[Reminder]:
@@ -245,8 +256,8 @@ def due(now: float | None = None) -> list[Reminder]:
 
 
 def waiting() -> list[Reminder]:
-    """Odpalone, ale niedostarczone (nikt nie sluchal)."""
-    return [r for r in load_reminders() if r.fired]
+    """Odpalone, ale niedostarczone subskrybentom (nikt nie sluchal)."""
+    return [r for r in load_reminders() if r.fired and not r.published]
 
 
 def next_due(now: float | None = None) -> float | None:

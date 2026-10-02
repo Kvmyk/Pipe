@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.21.4
+Pipe v0.21.5
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -183,7 +183,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/skille` | Lista zapisanych skilli z ich komendami |
 | `/alerty` | Aktywne alerty czuwania (same alerty przychodza na Telegram) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
-| `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; w CLI zalegle pokazuja sie po polaczeniu i przy najblizszej wiadomosci |
+| `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |
 | `/cele` | Zdalne serwery, kontenery i klastry |
 | `/vibe` | Notatka o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/historia` | Ostatnie wpisy audit logu |

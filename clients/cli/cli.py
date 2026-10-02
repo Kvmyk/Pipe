@@ -79,6 +79,7 @@ except ImportError:
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.patch_stdout import patch_stdout
 except ImportError:      # starsza instalacja bez prompt_toolkit — zwykly prompt, bez podpowiedzi komend
     PromptSession = None
 
@@ -95,6 +96,7 @@ DIAGRAMS_DIR: Path = Path(os.getenv("PIPE_DIAGRAMS_DIR", str(Path.home() / ".pip
 OPEN_IMAGES: bool = False                # ustawiane flaga --open
 RECONNECT_TIMEOUT: float = 180.0         # tyle CLI czeka na powrot backendu (restart po /aktualizuj)
 RECONNECT_DELAY: float = 2.0
+REMINDER_POLL: float = 10.0              # co ile CLI czekajace na wpis sprawdza, czy przyszla wiadomosc od Pipe
 WEB_PORT: int = 7400                     # `pipe web`: port lokalnej strony (--web-port)
 WEB_OPEN_BROWSER: bool = True            # `pipe web --no-browser` wylacza otwieranie przegladarki
 
@@ -304,6 +306,21 @@ class RemoteClient:
         return await self._send({"command": command, "session_id": self.session_id,
                                  "interface": self.interface, **fields})
 
+    async def probe(self, command: str, **fields) -> list[dict]:
+        """Jak send_command, ale jedna cicha proba z limitem czasu — do odpytywania w tle, gdy backend moze nie zyc."""
+        data = {"command": command, "session_id": self.session_id, "interface": self.interface, **fields}
+        if self.token:
+            data["token"] = self.token
+        responses: list[dict] = []
+        try:
+            if not self._writer or not self._reader:
+                await asyncio.wait_for(self.connect(), 5)
+            await asyncio.wait_for(self._exchange(data, responses), 10)
+        except (OSError, EOFError):
+            await self.disconnect()          # polowiczna wymiana zostawilaby smieci w strumieniu
+            raise
+        return responses
+
     async def _send(self, data: dict) -> list[dict]:
         """
         Wysyła żądanie JSON i zbiera odpowiedzi do `done: true`. Gdy backend zniknal (restart po
@@ -428,13 +445,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.4[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.5[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.4[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.5[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -673,7 +690,7 @@ if PromptSession is not None:
                                  display="/" + name, display_meta=description)
 
 
-def _prompt_reader(**session_options):
+def _prompt_reader(client: "RemoteClient | None" = None, **session_options):
     """
     Zwraca korutyne czytajaca jedna linie od uzytkownika. Z prompt_toolkit: podpowiedzi
     komend na zywo, Tab uzupelnia, strzalki przywoluja historie. Bez niego (albo gdy
@@ -687,7 +704,18 @@ def _prompt_reader(**session_options):
     session = PromptSession(completer=SlashCompleter(), complete_while_typing=True, **session_options)
 
     async def ask() -> str:
-        return await session.prompt_async([("bold ansicyan", ">"), ("", ": ")])
+        message = [("bold ansicyan", ">"), ("", ": ")]
+        if client is None:
+            return await session.prompt_async(message)
+        # czekajac na wpis, CLI odbiera wiadomosci od Pipe; patch_stdout rysuje je nad promptem
+        stop = asyncio.Event()
+        watcher = asyncio.ensure_future(_watch_reminders(client, stop))
+        try:
+            with patch_stdout(raw=True):
+                return await session.prompt_async(message)
+        finally:
+            stop.set()
+            await watcher                    # nie przerywamy wymiany w polowie — polaczenie jest wspolne
     return ask
 
 
@@ -986,13 +1014,24 @@ async def run_mcp_bridge(client: "RemoteClient", host: str) -> None:
         await client.disconnect()
 
 
-async def _show_due_reminders(client: "RemoteClient") -> None:
+async def _watch_reminders(client: "RemoteClient", stop: asyncio.Event) -> None:
+    """W tle, gdy CLI czeka na wpis: pokazuje wiadomosci od Pipe (np. wynik aktualizacji), gdy tylko przyjda."""
+    while True:
+        try:
+            await asyncio.wait_for(stop.wait(), REMINDER_POLL)
+            return
+        except asyncio.TimeoutError:
+            await _show_due_reminders(client, quiet=True)
+
+
+async def _show_due_reminders(client: "RemoteClient", quiet: bool = False) -> None:
     """
     CLI nie odbiera zdarzen na zywo (REPL czeka na klawiature), wiec przypomnienia, ktore odpalily bez
     odbiorcy, pobiera przy polaczeniu i po kazdej wymianie. Cicho, gdy backend jest starszy albo nic nie czeka.
     """
     try:
-        claimed = _response_data(await client.send_command("reminders", claim=True)).get("claimed", [])
+        send = client.probe if quiet else client.send_command
+        claimed = _response_data(await send("reminders", claim=True)).get("claimed", [])
     except Exception:
         return
     for event in claimed:
@@ -1116,7 +1155,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     await _first_run_welcome(client, host)
     await _show_due_reminders(client)
     await _refresh_skills(client)
-    ask = _prompt_reader()
+    ask = _prompt_reader(client)
     if PromptSession is None:
         install = escape(f"{sys.executable} -m pip install prompt_toolkit")
         console.print(tr(f"[yellow]Podpowiedzi komend po \"/\" są wyłączone — brakuje prompt_toolkit. Zainstaluj:[/yellow]\n  {install}",

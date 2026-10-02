@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.21.4
+Pipe v0.21.5
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -153,7 +153,8 @@ Rutyna jest cykliczna; przypomnienie odpala sie **raz**, o podanym czasie, i zni
   Wymaga potwierdzenia, bo wykona sie bez nadzoru.
 - Dostarczenie: Telegram, kanalem zdarzen. Przypomnienie z Telegrama wraca do osoby, ktora je ustawila; z CLI --
   do administratorow. Gdy bot nie jest podlaczony, przypomnienie czeka i dociera po polaczeniu.
-- CLI nie odbiera zdarzen na zywo -- zalegle przypomnienia pokazuje po polaczeniu i przy najblizszej wiadomosci.
+- CLI nie subskrybuje zdarzen, ale czekajac na wpis co 10 s odbiera przypomnienia (takze wynik `/aktualizuj`) i pokazuje
+  je nad promptem. Przypomnienie ustawione z CLI idzie do subskrybentow (Telegram, `pipe web`) i dodatkowo czeka na odbior w CLI.
 - Rejestr `backend/data/reminders.json` przetrwa restart; limit 50 przypomnien, najdalej rok naprzod.
 - `/przypomnienia` -- lista z czasem serwera; `/przypomnienia anuluj <id>` -- anulowanie (bez LLM).
 

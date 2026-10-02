@@ -1,5 +1,18 @@
 # Historia zmian -- Pipe
 
+## v0.21.5 (2026-10-02)
+
+### Wiadomosci od Pipe w CLI
+
+- Wynik `/aktualizuj` zleconej z CLI (i kazde przypomnienie ustawione z CLI) dociera teraz takze do CLI. Wczesniej,
+  gdy dzialal bot Telegrama albo otwarta byla strona `pipe web`, wiadomosc szla tylko do nich i znikala, zanim
+  CLI zdazylo ja odebrac
+- Takie przypomnienie idzie do Telegrama i weba jak dotad, a dodatkowo czeka na odbior w CLI; `/przypomnienia`
+  pokazuje je jako "wyslane, czeka na odbior w CLI"
+- CLI pokazuje wiadomosci od Pipe samo, nad promptem, gdy czeka na wpis (sprawdza co 10 s) -- nie trzeba juz nic
+  wpisywac, zeby je zobaczyc. Wymaga `prompt_toolkit`; bez niego dziala jak dotad (po polaczeniu i po kazdej wymianie)
+- Poprawka dotyczy tez backendu: zadziala po aktualizacji serwera do tej wersji
+
 ## v0.21.4 (2026-10-02)
 
 ### CLI

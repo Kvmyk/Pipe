@@ -111,6 +111,38 @@ class TestRegistry:
         assert {r.id for r in reminders.load_reminders()} == {telegram.id, pending.id}
         assert reminders.claim("cli") == []
 
+    def test_cli_reminder_reaches_subscribers_and_still_waits_for_the_cli(self):
+        """Z botem Telegrama w tle wynik /aktualizuj z CLI szedl tylko na Telegram — CLI nie dostawalo nic."""
+        async def scenario():
+            watcher = watch.Watcher()
+            queue = watcher.notifier.subscribe()
+            from_cli = reminders.add(time.time(), "Pipe zaktualizowany", to="cli:kuba")
+            from_telegram = reminders.add(time.time(), "z telegrama", to="telegram:5")
+            await watcher.fire_reminder(from_cli)
+            await watcher.fire_reminder(from_telegram)
+            events = [await asyncio.wait_for(queue.get(), 2) for _ in range(2)]
+            watcher.deliver_waiting_reminders()                # nic nie idzie do subskrybentow drugi raz
+            return from_cli, events, queue.qsize()
+        from_cli, events, extra = asyncio.run(scenario())
+        assert [e["text"] for e in events] == ["Pipe zaktualizowany", "z telegrama"] and extra == 0
+        assert [r.id for r in reminders.load_reminders()] == [from_cli.id]
+        assert "CLI" in reminders.load_reminders()[0].describe()
+        assert [r.id for r in reminders.claim("cli")] == [from_cli.id]
+        assert reminders.load_reminders() == []
+
+    def test_waiting_cli_reminder_is_published_once_on_subscribe(self):
+        async def scenario():
+            watcher = watch.Watcher()
+            saved = reminders.add(time.time(), "zalegle z cli", to="cli:kuba")
+            await watcher.fire_reminder(saved)                 # nikt nie slucha
+            queue = watcher.notifier.subscribe()
+            watcher.deliver_waiting_reminders()
+            watcher.deliver_waiting_reminders()
+            return saved, queue.qsize()
+        saved, published = asyncio.run(scenario())
+        assert published == 1
+        assert [r.id for r in reminders.claim("cli")] == [saved.id]
+
     def test_corrupt_file_is_empty_registry(self):
         reminders.reminders_path().parent.mkdir(parents=True, exist_ok=True)
         reminders.reminders_path().write_text("{nie json")
@@ -259,6 +291,8 @@ class TestDelivery:
         event = asyncio.run(scenario())
         assert calls == [(calls[0][0], "local", "sprawdz backup")] and calls[0][0].startswith("reminder-")
         assert event["kind"] == "task" and "backup jest z dzisiaj" in event["report"]
+        assert reminders.due() == [] and reminders.waiting() == []     # nie odpali drugi raz, nie pojdzie znow do subskrybentow
+        assert [r.report for r in reminders.claim("cli")] == [event["report"]]   # ale CLI, ktore je ustawilo, tez je dostanie
         assert reminders.load_reminders() == []
 
 
