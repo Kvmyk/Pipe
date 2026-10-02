@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.20.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.20.1** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -205,3 +205,9 @@ Szczegoly i ograniczenia (np. `docker.sock` = uprawnienia roota): [docs/security
 - [Bezpieczenstwo](./docs/security.md)
 - [Protokol komunikacji](./docs/protocol.md)
 - [Historia zmian](./docs/changelog.md)
+
+---
+
+Logotypy providerow LLM w `pipe web` sa znakami towarowymi swoich wlascicieli i sluza wylacznie wskazaniu, z czyimi
+modelami laczy sie agent. Pipe nie jest powiazany z tymi firmami ani przez nie zatwierdzony
+(`clients/webui/static/providers/NOTICE.md`).

@@ -201,6 +201,13 @@ class TestJournalChanges:
         assert files["/gone.txt"]["status"] == "deleted" and "-stare" in files["/gone.txt"]["diff"]
 
 
+def re_logos(app_js) -> list[str]:
+    """Identyfikatory providerow z logo, zadeklarowane w app.js (LOGOS)."""
+    import re
+    block = re.search(r"const LOGOS = new Set\(\[(.*?)\]\)", app_js.read_text(encoding="utf-8"), re.S).group(1)
+    return sorted(re.findall(r'"([a-z0-9-]+)"', block))
+
+
 class TestWebBridge:
     """Most HTTP na prawdziwych gniazdach: atrapa backendu (JSON lines) + WebBridge."""
 
@@ -327,6 +334,12 @@ class TestWebBridge:
         index = (web.STATIC_DIR / "index.html").read_text(encoding="utf-8")
         for name in ("app.css", "app.js", "graph.js", "md.js", "i18n.js", "theme.js", "icon.svg"):
             assert (web.STATIC_DIR / name).is_file() and f"/static/{name}" in index
+        logos = sorted(p.stem for p in (web.STATIC_DIR / "providers").glob("*.svg"))
+        declared = re_logos(web.STATIC_DIR / "app.js")
+        assert logos == declared and (web.STATIC_DIR / "providers" / "NOTICE.md").is_file()
+        for path in (web.STATIC_DIR / "providers").glob("*.svg"):          # obrazki bez aktywnej tresci
+            text = path.read_text(encoding="utf-8").lower()
+            assert "<script" not in text and "href=" not in text and "<foreignobject" not in text and " on" not in text.replace(" one", "")
         import re
         inline = [m for m in re.findall(r"<script(?![^>]*\bsrc=)([^>]*)>", index) if "application/json" not in m]
         assert inline == []                                          # CSP: script-src 'self'

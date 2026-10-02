@@ -673,17 +673,28 @@
     try { applyProviders(await command({ command: "providers" })); } catch (_) { return; }   // starszy backend: bez przelacznika
     if (first && !llm.chosen && llm.can_edit) openSetup(true);
   }
-  // Znaczek providera: wlasny monogram w kolorze wyliczonym z id — NIE logo. Logotypy providerow to znaki
-  // towarowe, ktorych uzycie wymaga ich zgody (wytyczne Anthropic, OpenAI, Google), wiec ich nie kopiujemy.
-  const MONOGRAMS = { gemini: "G", openai: "O", anthropic: "A", openrouter: "OR", groq: "Gq", deepseek: "D", mistral: "M", xai: "x",
-    zai: "Z", kimi: "K", together: "T", cerebras: "C", fireworks: "F", ollama: "Ol" };
-  function providerBadge(provider, small) {
+  // Znaczek providera: jego logo (static/providers/<id>.svg) — wylacznie po to, zeby wskazac, z czyimi modelami
+  // Pipe sie laczy; patrz static/providers/NOTICE.md. Wlasny provider albo brak pliku: monogram w kolorze z id.
+  const LOGOS = new Set(["gemini", "openai", "anthropic", "openrouter", "groq", "deepseek", "mistral", "xai", "zai", "kimi",
+    "together", "cerebras", "fireworks", "ollama"]);
+  function monogram(badge, provider) {
     const id = String(provider.id || ""), name = String(provider.name || id || "?");
     let hash = 7;
     for (const ch of id || name) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
-    const badge = el("span", "pbadge" + (small ? " small" : ""), MONOGRAMS[id] || name.trim().charAt(0).toUpperCase());
+    badge.classList.remove("logo");
+    badge.textContent = name.trim().charAt(0).toUpperCase();
     badge.style.setProperty("--hue", String(168 + (hash % 13) * 10));       // od morskiego po fiolet — w tonacji strony
+  }
+  function providerBadge(provider, small) {
+    const badge = el("span", "pbadge" + (small ? " small" : ""));
     badge.setAttribute("aria-hidden", "true");
+    if (!LOGOS.has(provider.id)) { monogram(badge, provider); return badge; }
+    const image = el("img");
+    image.alt = ""; image.decoding = "async"; image.draggable = false;
+    image.addEventListener("error", () => monogram(badge, provider));
+    image.src = "/static/providers/" + provider.id + ".svg";
+    badge.classList.add("logo");
+    badge.appendChild(image);
     return badge;
   }
   function announceProvider() {

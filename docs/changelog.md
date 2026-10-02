@@ -1,5 +1,13 @@
 # Historia zmian -- Pipe
 
+## v0.20.1 (2026-10-02)
+
+### `pipe web`
+
+- Logotypy providerow zamiast monogramow: na ekranie wyboru, w przelaczniku nad polem rozmowy i w jego menu.
+  Sluza wylacznie wskazaniu, z czyimi modelami laczy sie agent; Pipe nie jest powiazany z tymi firmami
+  (`clients/webui/static/providers/NOTICE.md`). Wlasni providerzy dalej maja monogram
+
 ## v0.20.0 (2026-10-02)
 
 ### Komenda `/aktualizuj`

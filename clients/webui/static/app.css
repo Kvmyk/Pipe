@@ -482,7 +482,7 @@ button { cursor: pointer; border: 0; background: none; }
   .model-pill #model-pill-model { max-width: 34vw; }
 }
 
-/* --- znaczki providerow: wlasne monogramy, nie logotypy --- */
+/* --- znaczki providerow: logo na jasnym kafelku; monogram dla wlasnych providerow --- */
 .pbadge { --hue: 212; flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 9px;
   font: 700 12px/1 var(--sans); letter-spacing: -.02em; color: #fff;
   background: linear-gradient(145deg, hsl(var(--hue) 82% 62%), hsl(calc(var(--hue) + 18) 74% 48%));
@@ -498,3 +498,7 @@ button { cursor: pointer; border: 0; background: none; }
 .model-item { align-items: center; }
 h2.with-badge { display: flex; align-items: center; gap: 10px; }
 h2.with-badge .pbadge { width: 30px; height: 30px; border-radius: 10px; font-size: 13.5px; }
+.pbadge.logo { background: #fff; color: #10151c; border: 1px solid var(--line); box-shadow: 0 3px 9px rgba(42, 111, 214, .12); }
+.pbadge.logo img { width: 62%; height: 62%; display: block; object-fit: contain; pointer-events: none; }
+.pbadge.small.logo { box-shadow: none; }
+.pbadge.small.logo img { width: 68%; height: 68%; }
