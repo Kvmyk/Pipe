@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.21.2 (2026-10-02)
+
+### CLI
+
+- Baner powitalny jest w jezyku agenta: pojawia sie dopiero po polaczeniu, wiec uwzglednia jezyk wybrany komenda
+  `/jezyk` (wczesniej zawsze byl w jezyku startowym CLI). `--lang` dalej ma pierwszenstwo
+- Gdy brakuje `prompt_toolkit`, CLI wyraznie mowi, ze podpowiedzi komend sa wylaczone, i podaje gotowe polecenie
+  instalacji dla tego Pythona, z ktorego dziala -- wazne, gdy `pipe` startuje z wlasnego venv, do ktorego
+  pakiety systemowe nie siegaja
+
 ## v0.21.1 (2026-10-02)
 
 ### CLI

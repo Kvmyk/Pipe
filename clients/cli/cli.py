@@ -399,13 +399,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.1[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.2[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.1[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.2[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -1073,24 +1073,26 @@ async def _first_run_welcome(client: "RemoteClient", host: str) -> None:
 
 async def run_cli(client: RemoteClient, host: str) -> None:
     """Główna pętla REPL."""
-    _print_banner(host)
-
     # Połącz z backendem
     try:
         await client.connect()
-        console.print(tr(f"[dim]Połączono z agentem na {host}[/dim]", f"[dim]Connected to the agent on {host}[/dim]"))
     except Exception as exc:
+        _print_banner(host)
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
         return
 
+    # baner dopiero po poznaniu jezyka agenta (/jezyk) — inaczej powitanie byloby zawsze w jezyku startowym
     await _sync_language(client)
+    _print_banner(host)
+    console.print(tr(f"[dim]Połączono z agentem na {host}[/dim]", f"[dim]Connected to the agent on {host}[/dim]"))
     await _first_run_welcome(client, host)
     await _show_due_reminders(client)
     await _refresh_skills(client)
     ask = _prompt_reader()
     if PromptSession is None:
-        console.print(tr("[dim]Podpowiedzi komend po \"/\" i uzupełnianie Tabem: pip install prompt_toolkit[/dim]",
-                         "[dim]Command suggestions after \"/\" and Tab completion: pip install prompt_toolkit[/dim]"))
+        install = escape(f"{sys.executable} -m pip install prompt_toolkit")
+        console.print(tr(f"[yellow]Podpowiedzi komend po \"/\" są wyłączone — brakuje prompt_toolkit. Zainstaluj:[/yellow]\n  {install}",
+                         f"[yellow]Command suggestions after \"/\" are off — prompt_toolkit is missing. Install:[/yellow]\n  {install}"))
 
     # Status startowy ukryty na zyczenie
     console.print(Rule(style="dim"))

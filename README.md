@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.21.1** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.21.2** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 

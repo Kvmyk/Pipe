@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.21.1
+Pipe v0.21.2
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -148,7 +148,8 @@ Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
 
 Po wpisaniu `/` pod promptem pojawia sie lista komend i skilli z opisami; zaweza sie w trakcie pisania
 (pasuje nazwa polska, angielska i alias). `Tab` wstawia pierwsza pozycje, kolejne `Tab` / strzalki wybieraja
-nastepne, strzalka w gore przywoluje wczesniejsze wpisy. Wymaga `prompt_toolkit` (jest w `requirements.txt`);
+nastepne, strzalka w gore przywoluje wczesniejsze wpisy. Wymaga `prompt_toolkit` (jest w `requirements.txt`) w tym samym
+Pythonie / venv, z ktorego startuje `pipe` -- CLI przy starcie podaje gotowe polecenie instalacji, gdy go brakuje;
 bez niego CLI dziala jak dotad, bez podpowiedzi.
 
 Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,

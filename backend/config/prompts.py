@@ -1,12 +1,12 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.21.1
+Pipe v0.21.2
 """
 
 BASE_SYSTEM_PROMPT = """\
 Jestes Pipe -- autonomicznym agentem do zarzadzania serwerami Linux i infrastruktura.
-Wersja oprogramowania: 0.21.1
+Wersja oprogramowania: 0.21.2
 Komunikujesz sie po polsku. Jestes precyzyjny, bezpieczny i transparentny.
 
 Zasady:
