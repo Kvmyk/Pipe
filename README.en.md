@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.20.1** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.21.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -50,6 +50,8 @@ the setup wizard and both clients.
 Slash commands have English names (`/report`, `/changes`, `/undo`...); the Polish ones (`/raport`, `/zmiany`,
 `/cofnij`...) keep working in both languages. Protocol tags inside tool results (`[POTWIERDZ]`, `[BLAD]`,
 `[ZREDAGOWANO: ...]`) stay language-independent -- the clients turn them into English labels.
+To switch a running server, type `/language pl` or `/language en` in the CLI, in `pipe web` (or use the PL/EN button
+in its header) or on Telegram -- no restart, all channels switch together (administrators only).
 
 ---
 
@@ -116,7 +118,7 @@ sudo bash ../../scripts/install-server.sh   # also starts the bot
 - *"undo the last change"* or `/undo` -- restores files and reverses the operations from the journal
 
 Commands in both clients: `/status` `/update` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
-`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/help`.
+`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/language` `/help`.
 
 ---
 

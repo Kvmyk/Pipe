@@ -96,9 +96,11 @@ class Notifier:
     def subscribers(self) -> int:
         return len(self._subscribers)
 
-    def publish(self, event: dict[str, Any]) -> None:
+    def publish(self, event: dict[str, Any], *, transient: bool = False) -> None:
+        """`transient` — zdarzenie techniczne (np. zmiana jezyka): trafia do klientow, ale nie do historii."""
         event = {**event, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
-        self.history = (self.history + [event])[-MAX_HISTORY:]
+        if not transient:
+            self.history = (self.history + [event])[-MAX_HISTORY:]
         for queue in list(self._subscribers):
             try:
                 queue.put_nowait(event)

@@ -91,6 +91,11 @@ class WebBridge:
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/?k={self.key}"
 
+    def _adopt_language(self, value) -> None:
+        """Jezyk zmieniony na serwerze (/jezyk z dowolnego kanalu) — strona po odswiezeniu dostaje nowy."""
+        if value in ("pl", "en"):
+            self.lang = value
+
     # --- HTTP ---------------------------------------------------------------
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -232,7 +237,12 @@ class WebBridge:
                 writer.write(line if line.endswith(b"\n") else line + b"\n")
                 await writer.drain()
                 try:
-                    if json.loads(line).get("done"):
+                    frame = json.loads(line)
+                    if frame.get("done"):
+                        data = frame.get("data")
+                        if request.get("command") == "language" and isinstance(data, dict) \
+                                and (request.get("args") or data.get("chosen")):
+                            self._adopt_language(data.get("lang"))
                         break
                 except (json.JSONDecodeError, AttributeError):
                     continue
@@ -270,6 +280,8 @@ class WebBridge:
                 except json.JSONDecodeError:
                     continue
                 payload = frame.get("event") or {"type": "error", "text": frame.get("response", "")}
+                if payload.get("type") == "language" or (payload.get("type") == "subscribed" and payload.get("lang_chosen")):
+                    self._adopt_language(payload.get("lang"))
                 writer.write(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
                 await writer.drain()
         finally:

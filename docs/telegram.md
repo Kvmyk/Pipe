@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.20.1
+Pipe v0.21.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -181,6 +181,7 @@ nazwy dzialaja w obu jezykach.
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
+| `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
 | `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
 | `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |

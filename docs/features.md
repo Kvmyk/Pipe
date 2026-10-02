@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.20.1
+Pipe v0.21.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -471,7 +471,11 @@ tez podac od razu w `backend/.env` (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC
 
 ## Jezyk: polski albo angielski
 
-`PIPE_LANG=pl` (domyslnie) albo `PIPE_LANG=en` przelacza caly produkt, nie tylko jezyk odpowiedzi modelu:
+`PIPE_LANG=pl` (domyslnie) albo `PIPE_LANG=en` przelacza caly produkt, nie tylko jezyk odpowiedzi modelu.
+Jezyk mozna tez zmienic w trakcie pracy, bez restartu: `/jezyk en` / `/jezyk pl` (`/language`) w CLI, w `pipe web`
+(komenda albo przycisk PL/EN w naglowku) i na Telegramie. Wybor jest wspolny dla calego agenta -- pozostale kanaly
+przelaczaja sie same -- zapisuje sie w `DATA_DIR/language.json` i obowiazuje do recznej zmiany `PIPE_LANG` w `.env`.
+Zmienia tylko administrator.
 
 | Warstwa | Co sie zmienia |
 |---------|----------------|

@@ -240,3 +240,30 @@ def test_report_formatting_leaves_code_untouched():
     # poprawny HTML Telegrama: brak tagow wewnatrz <pre>/<code>
     import re
     assert not re.search(r"<(pre|code)>[^<]*<(b|i)>", text)
+
+
+def test_language_event_switches_the_bot(monkeypatch, tmp_path):
+    """Jezyk zmieniony z dowolnego kanalu (/jezyk) dociera do bota jako zdarzenie — komunikaty i menu w nowym jezyku."""
+    monkeypatch.setenv("PIPE_LANG", "pl")
+    refreshed = []
+
+    async def refresh_menu(_bot, user_id):
+        refreshed.append((user_id, bot.tr("pl", "en")))
+    monkeypatch.setattr(bot, "refresh_menu", refresh_menu)
+    app, _, _ = _run_loop(monkeypatch, tmp_path, [
+        _event({"type": "subscribed", "lang": "pl", "lang_chosen": False}),
+        _event({"type": "language", "lang": "en"}),
+        _event({"type": "reminder", "id": "ab12cd", "kind": "message", "text": "coffee", "to": "telegram:1"}),
+    ], seconds=0.2)
+    assert sorted(refreshed) == [(1, "en"), (2, "en")]
+    assert [text for _, text, _ in app.bot.log][0].startswith("<b>Reminder</b>")
+
+
+def test_language_chosen_on_the_server_applies_on_subscribe(monkeypatch, tmp_path):
+    monkeypatch.setenv("PIPE_LANG", "pl")
+
+    async def refresh_menu(_bot, _user_id):
+        return None
+    monkeypatch.setattr(bot, "refresh_menu", refresh_menu)
+    _run_loop(monkeypatch, tmp_path, [_event({"type": "subscribed", "lang": "en", "lang_chosen": True})], seconds=0.15)
+    assert bot.tr("pl", "en") == "en"

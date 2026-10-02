@@ -8,6 +8,13 @@
   const { render: md, el, diffBlock } = window.PipeMd;
   const $ = (id) => document.getElementById(id);
   let session = config.session || String(Date.now());
+  // Po zmianie jezyka strona odswieza sie w nowym — rozmowa z agentem (sesja) zostaje ta sama.
+  let languageNote = "";
+  try {
+    session = sessionStorage.getItem("pipe-session") || session;
+    languageNote = sessionStorage.getItem("pipe-language-note") || "";
+    sessionStorage.removeItem("pipe-session"); sessionStorage.removeItem("pipe-language-note");
+  } catch (_) { /* tryb prywatny */ }
   if (location.search.includes("k=")) window.history.replaceState(null, "", location.pathname);   // klucz jest juz w ciasteczku
 
   // ---------------------------------------------------------------- most
@@ -622,6 +629,10 @@
       return;
     }
     if (event.type === "error") { setLink(false, event.text); return; }
+    if (event.type === "language") {      // jezyk zmieniony z innego kanalu (CLI, Telegram, druga karta)
+      if (event.lang !== window.PipeI18n.lang) toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
+      return;
+    }
     if (!addEvent(event, false)) return;
     if ($("tab-alerts").hidden) { unseenAlerts++; }
     toast(eventTitle(event), event.detail || (event.type === "reminder" ? "" : String(event.report || "").slice(0, 160)), () => switchTab("alerts"));
@@ -1006,7 +1017,7 @@
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
     ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
     ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
-    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
+    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
@@ -1014,7 +1025,22 @@
   const SCAN_WORDS = ["aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan"];
   const lines = (items) => (items || []).map((item) => "- " + item).join("\n");
 
+  // Jezyk Pipe jest wspolny dla calego agenta (prompty, raporty, komunikaty) — strona odswieza sie w nowym.
+  function reloadInLanguage(note) {
+    try { sessionStorage.setItem("pipe-session", session); sessionStorage.setItem("pipe-language-note", note || ""); } catch (_) { /* tryb prywatny */ }
+    location.reload();
+  }
+  async function setLanguage(args) {
+    if (busy) { toast(t("languageChanged"), t("languageBusy")); return; }
+    try {
+      const data = await command({ command: "language", args });
+      if (args && data.lang && data.lang !== window.PipeI18n.lang) reloadInLanguage(data.text);
+      else add("agent", md(data.text || ""));
+    } catch (error) { add("agent error", md(t("errorPrefix") + ": " + error.message)); }
+  }
+
   const HANDLERS = {
+    jezyk: (args) => setLanguage(args),
     status: () => run({ command: "status" }, t("working")),
     aktualizuj: (args) => run({ command: "update", args }, t("working")),
     raport: () => dataMessage({ command: "digest" }, digestBody),
@@ -1197,6 +1223,7 @@
     try { localStorage.setItem("pipe-theme", theme); } catch (_) { /* tryb prywatny */ }
   }
   $("theme").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+  $("lang").addEventListener("click", () => setLanguage(window.PipeI18n.lang === "en" ? "pl" : "en"));
   $("new-chat").addEventListener("click", () => {
     if (busy) return;
     session = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
@@ -1208,11 +1235,13 @@
   $("st-skills").textContent = t("skills");
   $("st-map").textContent = t("map"); $("st-changes-label").textContent = t("changes"); $("st-alerts-label").textContent = t("alerts");
   $("theme").title = t("theme");
+  $("lang").textContent = window.PipeI18n.lang.toUpperCase(); $("lang").title = t("language");
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
   input.placeholder = t("placeholder");
   $("server-name").textContent = config.server || "";
 
   welcome();
+  if (languageNote) add("agent", md(languageNote));
   loadSkills();
   loadGraph(false);
   loadAlerts();

@@ -52,6 +52,8 @@ def _initial_lang() -> str:
 
 
 LANG: str = _initial_lang()
+# --lang podany wprost wygrywa z jezykiem wybranym na serwerze (/jezyk)
+LANG_FORCED: bool = any(arg == "--lang" or arg.startswith("--lang=") for arg in sys.argv)
 
 
 def tr(pl, en):
@@ -73,6 +75,12 @@ except ImportError:
     print(tr("Błąd: zainstaluj zależności: pip install -r requirements.txt",
              "Error: install the dependencies: pip install -r requirements.txt"))
     sys.exit(1)
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import Completer, Completion
+except ImportError:      # starsza instalacja bez prompt_toolkit — zwykly prompt, bez podpowiedzi komend
+    PromptSession = None
 
 console = Console()
 # `pipe --mcp`: stdout nalezy do protokolu MCP — wszystko inne idzie na stderr.
@@ -391,13 +399,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.20.1[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.0[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.20.1[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.0[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -474,8 +482,40 @@ COMMAND_ALIASES = {
     "audit": "audyt", "map": "mapa", "directory": "katalogi", "dirs": "katalogi", "skills": "skille",
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
-    "reminders": "przypomnienia", "update": "aktualizuj",
+    "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
 }
+
+# Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
+COMMANDS = [
+    ("status", "status", "stan serwera", "server status"),
+    ("raport", "report", "raport: stan, zmiany, certyfikaty, backupy", "report: health, changes, certificates, backups"),
+    ("zmiany", "changes", "co się zmieniło na serwerze (np. /zmiany 3d)", "what changed on the server (e.g. /changes 3d)"),
+    ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
+    ("zdrowie", "health", "certyfikaty, strony, DNS, backupy", "certificates, sites, DNS, backups"),
+    ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
+    ("mapa", "map", "diagram infrastruktury", "infrastructure diagram"),
+    ("mermaid", "mermaid", "kod ostatniego diagramu", "source of the last diagram"),
+    ("server", "server", "notatki o serwerze (SERVER.md); /server aktualizuj", "server notes (SERVER.md); /server update"),
+    ("katalogi", "directory", "mapa repozytoriów i katalogów", "map of repositories and directories"),
+    ("skille", "skills", "lista skilli", "list of skills"),
+    ("alerty", "alerts", "aktywne alerty czuwania", "active watcher alerts"),
+    ("incydenty", "incidents", "pamięć incydentów", "incident memory"),
+    ("rutyny", "routines", "zadania według harmonogramu", "scheduled tasks"),
+    ("przypomnienia", "reminders", "przypomnienia; /przypomnienia anuluj <id>", "reminders; /reminders cancel <id>"),
+    ("cele", "targets", "zdalne serwery, kontenery i klastry", "remote servers, containers and clusters"),
+    ("vibe", "vibe", "styl rozmowy; /vibe reset", "conversation style; /vibe reset"),
+    ("dziennik", "journal", "zatwierdzone zmiany z kopiami", "approved changes with backups"),
+    ("cofnij", "undo", "cofnij ostatnią (albo wybraną) zmianę", "undo the last (or the chosen) change"),
+    ("zgody", "approvals", "operacje agentów MCP czekające na zgodę", "MCP agent operations waiting for approval"),
+    ("mcp", "mcp", "serwery MCP", "MCP servers"),
+    ("koszt", "cost", "zużycie tokenów i koszt LLM", "token usage and LLM cost"),
+    ("historia", "history", "ostatnie wpisy audit logu", "latest audit-log entries"),
+    ("jezyk", "language", "język Pipe: /jezyk en albo /jezyk pl", "Pipe's language: /language pl or /language en"),
+    ("aktualizuj", "update", "zaktualizuj Pipe na serwerze; /aktualizuj sprawdz", "update Pipe on the server; /update check"),
+    ("jezyk", "language", "język Pipe: /jezyk en albo /jezyk pl", "Pipe's language: /language pl or /language en"),
+    ("pomoc", "help", "lista komend", "list of commands"),
+    ("exit", "exit", "wyjście", "quit"),
+]
 
 HELP_TEXT = """**Komendy**
 
@@ -501,6 +541,7 @@ HELP_TEXT = """**Komendy**
 - `/mcp` — serwery MCP, z których korzysta Pipe
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
+- `/jezyk [pl|en]` — język Pipe: instrukcje agenta, raporty i komunikaty (wspólny dla CLI, weba i Telegrama)
 - `/pomoc` — ta lista
 - `/exit` — wyjście
 
@@ -531,6 +572,7 @@ HELP_TEXT_EN = """**Commands**
 - `/mcp` — MCP servers Pipe uses
 - `/cost` — token usage and LLM cost
 - `/history` — latest audit-log entries
+- `/language [pl|en]` — Pipe's language: the agent's instructions, reports and messages (shared by the CLI, web and Telegram)
 - `/help` — this list
 - `/exit` — quit
 
@@ -553,6 +595,90 @@ def _response_data(responses: list[dict]) -> dict:
             return resp["data"]
     error = next((r.get("response") for r in responses if r.get("status") == "error"), "") or tr("brak danych", "no data")
     raise RuntimeError(error)
+
+
+# Skille z komendami ([{name, description, command}]) — do podpowiedzi; odswiezane po kazdej turze.
+_skills: list[dict] = []
+
+
+async def _refresh_skills(client: "RemoteClient") -> None:
+    global _skills
+    try:
+        _skills = _response_data(await client.send_command("list_skills")).get("skills", [])
+    except Exception:
+        pass            # podpowiedzi to wygoda — brak listy skilli niczego nie blokuje
+
+
+def _slash_options(text: str, skills: list[dict] | None = None) -> list[tuple[str, str]]:
+    """
+    Podpowiedzi dla wpisywanej komendy: [(nazwa bez "/", opis)]. Pusta lista, gdy tekst
+    nie zaczyna sie od "/" albo ma juz spacje (wtedy to argumenty albo zwykla wiadomosc).
+    Pasuje poczatek nazwy w dowolnym jezyku (i alias), od 2 znakow takze srodek.
+    """
+    if not text.startswith("/") or any(ch.isspace() for ch in text):
+        return []
+    query = text[1:].lower()
+
+    def match(*names: str) -> bool:
+        names = [n.lower() for n in names if n]
+        return not query or any(n.startswith(query) for n in names) or (len(query) > 1 and any(query in n for n in names))
+
+    options = []
+    for name_pl, name_en, desc_pl, desc_en in COMMANDS:
+        aliases = [alias for alias, target in COMMAND_ALIASES.items() if target == name_pl]
+        if match(name_pl, name_en, *aliases):
+            options.append((tr(name_pl, name_en), tr(desc_pl, desc_en)))
+    for skill in _skills if skills is None else skills:
+        if skill.get("command") and match(skill["command"], skill.get("name", "")):
+            options.append((skill["command"], skill.get("description", "")))
+    # dokladne trafienie na gorze, potem pasujace poczatkiem
+    return sorted(options, key=lambda o: 0 if o[0].lower() == query else 1 if o[0].lower().startswith(query) else 2)
+
+
+if PromptSession is not None:
+    class SlashCompleter(Completer):
+        """Lista komend i skilli pod promptem — pojawia sie po "/", Tab wstawia wybrana."""
+
+        def get_completions(self, document, complete_event):
+            for name, description in _slash_options(document.text_before_cursor):
+                yield Completion(name, start_position=1 - len(document.text_before_cursor),
+                                 display="/" + name, display_meta=description)
+
+
+def _prompt_reader(**session_options):
+    """
+    Zwraca korutyne czytajaca jedna linie od uzytkownika. Z prompt_toolkit: podpowiedzi
+    komend na zywo, Tab uzupelnia, strzalki przywoluja historie. Bez niego (albo gdy
+    wejscie nie jest terminalem) — zwykly prompt.
+    """
+    if PromptSession is None or not (session_options or sys.stdin.isatty()):
+        async def plain() -> str:
+            return Prompt.ask("[bold cyan]>[/bold cyan]")
+        return plain
+
+    session = PromptSession(completer=SlashCompleter(), complete_while_typing=True, **session_options)
+
+    async def ask() -> str:
+        return await session.prompt_async([("bold ansicyan", ">"), ("", ": ")])
+    return ask
+
+
+def _set_lang(value: str) -> None:
+    """Przelacza jezyk CLI w trakcie pracy — `tr()` czyta LANG przy kazdym wywolaniu."""
+    global LANG
+    LANG = "en" if str(value).strip().lower().startswith("en") else "pl"
+
+
+async def _sync_language(client: "RemoteClient") -> None:
+    """Po polaczeniu: jezyk wybrany na serwerze komenda /jezyk obowiazuje tez tutaj (chyba ze podano --lang)."""
+    if LANG_FORCED:
+        return
+    try:
+        data = _response_data(await client.send_command("language"))
+    except Exception:
+        return          # starszy backend nie zna tej komendy
+    if data.get("chosen") and data.get("lang"):
+        _set_lang(data["lang"])
 
 
 async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
@@ -580,6 +706,13 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
 
     if name in ("pomoc", "help"):
         console.print(Markdown(tr(HELP_TEXT, HELP_TEXT_EN)))
+        return True
+
+    if name == "jezyk":
+        data = _response_data(await client.send_command("language", args=args))
+        if args and data.get("lang"):
+            _set_lang(data["lang"])
+        console.print(escape(data.get("text", "")))
         return True
 
     if name == "aktualizuj":
@@ -856,6 +989,7 @@ async def run_web(client: "RemoteClient", host: str) -> None:
         return
     try:
         await client.connect()
+        await _sync_language(client)
         await client.disconnect()
     except Exception as exc:
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
@@ -930,8 +1064,14 @@ async def run_cli(client: RemoteClient, host: str) -> None:
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
         return
 
+    await _sync_language(client)
     await _first_run_welcome(client, host)
     await _show_due_reminders(client)
+    await _refresh_skills(client)
+    ask = _prompt_reader()
+    if PromptSession is None:
+        console.print(tr("[dim]Podpowiedzi komend po \"/\" i uzupełnianie Tabem: pip install prompt_toolkit[/dim]",
+                         "[dim]Command suggestions after \"/\" and Tab completion: pip install prompt_toolkit[/dim]"))
 
     # Status startowy ukryty na zyczenie
     console.print(Rule(style="dim"))
@@ -941,7 +1081,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     try:
         while True:
             try:
-                user_input = Prompt.ask("[bold cyan]>[/bold cyan]")
+                user_input = await ask()
             except (KeyboardInterrupt, EOFError):
                 console.print()
                 break
@@ -962,6 +1102,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                     handled = True
                 if handled:
                     await _show_due_reminders(client)
+                    await _refresh_skills(client)
                     console.print()
                     continue
 
@@ -970,6 +1111,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 responses = await client.send_message(user_input)
                 await _handle_responses(responses, client)
                 await _show_due_reminders(client)
+                await _refresh_skills(client)
             except Exception as exc:
                 console.print(tr(f"[red]Błąd komunikacji: {exc}[/red]", f"[red]Communication error: {exc}[/red]"))
                 # Spróbuj ponownie połączyć

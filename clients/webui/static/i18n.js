@@ -1,4 +1,4 @@
-// Teksty interfejsu (pl / en). Jezyk przychodzi z `pipe web --lang` / PIPE_LANG.
+// Teksty interfejsu (pl / en). Jezyk przychodzi z `pipe web --lang` / PIPE_LANG albo z wyboru na serwerze (/jezyk).
 (function () {
   "use strict";
   const STRINGS = {
@@ -60,6 +60,9 @@
       modelsUnavailable: "Nie udało się pobrać listy modeli — wpisz nazwę modelu ręcznie.",
       useProvider: "Używaj", saving: "Zapisuję…", showKey: "Pokaż", hideKey: "Ukryj",
       viewerProviders: "Providera może zmieniać tylko administrator.",
+      c_language: "język Pipe: /jezyk en albo /jezyk pl", language: "Język: polski — kliknij, aby przełączyć na angielski",
+      languageBusy: "Poczekaj, aż agent skończy — wtedy zmienię język.",
+      languageChanged: "Zmieniono język Pipe", languageReload: "Kliknij, aby odświeżyć stronę w nowym języku.",
     },
     en: {
       chat: "Chat", stage: "Map", newChat: "New chat", placeholder: "Write what you want to do… or / for commands",
@@ -119,6 +122,9 @@
       modelsUnavailable: "Could not fetch the model list — type the model name by hand.",
       useProvider: "Use", saving: "Saving…", showKey: "Show", hideKey: "Hide",
       viewerProviders: "Only an administrator can change the provider.",
+      c_language: "Pipe's language: /language pl or /language en", language: "Language: English — click to switch to Polish",
+      languageBusy: "Wait until the agent finishes — then I will change the language.",
+      languageChanged: "Pipe's language changed", languageReload: "Click to reload the page in the new language.",
     },
   };
   let lang = "pl";

@@ -203,6 +203,7 @@ button { cursor: pointer; border: 0; background: none; }
 .crumbs button.here { color: var(--ink); font-weight: 600; cursor: default; background: none; }
 .crumbs i { color: var(--ink-faint); font-style: normal; }
 .icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--ink-soft); transition: background .2s, color .2s, transform .3s var(--ease); }
+.icon.lang { font-size: 11.5px; font-weight: 650; letter-spacing: .04em; }
 .icon:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .icon.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

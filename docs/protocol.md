@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.20.1
+Pipe v0.21.0
 
 ## Opis
 
@@ -69,6 +69,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `provider_models` | `name` (id providera), `key` (opcjonalnie -- nowy klucz do sprawdzenia) | `"data": {"models": [...], "total"}` -- aktualne modele czatu providera; odrzucony klucz = `error`. Tylko administrator |
 | `provider_set` | `name`, `key` (opcjonalnie), `model` (opcjonalnie) | jak `providers` -- zapisuje klucz (po sprawdzeniu u providera) i model, przelacza agenta, ustawia `chosen`. Tylko administrator |
 | `provider_forget` | `name` | jak `providers` -- usuwa klucz dodany z interfejsu; provider bez klucza przestaje byc aktywny. Tylko administrator |
+| `language` | `args`: `pl` \| `en` (opcjonalnie; takze `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- bez `args` stan, z `args` przelacza jezyk calego agenta (prompty, opisy narzedzi, raporty, komunikaty) bez restartu i zapisuje wybor w `DATA_DIR/language.json`; subskrybenci dostaja zdarzenie `language`. Zmiana tylko dla administratora |
 | `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
 | `update` | `args`: puste albo `sprawdz` / `check` | streaming: agent wywoluje narzedzie `pipe_update` (`apply` z potwierdzeniem albo `check`) |
@@ -128,7 +129,14 @@ asyncio (`open_connection(..., limit=32 * 1024 * 1024)`).
 
 ### Zdarzenia czuwania (`subscribe`)
 
-Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed"}}`, a potem, bez `done`:
+Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool}}`
+(`lang_chosen` -- jezyk wybrano komenda `language`, klient powinien go przejac), a potem, bez `done`:
+
+```json
+{"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
+```
+
+(jezyk Pipe zmieniony z dowolnego kanalu -- klient przelacza swoje komunikaty; zdarzenie nie trafia do historii `alerts`)
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {

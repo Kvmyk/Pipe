@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.20.1** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.21.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -97,7 +97,7 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"cofnij ostatnia zmiane"* albo `/cofnij` -- przywraca pliki i odwraca operacje z dziennika
 
 Komendy w obu klientach: `/status` `/aktualizuj` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
-`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/przypomnienia` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/pomoc`.
+`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/przypomnienia` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/jezyk` `/pomoc`.
 
 ---
 
@@ -114,8 +114,9 @@ komunikaty potwierdzen, alerty, poranny raport, audyt, wbudowane skille, kreator
 
 Komendy maja angielskie nazwy (`/report`, `/changes`, `/undo`...), a polskie dzialaja w obu jezykach.
 Znaczniki protokolu (`[POTWIERDZ]`, `[BLAD]`, `[ZREDAGOWANO: ...]`) nie zaleza od jezyka -- klienci zamieniaja je
-na etykiety. Zmiana jezyka na dzialajacym serwerze: ustaw `PIPE_LANG` i zrestartuj backend oraz bota; wbudowane
-skille w nowym jezyku dojda obok dotychczasowych. Opis po angielsku: [README.en.md](./README.en.md).
+na etykiety. Zmiana jezyka na dzialajacym serwerze: `/jezyk en` albo `/jezyk pl` w CLI, w `pipe web`
+(takze przycisk PL/EN w naglowku) lub na Telegramie -- bez restartu, dla wszystkich kanalow naraz (tylko administrator);
+wbudowane skille w nowym jezyku dojda obok dotychczasowych. Opis po angielsku: [README.en.md](./README.en.md).
 
 ---
 

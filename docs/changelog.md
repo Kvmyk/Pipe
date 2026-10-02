@@ -1,5 +1,27 @@
 # Historia zmian -- Pipe
 
+## v0.21.0 (2026-10-02)
+
+### Zmiana jezyka w trakcie pracy
+
+- `/jezyk en` i `/jezyk pl` (po angielsku `/language`) w CLI, w `pipe web` i na Telegramie -- przelacza jezyk
+  calego Pipe bez restartu: instrukcje agenta (system prompt, opisy narzedzi), raporty i komunikaty.
+  Samo `/jezyk` pokazuje obecny jezyk
+- Wybor jest wspolny dla wszystkich kanalow: po zmianie z jednego bot Telegrama sam przelacza komunikaty i menu `/`,
+  a otwarta strona `pipe web` proponuje odswiezenie. CLI przejmuje wybrany jezyk przy polaczeniu (chyba ze podano `--lang`)
+- `pipe web`: przycisk PL/EN w naglowku; strona odswieza sie w nowym jezyku, a agent pamieta rozmowe
+- Wybor zapisuje sie w `DATA_DIR/language.json` i zostaje po restarcie; reczna zmiana `PIPE_LANG` w `.env` znow ma
+  pierwszenstwo. Nietkniete skille wbudowane o tej samej nazwie w obu jezykach sa podmieniane na nowa wersje
+- Jezyk zmienia tylko administrator; rola viewer widzi obecny jezyk
+- Protokol: komenda `language`, zdarzenie `language` dla subskrybentow, pola `lang` i `lang_chosen` w `subscribed`
+
+### CLI
+
+- Podpowiedzi komend: po wpisaniu `/` pod promptem pojawia sie lista komend i skilli z opisami, zawezana w trakcie
+  pisania (pasuje nazwa polska, angielska i alias); `Tab` wstawia pozycje, strzalka w gore przywoluje wczesniejsze wpisy
+- Wymaga `prompt_toolkit` (doszedl do `clients/cli/requirements.txt`): po aktualizacji uruchom
+  `pip install -r clients/cli/requirements.txt`. Bez niego CLI dziala jak dotad, bez podpowiedzi
+
 ## v0.20.1 (2026-10-02)
 
 ### `pipe web`

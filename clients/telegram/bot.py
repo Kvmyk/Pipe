@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.20.1
+Pipe v0.21.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -474,6 +474,30 @@ async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/koszt -- zuzycie tokenow LLM."""
     await _command_with_image(update, context, "usage", "", lambda d: format_listing(tr("Koszt LLM", "LLM cost"), d.get("text", "")))
+
+
+def _apply_language(value) -> None:
+    """Jezyk bota w trakcie pracy — tg_format.lang() czyta PIPE_LANG przy kazdym wywolaniu."""
+    os.environ["PIPE_LANG"] = "en" if str(value or "").strip().lower().startswith("en") else "pl"
+
+
+async def _language_changed(app: Application, value) -> None:
+    """Zdarzenie `language` z backendu (zmiana z dowolnego kanalu): komunikaty i menu '/' w nowym jezyku."""
+    _apply_language(value)
+    for user_id in ALLOWED_USER_IDS | VIEWER_USER_IDS:
+        await refresh_menu(app.bot, user_id)
+
+
+async def cmd_jezyk(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/jezyk [pl|en] -- jezyk Pipe: instrukcje agenta, raporty i komunikaty (wspolny dla wszystkich kanalow)."""
+    args = " ".join(context.args or []).strip()
+
+    def render(data: dict) -> str:
+        if args and data.get("lang"):
+            _apply_language(data["lang"])
+        return html.escape(data.get("text", ""))
+
+    await _command_with_image(update, context, "language", args, render)
 
 
 async def cmd_incydenty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -949,6 +973,10 @@ async def alerts_loop(app: Application) -> None:
                     print("[Pipe Telegram] Subskrypcja alertow aktywna.", flush=True)
                     _subscription.update(connected=True, error="", since=time.time())
                     backoff = 2.0
+                    if event.get("lang_chosen"):      # jezyk wybrany komenda /jezyk obowiazuje tez bota
+                        await _language_changed(app, event.get("lang"))
+                elif event.get("type") == "language":
+                    await _language_changed(app, event.get("lang"))
                 elif event and (ALERTS_ENABLED or event.get("type") not in WATCH_EVENT_TYPES):
                     try:
                         await _broadcast(app, event)
@@ -1040,6 +1068,7 @@ def main() -> None:
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
+        ("jezyk", cmd_jezyk),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

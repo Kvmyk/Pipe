@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 from backend.config import settings
+from backend.core import i18n
 from backend.core.i18n import CONFIRM_PHRASES, lang, prompt, tr
 from backend.core import audit, diagram, incidents, journal, memory, metrics, routines, runtime, targets, usage
 from backend.core.agent import get_agent
@@ -335,6 +336,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _transcribe(writer, request)
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
             await _providers(writer, command, request, interface, role)
+        elif command == "language":
+            await _language(writer, args, interface, role)
         elif command == "usage":
             priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
             await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
@@ -424,6 +427,41 @@ async def _providers(writer, command: str, request: dict, interface: str, role: 
             await _send(writer, _data(state()))
     except llm.LlmError as exc:
         await _send(writer, _error(str(exc)))
+
+
+async def _language(writer, args: str, interface: str, role: str) -> None:
+    """
+    Jezyk Pipe w trakcie pracy (/jezyk w CLI, pipe web i na Telegramie), bez LLM. Bez argumentu — stan;
+    z argumentem (pl / en) — przelaczenie: prompty, opisy narzedzi, raporty i komunikaty od nastepnej
+    wiadomosci. Wybor jest wspolny dla calego agenta, wiec subskrybenci dostaja zdarzenie `language`.
+    """
+    def state(text: str) -> dict:
+        return {"lang": lang(), "chosen": i18n.chosen(), "languages": list(i18n.LANGUAGES),
+                "can_edit": role == "admin", "text": text}
+
+    if not args:
+        await _send(writer, _data(state(tr("Jezyk Pipe: polski. Zmiana: /jezyk en",
+                                           "Pipe language: English. Change: /language pl"))))
+        return
+    if role != "admin":
+        await _send(writer, _error(tr("Jezyk moze zmieniac tylko administrator.",
+                                      "Only an administrator can change the language.")))
+        return
+    try:
+        target = i18n.set_lang(args)
+    except ValueError:
+        await _send(writer, _error(tr(f"Nieznany jezyk: {args!r}. Dostepne: pl, en.",
+                                      f"Unknown language: {args!r}. Available: pl, en.")))
+        return
+    try:
+        memory.seed_builtin_skills()       # nietkniete skille wbudowane w nowym jezyku
+    except OSError:
+        pass
+    await audit.log_file_write(interface, f"{i18n.STORE} (lang={target})", 0)
+    print(f"[server] Jezyk: {target} (zmienil {interface})", flush=True)
+    get_watcher().notifier.publish({"type": "language", "lang": target}, transient=True)
+    await _send(writer, _data(state(tr("Od teraz rozmawiamy po polsku — instrukcje agenta, raporty i komunikaty.",
+                                       "From now on we speak English — the agent's instructions, reports and messages."))))
 
 
 async def _reminders(writer, request: dict, interface: str, role: str) -> None:
@@ -551,7 +589,7 @@ async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
     """Przesyla zdarzenia czuwania (alerty, raporty rutyn) do rozlaczenia klienta."""
     notifier = get_watcher().notifier
     queue = notifier.subscribe()
-    await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed"}})
+    await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed", "lang": lang(), "lang_chosen": i18n.chosen()}})
     get_watcher().reminders_changed()      # przypomnienia, ktore odpalily, gdy nikt nie sluchal
     closed = asyncio.ensure_future(reader.read(1))
     try:
@@ -584,6 +622,7 @@ async def _report_model_status() -> None:
 
 async def main() -> None:
     """Punkt wejścia serwera."""
+    i18n.load_saved()          # jezyk wybrany w trakcie pracy (/jezyk) ma pierwszenstwo przed .env
     try:
         settings.validate()
     except ValueError as exc:

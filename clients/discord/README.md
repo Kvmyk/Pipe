@@ -1,6 +1,6 @@
 # Discord Client -- Coming Soon
 
-Pipe v0.20.1
+Pipe v0.21.0
 
 Klient Discord dla Pipe. Status: Placeholder -- Pull Requests mile widziane.
 

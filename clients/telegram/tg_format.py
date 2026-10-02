@@ -213,6 +213,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
+    ("jezyk", "Jezyk Pipe (/jezyk en albo /jezyk pl)"),
     ("pomoc", "Lista komend"),
 )
 BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
@@ -239,6 +240,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("mcp", "MCP servers Pipe uses"),
     ("cost", "Token usage and LLM cost"),
     ("history", "Latest audit-log entries"),
+    ("language", "Pipe's language (/language pl or /language en)"),
     ("help", "List of commands"),
 )
 # Angielskie nazwy komend -> polskie (handlery sa rejestrowane pod obiema nazwami w obu jezykach).
@@ -247,7 +249,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
-    "update": "aktualizuj",
+    "update": "aktualizuj", "language": "jezyk",
 }
 
 
