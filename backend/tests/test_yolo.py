@@ -184,6 +184,7 @@ class TestClients:
     """/yolo i /providerzy w CLI, pipe web i na Telegramie."""
 
     def test_cli_commands_and_helpers(self):
+        pytest.importorskip("rich")              # CI nie instaluje zaleznosci CLI — jak test_cli_completion.py
         from clients.cli import cli
 
         names = [entry[0] for entry in cli.COMMANDS]
