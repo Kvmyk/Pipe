@@ -137,6 +137,26 @@ class TestCliShowsExactCommand:
         for line in command.splitlines():
             assert line.strip() in output if "\n" not in command else line.strip() in shown_lines, output
 
+    @pytest.mark.parametrize("command", DANGEROUS_COMMANDS)
+    def test_confirmation_panel_shows_exact_command(self, command):
+        """Panel potwierdzenia (cli._confirmation): komenda jednoliniowa jako zwykly tekst, znak w znak."""
+        pytest.importorskip("rich")
+        import io
+        from rich.console import Console
+        from clients.cli import cli
+
+        message = confirmation_message(command) + "\nBezpiecznik:\n- kopia przed zmiana: /etc/x\n- cofniecie pozniej: /cofnij"
+        buf = io.StringIO()
+        Console(file=buf, width=500, color_system=None).print(cli._confirmation(message))
+        output = buf.getvalue()
+        if "\n" in command:
+            shown_lines = [line.strip(" │") for line in output.splitlines()]
+            for line in command.splitlines():
+                assert line.strip() in shown_lines, output
+        else:
+            assert "$ " + command in output, output
+        assert "/etc/x" in output and "[POTWIERDZ]" not in output
+
 
 class TestAsCode:
 

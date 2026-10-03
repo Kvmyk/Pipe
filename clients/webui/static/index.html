@@ -9,11 +9,9 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <div class="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
-
-  <header class="topbar glass">
+  <header class="topbar">
     <div class="brand">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8a4 4 0 0 1 4-4h5a5 5 0 0 1 0 10H9v6H4z" fill="currentColor" opacity=".9"/><circle cx="13" cy="9" r="2.2" fill="var(--surface-solid)"/></svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill-rule="evenodd" d="M4 8a4 4 0 0 1 4-4h5a5 5 0 0 1 0 10H9v6H4zm9-1.2a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z" fill="currentColor"/></svg>
       <span>Pipe</span>
     </div>
     <div class="server-pill" id="server-pill" title=""><span class="dot" id="link-dot"></span><span id="server-name"></span></div>
@@ -26,11 +24,11 @@
     <button class="icon" id="theme" aria-label="theme">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
     </button>
-    <button class="ghost" id="new-chat"></button>
+    <button class="ghost" id="new-chat"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg><span id="new-chat-label"></span></button>
   </header>
 
   <main class="layout" id="layout" data-pane="chat">
-    <section class="chat glass" id="chat-pane" aria-label="chat">
+    <section class="chat" id="chat-pane" aria-label="chat">
       <div class="messages" id="messages" aria-live="polite"></div>
       <div class="working" id="working" hidden>
         <span class="orb"><i></i><i></i><i></i></span><span id="working-text"></span>
@@ -42,8 +40,8 @@
           <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <div class="palette glass model-menu" id="model-menu" role="listbox" hidden><div class="palette-glow" id="model-menu-glow"></div><div class="palette-list" id="model-menu-list"></div></div>
-      <div class="palette glass" id="palette" role="listbox" hidden><div class="palette-glow" id="palette-glow"></div><div class="palette-list" id="palette-list"></div></div>
+      <div class="palette model-menu" id="model-menu" role="listbox" hidden><div class="palette-glow" id="model-menu-glow"></div><div class="palette-list" id="model-menu-list"></div></div>
+      <div class="palette" id="palette" role="listbox" hidden><div class="palette-glow" id="palette-glow"></div><div class="palette-list" id="palette-list"></div></div>
       <form class="composer" id="composer" autocomplete="off">
         <textarea id="input" rows="1"></textarea>
         <button type="submit" id="send" class="primary" aria-label="send">
@@ -52,7 +50,7 @@
       </form>
     </section>
 
-    <section class="stage glass" id="stage-pane" aria-label="stage">
+    <section class="stage" id="stage-pane" aria-label="stage">
       <div class="stage-tabs" role="tablist">
         <button role="tab" data-tab="map" class="on" id="st-map"></button>
         <button role="tab" data-tab="changes" id="st-changes"><span id="st-changes-label"></span><b class="badge" id="changes-badge" hidden>0</b></button>
@@ -80,13 +78,13 @@
           <svg id="graph" xmlns="http://www.w3.org/2000/svg" role="img">
             <defs>
               <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5 8.5 5 1 8.5" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
-              <filter id="soft" x="-30%" y="-40%" width="160%" height="190%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#2a6fd6" flood-opacity=".13"/></filter>
             </defs>
             <g id="camera"><g id="edges"></g><g id="pulses"></g><g id="nodes"></g></g>
           </svg>
           <div class="map-empty" id="map-empty" hidden></div>
-          <aside class="detail glass" id="detail" hidden></aside>
+          <aside class="detail" id="detail" hidden></aside>
         </div>
+        <div class="timeline-head" id="timeline-head"></div>
         <div class="timeline" id="timeline"></div>
       </div>
 
@@ -97,7 +95,7 @@
   </main>
 
   <div class="sheet" id="setup" hidden>
-    <div class="sheet-card glass" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
       <button class="icon close" id="setup-close" type="button">×</button>
       <div class="steps">
         <section class="step" id="step-pick">

@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.22.1
+Pipe v0.23.0
 
 ## Wymagania wstepne
 
@@ -84,36 +84,49 @@ co wie, w SERVER.md i DIRECTORY).
 ## Przykladowa sesja
 
 ```
-+-------------------------------------------+
-|  PIPE                                     |
-|  Autonomiczny agent AI                    |
-|  Polaczono z: root@serwer.example.com     |
-+-------------------------------------------+
+ pipe   Autonomiczny agent AI do zarzadzania serwerem Linux
 
--------------- Status serwera ---------------
+ serwer    root@serwer.example.com
+ komendy   /status  /raport  /zmiany  /mapa  /server  /skille  /pomoc  /exit
 
-Serwer serwer17, dzialajacy 3 dni 7 godzin.
-Dysk: 4.2 GB wolne z 20 GB (79% zajete)
-RAM:  1.1 GB wolne z 2 GB
+Polaczono z agentem na root@serwer.example.com
+──────────────────────────────────────────────────────────────────────
 
----------------------------------------------
-
-> ile mam wolnego miejsca na dysku?
+› ile mam wolnego miejsca na dysku?
 
 Dysk jest zapelniony w 79% -- zostalo Ci okolo 4.2 GB.
 Najwieksze katalogi to /var/log (1.1 GB) i /home (2.3 GB).
 Czy chcesz wyczyscic logi? (`journalctl --vacuum-time=7d`)
 
-> pokaz bledy nginx z ostatniej godziny
+› pokaz bledy nginx z ostatniej godziny
 
-> zrestartuj nginx
-WYMAGA POTWIERDZENIA: `systemctl restart nginx`
-Czy chcesz wykonac te operacje? [t/N]: t
-nginx zrestartowany pomyslnie.
+› zrestartuj nginx
 
-> exit
+┌─  Wymaga potwierdzenia  ─────────────────────────────────────────────┐
+│                                                                      │
+│  Operacja wymaga potwierdzenia:                                      │
+│                                                                      │
+│    $ systemctl restart nginx                                         │
+│                                                                      │
+│  Bezpiecznik                                                         │
+│   ✓  sprawdzenie przed              nginx -t                         │
+│      (niepowodzenie = nie wykonam)                                   │
+│   ✓  weryfikacja po                 usluga nginx aktywna             │
+│                                     strony, ktore dzialaja teraz,    │
+│                                     maja dzialac po zmianie          │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+Czy chcesz wykonac te operacje? [y/n] (n): y
+✓ Operacja zatwierdzona -- wykonuje...
+nginx zrestartowany, weryfikacja przeszla.
+
+› exit
 Do widzenia!
 ```
+
+Komenda w panelu jest dokladnie tym, co zostanie wykonane. Pod nia plan bezpiecznika: co Pipe sprawdzi przed
+zmiana i po niej (szczegoly: [Zmiany z bezpiecznikiem](features.md#zmiany-z-bezpiecznikiem-i-cofnij)).
 
 ---
 

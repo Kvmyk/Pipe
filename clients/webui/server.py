@@ -35,6 +35,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+mimetypes.add_type("font/woff2", ".woff2")       # kroj IBM Plex (static/fonts) — nie kazdy system zna to rozszerzenie
 READ_LIMIT = 32 * 1024 * 1024          # ramki z diagramami (base64) sa duze
 MAX_BODY = 4 * 1024 * 1024
 DEFAULT_PORT = 7400

@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.22.1** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.23.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -219,3 +219,6 @@ zgloszenia bledow i pull requesty sa mile widziane.
 Logotypy providerow LLM w `pipe web` sa znakami towarowymi swoich wlascicieli i sluza wylacznie wskazaniu, z czyimi
 modelami laczy sie agent. Pipe nie jest powiazany z tymi firmami ani przez nie zatwierdzony
 (`clients/webui/static/providers/NOTICE.md`).
+
+`pipe web` uzywa kroju IBM Plex Sans i IBM Plex Mono (SIL Open Font License 1.1,
+`clients/webui/static/fonts/OFL.txt`).

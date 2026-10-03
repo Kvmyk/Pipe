@@ -48,3 +48,5 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 | `static/graph.js` | schemat: uklad, kamera, przejscia miedzy poziomami, animacje |
 | `static/md.js` | bezpieczny renderer Markdowna (bez `innerHTML`) |
 | `static/i18n.js` | teksty pl / en |
+| `static/app.css` | wyglad: jasny i ciemny motyw, kolor tylko z funkcja (niebieski -- agent pracuje, bursztyn -- czeka na zgode, zielony / czerwony -- wynik) |
+| `static/fonts/` | IBM Plex Sans i IBM Plex Mono (`woff2`, licencja SIL OFL 1.1 w `OFL.txt`) -- strona nie laduje nic z zewnatrz |

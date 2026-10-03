@@ -1,5 +1,27 @@
 # Historia zmian -- Pipe
 
+## v0.23.0 (2026-10-04)
+
+### Nowy wyglad `pipe web`
+
+- Spokojniejszy interfejs: pelne panele z liniami podzialu zamiast szklanych kart, bez rozmytych plam w tle
+  i gradientow. Kolor tylko z funkcja: niebieski -- agent pracuje, bursztyn -- czeka na zgode, zielony / czerwony -- wynik.
+  Jasny i ciemny motyw
+- Kroj IBM Plex Sans i IBM Plex Mono dolaczony do strony (`clients/webui/static/fonts/`, licencja SIL OFL 1.1) --
+  strona nadal nie laduje nic z zewnatrz
+- Karta potwierdzenia: komenda w osobnej linii `$ ...` (dokladnie to, co zostanie wykonane), plan bezpiecznika
+  jako lista krokow z ikonami (kopia, sprawdzenie przed, weryfikacja po, przywrocenie, cofniecie)
+- Os czasu ma naglowek "Aktywnosc agenta" i godzine przy kazdym dzialaniu
+- Zakladka *Zmiany*: przetlumaczone statusy wpisow ("wykonano", "cofnieto automatycznie"...), data i narzedzie
+  w naglowku karty. Zakladka *Alerty*: przetlumaczone poziomy ("ostrzezenie", "krytyczny")
+- Nowa ikona strony i znak Pipe na ekranie powitalnym
+
+### Nowy wyglad CLI
+
+- Naglowek bez ASCII-artu i ramki: znak, wersja, serwer i najczestsze komendy
+- Potwierdzenie jako panel: wstep, komenda w osobnej linii jako zwykly tekst (znak w znak), plan bezpiecznika jako tabela
+- Kolor tylko z funkcja (bursztyn -- potwierdzenie, zielony / czerwony -- wynik), prompt `›`
+
 ## v0.22.1 (2026-10-03)
 
 ### Wybor modelu razem z providerem

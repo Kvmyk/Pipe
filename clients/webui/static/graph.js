@@ -171,14 +171,14 @@
       const outer = svg("g", { "data-id": node.id }, "node-pos");
       outer.style.transition = reduced ? "" : "transform .55s cubic-bezier(.22,.8,.24,1), opacity .3s";
       const g = svg("g", {}, "node");
-      g.appendChild(svg("rect", { x: -3, y: -3, width: W + 6, height: H + 6, rx: 17 }, "ring"));
-      g.appendChild(svg("rect", { x: 0, y: 0, width: W, height: H, rx: 14, filter: "url(#soft)" }, "card"));
-      g.appendChild(svg("circle", { cx: 29, cy: H / 2, r: 15.5 }, "ico-bg"));
-      const icon = svg("path", { d: ICONS[node.kind] || ICONS.app, transform: `translate(${29 - 9.6}, ${H / 2 - 9.6}) scale(.8)` }, "ico");
+      g.appendChild(svg("rect", { x: -3, y: -3, width: W + 6, height: H + 6, rx: 9 }, "ring"));
+      g.appendChild(svg("rect", { x: 0, y: 0, width: W, height: H, rx: 6 }, "card"));
+      g.appendChild(svg("rect", { x: 13, y: H / 2 - 15, width: 30, height: 30, rx: 6 }, "ico-bg"));
+      const icon = svg("path", { d: ICONS[node.kind] || ICONS.app, transform: `translate(${28 - 9.6}, ${H / 2 - 9.6}) scale(.8)` }, "ico");
       g.appendChild(icon);
       g.appendChild(svg("text", { x: 53, y: 25 }, "title"));
       g.appendChild(svg("text", { x: 53, y: 42 }, "sub"));
-      g.appendChild(svg("circle", { cx: W - 13, cy: 13, r: 4 }, "state"));
+      g.appendChild(svg("circle", { cx: W - 12, cy: 12, r: 3.5 }, "state"));
       if (node.opens) g.appendChild(svg("path", { d: `M${W - 21},${H / 2 + 5} l5,5 -5,5` }, "opens"));
       const title = svg("title"); g.appendChild(title);
       outer.appendChild(g);
@@ -190,7 +190,7 @@
       const keep = ["active", "waiting", "selected", "enter", "flash-ok", "flash-bad"].filter((c) => g.classList.contains(c));
       g.setAttribute("class", ["node", "kind-" + node.kind, "state-" + (node.state || "ok"), ...keep].join(" "));
       g.querySelector(".title").textContent = clip(node.label, node.opens ? 15 : 17);
-      g.querySelector(".sub").textContent = clip(node.sub, 21);
+      g.querySelector(".sub").textContent = clip(node.sub, 19);
       g.querySelector("title").textContent = node.label + (node.sub ? " — " + node.sub : "");
     }
 

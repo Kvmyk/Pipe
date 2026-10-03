@@ -32,6 +32,7 @@ import base64
 import getpass
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -62,12 +63,16 @@ def tr(pl, en):
 
 
 try:
-    from rich.console import Console
+    from rich import box
+    from rich.console import Console, Group
     from rich.markdown import Markdown
+    from rich.padding import Padding
     from rich.panel import Panel
     from rich.prompt import Confirm, Prompt
     from rich.rule import Rule
+    from rich.table import Table
     from rich.text import Text
+    from rich.theme import Theme
     from rich.spinner import Spinner
     from rich.live import Live
     from rich.markup import escape
@@ -83,7 +88,10 @@ try:
 except ImportError:      # starsza instalacja bez prompt_toolkit — zwykly prompt, bez podpowiedzi komend
     PromptSession = None
 
-console = Console()
+# Kolor tylko z funkcja: bursztyn = potwierdzenie, zielony / czerwony = wynik; reszta w tonach terminala.
+PIPE_THEME = Theme({"markdown.code": "bold", "prompt.choices": "bold", "prompt.default": "dim",
+                    "markdown.item.bullet": "dim", "markdown.link_url": "underline"})
+console = Console(theme=PIPE_THEME)
 # `pipe --mcp`: stdout nalezy do protokolu MCP — wszystko inne idzie na stderr.
 BRIDGE_MODE = False
 
@@ -378,7 +386,7 @@ class RemoteClient:
             if response.get("attachment"):
                 _show_attachment(response["attachment"])
             elif (response.get("event") or {}).get("type") == "progress":
-                console.print(f"[dim]  › {escape(response['event'].get('text', ''))}[/dim]")
+                console.print(f"[dim]  · {escape(response['event'].get('text', ''))}[/dim]")
             else:
                 responses.append(response)
             if response.get("done"):
@@ -402,7 +410,7 @@ def _open_file(path: Path) -> None:
 def _show_attachment(attachment: dict) -> None:
     """Diagram: podgląd ASCII (jeśli mieści się w terminalu) + PNG zapisany na dysk."""
     caption = attachment.get("caption") or attachment.get("name") or tr("Załącznik", "Attachment")
-    console.print(Rule(f"[bold cyan]{escape(caption)}[/bold cyan]", style="cyan"))
+    console.print(Rule(f"[bold]{escape(caption)}[/bold]", style="dim", align="left"))
     preview = (attachment.get("text") or "").rstrip()
     if preview:
         width = max(len(line) for line in preview.splitlines())
@@ -436,33 +444,86 @@ _last_mermaid: str = ""
 
 
 def _print_banner(host: str) -> None:
-    """Wyświetla baner startowy z informacją o serwerze."""
-    ascii_art = """[bold cyan]
-  ____  _            
- |  _ \\(_)_ __   ___ 
- | |_) | | '_ \\ / _ \\
- |  __/| | |_) |  __/
- |_|   |_| .__/ \\___|
-         |_|         
-[/bold cyan]"""
-    console.print(
-        Panel.fit(
-            f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.22.1[/dim]\n\n"
-                 f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
-                 "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
-                 "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
-                 "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
-                 "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.22.1[/dim]\n\n"
-                 f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
-                 "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
-                 "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
-                 "[bold cyan]/skills[/bold cyan]  [bold cyan]/help[/bold cyan]  "
-                 "[bold cyan]/exit[/bold cyan][/dim]"),
-            border_style="cyan",
-        )
-    )
+    """Naglowek startowy: znak, wersja, serwer i najczestsze komendy — bez ramki i ASCII-artu."""
+    grid = Table.grid(padding=(0, 3))
+    grid.add_column(style="dim", no_wrap=True)
+    grid.add_column()
+    grid.add_row(tr("serwer", "server"), f"[bold]{escape(host)}[/bold]")
+    grid.add_row(tr("komendy", "commands"), tr("/status  /raport  /zmiany  /mapa  /server  /skille  /pomoc  /exit",
+                                               "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
+    console.print()
+    console.print("[bold reverse] pipe [/bold reverse]  "
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.23.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.23.0[/dim]"), highlight=False)
+    console.print()
+    console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
+    console.print()
+
+
+# Potwierdzenie: komenda z handlerow (core/handlers/common.py) i plan bezpiecznika (core/safety.py Plan.describe).
+FUSE_HEAD = re.compile(r"^(Bezpiecznik|Safety fuse):\s*$")
+_CODE_TAIL = re.compile(r"^(?P<lead>.*?:)\s*(?P<fence>`+)(?P<code>.+)(?P=fence)\s*$")
+
+
+def _code_span(raw: str) -> str:
+    """Tresc kodu inline wg CommonMark: po jednej spacji z brzegow znika tylko wtedy, gdy sa po obu stronach."""
+    if len(raw) > 1 and raw[0] == " " and raw[-1] == " " and raw.strip():
+        return raw[1:-1]
+    return raw
+
+
+def _fuse_mark(key: str) -> tuple[str, str]:
+    low = key.lower()
+    if low.startswith(("jesli", "if ")):
+        return "↺", "green"
+    if low.startswith(("cofniecie", "undo")):
+        return "↩", "dim"
+    if low.startswith(("uwaga", "note")):
+        return "!", "yellow"
+    return "✓", "green"
+
+
+def _confirmation(text: str) -> Panel:
+    """
+    [POTWIERDZ] jako panel: wstep, komenda jednoliniowa jako zwykly tekst (bez Markdowna — to, co widac,
+    zostanie wykonane znak w znak), reszta jako Markdown (komenda wieloliniowa jest tam blokiem kodu)
+    i plan bezpiecznika jako tabela.
+    """
+    lines = text.replace("[POTWIERDZ]", "", 1).strip().split("\n")
+    head, rows = "", []
+    at = next((i for i, line in enumerate(lines) if FUSE_HEAD.match(line.strip())), -1)
+    if at >= 0:
+        head = lines[at].strip().rstrip(":")
+        end = at + 1
+        while end < len(lines) and lines[end].startswith("- "):
+            rows.append(lines[end][2:])
+            end += 1
+        del lines[at:end]
+    parts: list = []
+    match = _CODE_TAIL.match(lines[0]) if lines else None
+    if match:
+        parts.append(Text(match["lead"].strip()))
+        parts.append(Padding(Text.assemble(("$ ", "dim"), (_code_span(match["code"]), "bold")), (1, 0, 1, 2)))
+        rest = "\n".join(lines[1:]).strip()
+    else:
+        rest = "\n".join(lines).strip()
+    if rest:
+        parts.append(Markdown(rest))
+    if rows:
+        table = Table.grid(padding=(0, 2))
+        table.add_column(no_wrap=True)
+        table.add_column(style="dim", max_width=30)
+        table.add_column()
+        for row in rows:
+            key, sep, value = row.partition(": ")
+            if not sep:
+                key, value = "", row
+            mark, style = _fuse_mark(key)
+            table.add_row(Text(mark, style=style), Text(key), Text(value.replace("; ", "\n")))
+        parts.append(Text(head, style="bold"))
+        parts.append(Padding(table, (0, 0, 0, 1)))
+    return Panel(Group(*parts), title=tr(" Wymaga potwierdzenia ", " Needs confirmation "), title_align="left",
+                 border_style="yellow", box=box.SQUARE, padding=(1, 2))
 
 
 def _print_response(text: str, status: str) -> None:
@@ -474,6 +535,9 @@ def _print_response(text: str, status: str) -> None:
     # Zamiana tagow statusowych na kolorowe oznaczenia Rich
     # [SUKCES] usuniety -- nie wyswietlamy go
     text = text.replace("[SUKCES]", "")
+    if status == "confirm":
+        console.print(_confirmation(text))
+        return
     text = text.replace("[BLAD]", tr("**BŁĄD:**", "**ERROR:**"))
     text = text.replace("[POTWIERDZ]", tr("**WYMAGA POTWIERDZENIA:**", "**NEEDS CONFIRMATION:**"))
     text = text.replace("[ODMOWA]", tr("**ODMOWA:**", "**REFUSED:**"))
@@ -510,9 +574,9 @@ async def _handle_responses(
             console.print()
 
         if confirmed:
-            console.print(tr("[dim]✔ Operacja zatwierdzona — wykonuję...[/dim]", "[dim]✔ Approved — running...[/dim]"))
+            console.print(tr("[green]✓[/green] [dim]Operacja zatwierdzona — wykonuję...[/dim]", "[green]✓[/green] [dim]Approved — running...[/dim]"))
         else:
-            console.print(tr("[dim]✖ Operacja anulowana.[/dim]", "[dim]✖ Operation cancelled.[/dim]"))
+            console.print(tr("[dim]✕ Operacja anulowana.[/dim]", "[dim]✕ Operation cancelled.[/dim]"))
 
         confirm_responses = await client.send_confirm(confirmed)
         await _handle_responses(confirm_responses, client)
@@ -709,13 +773,13 @@ def _prompt_reader(client: "RemoteClient | None" = None, **session_options):
     """
     if PromptSession is None or not (session_options or sys.stdin.isatty()):
         async def plain() -> str:
-            return Prompt.ask(("[bold red]YOLO[/bold red] " if _yolo else "") + "[bold cyan]>[/bold cyan]")
+            return Prompt.ask(("[bold red]YOLO[/bold red] " if _yolo else "") + "[bold]›[/bold]")
         return plain
 
     session = PromptSession(completer=SlashCompleter(), complete_while_typing=True, **session_options)
 
     async def ask() -> str:
-        message = ([("bold ansired", "YOLO "), ] if _yolo else []) + [("bold ansicyan", ">"), ("", ": ")]
+        message = ([("bold ansired", "YOLO "), ] if _yolo else []) + [("bold", "›"), ("", " ")]
         if client is None:
             return await session.prompt_async(message)
         # czekajac na wpis, CLI odbiera wiadomosci od Pipe; patch_stdout rysuje je nad promptem
@@ -1207,7 +1271,7 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
                              'No saved skills. After a multi-step procedure ask: "save this as a skill".'))
         for skill in skills:
             label = f"/{skill['command']}" if skill["command"] else f"{skill['name']} {tr('(bez komendy)', '(no command)')}"
-            console.print(f"  [bold cyan]{escape(label)}[/bold cyan] — {escape(skill['description'])}")
+            console.print(f"  [bold]{escape(label)}[/bold] [dim]—[/dim] {escape(skill['description'])}")
         return True
 
     entry = next((s for s in skills if name == s["name"] or (s["command"] and name == s["command"])), None)
@@ -1288,7 +1352,8 @@ async def _show_due_reminders(client: "RemoteClient", quiet: bool = False) -> No
         body = escape(str(event.get("text", "")))
         if event.get("report"):
             body += "\n\n" + escape(str(event["report"]))
-        console.print(Panel(body, title=f"{title} · {escape(str(event.get('due', '')))}", border_style="yellow"))
+        console.print(Panel(body, title=f" {title} · {escape(str(event.get('due', '')))} ", title_align="left",
+                            border_style="dim", box=box.SQUARE))
 
 
 async def run_web(client: "RemoteClient", host: str) -> None:
@@ -1313,17 +1378,17 @@ async def run_web(client: "RemoteClient", host: str) -> None:
     bridge = web_server.WebBridge(client.host, client.port, client.token, lang=LANG, server_label=host,
                                   port=web_server.free_port(WEB_PORT))
     console.print(Panel.fit(
-        tr(f"[bold cyan]Pipe Web[/bold cyan] — połączono z [bold white]{escape(host)}[/bold white]\n\n"
+        tr(f"[bold]Pipe Web[/bold] — połączono z [bold]{escape(host)}[/bold]\n\n"
            "[dim]Adres poniżej zawiera jednorazowy klucz dostępu i działa tylko na tym komputerze.\n"
            "Ctrl+C kończy.[/dim]",
-           f"[bold cyan]Pipe Web[/bold cyan] — connected to [bold white]{escape(host)}[/bold white]\n\n"
+           f"[bold]Pipe Web[/bold] — connected to [bold]{escape(host)}[/bold]\n\n"
            "[dim]The address below contains a one-time access key and works only on this computer.\n"
            "Ctrl+C to quit.[/dim]"),
-        border_style="cyan"))
+        border_style="dim", box=box.SQUARE, padding=(1, 2)))
     # Adres poza ramka, w jednej linii i jako hiperlacze terminala (OSC 8): ramka lamalaby go na dwie linie,
     # a wtedy klikniecie otwiera uciety adres bez klucza.
     console.print(tr("Otwórz w przeglądarce (kliknij):", "Open in your browser (click):"))
-    console.print(f"[bold underline cyan][link={bridge.url}]{bridge.url}[/link][/bold underline cyan]",
+    console.print(f"[bold underline][link={bridge.url}]{bridge.url}[/link][/bold underline]",
                   soft_wrap=True, highlight=False)
     console.print()
     await bridge.serve(open_browser=WEB_OPEN_BROWSER)
@@ -1607,7 +1672,7 @@ Examples:
     runner = run_web if args.mode == "web" else run_cli
     if args.mcp:
         BRIDGE_MODE = True
-        console = Console(stderr=True)
+        console = Console(stderr=True, theme=PIPE_THEME)
         runner = run_mcp_bridge
         if not args.no_tunnel and args.local_port == DEFAULT_LOCAL_PORT:
             args.local_port = _free_port()           # nie koliduj z otwartym CLI na 7379

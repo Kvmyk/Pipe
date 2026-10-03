@@ -71,6 +71,9 @@
 
   function welcome() {
     const box = el("div", "welcome");
+    const mark = document.querySelector(".brand svg").cloneNode(true);
+    mark.setAttribute("class", "logo"); mark.setAttribute("width", "28"); mark.setAttribute("height", "28");
+    box.appendChild(mark);
     box.appendChild(el("h1", "", t("welcomeTitle")));
     box.appendChild(el("p", "", t("welcomeText")));
     messages.appendChild(box);
@@ -102,19 +105,95 @@
     add("agent" + (failed && !refused ? " error" : ""), body);
   }
 
+  // Ikony interfejsu — SVG budowane w DOM (bez innerHTML)
+  const ICON_PATHS = {
+    shield: "M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6z",
+    shieldCheck: "M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6zM9 12l2 2 4-4",
+    copy: "M8 8h11v11H8zM5 16V5h11",
+    check: "M5 12.5l4.5 4.5L19 7.5",
+    eye: "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
+    restore: "M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4",
+    undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
+    info: "M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+  };
+  function icon(name, size) {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", String(size || 14)); svg.setAttribute("height", String(size || 14));
+    svg.setAttribute("aria-hidden", "true");
+    path.setAttribute("d", ICON_PATHS[name] || ICON_PATHS.info); path.setAttribute("fill", "none"); path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.8"); path.setAttribute("stroke-linecap", "round"); path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  // Tresc potwierdzenia: komenda jako osobna linia ($ ...), plan bezpiecznika jako lista krokow.
+  // Teksty przychodza z backendu (handlers/common.py, safety.Plan.describe) — tu zmienia sie tylko uklad.
+  const FUSE_HEAD = /^(Bezpiecznik|Safety fuse):\s*$/;
+  function confirmBody(text) {
+    const lines = text.split("\n"), rows = [];
+    let head = "";
+    const at = lines.findIndex((line) => FUSE_HEAD.test(line.trim()));
+    if (at >= 0) {
+      head = lines[at].trim().replace(/:$/, "");
+      let end = at + 1;
+      while (end < lines.length && /^- /.test(lines[end])) rows.push(lines[end++].slice(2));
+      lines.splice(at, end - at);
+    }
+    let command = "";
+    const first = (lines[0] || "").match(/^(.*?:)\s*(`+) ?([^`].*?) ?\2\s*$/);
+    if (first) { command = first[3]; lines[0] = first[1]; }
+    const body = md(lines.join("\n"));
+    if (command) {
+      const line = el("code", "cmd-line", command), lead = body.firstChild;
+      if (lead && lead.tagName === "P") lead.after(line); else body.insertBefore(line, body.firstChild);
+    }
+    if (rows.length) body.appendChild(fuseBlock(head, rows));
+    return body;
+  }
+  function fuseKind(key) {
+    const k = key.toLowerCase();
+    if (/^(kopia|backup)/.test(k)) return "copy";
+    if (/^(jesli|if )/.test(k)) return "restore";
+    if (/^(sprawdzenie|check)/.test(k)) return "check";
+    if (/^(weryfikacja|verification)/.test(k)) return "eye";
+    if (/^(cofniecie|undo)/.test(k)) return "undo";
+    return "info";
+  }
+  function fuseBlock(head, rows) {
+    const box = el("div", "fuse"), top = el("div", "fuse-head");
+    top.appendChild(icon("shieldCheck", 14)); top.appendChild(document.createTextNode(head));
+    box.appendChild(top);
+    rows.forEach((row) => {
+      const cut = row.indexOf(": ");
+      const key = cut > 0 ? row.slice(0, cut) : "", value = cut > 0 ? row.slice(cut + 2) : row;
+      const kind = fuseKind(key || value);
+      const line = el("div", "fuse-row " + kind), mark = el("span", "i"), text = el("div");
+      mark.appendChild(icon(kind, 14)); line.appendChild(mark);
+      if (key) text.appendChild(el("div", "k", key));
+      // sciezki, komendy i flagi czcionka o stalej szerokosci; zdania — zwykla
+      (kind === "check" || kind === "eye" ? value.split("; ") : [value]).forEach((part) =>
+        text.appendChild(el("div", "v" + (/(^|\s)-\w|\//.test(part) || !/\s/.test(part) ? " tech" : ""), part)));
+      line.appendChild(text);
+      box.appendChild(line);
+    });
+    return box;
+  }
+
   function confirmCard(text) {
     const card = el("div", "confirm");
     const title = el("div", "title");
-    title.appendChild(el("span", "tag warn", t("needsConfirm")));
+    title.appendChild(icon("shield", 15));
     title.appendChild(document.createTextNode(t("confirmTitle")));
+    title.appendChild(el("span", "tag warn", t("needsConfirm")));
     card.appendChild(title);
-    card.appendChild(md(text));
+    card.appendChild(confirmBody(text));
     const actions = el("div", "actions");
     const yes = el("button", "btn yes", t("yes")), no = el("button", "btn no", t("no"));
     actions.appendChild(yes); actions.appendChild(no);
     card.appendChild(actions);
-    const settle = (label) => { actions.remove(); card.classList.add("done"); card.appendChild(el("div", "verdict", label)); pendingCard = null; };
-    yes.addEventListener("click", () => { settle(t("approved")); run({ confirm: true }); });
+    const settle = (label, ok) => { actions.remove(); card.classList.add("done"); card.appendChild(el("div", "verdict" + (ok ? " ok" : ""), label)); pendingCard = null; };
+    yes.addEventListener("click", () => { settle(t("approved"), true); run({ confirm: true }); });
     no.addEventListener("click", () => { settle(t("rejected")); run({ confirm: false }); });
     card.supersede = () => settle(t("superseded"));
     pendingCard = card;
@@ -392,6 +471,7 @@
     const { event } = item;
     if (!item.row) {
       item.row = el("div", "act");
+      item.row.appendChild(el("span", "at", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
       item.row.appendChild(el("span", "mark"));
       item.row.appendChild(el("span", "what"));
       item.row.appendChild(el("span", "where"));
@@ -405,14 +485,14 @@
       timeline.insertBefore(item.row, timeline.firstChild);
       while (timeline.children.length > 40) timeline.lastChild.remove();
     }
-    const mark = item.row.children[0];
+    const mark = item.row.children[1];
     mark.className = "mark " + (event.phase === "start" || item.lingering ? "run" : event.phase === "wait" ? "wait" : event.ok === true ? "ok" : event.ok === false ? "fail" : "skip");
-    const what = item.row.children[1];
+    const what = item.row.children[2];
     what.textContent = "";
     what.appendChild(["execute_command", "remote_exec", "git_command", "docker_manage"].includes(event.tool) ? el("code", "", event.label) : document.createTextNode(event.label));
     what.title = event.label;
-    item.row.children[2].textContent = event.nodes.map((id) => graph.label(id)).slice(0, 2).join(", ");
-    const steps = item.row.children[3];
+    item.row.children[3].textContent = event.nodes.map((id) => graph.label(id)).slice(0, 2).join(", ");
+    const steps = item.row.children[4];
     steps.textContent = "";
     item.steps.slice(-3).forEach((step) => steps.appendChild(el("span", "", "· " + step)));
   }
@@ -508,10 +588,15 @@
   function changeCard(entry) {
     const card = el("div", "card-item");
     const head = el("div", "head");
-    head.appendChild(el("b", "", "#" + entry.id));
-    head.appendChild(el("span", "tag " + ({ failed: "del", restored: "warn", rolled_back: "warn", aborted: "warn" }[entry.status] || "add"), entry.status));
+    head.appendChild(el("b", "id", "#" + entry.id));
+    const label = t("st_" + entry.status);
+    head.appendChild(el("span", "tag " + ({ failed: "del", restored: "warn", rolled_back: "warn", aborted: "warn" }[entry.status] || "add"),
+      label === "st_" + entry.status ? entry.status : label));
+    // podsumowanie z dziennika: "<data> <godzina> [stan] narzedzie: co" — stan jest juz w znaczniku
+    const summary = entry.summary.replace(/^#\w+\s*/, ""), parts = summary.match(/^(\S+ \S+) \[[^\]]*\] ([\w-]+): ([\s\S]*)$/);
+    if (parts) head.appendChild(el("span", "meta when", parts[1] + " · " + parts[2]));
     card.appendChild(head);
-    card.appendChild(el("div", "cmd", entry.summary.replace(/^#\w+\s*/, "")));
+    card.appendChild(el("div", "cmd", parts ? parts[3] : summary));
     const holder = el("div"); card.appendChild(holder);
     const foot = el("div", "foot");
     const toggle = el("button", "btn no small", t("showDiff"));
@@ -560,7 +645,7 @@
       activeAlerts.forEach((alert) => {
         const card = el("div", "card-item alert-" + alert.severity);
         const head = el("div", "head");
-        head.appendChild(el("span", "tag " + (alert.severity === "critical" ? "del" : "warn"), alert.severity));
+        head.appendChild(el("span", "tag " + (alert.severity === "critical" ? "del" : "warn"), t("sev_" + alert.severity) === "sev_" + alert.severity ? alert.severity : t("sev_" + alert.severity)));
         head.appendChild(el("b", "", alert.title));
         card.appendChild(head);
         if (alert.detail) card.appendChild(el("div", "meta", alert.detail));
@@ -1270,7 +1355,8 @@
   });
 
   // teksty
-  $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat").textContent = t("newChat");
+  $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat-label").textContent = t("newChat");
+  $("timeline-head").textContent = t("activity");
   $("st-skills").textContent = t("skills");
   $("st-map").textContent = t("map"); $("st-changes-label").textContent = t("changes"); $("st-alerts-label").textContent = t("alerts");
   $("theme").title = t("theme");
