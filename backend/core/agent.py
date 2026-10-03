@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -30,8 +30,9 @@ from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, LLMConfig, chat_model_ids, model_available
 from backend.core import audit, executor, llm as llm_choice, memory, runtime, usage
 from backend.core.i18n import tr
-from backend.core.events import Activity, Event
+from backend.core.events import Activity, Event, Progress
 from backend.core.session import ConfirmationRequest, Session
+from backend.core.text import visible
 from backend.core.tools import TOOLS
 import backend.core.handlers as handlers_module
 
@@ -384,12 +385,17 @@ class VPSAgent:
                                 tuple(graph.locate(name, args, session.cwd)), workers=workers)
             yield activity
         failed = False
+        # YOLO: pytanie o TAK nie trafia do uzytkownika — operacja wykonuje sie od razu, przez bezpiecznik.
+        yolo = session.runs_yolo and dispatch is None
+        held: list[Event] = []
 
         buffered: list[Event] = []
         try:
             async for event in handler(session, tool_call, args):
                 if viewer:
                     buffered.append(event)   # przegladajacy nie moze zobaczyc pytania o TAK, ktorego nie zatwierdzi
+                elif yolo and isinstance(event, str) and "[POTWIERDZ]" in event:
+                    held.append(event)
                 else:
                     yield event
         except Exception as exc:  # blad handlera nie moze zostawic wywolania bez odpowiedzi
@@ -411,6 +417,27 @@ class VPSAgent:
             for event in buffered:
                 yield event
 
+        executed = False
+        if yolo:
+            pending = session.pending_confirmation
+            if pending is not None and pending.tool_call_id == tool_call.id:
+                session.pending_confirmation = None
+                pending.activity = activity
+                executed = True
+                shown = visible(" ".join(pending.command.split()))
+                shown = shown if len(shown) <= 200 else shown[:199] + "…"
+                yield Progress(tr(f"YOLO — wykonuje bez pytania: {shown}", f"YOLO — running without asking: {shown}"))
+                try:
+                    async for event in self._execute_tool_confirmed(session, pending, yolo=True):
+                        yield event
+                finally:
+                    if not _answered(session, tool_call.id, before):
+                        session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                                 "content": tr(INTERRUPTED_TOOL, INTERRUPTED_TOOL_EN)})
+            else:
+                for event in held:
+                    yield event
+
         if not _answered(session, tool_call.id, before) and (
             session.pending_confirmation is None or session.pending_confirmation.tool_call_id != tool_call.id
         ):
@@ -418,7 +445,7 @@ class VPSAgent:
                                      "content": tr("Narzedzie nie zwrocilo wyniku.", "The tool returned no result.")})
         _sanitize_new_results(session, before)
 
-        if activity is not None:
+        if activity is not None and not executed:     # po YOLO koniec dzialania zglosil juz _execute_tool_confirmed
             pending = session.pending_confirmation
             if pending is not None and pending.tool_call_id == tool_call.id:
                 pending.activity = activity
@@ -426,7 +453,8 @@ class VPSAgent:
             else:
                 yield dataclasses.replace(activity, phase="end", ok=not failed and not _refused(session, tool_call.id, before))
 
-    async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest) -> AsyncGenerator[Event, None]:
+    async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest, *,
+                                      yolo: bool = False) -> AsyncGenerator[Event, None]:
         """
         Wykonuje zatwierdzona operacje i dopisuje wynik do historii. Yielduje postep bezpiecznika.
 
@@ -436,32 +464,34 @@ class VPSAgent:
         Zmiany (wszystko poza akcja bez planu, np. odczytem pliku z sekretami) ida
         przez bezpiecznik (core/safety.py): kopia do dziennika, sprawdzenie przed,
         weryfikacja po, automatyczne przywrocenie plikow — wedlug planu z potwierdzenia.
+        `yolo` — wykonanie bez pytania (tryb YOLO); audit log i dziennik zapisuja to przy interfejsie.
         """
         before = len(session.messages)
+        who = session.interface + (" [yolo]" if yolo else "")
         from backend.core import safety
         from backend.core.handlers.common import format_result
 
         async def run_action() -> tuple[str, int]:
             try:
                 result = await pending.action()
-                await audit.log_confirmed(session.interface, pending.command, 0)
+                await audit.log_confirmed(who, pending.command, 0)
                 return result, 0
             except Exception as exc:
-                await audit.log_confirmed(session.interface, pending.command, 1)
+                await audit.log_confirmed(who, pending.command, 1)
                 return f"Blad: {exc}", 1
 
         async def run_write() -> tuple[str, int]:
             path = pending.file_path or ""
             try:
                 await executor.write_file(path, pending.file_content or "")
-                await audit.log_file_write(session.interface, path, 0)
+                await audit.log_file_write(who, path, 0)
                 return tr(f"Plik {runtime.to_host(path)} zostal zapisany pomyslnie.",
                           f"File {runtime.to_host(path)} was written successfully."), 0
             except PermissionError as exc:
-                await audit.log_file_write(session.interface, path, 1)
+                await audit.log_file_write(who, path, 1)
                 return tr(f"Blad zapisu (brak uprawnien): {exc}", f"Write error (permission denied): {exc}"), 1
             except OSError as exc:
-                await audit.log_file_write(session.interface, path, 1)
+                await audit.log_file_write(who, path, 1)
                 return tr(f"Blad zapisu pliku: {exc}", f"File write error: {exc}"), 1
 
         async def run_command() -> tuple[str, int]:
@@ -470,7 +500,7 @@ class VPSAgent:
                 cwd=runtime.to_local(session.cwd),
                 timeout=settings.CONFIRMED_COMMAND_TIMEOUT,
             )
-            await audit.log_confirmed(session.interface, pending.command, exit_code)
+            await audit.log_confirmed(who, pending.command, exit_code)
             return format_result(stdout, stderr, exit_code), exit_code
 
         exit_code, entry_id = 0, ""
@@ -487,7 +517,7 @@ class VPSAgent:
             result = ""
             from backend.core import checks
             async for item in safety.guarded(
-                plan, operation, interface=session.interface, tool=pending.tool_name, description=pending.command,
+                plan, operation, interface=who, tool=pending.tool_name, description=pending.command,
                 cwd=runtime.to_local(session.cwd), auto_restore=settings.SAFE_AUTO_ROLLBACK,
                 sites_enabled=settings.WATCH_SITES, site_ignore=checks.parse_ignore(settings.WATCH_IGNORE),
             ):

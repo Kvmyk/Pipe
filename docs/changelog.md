@@ -1,5 +1,35 @@
 # Historia zmian -- Pipe
 
+## v0.22.0 (2026-10-03)
+
+### Tryb YOLO (`/yolo`)
+
+- Nowa komenda `/yolo on` / `/yolo off` w CLI, `pipe web` i na Telegramie: zmiany w tej rozmowie wykonuja sie od razu,
+  bez pytania o TAK. Domyslnie wylaczony, tylko dla administratora, dotyczy tylko biezacej rozmowy i znika po
+  restarcie backendu
+- Bezpiecznik dziala jak po TAK: kopia plikow, sprawdzenie przed, weryfikacja po, automatyczne przywrocenie configow
+  i wpis w dzienniku -- `/cofnij` cofa takze zmiany z YOLO. Operacje zakazane sa nadal odrzucane, workery nadal tylko czytaja
+- Tryb jest widoczny: czerwone `YOLO` w prompcie CLI, pulsujacy znacznik nad polem wpisywania w `pipe web`
+  (klikniecie wylacza), komunikat "YOLO — wykonuje bez pytania: ..." przy kazdej operacji, dopisek `[yolo]` przy
+  interfejsie w audit logu i dzienniku
+- Agent dostaje w prompcie instrukcje na ten tryb: ostroznie, najmniejsza zmiana, bez nieodwracalnych operacji
+  bez wyraznej prosby
+
+### Providerzy LLM z komendy (`/providerzy`, `/providers`)
+
+- CLI: lista providerow, wybor numerem, klucz API wpisywany bez echa, model z listy providera;
+  `/providerzy groq [model]` przelacza od razu, `/providerzy zapomnij <id>` usuwa klucz dodany z interfejsu
+- `pipe web`: komenda otwiera ekran wyboru providera, `/providerzy groq` przelacza od razu (stare `/provider` dziala dalej)
+- Telegram: lista z przyciskami przelaczenia i `/providerzy groq [model]`. Bot celowo nie przyjmuje kluczy API
+  (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI
+
+### Projekt open source
+
+- Pipe ma licencje MIT (plik `LICENSE`) -- wczesniej repozytorium nie mialo zadnej licencji
+- Instalator (`scripts/install-server.sh`), cloud-init i dokumentacja klonowaly repozytorium spod nieistniejacego
+  adresu `github.com/user/pipe` -- teraz `github.com/Kvmyk/pipe`. Instalacja na swiezym serwerze bez repo znowu dziala
+- Usunieto nieaktualne `TODO.md` (analiza z czasow v0.3); `AGENTS.md` odsyla teraz do `CLAUDE.md`
+
 ## v0.21.5 (2026-10-02)
 
 ### Wiadomosci od Pipe w CLI

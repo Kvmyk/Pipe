@@ -213,6 +213,8 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
+    ("providerzy", "Providerzy LLM: przelacz (/providerzy groq [model])"),
+    ("yolo", "Zmiany bez pytania o TAK (/yolo on, /yolo off)"),
     ("jezyk", "Jezyk Pipe (/jezyk en albo /jezyk pl)"),
     ("pomoc", "Lista komend"),
 )
@@ -240,6 +242,8 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("mcp", "MCP servers Pipe uses"),
     ("cost", "Token usage and LLM cost"),
     ("history", "Latest audit-log entries"),
+    ("providers", "LLM providers: switch (/providers groq [model])"),
+    ("yolo", "Changes without asking for YES (/yolo on, /yolo off)"),
     ("language", "Pipe's language (/language pl or /language en)"),
     ("help", "List of commands"),
 )
@@ -249,7 +253,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
-    "update": "aktualizuj", "language": "jezyk",
+    "update": "aktualizuj", "language": "jezyk", "providers": "providerzy",
 }
 
 
@@ -322,6 +326,41 @@ def format_help(skills: list[dict]) -> str:
     lines.append(tr("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>",
                     "\nYou can also just write, e.g. <i>\"how much free space do I have?\"</i>"))
     return "\n".join(lines)
+
+
+def format_providers(data: dict, *, admin: bool) -> str:
+    """
+    /providerzy jako HTML Telegrama: aktywny, gotowi (z kluczem) i reszta. Kluczy tu nie ma — backend ich
+    nie wysyla — i nie przyjmujemy ich przez czat (zostalyby w historii Telegrama): dodaje sie je w pipe web albo CLI.
+    """
+    active = data.get("active") or {}
+    lines = [tr(f"<b>Providerzy LLM</b> — teraz: <b>{html.escape(active.get('name', '?'))}</b> · "
+                f"<code>{html.escape(active.get('model', ''))}</code>",
+                f"<b>LLM providers</b> — now: <b>{html.escape(active.get('name', '?'))}</b> · "
+                f"<code>{html.escape(active.get('model', ''))}</code>"), ""]
+    for provider in data.get("providers", []):
+        mark = "✅" if provider.get("active") else "🟢" if provider.get("ready") else "⚪"
+        model = provider.get("model") or provider.get("default_model") or ""
+        lines.append(f"{mark} <b>{html.escape(provider.get('name', ''))}</b> (<code>{html.escape(provider.get('id', ''))}</code>)"
+                     + (f" · <code>{html.escape(model)}</code>" if provider.get("ready") and model else "")
+                     + ("" if provider.get("ready") else tr(" — brak klucza", " — no key")))
+    if admin:
+        lines.append(tr("\nPrzelacz przyciskiem albo: <code>/providerzy groq</code>, z modelem: "
+                        "<code>/providerzy groq llama-3.3-70b-versatile</code>.\n"
+                        "<i>Klucze API dodasz w pipe web albo w CLI (/providerzy) — nie wysylaj ich przez czat.</i>",
+                        "\nSwitch with a button or: <code>/providers groq</code>, with a model: "
+                        "<code>/providers groq llama-3.3-70b-versatile</code>.\n"
+                        "<i>Add API keys in pipe web or the CLI (/providers) — do not send them through the chat.</i>"))
+    else:
+        lines.append(tr("\n<i>Providera moze zmieniac tylko administrator.</i>",
+                        "\n<i>Only an administrator can change the provider.</i>"))
+    return "\n".join(lines)
+
+
+def provider_choices(data: dict) -> list[tuple[str, str]]:
+    """Przyciski przelaczenia: (etykieta, id) gotowych providerow poza aktywnym."""
+    return [(str(p.get("name", "")), str(p.get("id", ""))) for p in data.get("providers", [])
+            if p.get("ready") and not p.get("active") and p.get("id")]
 
 
 def response_data(responses: list[dict]) -> dict:

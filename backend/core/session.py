@@ -46,6 +46,13 @@ class Session:
     # Kto zalozyl sesje (tozsamosc z tokenu) i z jaka rola: admin | viewer (tylko odczyty)
     owner: str = ""
     role: str = "admin"
+    # Tryb YOLO (/yolo): operacje wymagajace potwierdzenia wykonuja sie bez pytania — tylko admin,
+    # tylko ta sesja, domyslnie wylaczony i zapominany przy restarcie backendu.
+    yolo: bool = False
+
+    @property
+    def runs_yolo(self) -> bool:
+        return self.yolo and self.role == "admin"
 
     @property
     def is_telegram(self) -> bool:
@@ -82,5 +89,6 @@ class Session:
             + prompt_context(self.user_key)
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
+            + (prompt("YOLO_BLOCK") if self.runs_yolo else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

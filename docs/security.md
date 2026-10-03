@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 ## Model
 
@@ -113,6 +113,22 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
 - Plan bezpiecznika (kopie, sprawdzenia, weryfikacja) jest czescia potwierdzenia i jest przechowywany w nim --
   po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
   sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
+
+## Tryb YOLO (`/yolo`)
+
+Domyslnie kazda zmiana czeka na TAK. `/yolo on` (CLI, `pipe web`, Telegram) wylacza to pytanie -- **tylko w tej
+rozmowie (sesji)**, tylko dla administratora i tylko do restartu backendu albo `/yolo off`. Co sie nie zmienia:
+
+- klasyfikacja: operacje `forbidden` sa nadal odrzucane, a `safe` dzialaja jak zawsze;
+- bezpiecznik: kazda zmiana idzie przez ten sam plan co po TAK (kopia plikow, sprawdzenie przed, weryfikacja po,
+  automatyczne przywrocenie configow) i trafia do dziennika -- `/cofnij` dziala;
+- workery nadal tylko czytaja (propozycje zmian nie sa wykonywane), a zgody zewnetrznych agentow MCP nadal czekaja na decyzje;
+- rola viewer nie moze wlaczyc YOLO, a nawet ustawiona flaga nic nie zmienia dla sesji viewera.
+
+Wykonanie bez pytania jest widoczne: klient dostaje `progress` „YOLO — wykonuje bez pytania: ...”, `pipe web` pokazuje
+czerwony znacznik nad polem wpisywania, CLI -- `YOLO` w prompcie, a audit log i dziennik zapisuja interfejs z dopiskiem
+`[yolo]` (np. `cli:kuba [yolo]`). Model dostaje w prompcie blok o trybie YOLO (ostroznosc, najmniejsza zmiana,
+bez nieodwracalnych operacji bez wyraznej prosby). YOLO usuwa czlowieka z petli -- wlaczaj je na czas konkretnej pracy.
 
 ## Role i tokeny
 

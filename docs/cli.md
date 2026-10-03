@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -154,7 +154,7 @@ bez niego CLI dziala jak dotad, bez podpowiedzi.
 
 Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
 `/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`,
-`/approvals`, `/cost`, `/history`, `/language`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski
+`/approvals`, `/cost`, `/history`, `/providers`, `/language`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski
 tylko w tym uruchomieniu; `/jezyk en` (`/language pl`) zmienia jezyk calego Pipe -- instrukcje agenta, raporty,
 komunikaty -- bez restartu, takze w `pipe web` i na Telegramie. Wybor zostaje po restarcie i CLI przejmuje go
 przy polaczeniu (chyba ze podano `--lang`).
@@ -175,6 +175,8 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
+| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, wybor z klawiatury (klucz API wpisywany bez echa, model z listy providera); `/providerzy groq` przelacza od razu, `/providerzy zapomnij <id>` usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
+| `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez pytania o TAK (bezpiecznik, dziennik i `/cofnij` dzialaja dalej, operacje zakazane sa nadal odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu; prompt pokazuje wtedy czerwone `YOLO` |
 | `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
 | `/mermaid` | Kod Mermaid ostatniego diagramu |
 | `/server` | Pokazuje SERVER.md; gdy go nie ma -- agent bada serwer i tworzy plik |

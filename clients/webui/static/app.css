@@ -395,6 +395,12 @@ button { cursor: pointer; border: 0; background: none; }
   transition: border-color .2s, color .2s, box-shadow .25s var(--ease); }
 .model-pill:hover, .model-pill[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-strong); }
 .model-pill[aria-expanded="true"] { box-shadow: 0 0 0 4px var(--accent-soft); }
+.yolo-chip { order: 98; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px;
+  font: 700 12px var(--sans); letter-spacing: .06em; color: #fff; background: var(--bad); border: 1px solid var(--bad);
+  box-shadow: 0 0 0 4px rgba(236, 90, 102, .16); cursor: pointer; transition: transform .2s var(--ease), box-shadow .2s var(--ease); }
+.yolo-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: yolopulse 1.6s ease-in-out infinite; }
+.yolo-chip:hover { transform: translateY(-1px); box-shadow: 0 0 0 6px rgba(236, 90, 102, .2); }
+@keyframes yolopulse { 50% { opacity: .35; } }
 .model-pill .dot { width: 7px; height: 7px; box-shadow: 0 0 0 3px rgba(25, 180, 124, .16); }
 .model-pill .swap { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; }
 .model-pill b { font-weight: 600; color: var(--ink); white-space: nowrap; }

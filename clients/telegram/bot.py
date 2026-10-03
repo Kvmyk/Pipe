@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -84,6 +84,8 @@ from tg_format import (
     format_directory,
     format_help,
     format_investigation,
+    format_providers,
+    provider_choices,
     format_list,
     format_listing,
     format_pre,
@@ -500,6 +502,77 @@ async def cmd_jezyk(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _command_with_image(update, context, "language", args, render)
 
 
+async def cmd_yolo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/yolo [on|off] -- zmiany w tej rozmowie bez pytania o TAK (tylko administrator; domyslnie wylaczone)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = " ".join(context.args or []).strip()
+
+    def render(data: dict) -> str:
+        text = html.escape(data.get("text", ""))
+        return f"🔴 <b>{text}</b>" if data.get("yolo") and args else text
+
+    await _command_with_image(update, context, "yolo", args, render)
+
+
+def _providers_keyboard(data: dict, user_id: int) -> InlineKeyboardMarkup | None:
+    buttons = [InlineKeyboardButton(name, callback_data=f"prov:{provider_id}:{user_id}")
+               for name, provider_id in provider_choices(data) if len(f"prov:{provider_id}:{user_id}") <= 64]
+    if not buttons:
+        return None
+    return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+
+
+async def cmd_providerzy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/providerzy [id [model]] -- lista providerow LLM i przelaczenie (przyciski albo argumenty; tylko administrator)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = list(context.args or [])
+
+    async def go() -> None:
+        client = get_client(user_id)
+        if args and _is_admin(user_id):
+            data = await client.data("provider_set", name=args[0].lower(), model=args[1] if len(args) > 1 else "")
+            active = data.get("active") or {}
+            await update.message.reply_text(
+                tr(f"Od teraz odpowiada <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>",
+                   f"From now on you are talking to <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>"),
+                parse_mode=ParseMode.HTML)
+            return
+        data = await client.data("providers")
+        admin = _is_admin(user_id) and bool(data.get("can_edit"))
+        await _send_html(context.bot, update.effective_chat.id, format_providers(data, admin=admin),
+                         _providers_keyboard(data, user_id) if admin else None)
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_provider_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    if len(parts) != 3 or not user or str(user.id) != parts[2] or not _is_admin(user.id):
+        await query.answer(tr("Providera zmienia tylko administrator.", "Only an administrator can change the provider."),
+                           show_alert=True)
+        return
+    await query.answer(tr("Przelaczam...", "Switching..."))
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    async def go() -> None:
+        active = (await get_client(user.id).data("provider_set", name=parts[1])).get("active") or {}
+        await context.bot.send_message(query.message.chat_id, tr(
+            f"Od teraz odpowiada <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>",
+            f"From now on you are talking to <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>"),
+            parse_mode=ParseMode.HTML)
+
+    await _backend_call(update, context, go())
+
+
 async def cmd_incydenty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/incydenty -- pamiec incydentow: rozwiazane alerty z ustaleniami i tym, co pomoglo (bez LLM)."""
     await _command_with_image(update, context, "incidents", "",
@@ -754,6 +827,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith("appr:"):
         await _handle_approval_callback(update, context, data)
+        return
+
+    if data.startswith("prov:"):
+        await _handle_provider_callback(update, context, data)
         return
 
     if data.startswith("investigate:"):
@@ -1068,7 +1145,7 @@ def main() -> None:
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
-        ("jezyk", cmd_jezyk),
+        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

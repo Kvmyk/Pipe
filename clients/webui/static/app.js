@@ -1017,11 +1017,12 @@
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
     ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
     ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
-    ["historia", "history", "c_history"], ["provider", "provider", "c_provider"], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
+    ["historia", "history", "c_history"], ["providerzy", "providers", "c_provider", true], ["yolo", "yolo", "c_yolo", true], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
-  function findCommand(name) { return COMMANDS.find((entry) => entry[0] === name || entry[1] === name); }
+  const ALIASES = { provider: "providerzy" };      // stara nazwa z wczesniejszych wersji
+  function findCommand(name) { name = ALIASES[name] || name; return COMMANDS.find((entry) => entry[0] === name || entry[1] === name); }
   const SCAN_WORDS = ["aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan"];
   const lines = (items) => (items || []).map((item) => "- " + item).join("\n");
 
@@ -1039,8 +1040,38 @@
     } catch (error) { add("agent error", md(t("errorPrefix") + ": " + error.message)); }
   }
 
+  // /providerzy — ekran wyboru; /providerzy <id> [model] — przelaczenie od razu (provider musi miec klucz)
+  async function providersCommand(args) {
+    if (!llm) { add("agent error", md(t("offline"))); return; }
+    const [wanted, model] = args.split(/\s+/).filter(Boolean);
+    if (!wanted) { openSetup(false); return; }
+    const q = wanted.toLowerCase(), found = llm.providers.find((p) => p.id === q || p.name.toLowerCase() === q);
+    if (!found) { toast(t("providers"), t("unknownProvider") + " " + wanted); openSetup(false); return; }
+    if (!found.ready || !llm.can_edit) { openSetup(false); showProvider(found); return; }
+    if (found.active && (!model || model === found.model)) { toast(t("providers"), t("providerNow") + " " + found.name + " · " + found.model); return; }
+    if (busy) { toast(t("providers"), t("providerBusy")); return; }
+    try { if (applyProviders(await command({ command: "provider_set", name: found.id, model: model || "" }))) announceProvider(); }
+    catch (error) { toast(t("errorPrefix"), error.message); }
+  }
+
+  // YOLO: zmiany w tej rozmowie bez pytania o TAK — stan zyje w sesji backendu, tu tylko znacznik
+  const yoloChip = $("yolo-chip");
+  function showYolo(on) { yoloChip.hidden = !on; yoloChip.title = t("yoloChip"); }
+  async function loadYolo() {
+    try { showYolo(!!(await command({ command: "yolo" })).yolo); } catch (_) { showYolo(false); }   // starszy backend
+  }
+  async function setYolo(args) {
+    try {
+      const data = await command({ command: "yolo", args });
+      showYolo(!!data.yolo);
+      add(data.yolo ? "agent error" : "agent", md(data.text || ""));
+    } catch (error) { add("agent error", md(t("errorPrefix") + ": " + error.message)); }
+  }
+  yoloChip.addEventListener("click", () => { if (!busy) setYolo("off"); });
+
   const HANDLERS = {
     jezyk: (args) => setLanguage(args),
+    yolo: (args) => setYolo(args),
     status: () => run({ command: "status" }, t("working")),
     aktualizuj: (args) => run({ command: "update", args }, t("working")),
     raport: () => dataMessage({ command: "digest" }, digestBody),
@@ -1092,11 +1123,11 @@
     alerty: () => switchTab("alerts"),
     dziennik: () => switchTab("changes"),
     cofnij: () => switchTab("changes"),
-    provider: () => { if (llm) openSetup(false); else add("agent error", md(t("offline"))); },
+    providerzy: (args) => providersCommand(args),
     pomoc: () => add("agent", listing(COMMANDS.map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
       + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
   };
-  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij", "provider"];
+  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij", "providerzy"];
 
   // Zwraca true, gdy tekst byl komenda (wbudowana albo skillem); false — idzie do agenta jako zwykla wiadomosc.
   async function slash(text) {
@@ -1228,6 +1259,7 @@
     if (busy) return;
     session = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
     messages.textContent = ""; pendingCard = null; welcome();
+    showYolo(false);                     // nowa rozmowa = nowa sesja, YOLO zostaje w starej
   });
 
   // teksty
@@ -1246,6 +1278,7 @@
   loadGraph(false);
   loadAlerts();
   loadProviders(true);
+  loadYolo();
   connectEvents();
   input.focus();
 })();

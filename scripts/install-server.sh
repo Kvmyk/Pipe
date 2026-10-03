@@ -16,7 +16,7 @@ set -euo pipefail
 
 MODE="docker"
 DIR="/opt/pipe"
-REPO="${PIPE_REPO:-https://github.com/user/pipe.git}"
+REPO="${PIPE_REPO:-https://github.com/Kvmyk/pipe.git}"
 BRANCH="${PIPE_BRANCH:-main}"
 NON_INTERACTIVE=0
 

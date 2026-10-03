@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 ## Wymagania wstepne
 
@@ -14,7 +14,7 @@ Pipe v0.21.5
 Zaloguj sie przez SSH na serwer i wykonaj:
 
 ```bash
-git clone https://github.com/user/pipe
+git clone https://github.com/Kvmyk/pipe
 cd pipe
 sudo bash scripts/install-server.sh            # albo --mode native (bez Dockera)
 ```
@@ -40,7 +40,7 @@ Kubernetes: [deploy/kubernetes](../deploy/kubernetes/README.md).
 ## Krok 2: Zainstaluj CLI na laptopie
 
 ```bash
-git clone https://github.com/user/pipe
+git clone https://github.com/Kvmyk/pipe
 cd pipe
 ```
 

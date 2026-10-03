@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 ## Opis
 
@@ -69,6 +69,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `provider_models` | `name` (id providera), `key` (opcjonalnie -- nowy klucz do sprawdzenia) | `"data": {"models": [...], "total"}` -- aktualne modele czatu providera; odrzucony klucz = `error`. Tylko administrator |
 | `provider_set` | `name`, `key` (opcjonalnie), `model` (opcjonalnie) | jak `providers` -- zapisuje klucz (po sprawdzeniu u providera) i model, przelacza agenta, ustawia `chosen`. Tylko administrator |
 | `provider_forget` | `name` | jak `providers` -- usuwa klucz dodany z interfejsu; provider bez klucza przestaje byc aktywny. Tylko administrator |
+| `yolo` | `args`: `on` \| `off` (opcjonalnie; takze `wlacz`/`wylacz`, `tak`/`nie`) | `"data": {"yolo": bool, "can_edit": bool, "text"}` -- bez `args` stan, z `args` wlacza/wylacza tryb YOLO **tej sesji**: operacje wymagajace potwierdzenia wykonuja sie od razu (przez bezpiecznik i dziennik; w strumieniu zamiast `[POTWIERDZ]` przychodzi zdarzenie `progress` „YOLO — ...”). Zmiana tylko dla administratora; nie przetrwa restartu backendu |
 | `language` | `args`: `pl` \| `en` (opcjonalnie; takze `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- bez `args` stan, z `args` przelacza jezyk calego agenta (prompty, opisy narzedzi, raporty, komunikaty) bez restartu i zapisuje wybor w `DATA_DIR/language.json`; subskrybenci dostaja zdarzenie `language`. Zmiana tylko dla administratora |
 | `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |

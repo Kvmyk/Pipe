@@ -28,7 +28,6 @@ VERSION_FILE = ROOT / "VERSION"
 PATTERNS: list[tuple[str, str]] = [
     ("README.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
     ("CLAUDE.md", r"\*\*Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
-    ("AGENTS.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?) status\*\*"),
     ("docs/backend.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/cli.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/telegram.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),

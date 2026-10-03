@@ -67,7 +67,7 @@ Nastepnie sprawdz, czy zmiana nie unieważnila innych dokumentow, i popraw te, k
 | zmienne `.env`, `docker-compose.yml` | `backend/.env.example`, `docs/backend.md`, `docs/quickstart.md`, `CLAUDE.md` |
 | CLI (`clients/cli/`) | `docs/cli.md`, `clients/cli/README.md` |
 | Telegram (`clients/telegram/`) | `docs/telegram.md`, `clients/telegram/.env.example` |
-| architektura, uklad modulow | `CLAUDE.md`, `AGENTS.md` |
+| architektura, uklad modulow | `CLAUDE.md` |
 
 Cala dokumentacja i komentarze w tym repo sa **po polsku** — trzymaj sie tego.
 

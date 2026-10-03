@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.21.5** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.22.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -41,7 +41,7 @@ Tamte narzedzia to ogolni agenci do kodu albo "do wszystkiego". Pipe jest agente
 ### 1. Postaw backend na serwerze
 
 ```bash
-git clone https://github.com/user/pipe && cd pipe
+git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh             # Docker; kreator pyta o providera i klucz
 # albo: sudo bash scripts/install-server.sh --mode native   (bez Dockera, systemd)
 ```
@@ -97,7 +97,7 @@ sudo bash ../../scripts/install-server.sh   # uruchomi tez bota
 - *"cofnij ostatnia zmiane"* albo `/cofnij` -- przywraca pliki i odwraca operacje z dziennika
 
 Komendy w obu klientach: `/status` `/aktualizuj` `/raport` `/zmiany` `/wykres` `/zdrowie` `/mapa` `/server` `/katalogi` `/skille`
-`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/przypomnienia` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/jezyk` `/pomoc`.
+`/audyt` `/incydenty` `/zgody` `/mcp` `/alerty` `/rutyny` `/przypomnienia` `/cele` `/vibe` `/dziennik` `/cofnij` `/koszt` `/historia` `/providerzy` `/yolo` `/jezyk` `/pomoc`.
 
 ---
 
@@ -206,6 +206,13 @@ Szczegoly i ograniczenia (np. `docker.sock` = uprawnienia roota): [docs/security
 - [Bezpieczenstwo](./docs/security.md)
 - [Protokol komunikacji](./docs/protocol.md)
 - [Historia zmian](./docs/changelog.md)
+
+---
+
+## Licencja
+
+MIT -- patrz [LICENSE](./LICENSE). Pipe jest i pozostanie darmowym projektem open source;
+zgloszenia bledow i pull requesty sa mile widziane.
 
 ---
 

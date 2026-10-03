@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.21.5** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.22.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -60,7 +60,7 @@ in its header) or on Telegram -- no restart, all channels switch together (admin
 ### 1. Put the backend on the server
 
 ```bash
-git clone https://github.com/user/pipe && cd pipe
+git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh --lang en             # Docker; the wizard asks for the provider and key
 # or: sudo bash scripts/install-server.sh --lang en --mode native   (no Docker, systemd)
 ```
@@ -118,7 +118,7 @@ sudo bash ../../scripts/install-server.sh   # also starts the bot
 - *"undo the last change"* or `/undo` -- restores files and reverses the operations from the journal
 
 Commands in both clients: `/status` `/update` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
-`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/language` `/help`.
+`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/providers` `/yolo` `/language` `/help`.
 
 ---
 
@@ -211,6 +211,13 @@ The detailed documentation in `docs/` is written in Polish; this README and the 
 - [Security](./docs/security.md)
 - [Wire protocol](./docs/protocol.md)
 - [Changelog](./docs/changelog.md)
+
+---
+
+## License
+
+MIT -- see [LICENSE](./LICENSE). Pipe is and will stay a free, open-source project;
+bug reports and pull requests are welcome.
 
 ---
 

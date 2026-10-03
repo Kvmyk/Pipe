@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.21.5
+Pipe v0.22.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -18,7 +18,7 @@ Obraz Dockera budowany jest dla **amd64 i arm64** (Hetzner CAX, Oracle Ampere, A
 ## Docker (VPS)
 
 ```bash
-git clone https://github.com/user/pipe && cd pipe
+git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh
 ```
 

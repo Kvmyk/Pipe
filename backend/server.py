@@ -338,6 +338,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _providers(writer, command, request, interface, role)
         elif command == "language":
             await _language(writer, args, interface, role)
+        elif command == "yolo":
+            await _yolo(writer, agent, args, session_id, interface, identity, role)
         elif command == "usage":
             priced = bool(settings.LLM_PRICE_IN or settings.LLM_PRICE_OUT)
             await _send(writer, _data(usage.report(7, priced=priced, token_limit=settings.DAILY_TOKEN_LIMIT,
@@ -462,6 +464,50 @@ async def _language(writer, args: str, interface: str, role: str) -> None:
     get_watcher().notifier.publish({"type": "language", "lang": target}, transient=True)
     await _send(writer, _data(state(tr("Od teraz rozmawiamy po polsku — instrukcje agenta, raporty i komunikaty.",
                                        "From now on we speak English — the agent's instructions, reports and messages."))))
+
+
+YOLO_ON = ("on", "wlacz", "włącz", "tak", "yes", "1", "true")
+YOLO_OFF = ("off", "wylacz", "wyłącz", "nie", "no", "0", "false")
+
+
+async def _yolo(writer, agent, args: str, session_id: str, interface: str, identity: str, role: str) -> None:
+    """
+    /yolo [on|off] — operacje wymagajace potwierdzenia wykonuja sie w tej sesji bez pytania (bezpiecznik,
+    dziennik i /cofnij dzialaja dalej; zakazane — nadal odrzucane). Tylko admin; bez argumentu — stan.
+    Domyslnie wylaczony, nie przetrwa restartu backendu; inne sesje (inne kanaly) go nie dziedzicza.
+    """
+    session = agent.get_or_create_session(session_id, interface, owner=identity, role=role)
+
+    def state(text: str) -> dict:
+        return {"yolo": session.runs_yolo, "can_edit": role == "admin", "text": text}
+
+    choice = args.lower()
+    if not choice:
+        await _send(writer, _data(state(
+            tr("YOLO jest wlaczone: zmiany wykonuja sie bez pytania. Wylacz: /yolo off", "YOLO is on: changes run "
+               "without asking. Turn it off: /yolo off") if session.runs_yolo else
+            tr("YOLO jest wylaczone: kazda zmiana czeka na Twoje TAK. Wlacz: /yolo on", "YOLO is off: every change "
+               "waits for your YES. Turn it on: /yolo on"))))
+        return
+    if choice not in YOLO_ON + YOLO_OFF:
+        await _send(writer, _error(tr(f"Nie rozumiem {args!r}. Uzyj: /yolo on albo /yolo off.",
+                                      f"I do not understand {args!r}. Use: /yolo on or /yolo off.")))
+        return
+    if role != "admin":
+        await _send(writer, _error(tr("Tryb YOLO moze wlaczyc tylko administrator.",
+                                      "Only an administrator can turn on YOLO mode.")))
+        return
+    session.yolo = choice in YOLO_ON
+    await audit.log_confirmed(interface, f"yolo {'on' if session.yolo else 'off'}", 0)
+    print(f"[server] YOLO {'wlaczone' if session.yolo else 'wylaczone'} ({interface})", flush=True)
+    await _send(writer, _data(state(
+        tr("YOLO wlaczone. Od teraz zmiany w tej rozmowie wykonuje bez pytania — bezpiecznik robi kopie, a kazda "
+           "zmiana trafia do dziennika (/cofnij). Operacje zakazane nadal odrzucam. Wylacz: /yolo off",
+           "YOLO is on. From now on I make changes in this conversation without asking — the safety fuse takes "
+           "backups and every change goes to the journal (/undo). Forbidden operations are still refused. "
+           "Turn it off: /yolo off") if session.yolo else
+        tr("YOLO wylaczone. Kazda zmiana znow czeka na Twoje TAK.",
+           "YOLO is off. Every change waits for your YES again."))))
 
 
 async def _reminders(writer, request: dict, interface: str, role: str) -> None:

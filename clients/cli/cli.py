@@ -254,6 +254,8 @@ class RemoteClient:
     ) -> None:
         self.session_id = session_id
         self.host = host
+        # polaczono ponownie po zerwaniu (np. restart backendu) — stan sesji (YOLO) trzeba odczytac na nowo
+        self.reconnected = False
         self.port = port
         self.token = token
         self._reader: asyncio.StreamReader | None = None
@@ -338,6 +340,7 @@ class RemoteClient:
                     await self.connect()
                 await self._exchange(data, responses)
                 if deadline:
+                    self.reconnected = True
                     console.print(tr("[dim]Połączono ponownie.[/dim]", "[dim]Reconnected.[/dim]"))
                 return responses
             except (OSError, EOFError) as exc:
@@ -445,13 +448,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.21.5[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.22.0[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.21.5[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.22.0[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -529,6 +532,7 @@ COMMAND_ALIASES = {
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
+    "providers": "providerzy", "provider": "providerzy",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -557,6 +561,9 @@ COMMANDS = [
     ("koszt", "cost", "zużycie tokenów i koszt LLM", "token usage and LLM cost"),
     ("historia", "history", "ostatnie wpisy audit logu", "latest audit-log entries"),
     ("aktualizuj", "update", "zaktualizuj Pipe na serwerze; /aktualizuj sprawdz", "update Pipe on the server; /update check"),
+    ("providerzy", "providers", "providerzy LLM: klucz, model, przełączenie (/providerzy groq)",
+     "LLM providers: key, model, switching (/providers groq)"),
+    ("yolo", "yolo", "zmiany bez pytania o TAK: /yolo on, /yolo off", "changes without asking for YES: /yolo on, /yolo off"),
     ("jezyk", "language", "język Pipe: /jezyk en albo /jezyk pl", "Pipe's language: /language pl or /language en"),
     ("pomoc", "help", "lista komend", "list of commands"),
     ("exit", "exit", "wyjście", "quit"),
@@ -586,6 +593,8 @@ HELP_TEXT = """**Komendy**
 - `/mcp` — serwery MCP, z których korzysta Pipe
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
+- `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq`, `/providerzy groq llama-3.3-70b-versatile`); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
+- `/yolo [on|off]` — tryb YOLO: zmiany w tej rozmowie wykonują się bez pytania o TAK (kopie, dziennik i `/cofnij` działają dalej; operacje zakazane — nadal odrzucane). Domyślnie wyłączony
 - `/jezyk [pl|en]` — język Pipe: instrukcje agenta, raporty i komunikaty (wspólny dla CLI, weba i Telegrama)
 - `/pomoc` — ta lista
 - `/exit` — wyjście
@@ -617,6 +626,8 @@ HELP_TEXT_EN = """**Commands**
 - `/mcp` — MCP servers Pipe uses
 - `/cost` — token usage and LLM cost
 - `/history` — latest audit-log entries
+- `/providers` — LLM providers: add a key, change the model or switch (`/providers groq`, `/providers groq llama-3.3-70b-versatile`); `/providers forget <id>` — remove a key added from the interface
+- `/yolo [on|off]` — YOLO mode: changes in this conversation run without asking for YES (backups, the journal and `/undo` still work; forbidden operations are still refused). Off by default
 - `/language [pl|en]` — Pipe's language: the agent's instructions, reports and messages (shared by the CLI, web and Telegram)
 - `/help` — this list
 - `/exit` — quit
@@ -698,13 +709,13 @@ def _prompt_reader(client: "RemoteClient | None" = None, **session_options):
     """
     if PromptSession is None or not (session_options or sys.stdin.isatty()):
         async def plain() -> str:
-            return Prompt.ask("[bold cyan]>[/bold cyan]")
+            return Prompt.ask(("[bold red]YOLO[/bold red] " if _yolo else "") + "[bold cyan]>[/bold cyan]")
         return plain
 
     session = PromptSession(completer=SlashCompleter(), complete_while_typing=True, **session_options)
 
     async def ask() -> str:
-        message = [("bold ansicyan", ">"), ("", ": ")]
+        message = ([("bold ansired", "YOLO "), ] if _yolo else []) + [("bold ansicyan", ">"), ("", ": ")]
         if client is None:
             return await session.prompt_async(message)
         # czekajac na wpis, CLI odbiera wiadomosci od Pipe; patch_stdout rysuje je nad promptem
@@ -717,6 +728,167 @@ def _prompt_reader(client: "RemoteClient | None" = None, **session_options):
             stop.set()
             await watcher                    # nie przerywamy wymiany w polowie — polaczenie jest wspolne
     return ask
+
+
+# Tryb YOLO tej sesji (stan zyje w backendzie; tu tylko znacznik w prompcie).
+_yolo = False
+
+
+async def _sync_yolo(client: "RemoteClient") -> None:
+    """Stan YOLO z backendu — po starcie i po ponownym polaczeniu (restart backendu wylacza YOLO)."""
+    global _yolo
+    was = _yolo
+    try:
+        _yolo = bool(_response_data(await client.send_command("yolo")).get("yolo"))
+    except Exception:
+        _yolo = False          # starszy backend nie zna tej komendy
+    if was and not _yolo:
+        console.print(tr("[yellow]YOLO jest wyłączone (backend uruchomił się ponownie) — zmiany znów czekają na TAK.[/yellow]",
+                         "[yellow]YOLO is off (the backend restarted) — changes wait for YES again.[/yellow]"))
+
+
+async def _after_reconnect(client: "RemoteClient") -> None:
+    if client.reconnected:
+        client.reconnected = False
+        if _yolo:
+            await _sync_yolo(client)
+
+
+PROVIDER_FORGET = ("zapomnij", "forget", "usun", "usuń", "remove")
+MODELS_SHOWN = 20
+
+
+def _provider_line(index: int, provider: dict) -> str:
+    """Wiersz listy providerow (bez kluczy — backend ich nie wysyla)."""
+    if provider.get("active"):
+        mark = "[green]✓[/green]"
+    elif provider.get("ready"):
+        mark = "[cyan]●[/cyan]"
+    else:
+        mark = "[dim]○[/dim]"
+    model = provider.get("model") or provider.get("default_model") or ""
+    if provider.get("ready"):
+        state = tr("klucz z .env", "key from .env") if provider.get("key_source") == "env" else \
+            tr("klucz dodany", "key added") if provider.get("key_source") == "web" else tr("bez klucza", "no key needed")
+    else:
+        state = tr("brak klucza", "no key") if provider.get("requires_key") else tr("wybierz model", "pick a model")
+    active = tr(" — aktywny", " — active") if provider.get("active") else ""
+    return (f"  {index:>2}. {mark} [bold]{escape(provider.get('name', ''))}[/bold] [dim]({escape(provider.get('id', ''))})[/dim]"
+            f"  {escape(model)}  [dim]{escape(state)}{active}[/dim]")
+
+
+def _print_providers(data: dict) -> None:
+    active = data.get("active") or {}
+    console.print(tr(f"[bold]Providerzy LLM[/bold] — agent korzysta z [bold]{escape(active.get('name', '?'))}[/bold] · {escape(active.get('model', ''))}",
+                     f"[bold]LLM providers[/bold] — the agent is using [bold]{escape(active.get('name', '?'))}[/bold] · {escape(active.get('model', ''))}"))
+    for index, provider in enumerate(data.get("providers", []), 1):
+        console.print(_provider_line(index, provider))
+
+
+def _find_provider(data: dict, wanted: str) -> dict | None:
+    wanted = wanted.strip().lower()
+    providers = data.get("providers", [])
+    if wanted.isdigit() and 1 <= int(wanted) <= len(providers):
+        return providers[int(wanted) - 1]
+    return next((p for p in providers if p.get("id") == wanted or str(p.get("name", "")).lower() == wanted), None)
+
+
+def _pick_model(models: list[str], answer: str) -> str:
+    """Odpowiedz uzytkownika -> nazwa modelu: numer z listy, dokladna nazwa albo jedyne pasujace."""
+    answer = answer.strip()
+    if answer.isdigit() and 1 <= int(answer) <= min(len(models), MODELS_SHOWN):
+        return models[int(answer) - 1]
+    if answer in models or not answer:
+        return answer
+    matching = [m for m in models if answer.lower() in m.lower()]
+    return matching[0] if len(matching) == 1 else answer
+
+
+async def _setup_provider(client: "RemoteClient", provider: dict, model: str = "") -> None:
+    """Klucz (gdy trzeba; wpisywany bez echa) -> model -> przelaczenie. Klucz idzie tylko do backendu."""
+    key = ""
+    if provider.get("requires_key"):
+        change = False
+        if provider.get("has_key"):
+            change = Confirm.ask(tr("Zmienić klucz API?", "Change the API key?"), default=False)
+        if not provider.get("has_key") or change:
+            if provider.get("key_url"):
+                console.print(tr(f"[dim]Klucz utworzysz tutaj: {escape(provider['key_url'])}[/dim]",
+                                 f"[dim]Create a key here: {escape(provider['key_url'])}[/dim]"))
+            key = getpass.getpass(tr("Klucz API (nie będzie widoczny): ", "API key (hidden): ")).strip()
+            if not key and not provider.get("has_key"):
+                console.print(tr("[dim]✖ Anulowano — bez klucza nie da się przełączyć.[/dim]",
+                                 "[dim]✖ Cancelled — cannot switch without a key.[/dim]"))
+                return
+    if not model:
+        console.print(tr("[dim]Pobieram listę modeli...[/dim]", "[dim]Fetching the model list...[/dim]"))
+        models = _response_data(await client.send_command("provider_models", name=provider["id"], key=key)).get("models", [])
+        current = provider.get("model") or provider.get("default_model") or (models[0] if models else "")
+        for index, name in enumerate(models[:MODELS_SHOWN], 1):
+            mark = " [green]✓[/green]" if name == current else ""
+            console.print(f"  {index:>2}. {escape(name)}{mark}")
+        if len(models) > MODELS_SHOWN:
+            console.print(tr(f"[dim]  … i {len(models) - MODELS_SHOWN} więcej — możesz wpisać nazwę albo jej fragment[/dim]",
+                             f"[dim]  … and {len(models) - MODELS_SHOWN} more — you can type a name or part of it[/dim]"))
+        model = _pick_model(models, Prompt.ask(tr("Model (numer albo nazwa)", "Model (number or name)"), default=current))
+    data = _response_data(await client.send_command("provider_set", name=provider["id"], key=key, model=model))
+    active = data.get("active") or {}
+    console.print(tr(f"[green]✓[/green] Od teraz odpowiada [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
+                     "[dim](dla całego agenta: CLI, web, Telegram, rutyny)[/dim]",
+                     f"[green]✓[/green] From now on you are talking to [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
+                     "[dim](for the whole agent: CLI, web, Telegram, routines)[/dim]"))
+
+
+async def _providers_command(args: str, client: "RemoteClient") -> None:
+    """
+    /providerzy — lista i (dla admina) wybor z klawiatury; /providerzy <id|nr> [model] — przelaczenie od razu
+    (provider bez klucza: pytanie o klucz); /providerzy zapomnij <id> — usuniecie klucza dodanego z interfejsu.
+    """
+    parts = args.split()
+    if parts and parts[0].lower() in PROVIDER_FORGET:
+        if len(parts) < 2:
+            console.print(tr("[dim]Użycie: /providerzy zapomnij <id>[/dim]", "[dim]Usage: /providers forget <id>[/dim]"))
+            return
+        data = _response_data(await client.send_command("provider_forget", name=parts[1].lower()))
+        console.print(tr("Klucz usunięty (o ile był dodany z interfejsu).", "Key removed (if it was added from the interface)."))
+        _print_providers(data)
+        return
+    data = _response_data(await client.send_command("providers"))
+    if parts:
+        provider = _find_provider(data, parts[0])
+        if provider is None:
+            console.print(tr(f"[red]Nie znam providera {escape(parts[0])!r}.[/red]", f"[red]Unknown provider {escape(parts[0])!r}.[/red]"))
+            _print_providers(data)
+        elif not data.get("can_edit"):
+            console.print(tr("[yellow]Providera może zmieniać tylko administrator.[/yellow]",
+                             "[yellow]Only an administrator can change the provider.[/yellow]"))
+        elif provider.get("ready"):
+            model = parts[1] if len(parts) > 1 else ""
+            current = _response_data(await client.send_command("provider_set", name=provider["id"], model=model)).get("active") or {}
+            console.print(tr(f"[green]✓[/green] Od teraz odpowiada [bold]{escape(current.get('name', ''))}[/bold] · {escape(current.get('model', ''))}",
+                             f"[green]✓[/green] From now on you are talking to [bold]{escape(current.get('name', ''))}[/bold] · {escape(current.get('model', ''))}"))
+        else:
+            await _setup_provider(client, provider, parts[1] if len(parts) > 1 else "")
+        return
+    _print_providers(data)
+    if not data.get("can_edit"):
+        console.print(tr("[dim]Providera może zmieniać tylko administrator.[/dim]", "[dim]Only an administrator can change the provider.[/dim]"))
+        return
+    try:
+        choice = Prompt.ask(tr("Numer albo id providera (Enter — bez zmian)", "Provider number or id (Enter — no change)"),
+                            default="", show_default=False)
+    except (KeyboardInterrupt, EOFError):
+        return
+    if not choice.strip():
+        return
+    provider = _find_provider(data, choice)
+    if provider is None:
+        console.print(tr(f"[red]Nie znam providera {escape(choice)!r}.[/red]", f"[red]Unknown provider {escape(choice)!r}.[/red]"))
+        return
+    try:
+        await _setup_provider(client, provider)
+    except (KeyboardInterrupt, EOFError):
+        console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
 
 
 def _set_lang(value: str) -> None:
@@ -769,6 +941,17 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         if args and data.get("lang"):
             _set_lang(data["lang"])
         console.print(escape(data.get("text", "")))
+        return True
+
+    if name == "providerzy":
+        await _providers_command(args, client)
+        return True
+
+    if name == "yolo":
+        global _yolo
+        data = _response_data(await client.send_command("yolo", args=args))
+        _yolo = bool(data.get("yolo"))
+        console.print(f"[bold red]{escape(data.get('text', ''))}[/bold red]" if _yolo and args else escape(data.get("text", "")))
         return True
 
     if name == "aktualizuj":
@@ -1150,6 +1333,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
 
     # baner dopiero po poznaniu jezyka agenta (/jezyk) — inaczej powitanie byloby zawsze w jezyku startowym
     await _sync_language(client)
+    await _sync_yolo(client)
     _print_banner(host)
     console.print(tr(f"[dim]Połączono z agentem na {host}[/dim]", f"[dim]Connected to the agent on {host}[/dim]"))
     await _first_run_welcome(client, host)
@@ -1191,6 +1375,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 if handled:
                     await _show_due_reminders(client)
                     await _refresh_skills(client)
+                    await _after_reconnect(client)
                     console.print()
                     continue
 
@@ -1200,6 +1385,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 await _handle_responses(responses, client)
                 await _show_due_reminders(client)
                 await _refresh_skills(client)
+                await _after_reconnect(client)
             except Exception as exc:
                 # _send samo laczy ponownie; blad tutaj nie konczy rozmowy — nastepna wiadomosc sprobuje znowu
                 console.print(tr(f"[red]Błąd komunikacji: {escape(str(exc))}[/red]", f"[red]Communication error: {escape(str(exc))}[/red]"))

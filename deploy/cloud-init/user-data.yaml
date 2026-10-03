@@ -31,7 +31,7 @@ write_files:
       AGENT_TOKEN=
       # docker (domyslnie) albo native (systemd, bez Dockera)
       PIPE_MODE=docker
-      PIPE_REPO=https://github.com/user/pipe.git
+      PIPE_REPO=https://github.com/Kvmyk/pipe.git
       PIPE_BRANCH=main
       # Opcjonalnie: bot Telegram (puste = bez bota)
       TELEGRAM_BOT_TOKEN=
