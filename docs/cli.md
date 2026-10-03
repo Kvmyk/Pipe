@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.22.0
+Pipe v0.22.1
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -175,7 +175,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
-| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, wybor z klawiatury (klucz API wpisywany bez echa, model z listy providera); `/providerzy groq` przelacza od razu, `/providerzy zapomnij <id>` usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
+| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
 | `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez pytania o TAK (bezpiecznik, dziennik i `/cofnij` dzialaja dalej, operacje zakazane sa nadal odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu; prompt pokazuje wtedy czerwone `YOLO` |
 | `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
 | `/mermaid` | Kod Mermaid ostatniego diagramu |

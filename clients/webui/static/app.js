@@ -755,6 +755,7 @@
       row.appendChild(name);
       row.appendChild(el("span", "desc", item.manage ? t("manageProviders") : item.provider.model));
       row.appendChild(el("span", "hint", !item.manage && item.provider.active ? "✓" : ""));
+      if (!item.manage) row.title = t(item.provider.active ? "changeModel" : "pickModel");
       row.addEventListener("click", () => pickMenu(index));
       row.addEventListener("mousemove", () => { if (menuIndex !== index) { menuIndex = index; moveMenuGlow(); } });
       menuList.appendChild(row);
@@ -785,14 +786,14 @@
     const item = menuItems[index];
     closeMenu();
     if (!item) return;
-    if (item.manage) openSetup(false); else switchProvider(item.provider);
+    if (item.manage) openSetup(false); else openProvider(item.provider);
   }
-  async function switchProvider(provider) {
-    if (provider.active) return;
+  // Wybor providera zawsze prowadzi do wyboru modelu z jego listy (obecny zaznaczony — Enter go zostawia);
+  // aktywny provider: zmiana samego modelu. `query` — fragment nazwy modelu z komendy /providerzy.
+  function openProvider(provider, query) {
     if (!llm.can_edit) { toast(t("providers"), t("viewerProviders")); return; }
-    if (busy) { toast(t("providers"), t("providerBusy")); return; }
-    try { if (applyProviders(await command({ command: "provider_set", name: provider.id }))) announceProvider(); }
-    catch (error) { toast(t("errorPrefix"), error.message); }
+    openSetup(false);
+    showProvider(provider, query);
   }
   pill.addEventListener("click", () => (menuOpen ? closeMenu() : openMenu()));
   pill.addEventListener("keydown", (event) => {
@@ -851,7 +852,7 @@
       grid.appendChild(card);
     });
   }
-  function showProvider(p) {
+  function showProvider(p, query) {
     stepKey.textContent = "";
     let models = [], filter = "", ticket = 0;
     const back = el("button", "ghost back", "← " + t("back"));
@@ -950,6 +951,14 @@
     function offerModels(note) {
       modelInput.value = [p.model, p.default_model].find((m) => m && (!models.length || models.includes(m))) || models[0] || "";
       filter = "";
+      if (query) {                       // /providerzy groq llama — jedno trafienie wybiera, kilka zaweza liste
+        const q = query.toLowerCase(), hits = models.filter((m) => m.toLowerCase().includes(q));
+        if (models.includes(query)) modelInput.value = query;
+        else if (hits.length === 1) modelInput.value = hits[0];
+        else if (hits.length) filter = query;
+        else if (!models.length) modelInput.value = query;
+        query = "";
+      }
       count.textContent = models.length ? models.length + " " + t("modelCount") : "";
       if (note) setStatus("", note);
       renderModels();
@@ -967,7 +976,7 @@
         models = data.models || [];
         setStatus(key ? "ok" : "", key ? t("keyOk") : "");
         offerModels(models.length ? "" : t("modelsUnavailable"));
-        if (key) modelInput.focus({ preventScroll: true });
+        modelInput.focus({ preventScroll: true });      // Enter zapisuje zaznaczony model
       } catch (error) {
         if (mine !== ticket) return;
         setStatus("bad", error.message);
@@ -1040,18 +1049,16 @@
     } catch (error) { add("agent error", md(t("errorPrefix") + ": " + error.message)); }
   }
 
-  // /providerzy — ekran wyboru; /providerzy <id> [model] — przelaczenie od razu (provider musi miec klucz)
+  // /providerzy — ekran wyboru; /providerzy <id> [fragment modelu] — od razu krok z modelem; /providerzy model — obecny provider
   async function providersCommand(args) {
     if (!llm) { add("agent error", md(t("offline"))); return; }
     const [wanted, model] = args.split(/\s+/).filter(Boolean);
     if (!wanted) { openSetup(false); return; }
-    const q = wanted.toLowerCase(), found = llm.providers.find((p) => p.id === q || p.name.toLowerCase() === q);
+    const q = wanted.toLowerCase();
+    const found = ["model", "modele", "models"].includes(q) ? llm.providers.find((p) => p.active)
+      : llm.providers.find((p) => p.id === q || p.name.toLowerCase() === q);
     if (!found) { toast(t("providers"), t("unknownProvider") + " " + wanted); openSetup(false); return; }
-    if (!found.ready || !llm.can_edit) { openSetup(false); showProvider(found); return; }
-    if (found.active && (!model || model === found.model)) { toast(t("providers"), t("providerNow") + " " + found.name + " · " + found.model); return; }
-    if (busy) { toast(t("providers"), t("providerBusy")); return; }
-    try { if (applyProviders(await command({ command: "provider_set", name: found.id, model: model || "" }))) announceProvider(); }
-    catch (error) { toast(t("errorPrefix"), error.message); }
+    openProvider(found, model || "");
   }
 
   // YOLO: zmiany w tej rozmowie bez pytania o TAK — stan zyje w sesji backendu, tu tylko znacznik

@@ -448,13 +448,13 @@ def _print_banner(host: str) -> None:
     console.print(
         Panel.fit(
             f"{ascii_art}\n"
-            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.22.0[/dim]\n\n"
+            + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.22.1[/dim]\n\n"
                  f"[dim]Połączono z: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Komendy: [bold cyan]/status[/bold cyan]  [bold cyan]/raport[/bold cyan]  [bold cyan]/zmiany[/bold cyan]  "
                  "[bold cyan]/mapa[/bold cyan]  [bold cyan]/server[/bold cyan]  "
                  "[bold cyan]/skille[/bold cyan]  [bold cyan]/pomoc[/bold cyan]  "
                  "[bold cyan]/exit[/bold cyan][/dim]",
-                 "[dim]Autonomous AI agent for managing a Linux server | v0.22.0[/dim]\n\n"
+                 "[dim]Autonomous AI agent for managing a Linux server | v0.22.1[/dim]\n\n"
                  f"[dim]Connected to: [bold white]{host}[/bold white][/dim]\n"
                  "[dim]Commands: [bold cyan]/status[/bold cyan]  [bold cyan]/report[/bold cyan]  [bold cyan]/changes[/bold cyan]  "
                  "[bold cyan]/map[/bold cyan]  [bold cyan]/server[/bold cyan]  "
@@ -593,7 +593,7 @@ HELP_TEXT = """**Komendy**
 - `/mcp` — serwery MCP, z których korzysta Pipe
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
-- `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq`, `/providerzy groq llama-3.3-70b-versatile`); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
+- `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq` — potem model z listy providera, `/providerzy groq llama` — model po fragmencie nazwy, `/providerzy model` — tylko zmiana modelu); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
 - `/yolo [on|off]` — tryb YOLO: zmiany w tej rozmowie wykonują się bez pytania o TAK (kopie, dziennik i `/cofnij` działają dalej; operacje zakazane — nadal odrzucane). Domyślnie wyłączony
 - `/jezyk [pl|en]` — język Pipe: instrukcje agenta, raporty i komunikaty (wspólny dla CLI, weba i Telegrama)
 - `/pomoc` — ta lista
@@ -626,7 +626,7 @@ HELP_TEXT_EN = """**Commands**
 - `/mcp` — MCP servers Pipe uses
 - `/cost` — token usage and LLM cost
 - `/history` — latest audit-log entries
-- `/providers` — LLM providers: add a key, change the model or switch (`/providers groq`, `/providers groq llama-3.3-70b-versatile`); `/providers forget <id>` — remove a key added from the interface
+- `/providers` — LLM providers: add a key, change the model or switch (`/providers groq` — then a model from the provider's list, `/providers groq llama` — a model by part of its name, `/providers model` — change only the model); `/providers forget <id>` — remove a key added from the interface
 - `/yolo [on|off]` — YOLO mode: changes in this conversation run without asking for YES (backups, the journal and `/undo` still work; forbidden operations are still refused). Off by default
 - `/language [pl|en]` — Pipe's language: the agent's instructions, reports and messages (shared by the CLI, web and Telegram)
 - `/help` — this list
@@ -755,6 +755,7 @@ async def _after_reconnect(client: "RemoteClient") -> None:
 
 
 PROVIDER_FORGET = ("zapomnij", "forget", "usun", "usuń", "remove")
+PROVIDER_MODEL = ("model", "modele", "models")         # /providerzy model — tylko zmiana modelu
 MODELS_SHOWN = 20
 
 
@@ -800,16 +801,87 @@ def _pick_model(models: list[str], answer: str) -> str:
         return models[int(answer) - 1]
     if answer in models or not answer:
         return answer
-    matching = [m for m in models if answer.lower() in m.lower()]
+    matching = _matching_models(models, answer)
     return matching[0] if len(matching) == 1 else answer
 
 
-async def _setup_provider(client: "RemoteClient", provider: dict, model: str = "") -> None:
-    """Klucz (gdy trzeba; wpisywany bez echa) -> model -> przelaczenie. Klucz idzie tylko do backendu."""
+def _matching_models(models: list[str], query: str) -> list[str]:
+    query = query.strip().lower()
+    return [m for m in models if query in m.lower()] if query else list(models)
+
+
+def _print_models(models: list[str], current: str) -> None:
+    for index, name in enumerate(models[:MODELS_SHOWN], 1):
+        mark = tr(" [green]✓ obecny[/green]", " [green]✓ current[/green]") if name == current else ""
+        console.print(f"  {index:>2}. {escape(name)}{mark}")
+    if len(models) > MODELS_SHOWN:
+        console.print(tr(f"[dim]  … i {len(models) - MODELS_SHOWN} więcej — wpisz fragment nazwy, żeby zawęzić listę[/dim]",
+                         f"[dim]  … and {len(models) - MODELS_SHOWN} more — type part of a name to narrow the list[/dim]"))
+
+
+async def _choose_model(client: "RemoteClient", provider: dict, key: str = "", query: str = "") -> str:
+    """
+    Model z listy, ktora zwraca provider (obecny zaznaczony i domyslny — Enter zostawia go bez zmian).
+    `query` — fragment nazwy podany w komendzie: jedno trafienie wybiera od razu, kilka zaweza liste.
+    Gdy listy nie da sie pobrac (np. lokalna Ollama nie odpowiada), nazwe mozna wpisac recznie.
+    """
+    console.print(tr(f"[dim]Pobieram modele {escape(provider.get('name', ''))}...[/dim]",
+                     f"[dim]Fetching {escape(provider.get('name', ''))} models...[/dim]"))
+    try:
+        models = _response_data(await client.send_command("provider_models", name=provider["id"], key=key)).get("models", [])
+    except RuntimeError as exc:
+        if key:
+            raise                              # nowy klucz musi dzialac — blad idzie do uzytkownika
+        console.print(tr(f"[yellow]{escape(str(exc))}[/yellow] [dim]— wpisz nazwę modelu ręcznie.[/dim]",
+                         f"[yellow]{escape(str(exc))}[/yellow] [dim]— type the model name yourself.[/dim]"))
+        models = []
+    current = provider.get("model") or provider.get("default_model") or (models[0] if models else "")
+    if query:
+        if not models or query in models:
+            return query
+        shown = _matching_models(models, query)
+        if len(shown) == 1:
+            return shown[0]
+        if not shown:
+            console.print(tr(f"[yellow]Żaden model nie pasuje do {escape(query)!r} — oto pełna lista.[/yellow]",
+                             f"[yellow]No model matches {escape(query)!r} — here is the full list.[/yellow]"))
+            shown = models
+    else:
+        shown = models
+    while True:
+        if shown:
+            console.print(tr(f"[bold]Modele {escape(provider.get('name', ''))}[/bold] ({len(shown)})",
+                             f"[bold]{escape(provider.get('name', ''))} models[/bold] ({len(shown)})"))
+            _print_models(shown, current)
+        answer = Prompt.ask(tr("Model (numer, nazwa albo fragment; Enter — obecny)", "Model (number, name or part of it; Enter — current)"),
+                            default=current).strip()
+        picked = _pick_model(shown, answer)
+        if not models or picked in models:
+            return picked
+        narrowed = _matching_models(models, answer)
+        if narrowed:
+            shown = narrowed
+            continue
+        if Confirm.ask(tr(f"Modelu {escape(picked)!r} nie ma na liście providera. Użyć mimo to?",
+                          f"Model {escape(picked)!r} is not on the provider's list. Use it anyway?"), default=False):
+            return picked
+        shown = models
+
+
+def _announce_provider(data: dict) -> None:
+    active = data.get("active") or {}
+    console.print(tr(f"[green]✓[/green] Od teraz odpowiada [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
+                     "[dim](dla całego agenta: CLI, web, Telegram, rutyny)[/dim]",
+                     f"[green]✓[/green] From now on you are talking to [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
+                     "[dim](for the whole agent: CLI, web, Telegram, routines)[/dim]"))
+
+
+async def _setup_provider(client: "RemoteClient", provider: dict, query: str = "", *, ask_key: bool = True) -> None:
+    """Klucz (gdy trzeba; wpisywany bez echa) -> model z listy providera -> przelaczenie. Klucz idzie tylko do backendu."""
     key = ""
     if provider.get("requires_key"):
         change = False
-        if provider.get("has_key"):
+        if provider.get("has_key") and ask_key:
             change = Confirm.ask(tr("Zmienić klucz API?", "Change the API key?"), default=False)
         if not provider.get("has_key") or change:
             if provider.get("key_url"):
@@ -820,29 +892,18 @@ async def _setup_provider(client: "RemoteClient", provider: dict, model: str = "
                 console.print(tr("[dim]✖ Anulowano — bez klucza nie da się przełączyć.[/dim]",
                                  "[dim]✖ Cancelled — cannot switch without a key.[/dim]"))
                 return
+    model = await _choose_model(client, provider, key, query)
     if not model:
-        console.print(tr("[dim]Pobieram listę modeli...[/dim]", "[dim]Fetching the model list...[/dim]"))
-        models = _response_data(await client.send_command("provider_models", name=provider["id"], key=key)).get("models", [])
-        current = provider.get("model") or provider.get("default_model") or (models[0] if models else "")
-        for index, name in enumerate(models[:MODELS_SHOWN], 1):
-            mark = " [green]✓[/green]" if name == current else ""
-            console.print(f"  {index:>2}. {escape(name)}{mark}")
-        if len(models) > MODELS_SHOWN:
-            console.print(tr(f"[dim]  … i {len(models) - MODELS_SHOWN} więcej — możesz wpisać nazwę albo jej fragment[/dim]",
-                             f"[dim]  … and {len(models) - MODELS_SHOWN} more — you can type a name or part of it[/dim]"))
-        model = _pick_model(models, Prompt.ask(tr("Model (numer albo nazwa)", "Model (number or name)"), default=current))
-    data = _response_data(await client.send_command("provider_set", name=provider["id"], key=key, model=model))
-    active = data.get("active") or {}
-    console.print(tr(f"[green]✓[/green] Od teraz odpowiada [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
-                     "[dim](dla całego agenta: CLI, web, Telegram, rutyny)[/dim]",
-                     f"[green]✓[/green] From now on you are talking to [bold]{escape(active.get('name', ''))}[/bold] · {escape(active.get('model', ''))} "
-                     "[dim](for the whole agent: CLI, web, Telegram, routines)[/dim]"))
+        console.print(tr("[dim]✖ Anulowano — nie wybrano modelu.[/dim]", "[dim]✖ Cancelled — no model chosen.[/dim]"))
+        return
+    _announce_provider(_response_data(await client.send_command("provider_set", name=provider["id"], key=key, model=model)))
 
 
 async def _providers_command(args: str, client: "RemoteClient") -> None:
     """
-    /providerzy — lista i (dla admina) wybor z klawiatury; /providerzy <id|nr> [model] — przelaczenie od razu
-    (provider bez klucza: pytanie o klucz); /providerzy zapomnij <id> — usuniecie klucza dodanego z interfejsu.
+    /providerzy — lista i (dla admina) wybor z klawiatury: provider, potem model z jego listy;
+    /providerzy <id|nr> [model albo fragment] — od razu do wyboru modelu (provider bez klucza: najpierw klucz);
+    /providerzy model — zmiana modelu obecnego providera; /providerzy zapomnij <id> — usuniecie klucza z interfejsu.
     """
     parts = args.split()
     if parts and parts[0].lower() in PROVIDER_FORGET:
@@ -855,27 +916,32 @@ async def _providers_command(args: str, client: "RemoteClient") -> None:
         return
     data = _response_data(await client.send_command("providers"))
     if parts:
-        provider = _find_provider(data, parts[0])
+        if not data.get("can_edit"):
+            console.print(tr("[yellow]Providera może zmieniać tylko administrator.[/yellow]",
+                             "[yellow]Only an administrator can change the provider.[/yellow]"))
+            return
+        if parts[0].lower() in PROVIDER_MODEL:
+            provider = next((p for p in data.get("providers", []) if p.get("active")), None)
+            rest = parts[1:]
+        else:
+            provider = _find_provider(data, parts[0])
+            rest = parts[1:]
         if provider is None:
             console.print(tr(f"[red]Nie znam providera {escape(parts[0])!r}.[/red]", f"[red]Unknown provider {escape(parts[0])!r}.[/red]"))
             _print_providers(data)
-        elif not data.get("can_edit"):
-            console.print(tr("[yellow]Providera może zmieniać tylko administrator.[/yellow]",
-                             "[yellow]Only an administrator can change the provider.[/yellow]"))
-        elif provider.get("ready"):
-            model = parts[1] if len(parts) > 1 else ""
-            current = _response_data(await client.send_command("provider_set", name=provider["id"], model=model)).get("active") or {}
-            console.print(tr(f"[green]✓[/green] Od teraz odpowiada [bold]{escape(current.get('name', ''))}[/bold] · {escape(current.get('model', ''))}",
-                             f"[green]✓[/green] From now on you are talking to [bold]{escape(current.get('name', ''))}[/bold] · {escape(current.get('model', ''))}"))
-        else:
-            await _setup_provider(client, provider, parts[1] if len(parts) > 1 else "")
+            return
+        try:
+            await _setup_provider(client, provider, " ".join(rest), ask_key=not provider.get("ready"))
+        except (KeyboardInterrupt, EOFError):
+            console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
         return
     _print_providers(data)
     if not data.get("can_edit"):
         console.print(tr("[dim]Providera może zmieniać tylko administrator.[/dim]", "[dim]Only an administrator can change the provider.[/dim]"))
         return
     try:
-        choice = Prompt.ask(tr("Numer albo id providera (Enter — bez zmian)", "Provider number or id (Enter — no change)"),
+        choice = Prompt.ask(tr("Numer albo id providera — także obecnego, żeby zmienić model (Enter — bez zmian)",
+                               "Provider number or id — the current one too, to change the model (Enter — no change)"),
                             default="", show_default=False)
     except (KeyboardInterrupt, EOFError):
         return

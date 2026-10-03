@@ -212,7 +212,7 @@ class TestClients:
         text = tg_format.format_providers(data, admin=True)
         assert "gemini-2.5-flash" in text and "OpenAI &lt;x&gt;" in text and "nie wysylaj" in text
         assert "tylko administrator" in tg_format.format_providers(data, admin=False)
-        assert tg_format.provider_choices(data) == [("Groq", "groq")]
+        assert tg_format.provider_choices(data) == [("✓ Google Gemini", "gemini"), ("Groq", "groq")]
 
     def test_web_commands(self):
         from pathlib import Path
@@ -221,6 +221,6 @@ class TestClients:
         app = (static / "app.js").read_text(encoding="utf-8")
         strings = (static / "i18n.js").read_text(encoding="utf-8")
         assert '["providerzy", "providers", "c_provider", true]' in app and '["yolo", "yolo", "c_yolo", true]' in app
-        assert "providerzy: (args) => providersCommand(args)" in app and "yolo: (args) => setYolo(args)" in app
+        assert "providerzy: (args) => providersCommand(args)" in app and "openProvider(item.provider)" in app and "yolo: (args) => setYolo(args)" in app
         assert 'id="yolo-chip"' in (static / "index.html").read_text(encoding="utf-8")
         assert strings.count("c_yolo:") == 2 and strings.count("yoloChip:") == 2 and strings.count("unknownProvider:") == 2

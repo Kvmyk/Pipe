@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.22.0
+Pipe v0.22.1
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -182,7 +182,7 @@ nazwy dzialaja w obu jezykach.
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
-| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista i przyciski przelaczenia miedzy providerami z kluczem; `/providerzy groq llama-3.3-70b-versatile` -- z modelem. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |
+| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |
 | `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez przyciskow TAK/NIE (bezpiecznik, dziennik i `/cofnij` dzialaja dalej; zakazane -- odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu |
 | `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
 | `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |

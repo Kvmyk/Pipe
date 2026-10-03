@@ -213,7 +213,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
-    ("providerzy", "Providerzy LLM: przelacz (/providerzy groq [model])"),
+    ("providerzy", "Providerzy LLM i model (/providerzy groq, /providerzy model)"),
     ("yolo", "Zmiany bez pytania o TAK (/yolo on, /yolo off)"),
     ("jezyk", "Jezyk Pipe (/jezyk en albo /jezyk pl)"),
     ("pomoc", "Lista komend"),
@@ -242,7 +242,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("mcp", "MCP servers Pipe uses"),
     ("cost", "Token usage and LLM cost"),
     ("history", "Latest audit-log entries"),
-    ("providers", "LLM providers: switch (/providers groq [model])"),
+    ("providers", "LLM providers and model (/providers groq, /providers model)"),
     ("yolo", "Changes without asking for YES (/yolo on, /yolo off)"),
     ("language", "Pipe's language (/language pl or /language en)"),
     ("help", "List of commands"),
@@ -345,11 +345,11 @@ def format_providers(data: dict, *, admin: bool) -> str:
                      + (f" · <code>{html.escape(model)}</code>" if provider.get("ready") and model else "")
                      + ("" if provider.get("ready") else tr(" — brak klucza", " — no key")))
     if admin:
-        lines.append(tr("\nPrzelacz przyciskiem albo: <code>/providerzy groq</code>, z modelem: "
-                        "<code>/providerzy groq llama-3.3-70b-versatile</code>.\n"
+        lines.append(tr("\nWybierz providera przyciskiem (aktywny — zeby zmienic model) albo: <code>/providerzy groq</code>, "
+                        "z modelem po fragmencie nazwy: <code>/providerzy groq llama</code>, sam model: <code>/providerzy model</code>.\n"
                         "<i>Klucze API dodasz w pipe web albo w CLI (/providerzy) — nie wysylaj ich przez czat.</i>",
-                        "\nSwitch with a button or: <code>/providers groq</code>, with a model: "
-                        "<code>/providers groq llama-3.3-70b-versatile</code>.\n"
+                        "\nPick a provider with a button (the active one — to change the model) or: <code>/providers groq</code>, "
+                        "with a model by part of its name: <code>/providers groq llama</code>, just the model: <code>/providers model</code>.\n"
                         "<i>Add API keys in pipe web or the CLI (/providers) — do not send them through the chat.</i>"))
     else:
         lines.append(tr("\n<i>Providera moze zmieniac tylko administrator.</i>",
@@ -358,9 +358,53 @@ def format_providers(data: dict, *, admin: bool) -> str:
 
 
 def provider_choices(data: dict) -> list[tuple[str, str]]:
-    """Przyciski przelaczenia: (etykieta, id) gotowych providerow poza aktywnym."""
-    return [(str(p.get("name", "")), str(p.get("id", ""))) for p in data.get("providers", [])
-            if p.get("ready") and not p.get("active") and p.get("id")]
+    """
+    Przyciski providerow: (etykieta, id) gotowych (z kluczem). Aktywny tez — jego przycisk zmienia tylko model.
+    Po kliknieciu bot pokazuje modele providera do wyboru.
+    """
+    return [(("✓ " if p.get("active") else "") + str(p.get("name", "")), str(p.get("id", "")))
+            for p in data.get("providers", []) if p.get("ready") and p.get("id")]
+
+
+MODELS_PER_PAGE = 8
+MAX_MODEL_LABEL = 60
+
+
+def match_models(models: list[str], query: str) -> list[str]:
+    """Modele pasujace do fragmentu nazwy (bez fragmentu — wszystkie)."""
+    query = (query or "").strip().lower()
+    return [m for m in models if query in m.lower()] if query else list(models)
+
+
+def model_page(models: list[str], current: str, page: int | None = None) -> tuple[list[tuple[str, int]], int, int]:
+    """
+    Jedna strona wyboru modelu: ([(etykieta, indeks w `models`)], strona, liczba stron). Bez `page` —
+    strona z obecnym modelem. Indeks (a nie nazwa) idzie do callback_data, ktore Telegram ogranicza do 64 bajtow.
+    """
+    pages = max(1, -(-len(models) // MODELS_PER_PAGE))
+    if page is None:
+        page = models.index(current) // MODELS_PER_PAGE if current in models else 0
+    page = min(max(page, 0), pages - 1)
+    start = page * MODELS_PER_PAGE
+    buttons = []
+    for index, name in enumerate(models[start:start + MODELS_PER_PAGE], start):
+        label = ("✓ " if name == current else "") + name
+        buttons.append((label if len(label) <= MAX_MODEL_LABEL else label[:MAX_MODEL_LABEL - 1] + "…", index))
+    return buttons, page, pages
+
+
+def format_model_picker(name: str, current: str, total: int, shown: int, query: str = "") -> str:
+    """Naglowek wiadomosci z wyborem modelu (HTML Telegrama)."""
+    head = tr(f"<b>Model: {html.escape(name)}</b>", f"<b>Model: {html.escape(name)}</b>")
+    if query:
+        head += tr(f" — pasuje do <code>{html.escape(query)}</code>: {shown} z {total}",
+                   f" — matching <code>{html.escape(query)}</code>: {shown} of {total}")
+    else:
+        head += tr(f" — {total} do wyboru", f" — {total} to choose from")
+    if current:
+        head += tr(f"\nObecny: <code>{html.escape(current)}</code>", f"\nCurrent: <code>{html.escape(current)}</code>")
+    return head + tr("\n<i>Dluga lista? Zawez: /providerzy &lt;id&gt; &lt;fragment nazwy&gt;</i>",
+                     "\n<i>Long list? Narrow it: /providers &lt;id&gt; &lt;part of the name&gt;</i>")
 
 
 def response_data(responses: list[dict]) -> dict:

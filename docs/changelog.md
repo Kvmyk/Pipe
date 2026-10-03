@@ -1,5 +1,20 @@
 # Historia zmian -- Pipe
 
+## v0.22.1 (2026-10-03)
+
+### Wybor modelu razem z providerem
+
+- Wybor providera prowadzi teraz zawsze do wyboru modelu z listy, ktora zwraca ten provider -- w CLI, `pipe web`
+  i na Telegramie. Obecny model jest zaznaczony i domyslny (Enter / "Zostaw ..." niczego nie zmienia),
+  fragment nazwy zaweza liste, a jedno trafienie wybiera od razu
+- Ten sam krok sluzy do zmiany samego modelu: `/providerzy model` albo wybranie aktywnego providera
+- CLI: lista modeli z numerami; `/providerzy groq llama` wybiera model po fragmencie nazwy, a nazwa spoza listy
+  providera wymaga potwierdzenia. Gdy listy nie da sie pobrac (np. lokalna Ollama nie odpowiada), nazwe mozna wpisac recznie
+- `pipe web`: klikniecie providera w przelaczniku nad polem wpisywania otwiera krok z modelem (wczesniej przelaczalo
+  od razu, z poprzednim modelem); Enter zapisuje zaznaczony
+- Telegram: po wyborze providera modele przychodza jako przyciski ze stronami (◀ 2/6 ▶), otwarte na stronie
+  z obecnym modelem; aktywny provider tez ma przycisk (✓) -- zeby zmienic model
+
 ## v0.22.0 (2026-10-03)
 
 ### Tryb YOLO (`/yolo`)

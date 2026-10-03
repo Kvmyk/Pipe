@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.22.0
+Pipe v0.22.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -84,7 +84,11 @@ from tg_format import (
     format_directory,
     format_help,
     format_investigation,
+    MAX_MODEL_LABEL,
+    format_model_picker,
     format_providers,
+    match_models,
+    model_page,
     provider_choices,
     format_list,
     format_listing,
@@ -524,8 +528,81 @@ def _providers_keyboard(data: dict, user_id: int) -> InlineKeyboardMarkup | None
     return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
 
 
+# Wybor modelu w toku, per uzytkownik: provider i lista modeli (callback_data niesie tylko indeks — limit 64 bajtow).
+# Po restarcie bota lista przepada; przycisk mowi wtedy, zeby wpisac /providerzy ponownie.
+_model_picks: dict[int, dict] = {}
+
+
+def _announce_provider_html(data: dict) -> str:
+    active = data.get("active") or {}
+    return tr(f"Od teraz odpowiada <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>",
+              f"From now on you are talking to <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>")
+
+
+def _models_keyboard(user_id: int, pick: dict, page: int | None = None) -> InlineKeyboardMarkup:
+    buttons, page, pages = model_page(pick["shown"], pick["current"], page)
+    rows = [[InlineKeyboardButton(label, callback_data=f"pms:{index}:{user_id}")] for label, index in buttons]
+    if pages > 1:
+        rows.append([InlineKeyboardButton("◀", callback_data=f"pmp:{(page - 1) % pages}:{user_id}"),
+                     InlineKeyboardButton(f"{page + 1}/{pages}", callback_data=f"pmp:{page}:{user_id}"),
+                     InlineKeyboardButton("▶", callback_data=f"pmp:{(page + 1) % pages}:{user_id}")])
+    if pick["current"]:
+        rows.append([InlineKeyboardButton(tr(f"Zostaw {pick['current']}", f"Keep {pick['current']}")[:MAX_MODEL_LABEL],
+                                          callback_data=f"pms:-1:{user_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def _offer_models(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, provider_id: str,
+                        query: str = "") -> None:
+    """
+    Po wyborze providera: modele z jego listy (obecny zaznaczony, "Zostaw ..." go zostawia). Fragment nazwy z komendy
+    zaweza liste, a jedno trafienie przelacza od razu. Gdy listy nie da sie pobrac — przelacza z podanym albo obecnym modelem.
+    """
+    client = get_client(user_id)
+    state = await client.data("providers")
+    provider = next((p for p in state.get("providers", []) if p.get("id") == provider_id), None)
+    if provider is None:
+        await context.bot.send_message(chat_id, tr(f"Nie znam providera {provider_id!r}. Lista: /providerzy",
+                                                   f"Unknown provider {provider_id!r}. List: /providers"))
+        return
+    if not provider.get("ready"):
+        await context.bot.send_message(chat_id, tr(
+            f"{provider.get('name')} nie ma jeszcze klucza API. Dodaj go w pipe web albo w CLI (/providerzy) — "
+            "nie wysylaj kluczy przez czat.",
+            f"{provider.get('name')} has no API key yet. Add it in pipe web or the CLI (/providers) — "
+            "do not send keys through the chat."))
+        return
+    current = provider.get("model") or provider.get("default_model") or ""
+    try:
+        models = (await client.data("provider_models", name=provider_id)).get("models", [])
+    except RuntimeError as exc:
+        models = []
+        await context.bot.send_message(chat_id, tr(f"Nie udalo sie pobrac listy modeli: {exc}",
+                                                   f"Could not fetch the model list: {exc}"))
+    shown = match_models(models, query)
+    direct = query if query and (not models or query in models) else shown[0] if query and len(shown) == 1 else ""
+    if not models and not direct:
+        direct = current                 # bez listy: przelaczenie z modelem, ktory provider juz ma
+    if direct:
+        data = await client.data("provider_set", name=provider_id, model=direct)
+        await context.bot.send_message(chat_id, _announce_provider_html(data), parse_mode=ParseMode.HTML)
+        return
+    if query and not shown:
+        await context.bot.send_message(chat_id, tr(f"Zaden model nie pasuje do {query!r} — oto pelna lista.",
+                                                   f"No model matches {query!r} — here is the full list."))
+        shown, query = models, ""
+    pick = {"provider": provider_id, "name": provider.get("name", provider_id), "shown": shown,
+            "current": current if current in models else ""}
+    _model_picks[user_id] = pick
+    await context.bot.send_message(chat_id, format_model_picker(pick["name"], pick["current"], len(models), len(shown), query),
+                                   parse_mode=ParseMode.HTML, reply_markup=_models_keyboard(user_id, pick))
+
+
 async def cmd_providerzy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/providerzy [id [model]] -- lista providerow LLM i przelaczenie (przyciski albo argumenty; tylko administrator)."""
+    """
+    /providerzy -- lista providerow LLM z przyciskami; wybor providera prowadzi do wyboru modelu.
+    /providerzy <id> [fragment modelu] -- od razu do modeli; /providerzy model -- model obecnego providera. Tylko administrator.
+    """
     user_id = await _guard(update)
     if not user_id:
         return
@@ -533,16 +610,14 @@ async def cmd_providerzy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     async def go() -> None:
         client = get_client(user_id)
-        if args and _is_admin(user_id):
-            data = await client.data("provider_set", name=args[0].lower(), model=args[1] if len(args) > 1 else "")
-            active = data.get("active") or {}
-            await update.message.reply_text(
-                tr(f"Od teraz odpowiada <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>",
-                   f"From now on you are talking to <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>"),
-                parse_mode=ParseMode.HTML)
-            return
         data = await client.data("providers")
         admin = _is_admin(user_id) and bool(data.get("can_edit"))
+        if args and admin:
+            wanted = args[0].lower()
+            if wanted in ("model", "modele", "models"):
+                wanted = (data.get("active") or {}).get("id", "")
+            await _offer_models(context, update.effective_chat.id, user_id, wanted, " ".join(args[1:]))
+            return
         await _send_html(context.bot, update.effective_chat.id, format_providers(data, admin=admin),
                          _providers_keyboard(data, user_id) if admin else None)
 
@@ -550,6 +625,7 @@ async def cmd_providerzy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _handle_provider_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """Przyciski: prov (provider -> lista modeli), pmp (strona listy), pms (wybrany model; -1 = zostaw obecny)."""
     query = update.callback_query
     user = update.effective_user
     parts = data.split(":")
@@ -557,18 +633,44 @@ async def _handle_provider_callback(update: Update, context: ContextTypes.DEFAUL
         await query.answer(tr("Providera zmienia tylko administrator.", "Only an administrator can change the provider."),
                            show_alert=True)
         return
-    await query.answer(tr("Przelaczam...", "Switching..."))
+    kind, value = parts[0], parts[1]
+
+    if kind == "prov":
+        await query.answer()
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await _backend_call(update, context, _offer_models(context, query.message.chat_id, user.id, value))
+        return
+
+    pick = _model_picks.get(user.id)
+    if pick is None:
+        await query.answer(tr("Ta lista wygasla — wpisz /providerzy ponownie.", "This list has expired — type /providers again."),
+                           show_alert=True)
+        return
+    if kind == "pmp":
+        await query.answer()
+        try:
+            await query.edit_message_reply_markup(reply_markup=_models_keyboard(user.id, pick, int(value)))
+        except Exception:
+            pass                                         # ta sama strona — Telegram odrzuca edycje bez zmian
+        return
     try:
-        await query.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        pass
+        index = int(value)
+        model = pick["current"] if index < 0 else pick["shown"][index]
+    except (ValueError, IndexError):
+        await query.answer()
+        return
+    await query.answer(tr("Przelaczam...", "Switching..."))
+    _model_picks.pop(user.id, None)
 
     async def go() -> None:
-        active = (await get_client(user.id).data("provider_set", name=parts[1])).get("active") or {}
-        await context.bot.send_message(query.message.chat_id, tr(
-            f"Od teraz odpowiada <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>",
-            f"From now on you are talking to <b>{html.escape(active.get('name', ''))}</b> · <code>{html.escape(active.get('model', ''))}</code>"),
-            parse_mode=ParseMode.HTML)
+        result = await get_client(user.id).data("provider_set", name=pick["provider"], model=model)
+        try:
+            await query.edit_message_text(_announce_provider_html(result), parse_mode=ParseMode.HTML)
+        except Exception:
+            await context.bot.send_message(query.message.chat_id, _announce_provider_html(result), parse_mode=ParseMode.HTML)
 
     await _backend_call(update, context, go())
 
@@ -829,7 +931,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _handle_approval_callback(update, context, data)
         return
 
-    if data.startswith("prov:"):
+    if data.startswith(("prov:", "pmp:", "pms:")):
         await _handle_provider_callback(update, context, data)
         return
 
