@@ -1,5 +1,13 @@
 # Historia zmian -- Pipe
 
+## v0.25.3 (2026-10-04)
+
+### Dokumentacja
+
+- Nowy `docs/roadmap.md` z planem nastepnej funkcji: zalaczniki (pliki, zdjecia) i glosowki w Telegramie,
+  `pipe web` i CLI -- zakres, stan wyjsciowy i decyzje do potwierdzenia przed startem. `CLAUDE.md` wskazuje na
+  ten plan w sekcji *Next up*
+
 ## v0.25.2 (2026-10-04)
 
 ### Repozytorium

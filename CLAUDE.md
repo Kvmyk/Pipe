@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.25.2** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.25.3** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings). Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README.
 
@@ -211,6 +211,10 @@ Telegram needs `clients/telegram/.env` with `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLO
 `VERSION` in the repo root is the single source of truth (`X.Y.Z`). The same string is duplicated in README, `docs/*.md` (including `features.md`, `deploy.md`), backend docstrings, `config/prompts.py`, the CLI banner and the Telegram bot — never hand-edit those; run `python scripts/bump_version.py patch|minor|major|X.Y.Z`, which rewrites every site from the `PATTERNS` list. A new hardcoded version site must be added to that list.
 
 The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump version → update `docs/changelog.md` and any docs the change invalidates (keep `README.en.md` in step with `README.md`) → run tests → commit → push. Changelog entries and commit messages are Polish.
+
+## Next up
+
+`docs/roadmap.md` holds the agreed next task (attachments — files, images — and voice notes in Telegram, `pipe web` and the CLI) with its scope and the decisions to confirm with the user before coding. Read it at the start of a session and remove the entry once it ships.
 
 ## Known limitations
 
