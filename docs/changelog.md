@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.25.1 (2026-10-04)
+
+### Wyglad
+
+- `pipe web` startuje domyslnie w ciemnym motywie; jasny zostaje, gdy ktos go wybral przyciskiem (wybor pamieta przegladarka)
+- Znak Pipe ma dluzsza nozke -- w logo README, ikonie karty przegladarki i gornym pasku `pipe web`
+- Nagrania w README sa w ciemnym motywie i plynniejsze: 25 klatek na sekunde zamiast 12 (`scripts/demo/record.py`
+  ustawia motyw jawnie i wypisuje, ile klatek zlapal)
+
 ## v0.25.0 (2026-10-04)
 
 ### Panel boczny w `pipe web`

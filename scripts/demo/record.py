@@ -78,6 +78,7 @@ async def record(url: str, lang: str, frames_dir: Path, theme: str, failure: Pat
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel="chrome", headless=True)
         context = await browser.new_context(viewport=VIEWPORT, color_scheme=theme, device_scale_factor=1)
+        await context.add_init_script(f"try {{ localStorage.setItem('pipe-theme', '{theme}'); }} catch (_) {{}}")
         page = await context.new_page()
         cdp = await context.new_cdp_session(page)
 
@@ -126,6 +127,10 @@ def to_gif(frames: list[tuple[Path, float]], out: Path, width: int, fps: int) ->
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise SystemExit("ffmpeg not found in PATH")
+    gaps = sorted(b - a for (_, a), (_, b) in zip(frames, frames[1:]))
+    span = frames[-1][1] - frames[0][1]
+    print(f"klatki: {len(frames)} w {span:.1f} s (srednio {len(frames) / span:.1f}/s, "
+          f"przerwa mediana {gaps[len(gaps) // 2] * 1000:.0f} ms, 95% {gaps[int(len(gaps) * .95)] * 1000:.0f} ms)")
     listing = out.with_suffix(".frames.txt")
     lines = []
     for (path, at), (_, following) in zip(frames, frames[1:]):
@@ -152,7 +157,7 @@ def main() -> None:
     parser.add_argument("--backend-python", default=sys.executable,
                         help="python with backend requirements (openai) for demo_backend.py")
     parser.add_argument("--width", type=int, default=1100)
-    parser.add_argument("--fps", type=int, default=12)
+    parser.add_argument("--fps", type=int, default=25)   # 25 = 4 cs na klatke: najplynniej, co GIF odtwarza rowno
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
