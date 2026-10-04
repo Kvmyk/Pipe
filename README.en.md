@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.26.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.26.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -19,7 +19,7 @@
   <a href="./README.md">Polski</a> · <b>English</b> ·
   <a href="https://kvmyk.github.io/pipe/en/">Website</a> ·
   <a href="#installation">Installation</a> ·
-  <a href="docs/">Documentation (Polish)</a>
+  <a href="https://kvmyk.github.io/pipe/en/docs/">Documentation</a>
 </p>
 
 <p align="center">
@@ -110,7 +110,7 @@ installer again. Language: `PIPE_LANG=en` in `backend/.env` and `clients/telegra
 or `/language en` at runtime.
 
 Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described in
-[docs/deploy.md](./docs/deploy.md).
+[docs/en/deploy.md](./docs/en/deploy.md).
 
 ## Security
 
@@ -120,23 +120,22 @@ Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described
 - Workers and routines only read. Every operation is written to an audit log.
 
 An important limitation: in Docker mode Pipe has access to `docker.sock`, which in practice means root on the server.
-The protection is your confirmation of every change. Full description: [docs/security.md](./docs/security.md).
+The protection is your confirmation of every change. Full description: [docs/en/security.md](./docs/en/security.md).
 
 ## Documentation
 
-The detailed documentation is in Polish; the commands, configuration names and examples read the same in both
-languages.
+The documentation is also on the website: [kvmyk.github.io/pipe/en/docs](https://kvmyk.github.io/pipe/en/docs/).
 
 | | |
 |---|---|
-| [Quick start](./docs/quickstart.md) | installation step by step |
-| [Features](./docs/features.md) | watching, workers, routines, diagrams, `pipe web`, MCP |
-| [Deployment](./docs/deploy.md) | Docker, systemd, Kubernetes, clouds |
-| [Backend](./docs/backend.md) | configuration, `.env` variables, agent tools |
-| [CLI](./docs/cli.md) and [Telegram](./docs/telegram.md) | clients and commands |
-| [Security](./docs/security.md) | classifier, confirmations, limitations |
-| [Protocol](./docs/protocol.md) | how clients talk to the backend |
-| [Changelog](./docs/changelog.md) | what changed in each version |
+| [Quick start](./docs/en/quickstart.md) | installation step by step |
+| [Features](./docs/en/features.md) | watching, workers, routines, diagrams, `pipe web`, MCP |
+| [Deployment](./docs/en/deploy.md) | Docker, systemd, Kubernetes, clouds |
+| [Backend](./docs/en/backend.md) | configuration, `.env` variables, agent tools |
+| [CLI](./docs/en/cli.md) and [Telegram](./docs/en/telegram.md) | clients and commands |
+| [Security](./docs/en/security.md) | classifier, confirmations, limitations |
+| [Protocol](./docs/en/protocol.md) | how clients talk to the backend |
+| [Changelog](./docs/changelog.md) | what changed in each version (in Polish) |
 
 ## License
 

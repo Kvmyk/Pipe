@@ -1,5 +1,19 @@
 # Historia zmian -- Pipe
 
+## v0.26.1 (2026-10-04)
+
+### Dokumentacja na stronie projektu
+
+- Strona projektu (GitHub Pages) ma dokumentacje: polska pod `/docs/`, angielska pod `/en/docs/`. Strony powstaja
+  przy budowie z `docs/*.md` i `docs/en/*.md` (`scripts/build_site.py`, wlasny konwerter Markdown bez zaleznosci),
+  maja menu wszystkich stron, spis sekcji i przelacznik PL/EN na te sama strone w drugim jezyku
+- Nowy katalog `docs/en/`: angielskie wersje szybkiego startu, funkcji, CLI, Telegrama, wdrozenia, bezpieczenstwa,
+  backendu i protokolu. `README.en.md` i angielska strona glowna linkuja do nich zamiast do polskich plikow
+- Strona glowna (PL i EN) ma w nawigacji i stopce link do dokumentacji; workflow strony rusza takze po zmianie
+  `docs/*.md`, `docs/en/*.md` i `VERSION`, a `bump_version.py` podbija wersje rowniez w `docs/en/`
+- Test `test_site.py` pilnuje, zeby kazda strona istniala w obu jezykach z ta sama liczba sekcji i zeby
+  zbudowana strona nie miala zepsutych linkow ani kotwic
+
 ## v0.26.0 (2026-10-04)
 
 ### Zalaczniki: pliki, zrzuty ekranu, logi

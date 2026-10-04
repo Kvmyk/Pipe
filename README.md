@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.26.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.26.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -125,6 +125,8 @@ Ważne ograniczenie: w trybie Docker Pipe ma dostęp do `docker.sock`, czyli w p
 Ochroną jest Twoje potwierdzenie przy każdej zmianie. Pełny opis: [docs/security.md](./docs/security.md).
 
 ## Dokumentacja
+
+Ta sama dokumentacja jest na stronie projektu: [kvmyk.github.io/pipe/docs](https://kvmyk.github.io/pipe/docs/).
 
 | | |
 |---|---|

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.26.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.26.1** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
-Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings). Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README. The project website (`site/`, Polish at `/`, English at `/en/`) and both READMEs are written in plain language with Polish diacritics — avoid AI-sounding copy (no "not just X but Y", no bold-first bullets, few dashes, concrete numbers).
+Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings); `docs/en/` mirrors the user docs in English, file for file and section for section (the website renders both, `test_site.py` checks that every page exists in both languages with the same number of `##` sections and that links/anchors resolve). A change to a `docs/*.md` page needs the same change in `docs/en/`. The site's page list is `DOCS` in `scripts/build_site.py`; its Markdown renderer is a small stdlib one that supports only what `docs/` uses. Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README. The project website (`site/`, Polish at `/`, English at `/en/`) and both READMEs are written in plain language with Polish diacritics — avoid AI-sounding copy (no "not just X but Y", no bold-first bullets, few dashes, concrete numbers).
 
 ## Commands
 
@@ -17,7 +17,7 @@ pytest backend/tests/test_security.py -v  # single file
 pytest backend/tests/test_security.py::TestClassifyCommandSafe -v   # single class
 python -m backend.server                  # local run; needs backend/.env (PIPE_RUNTIME=native outside Docker)
 python scripts/demo/record.py --lang pl  # README GIF: scripted demo backend + real `pipe web` + Playwright/ffmpeg (docs/assets/)
-python scripts/build_site.py             # project website (GitHub Pages) from site/ + docs/assets + Plex fonts -> _site/; deployed by .github/workflows/pages.yml
+python scripts/build_site.py             # project website (GitHub Pages) from site/ + docs/assets + Plex fonts + docs pages rendered from docs/*.md (/docs/) and docs/en/*.md (/en/docs/) -> _site/; deployed by .github/workflows/pages.yml
 ```
 
 Telegram tests (`test_telegram_bot.py`) are skipped unless `python-telegram-bot` is installed; diagram render tests are skipped without `mermaidx`. `backend/tests/conftest.py` forces `PIPE_RUNTIME=docker` for every test (tests describe the default deployment); tests for other modes override it. `backend/tests/fakes.py` has a scripted fake OpenAI client (`FakeClient`, `completion()`) and `assert_history_valid()` for agent-loop tests.
@@ -215,7 +215,7 @@ Telegram needs `clients/telegram/.env` with `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLO
 
 `VERSION` in the repo root is the single source of truth (`X.Y.Z`). The same string is duplicated in README, `docs/*.md` (including `features.md`, `deploy.md`), backend docstrings, `config/prompts.py`, the CLI banner and the Telegram bot — never hand-edit those; run `python scripts/bump_version.py patch|minor|major|X.Y.Z`, which rewrites every site from the `PATTERNS` list. A new hardcoded version site must be added to that list.
 
-The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump version → update `docs/changelog.md` and any docs the change invalidates (keep `README.en.md` in step with `README.md`) → run tests → commit → push. Changelog entries and commit messages are Polish.
+The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump version → update `docs/changelog.md` and any docs the change invalidates (keep `README.en.md` in step with `README.md`, and `docs/en/` in step with `docs/`) → run tests → commit → push. Changelog entries and commit messages are Polish.
 
 ## Next up
 

@@ -1,6 +1,6 @@
 name: Strona (GitHub Pages)
 
-# Publikuje strone projektu z katalogu site/ (sklada ja scripts/build_site.py).
+# Publikuje strone projektu z katalogu site/ i dokumentacje z docs/ (sklada je scripts/build_site.py).
 # Jednorazowo w repozytorium: Settings -> Pages -> Source: GitHub Actions.
 
 on:
@@ -8,7 +8,10 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "docs/*.md"
+      - "docs/en/*.md"
       - "docs/assets/**"
+      - "VERSION"
       - "clients/webui/static/fonts/**"
       - "scripts/build_site.py"
       - ".github/workflows/pages.yml"
