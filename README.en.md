@@ -1,8 +1,34 @@
-# Pipe
+<p align="center">
+  <img src="docs/assets/logo.svg" width="88" height="88" alt="Pipe">
+</p>
 
-**v0.24.0** -- An AI agent that looks after your servers instead of just answering questions.
+<h1 align="center">Pipe</h1>
 
-[Polski](./README.md) · **English**
+<p align="center">
+  <b>An AI agent that looks after your servers instead of just answering questions.</b>
+</p>
+
+<p align="center">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.25.0-1a1b1d?style=flat-square">
+  <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-1a1b1d?style=flat-square">
+  <img alt="Docker, systemd, Kubernetes" src="https://img.shields.io/badge/deploy-docker%20%C2%B7%20systemd%20%C2%B7%20k8s-1a1b1d?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="./README.md">Polski</a> · <b>English</b> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="docs/features.md">Features</a> ·
+  <a href="docs/security.md">Security</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent investigates 502 errors, searches the web, proposes an nginx fix with a safety-fuse plan and applies it after YES" width="100%">
+  <br>
+  <sub><code>pipe web</code> demo: the agent checks the logs, looks up the cause on the web and fixes nginx after your YES -- while the map next to the chat shows where it works.
+  Recorded from a scripted session (<a href="scripts/demo">scripts/demo</a>).</sub>
+</p>
 
 Pipe lives on the server permanently: it knows it (SERVER.md, a map of directories), watches it and speaks up
 first when something breaks. You talk to it from a terminal (CLI over an SSH tunnel) or from your phone

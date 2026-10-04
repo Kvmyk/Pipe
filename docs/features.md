@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.24.0
+Pipe v0.25.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -449,7 +449,15 @@ tunel co CLI.
 - Pod schematem jest os czasu dzialan, z krokami bezpiecznika (kopia, sprawdzenie, weryfikacja) i workerow.
 
 Przypisanie dzialania do elementu wynika z tresci komendy: nazwa kontenera, jednostka systemd, sciezka pliku, katalog
-projektu. Gdy sie nie da (np. dowolny skrypt), dzialanie jest pokazywane na calym serwerze.
+projektu. Gdy sie nie da (np. dowolny skrypt), dzialanie jest pokazywane na calym serwerze. Wyszukiwanie i czytanie
+stron (`web_search`, `web_fetch`, `software_info`) swieci na elemencie *Internet*.
+
+**Panel boczny** zajmuje domyslnie pol ekranu. Jego krawedz mozna przeciagnac -- wezej albo szerzej, najwyzej do polowy
+ekranu; dwuklik na krawedzi przywraca domyslna szerokosc, a przeciagniecie do prawej krawedzi okna chowa panel.
+Panel chowa tez przycisk w jego pasku zakladek; przycisk w gornym pasku chowa go i rozwija z powrotem. Ze schowanym
+panelem rozmowa zajmuje cale okno (tresc w czytelnej kolumnie posrodku), a komenda albo powiadomienie, ktore otwiera
+zakladke (np. `/alerty`), rozwija panel sam. Szerokosc i stan panelu zostaja w przegladarce. Z klawiatury: fokus na
+krawedzi, strzalki zmieniaja szerokosc, Enter chowa.
 
 **Zmiany.** Przed zatwierdzeniem zapisu pliku widac roznice w karcie potwierdzenia. Po wykonaniu roznica "przed -> po"
 pojawia sie w rozmowie i w zakladce *Zmiany* -- takze gdy plik zmienila komenda (np. `sed`), bo bezpiecznik robi kopie.

@@ -5,6 +5,7 @@ adresy z wynikow bez pytania, inne za zgoda, wstrzymanie YOLO po tresci z intern
 
 import asyncio
 import socket
+import sys
 
 import pytest
 
@@ -327,3 +328,15 @@ class TestKeylessSources:
         assert tool_result(session, "e1") == "EOL ubuntu 20.04"
         assert session.web_tainted
         assert_history_valid(session.messages)
+
+
+def test_web_tools_point_at_internet_node():
+    from backend.core import graph
+    assert graph.locate("web_search", {"query": "x"}) == ["internet"]
+    assert graph.locate("web_fetch", {"url": "https://x.org"}) == ["internet"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="sciezki hosta w trybie docker sa posiksowe")
+def test_nginx_log_points_at_nginx_node():
+    from backend.core import graph
+    assert graph.locate("execute_command", {"command": "tail -n 50 /var/log/nginx/error.log"}) == ["proxy:nginx"]

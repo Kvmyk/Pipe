@@ -1,5 +1,32 @@
 # Historia zmian -- Pipe
 
+## v0.25.0 (2026-10-04)
+
+### Panel boczny w `pipe web`
+
+- Krawedz panelu ze schematem mozna przeciagnac -- wezej albo szerzej, najwyzej do polowy ekranu (domyslnie pol na
+  pol); dwuklik przywraca domyslna szerokosc
+- Panel mozna schowac: przyciskiem w pasku zakladek, przeciagnieciem krawedzi do prawej strony okna albo przyciskiem
+  w gornym pasku, ktory go tez rozwija. Rozmowa zajmuje wtedy cale okno, tresc w kolumnie posrodku. Komenda albo
+  powiadomienie, ktore otwiera zakladke (np. `/alerty`), rozwija panel sam. Szerokosc i stan zostaja w przegladarce
+- Obsluga z klawiatury: fokus na krawedzi, strzalki zmieniaja szerokosc, Enter chowa panel
+
+### Poprawki
+
+- Zakladki *Zmiany*, *Skille* i *Alerty* nie migaja juz przy przelaczaniu: listy sa przebudowywane tylko, gdy dane
+  sie zmienily, a karty nie powtarzaja animacji wejscia po ponownym pokazaniu zakladki. Rozwiniete podglady skilli
+  i roznic nie zwijaja sie przy przelaczaniu
+- Wyszukiwanie i czytanie stron swieci na schemacie na elemencie *Internet*, a czytanie logow `/var/log/nginx`
+  -- na nginx (wczesniej caly serwer)
+
+### Repozytorium
+
+- README z logo, odznakami i nagraniem `pipe web` (osobne dla polskiej i angielskiej wersji)
+- `scripts/demo/`: atrapa backendu z zaplanowanym scenariuszem (prawdziwy interfejs i formaty ramek, bez serwera
+  i LLM) oraz `record.py`, ktory nagrywa z niej GIF do README jedna komenda (Playwright + ffmpeg); `--full` dodaje
+  przykladowe skille, alerty i dziennik do testow interfejsu
+- Wersja w README jest teraz w odznace -- `bump_version.py` podbija ja sam
+
 ## v0.24.0 (2026-10-04)
 
 ### Internet dla agenta -- bez kluczy API

@@ -20,6 +20,9 @@
       <button data-pane="chat" class="on" id="tab-chat"></button>
       <button data-pane="stage" id="tab-stage"></button>
     </nav>
+    <button class="icon stage-toggle" id="stage-toggle" type="button" aria-label="panel" aria-pressed="true" aria-controls="stage-pane">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path class="fill" d="M14 5h6v14h-6z" fill="currentColor" opacity=".35"/></svg>
+    </button>
     <button class="icon lang" id="lang" aria-label="language"></button>
     <button class="icon" id="theme" aria-label="theme">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
@@ -50,6 +53,8 @@
       </form>
     </section>
 
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" tabindex="0" aria-controls="stage-pane"></div>
+
     <section class="stage" id="stage-pane" aria-label="stage">
       <div class="stage-tabs" role="tablist">
         <button role="tab" data-tab="map" class="on" id="st-map"></button>
@@ -57,6 +62,9 @@
         <button role="tab" data-tab="skills" id="st-skills"></button>
         <button role="tab" data-tab="alerts" id="st-alerts"><span id="st-alerts-label"></span><b class="badge warn" id="alerts-badge" hidden>0</b></button>
         <div class="spacer"></div>
+        <button class="icon stage-hide" id="stage-hide" type="button" aria-label="hide panel">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14M8.5 10l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
 
       <div class="tab-body" id="tab-map">

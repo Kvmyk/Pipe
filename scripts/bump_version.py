@@ -26,7 +26,7 @@ VERSION_FILE = ROOT / "VERSION"
 # Pliki, w ktorych wersja wystepuje w tekscie. Kazdy wzorzec musi zawierac
 # grupe nazwana (?P<ver>...) obejmujaca sam numer wersji.
 PATTERNS: list[tuple[str, str]] = [
-    ("README.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
+    ("README.md", r"badge/version-v(?P<ver>\d+\.\d+(?:\.\d+)?)-"),
     ("CLAUDE.md", r"\*\*Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
     ("docs/backend.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/cli.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
@@ -45,7 +45,7 @@ PATTERNS: list[tuple[str, str]] = [
     ("backend/config/prompts_en.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/config/prompts_en.py", r"Software version: (?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/core/tools_en.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("README.en.md", r"\*\*v(?P<ver>\d+\.\d+(?:\.\d+)?)\*\*"),
+    ("README.en.md", r"badge/version-v(?P<ver>\d+\.\d+(?:\.\d+)?)-"),
     ("clients/telegram/bot.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("clients/cli/cli.py", r"\| v(?P<ver>\d+\.\d+(?:\.\d+)?)\[/dim\]"),
 ]

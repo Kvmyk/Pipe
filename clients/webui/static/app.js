@@ -127,6 +127,25 @@
     return svg;
   }
 
+  // Listy w zakladkach (zmiany, skille, alerty). Ukryta zakladka ma display:none, a po jej pokazaniu przegladarka
+  // odpala animacje wejscia od nowa — karty migaly przy kazdym przelaczeniu. Dlatego lista jest przebudowywana tylko,
+  // gdy dane sie zmienily; karty, ktore juz byly na liscie (data-key) albo powstaly w ukrytej zakladce, nie animuja
+  // sie wcale, a kazdy element po swojej animacji wejscia dostaje "settled" (animacja zdjeta na stale).
+  const listSignatures = new WeakMap();
+  function renderList(list, data, build) {
+    const signature = JSON.stringify(data);
+    if (listSignatures.get(list) === signature) return;
+    listSignatures.set(list, signature);
+    const known = new Set(Array.from(list.querySelectorAll("[data-key]"), (node) => node.dataset.key));
+    const hidden = !list.offsetParent;
+    list.textContent = "";
+    build();
+    list.querySelectorAll(".card-item").forEach((node) => { if (hidden || known.has(node.dataset.key)) node.classList.add("settled"); });
+  }
+  document.addEventListener("animationend", (event) => {
+    if (event.animationName === "rise" && event.target.classList) event.target.classList.add("settled");
+  });
+
   // Tresc potwierdzenia: komenda jako osobna linia ($ ...), plan bezpiecznika jako lista krokow.
   // Teksty przychodza z backendu (handlers/common.py, safety.Plan.describe) — tu zmienia sie tylko uklad.
   const FUSE_HEAD = /^(Bezpiecznik|Safety fuse):\s*$/;
@@ -578,15 +597,16 @@
   }
   async function loadChanges() {
     try {
-      const data = await command({ command: "journal" });
-      changesList.textContent = "";
-      const entries = data.entries || [];
-      if (!entries.length) { changesList.appendChild(el("div", "empty", t("noChanges"))); return; }
-      entries.forEach((entry) => changesList.appendChild(changeCard(entry)));
-    } catch (error) { changesList.textContent = ""; changesList.appendChild(el("div", "empty", error.message)); }
+      const entries = (await command({ command: "journal" })).entries || [];
+      renderList(changesList, entries, () => {
+        if (!entries.length) { changesList.appendChild(el("div", "empty", t("noChanges"))); return; }
+        entries.forEach((entry) => changesList.appendChild(changeCard(entry)));
+      });
+    } catch (error) { renderList(changesList, { error: error.message }, () => changesList.appendChild(el("div", "empty", error.message))); }
   }
   function changeCard(entry) {
     const card = el("div", "card-item");
+    card.dataset.key = "change:" + entry.id;
     const head = el("div", "head");
     head.appendChild(el("b", "id", "#" + entry.id));
     const label = t("st_" + entry.status);
@@ -637,13 +657,14 @@
   const liveEvents = [];
   let activeAlerts = [], unseenAlerts = 0;
   function badge(id, count) { const node = $(id); node.hidden = !count; node.textContent = String(count); }
-  function renderAlerts() {
-    alertsList.textContent = "";
+  function renderAlerts() { renderList(alertsList, [activeAlerts, liveEvents], buildAlerts); }
+  function buildAlerts() {
     if (!activeAlerts.length && !liveEvents.length) { alertsList.appendChild(el("div", "empty", t("noAlerts"))); return; }
     if (activeAlerts.length) {
       alertsList.appendChild(el("div", "section-title", t("active")));
       activeAlerts.forEach((alert) => {
         const card = el("div", "card-item alert-" + alert.severity);
+        card.dataset.key = "alert:" + alert.id;
         const head = el("div", "head");
         head.appendChild(el("span", "tag " + (alert.severity === "critical" ? "del" : "warn"), t("sev_" + alert.severity) === "sev_" + alert.severity ? alert.severity : t("sev_" + alert.severity)));
         head.appendChild(el("b", "", alert.title));
@@ -674,6 +695,7 @@
   }
   function eventCard(event) {
     const card = el("div", "card-item" + (event.type === "alert" && event.state !== "resolved" ? " alert-" + event.severity : ""));
+    card.dataset.key = "event:" + eventKey(event);
     const head = el("div", "head");
     head.appendChild(el("b", "", eventTitle(event)));
     card.appendChild(head);
@@ -733,7 +755,7 @@
   let skills = [];
   async function loadSkills() {
     try { skills = (await command({ command: "list_skills" })).skills || []; } catch (_) { return; }
-    if (!$("tab-skills").hidden) renderSkills();
+    renderSkills();                      // takze w ukrytej zakladce: przy otwarciu lista jest gotowa (renderList)
   }
   function runSkill(skill, args) {
     if (busy) return;
@@ -742,12 +764,13 @@
     add("user", "/" + (skill.command || skill.name) + (args ? " " + args : ""));
     run({ command: "run_skill", name: skill.name, args: args || "" }, t("runningSkill") + " " + skill.name + "…");
   }
-  function renderSkills() {
+  function renderSkills() { renderList($("skills"), skills, buildSkills); }
+  function buildSkills() {
     const list = $("skills");
-    list.textContent = "";
     if (!skills.length) { list.appendChild(el("div", "empty", t("noSkills"))); return; }
     skills.forEach((skill, index) => {
       const card = el("div", "card-item skill");
+      card.dataset.key = "skill:" + skill.name;
       card.style.animationDelay = Math.min(index, 10) * 28 + "ms";
       const head = el("div", "head");
       head.appendChild(el("b", "", skill.name));
@@ -1326,7 +1349,70 @@
     $("toasts").appendChild(node);
     setTimeout(close, 7000);
   }
+  // Panel boczny (schemat i zakladki): szerokosc przeciaganiem krawedzi — najwyzej pol ekranu — i chowanie.
+  // Stan zostaje w przegladarce (localStorage). Na waskim ekranie panel przelacza sie przyciskami u gory.
+  const layout = $("layout"), splitter = $("splitter");
+  const STAGE_MIN = 340, CHAT_MIN = 360, HIDE_BELOW = 170;
+  const wide = window.matchMedia("(min-width: 901px)");
+  let stageWidth = 0, stageHidden = false;          // 0 = domyslna szerokosc (polowa ekranu)
+  try {
+    const saved = JSON.parse(localStorage.getItem("pipe-stage") || "{}");
+    stageWidth = Number(saved.width) || 0; stageHidden = !!saved.hidden;
+  } catch (_) { /* tryb prywatny */ }
+  function saveStage() {
+    try { localStorage.setItem("pipe-stage", JSON.stringify({ width: stageWidth, hidden: stageHidden })); } catch (_) { /* tryb prywatny */ }
+  }
+  function clampStage(width) {
+    const total = layout.clientWidth, max = Math.max(0, Math.min(Math.floor(total / 2), total - CHAT_MIN));
+    return Math.round(Math.max(Math.min(STAGE_MIN, max), Math.min(width, max)));
+  }
+  function applyStage() {
+    layout.classList.toggle("stage-hidden", stageHidden);
+    if (stageWidth) layout.style.setProperty("--stage-w", clampStage(stageWidth) + "px"); else layout.style.removeProperty("--stage-w");
+    $("stage-toggle").setAttribute("aria-pressed", String(!stageHidden));
+    $("stage-toggle").title = stageHidden ? t("showPanel") : t("hidePanel");
+  }
+  function setStageHidden(hidden) {
+    if (stageHidden === hidden) return;
+    stageHidden = hidden;
+    applyStage(); saveStage();
+  }
+  function resizeStage(width) { stageWidth = width ? clampStage(width) : 0; applyStage(); saveStage(); }
+  splitter.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    splitter.setPointerCapture(event.pointerId);
+    layout.classList.add("resizing");
+    const right = layout.getBoundingClientRect().right, before = stageWidth;
+    let raw = right - event.clientX;
+    const move = (e) => {
+      raw = right - e.clientX;
+      layout.classList.toggle("will-hide", raw < HIDE_BELOW);
+      stageWidth = clampStage(raw); applyStage();
+    };
+    const up = () => {
+      layout.classList.remove("resizing", "will-hide");
+      ["pointermove", "pointerup", "pointercancel"].forEach((type) => splitter.removeEventListener(type, type === "pointermove" ? move : up));
+      if (raw < HIDE_BELOW) { stageWidth = before; setStageHidden(true); }   // do krawedzi: chowamy, szerokosc jak przed
+      else saveStage();
+    };
+    splitter.addEventListener("pointermove", move);
+    splitter.addEventListener("pointerup", up);
+    splitter.addEventListener("pointercancel", up);
+  });
+  splitter.addEventListener("dblclick", () => resizeStage(0));
+  splitter.addEventListener("keydown", (event) => {
+    const now = $("stage-pane").getBoundingClientRect().width, step = event.shiftKey ? 96 : 32;
+    const keys = { ArrowLeft: () => resizeStage(now + step), ArrowRight: () => resizeStage(now - step),
+                   Home: () => resizeStage(layout.clientWidth), End: () => resizeStage(STAGE_MIN), Enter: () => setStageHidden(true) };
+    if (keys[event.key]) { event.preventDefault(); keys[event.key](); }
+  });
+  $("stage-hide").addEventListener("click", () => setStageHidden(true));
+  $("stage-toggle").addEventListener("click", () => setStageHidden(!stageHidden));
+  window.addEventListener("resize", () => { if (stageWidth) applyStage(); });
+
   function switchTab(name) {
+    if (stageHidden && wide.matches) setStageHidden(false);         // komenda albo powiadomienie otwiera schowany panel
     ["map", "changes", "skills", "alerts"].forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
     if (name === "skills") loadSkills();
     if (name === "changes") { unseenChanges = 0; badge("changes-badge", 0); loadChanges(); }
@@ -1362,6 +1448,10 @@
   $("theme").title = t("theme");
   $("lang").textContent = window.PipeI18n.lang.toUpperCase(); $("lang").title = t("language");
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
+  $("stage-hide").title = t("hidePanel"); $("stage-hide").setAttribute("aria-label", t("hidePanel"));
+  $("stage-toggle").setAttribute("aria-label", t("showPanel") + " / " + t("hidePanel"));
+  splitter.title = t("resizePanel"); splitter.setAttribute("aria-label", t("resizePanel"));
+  applyStage();
   input.placeholder = t("placeholder");
   $("server-name").textContent = config.server || "";
 
@@ -1370,6 +1460,7 @@
   loadSkills();
   loadGraph(false);
   loadAlerts();
+  loadChanges();                         // zakladka gotowa przed pierwszym otwarciem — bez pustej listy na chwile
   loadProviders(true);
   loadYolo();
   connectEvents();

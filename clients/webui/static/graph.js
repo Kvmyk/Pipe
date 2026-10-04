@@ -392,7 +392,7 @@
       moveCamera({ k, x: mx - (mx - base.x) * ratio, y: my - (my - base.y) * ratio }, 140, easeOut);
     }, { passive: false });
     root.addEventListener("dblclick", (event) => { if (!event.target.closest(".node-pos")) fit(); });
-    if (window.ResizeObserver) new ResizeObserver(() => { if (current && !drag && !busy) fit(0); }).observe(root);
+    if (window.ResizeObserver) new ResizeObserver(() => { if (current && !drag && !busy && root.clientWidth) fit(0); }).observe(root);   // schowany panel: 0 px
 
     function select(id) {
       selected = id;

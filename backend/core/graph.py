@@ -283,7 +283,8 @@ def _mark_alerts(views: dict[str, dict[str, Any]], index: dict[str, list[str]], 
 
 # ─── Dzialania agenta -> wezly ──────────────────────────────────────────────
 
-_PROXY_PATHS = (("/etc/nginx", "proxy:nginx"), ("/etc/caddy", "proxy:caddy"))
+_PROXY_PATHS = (("/etc/nginx", "proxy:nginx"), ("/var/log/nginx", "proxy:nginx"), ("/etc/caddy", "proxy:caddy"),
+                ("/var/log/caddy", "proxy:caddy"))
 _PROXY_UNITS = {"nginx": "proxy:nginx", "caddy": "proxy:caddy"}
 
 
@@ -359,6 +360,8 @@ def locate(tool: str, args: dict[str, Any], cwd: str = "/") -> list[str]:
     elif tool in ("execute_command", "git_command"):
         command = str(args.get("command", "") or "")
         nodes = _nodes_for_command(("git " + command) if tool == "git_command" else command, cwd, infra)
+    elif tool in ("web_search", "web_fetch", "software_info"):
+        nodes = ["internet"]
     elif tool.startswith("mcp__"):
         nodes = []
     cleaned = [n for n in nodes if n not in ("t:", "t:local")]
@@ -386,8 +389,8 @@ _LABELS = {
     "routine_manage": ("rutyna {name} ({operation})", "routine {name} ({operation})"),
     "reminder": ("przypomnienie ({operation})", "reminder ({operation})"),
     "server_history": ("historia serwera ({operation})", "server history ({operation})"),
-    "web_search": ("szukam w sieci: {query}", "web search: {query}"),
-    "web_fetch": ("czytam strone {url}", "reading {url}"),
+    "web_search": ("szuka w sieci: {query}", "searches the web: {query}"),
+    "web_fetch": ("czyta strone {url}", "reads {url}"),
     "software_info": ("oprogramowanie: {operation} {product}{package} {version}", "software: {operation} {product}{package} {version}"),
     "journal": ("dziennik zmian ({operation})", "change journal ({operation})"),
     "security_audit": ("audyt bezpieczenstwa", "security audit"),

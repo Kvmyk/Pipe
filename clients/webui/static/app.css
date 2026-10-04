@@ -127,7 +127,8 @@ button { cursor: pointer; border: 0; background: none; }
 /* --- uklad --- */
 .layout {
   flex: 1; min-height: 0; display: grid;
-  grid-template-columns: minmax(380px, 0.9fr) minmax(440px, 1.15fr);
+  /* czat | uchwyt (0 px, nachodzi na krawedz) | panel boczny — szerokosc panelu z przeciagania (--stage-w), najwyzej polowa */
+  grid-template-columns: minmax(360px, 1fr) 0 var(--stage-w, 50%);
 }
 .chat, .stage { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .chat { background: var(--panel); border-right: 1px solid var(--line); }
@@ -396,6 +397,7 @@ button { cursor: pointer; border: 0; background: none; }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
   .layout[data-pane="chat"] .stage, .layout[data-pane="stage"] .chat { display: none; }
+  .splitter, .stage-hide, .stage-toggle { display: none; }
   .chat { border-right: 0; }
   .mobile-switch { display: inline-flex; }
   .server-pill { max-width: 30vw; }
@@ -557,3 +559,28 @@ h2.with-badge .pbadge { width: 30px; height: 30px; border-radius: 7px; font-size
 .pbadge.logo img { width: 62%; height: 62%; display: block; object-fit: contain; pointer-events: none; }
 .pbadge.small.logo img { width: 70%; height: 70%; }
 #model-pill-badge { display: inline-grid; }
+
+/* element po animacji wejscia: animacja zdjeta na stale (bez ponownego odpalenia po pokazaniu ukrytej zakladki) */
+.settled { animation: none !important; }
+
+/* --- panel boczny: przeciaganie krawedzi i chowanie (tylko szeroki ekran) --- */
+.splitter { position: relative; z-index: 4; width: 0; cursor: col-resize; touch-action: none; outline: none; }
+.splitter::before { content: ""; position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; }
+.splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: transparent; transition: background .15s; }
+.splitter:hover::after, .splitter:focus-visible::after, .layout.resizing .splitter::after { background: var(--accent); }
+.layout.resizing.will-hide .splitter::after { background: var(--warn-fill); }
+.layout.resizing { cursor: col-resize; }
+.layout.resizing .chat, .layout.resizing .stage { pointer-events: none; user-select: none; }
+.stage-tabs .stage-hide { padding: 0; align-self: center; }
+.stage-tabs .stage-hide::after { display: none; }
+.stage-toggle[aria-pressed="false"] .fill { opacity: 0; }
+@media (min-width: 901px) {
+  .layout.stage-hidden { grid-template-columns: 1fr 0 0; }
+  .layout.stage-hidden .stage, .layout.stage-hidden .splitter { display: none; }
+  .layout.stage-hidden .chat { border-right: 0; }
+  /* czat na cala szerokosc: tresc w czytelnej kolumnie posrodku */
+  .layout.stage-hidden .messages { padding-inline: max(24px, calc(50% - 440px)); }
+  .layout.stage-hidden .working { padding-inline: max(24px, calc(50% - 440px)); }
+  .layout.stage-hidden .chips { padding-inline: max(20px, calc(50% - 444px)); }
+  .layout.stage-hidden .composer { margin-inline: max(16px, calc(50% - 448px)); }
+}
