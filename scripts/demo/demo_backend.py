@@ -24,10 +24,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-HOST = "vps-sklep"
-DOMAIN = "sklep.example.com"
-CONF = "/etc/nginx/sites-enabled/sklep.conf"
-COMMAND = f"sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' {CONF} && systemctl reload nginx"
+# Nazwy w scenariuszu zaleza od jezyka (configure()): "sklep" po polsku, "shop" po angielsku.
+PROJECT = HOST = DOMAIN = CONF = COMMAND = ""
+
+
+def names(lang: str) -> dict[str, str]:
+    project = "shop" if lang == "en" else "sklep"
+    return {"project": project, "host": f"vps-{project}", "domain": f"{project}.example.com",
+            "conf": f"/etc/nginx/sites-enabled/{project}.conf"}
+
+
+def configure(lang: str) -> None:
+    global PROJECT, HOST, DOMAIN, CONF, COMMAND
+    n = names(lang)
+    PROJECT, HOST, DOMAIN, CONF = n["project"], n["host"], n["domain"], n["conf"]
+    COMMAND = f"sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' {CONF} && systemctl reload nginx"
+
+
+configure("pl")
 ENTRY = "a1b2c3d4"
 
 
@@ -47,10 +61,10 @@ def infra():
     return Infra(
         hostname=HOST, os_name="Ubuntu 24.04 LTS",
         containers=[
-            c("shop-app", "ghcr.io/acme/shop:2.4.1", "sklep", "app", (8080,)),
-            c("shop-worker", "ghcr.io/acme/shop:2.4.1", "sklep", "worker"),
-            c("shop-db", "postgres:16", "sklep", "db"),
-            c("shop-redis", "redis:7-alpine", "sklep", "redis"),
+            c("shop-app", "ghcr.io/acme/shop:2.4.1", PROJECT, "app", (8080,)),
+            c("shop-worker", "ghcr.io/acme/shop:2.4.1", PROJECT, "worker"),
+            c("shop-db", "postgres:16", PROJECT, "db"),
+            c("shop-redis", "redis:7-alpine", PROJECT, "redis"),
             c("uptime-kuma", "louislam/uptime-kuma:1", "monitoring", "kuma", (3001,)),
         ],
         routes=[Route("nginx", [DOMAIN, "www." + DOMAIN], "127.0.0.1:8080", CONF),
@@ -88,7 +102,7 @@ async def tool(writer, call_id: str, name: str, args: dict, steps: list[str], se
     """Jedno wywolanie narzedzia tak, jak widzi je interfejs webowy: start, postep, koniec."""
     from backend.core import graph
     from backend.core.events import Activity, Progress
-    activity = Activity(call_id, "start", name, graph.describe(name, args), tuple(graph.locate(name, args, "/srv/sklep")))
+    activity = Activity(call_id, "start", name, graph.describe(name, args), tuple(graph.locate(name, args, f"/srv/{PROJECT}")))
     await send(writer, frame(activity))
     for step in steps:
         await asyncio.sleep(seconds / max(1, len(steps)))
@@ -148,14 +162,14 @@ async def apply_fix(writer) -> None:
         f"Naprawione — **{DOMAIN}** znów odpowiada.\n\n"
         "**Przyczyna:** generowanie raportu PDF w `shop-app` trwa ok. 75 s, a nginx czekał na odpowiedź tylko 60 s "
         "(`proxy_read_timeout`) i zwracał 502 (`upstream timed out (110)` w `error.log`).\n\n"
-        "**Zmiana:** `proxy_read_timeout 120s` w `sklep.conf`. `nginx -t` przeszedł, nginx przeładowany, strona "
+        f"**Zmiana:** `proxy_read_timeout 120s` w `{PROJECT}.conf`. `nginx -t` przeszedł, nginx przeładowany, strona "
         "odpowiada 200. Kopia jest w dzienniku — cofniesz to przez `/cofnij`.\n\n"
         "Docelowo raport warto generować w tle (`shop-worker`), zamiast trzymać żądanie HTTP.\n\n"
         "Źródła: nginx.org — ngx_http_proxy_module (`proxy_read_timeout`), serverfault.com/q/1156287",
         f"Fixed — **{DOMAIN}** responds again.\n\n"
         "**Cause:** generating the PDF report in `shop-app` takes about 75 s, while nginx waited only 60 s for the "
         "response (`proxy_read_timeout`) and returned 502 (`upstream timed out (110)` in `error.log`).\n\n"
-        "**Change:** `proxy_read_timeout 120s` in `sklep.conf`. `nginx -t` passed, nginx reloaded, the site answers "
+        f"**Change:** `proxy_read_timeout 120s` in `{PROJECT}.conf`. `nginx -t` passed, nginx reloaded, the site answers "
         "200. The backup is in the journal — undo it with `/undo`.\n\n"
         "Long term the report should be generated in the background (`shop-worker`) instead of holding the HTTP request.\n\n"
         "Sources: nginx.org — ngx_http_proxy_module (`proxy_read_timeout`), serverfault.com/q/1156287"), 0.3)
@@ -223,7 +237,7 @@ class Demo:
             entries = [{"id": ENTRY, "summary": f"2026-10-04 14:32 [done] execute_command: {COMMAND}", "undoable": True,
                         "status": "done"}] if self.fixed or self.full else []
             if self.full:
-                entries += [{"id": f"{i:08x}", "summary": f"2026-10-0{i} 09:1{i} [done] write_file: /srv/sklep/.env.example",
+                entries += [{"id": f"{i:08x}", "summary": f"2026-10-0{i} 09:1{i} [done] write_file: /srv/{PROJECT}/.env.example",
                              "undoable": True, "status": "done"} for i in range(1, 6)]
             await done(writer, {"entries": entries, "text": ""})
         elif command == "journal_changes":
@@ -250,6 +264,7 @@ async def main() -> None:
     parser.add_argument("--full", action="store_true", help="przykladowe skille, alerty i dziennik (testy interfejsu)")
     args = parser.parse_args()
     os.environ["PIPE_LANG"] = args.lang
+    configure(args.lang)
     from backend.core import graph
     import backend.server  # noqa: F401 — import trwa kilka sekund; nie w trakcie nagrania
     graph.build(infra())               # graph.locate() potrzebuje ostatniej infrastruktury

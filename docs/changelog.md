@@ -1,5 +1,13 @@
 # Historia zmian -- Pipe
 
+## v0.25.2 (2026-10-04)
+
+### Repozytorium
+
+- Angielskie nagranie w `README.en.md` jest w calosci po angielsku: serwer `vps-shop`, domena `shop.example.com`,
+  projekt `shop`, plik `shop.conf` (wczesniej polskie nazwy ze scenariusza). Atrapa backendu w `scripts/demo/`
+  dobiera nazwy do jezyka nagrania
+
 ## v0.25.1 (2026-10-04)
 
 ### Wyglad

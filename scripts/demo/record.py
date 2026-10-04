@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 MESSAGE = {
     "pl": "sklep.example.com co chwilę sypie 502, sprawdź co jest grane",
-    "en": "sklep.example.com keeps throwing 502s, find out what is going on",
+    "en": "shop.example.com keeps throwing 502s, find out what is going on",
 }
 DONE_TEXT = {"pl": "Naprawione", "en": "Fixed"}
 VIEWPORT = {"width": 1360, "height": 800}
@@ -56,7 +56,7 @@ def start_bridge(backend_port: int, lang: str) -> str:
     holder: dict[str, str] = {}
 
     def run() -> None:
-        bridge = WebBridge("127.0.0.1", backend_port, "", lang=lang, server_label="vps-sklep", port=free_port(7400))
+        bridge = WebBridge("127.0.0.1", backend_port, "", lang=lang, server_label="vps-shop" if lang == "en" else "vps-sklep", port=free_port(7400))
         holder["url"] = bridge.url
         ready.set()
         asyncio.run(bridge.serve(open_browser=False))
