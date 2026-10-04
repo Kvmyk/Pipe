@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -53,9 +53,16 @@ Logi: `docker compose logs telegram | grep -i "kanal\|subskrypcja"` -- prawidlow
 
 ## Wiadomosci glosowe
 
-Nagraj wiadomosc glosowa -- bot odpisze *Uslyszalem: ...* i przekaze tekst agentowi. Transkrypcja idzie przez
-endpoint zgodny z OpenAI (Whisper): przy providerze `openai` albo `groq` dziala od razu, przy innych ustaw w
+Nagraj wiadomosc glosowa -- bot odpisze *Uslyszalem: ...* i przekaze tekst agentowi. Przy providerze `gemini`
+nagranie przepisuje sam model, przy `openai` albo `groq` -- ich Whisper; dziala od razu. Przy innych ustaw w
 `backend/.env` `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy klucz Groq albo lokalny faster-whisper).
+
+## Zdjecia i pliki
+
+Wyslij zrzut ekranu, log albo plik konfiguracyjny; podpis to pytanie (*"czemu nginx tego nie przyjmuje?"*).
+Kilka zdjec wyslanych naraz (album) trafia do agenta jako jedna wiadomosc. Limit 10 MB na plik. Obrazy model
+oglada, tekst czyta (po ukryciu sekretow), inne pliki Pipe zapisuje na serwerze i podaje agentowi sciezke.
+Viewer moze wysylac obrazy i tekst, ale nie pliki do zapisania. Szczegoly: `docs/features.md`, *Zalaczniki*.
 
 ## Role
 

@@ -301,11 +301,12 @@ class RemoteClient:
             user = ""
         return f"cli:{user}" if user else "cli"
 
-    async def send_message(self, message: str) -> list[dict]:
-        """Wysyła wiadomość i zwraca listę odpowiedzi."""
-        return await self._send(
-            {"message": message, "session_id": self.session_id, "interface": self.interface}
-        )
+    async def send_message(self, message: str, attachments: list[dict] | None = None) -> list[dict]:
+        """Wysyła wiadomość (opcjonalnie z plikami: [{name, mime, data}]) i zwraca listę odpowiedzi."""
+        request = {"message": message, "session_id": self.session_id, "interface": self.interface}
+        if attachments:
+            request["attachments"] = attachments
+        return await self._send(request)
 
     async def send_confirm(self, confirmed: bool) -> list[dict]:
         """Wysyła potwierdzenie/odmowę."""
@@ -453,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.25.4[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.25.4[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.26.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.26.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -596,7 +597,7 @@ COMMAND_ALIASES = {
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
-    "providers": "providerzy", "provider": "providerzy",
+    "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -627,6 +628,8 @@ COMMANDS = [
     ("aktualizuj", "update", "zaktualizuj Pipe na serwerze; /aktualizuj sprawdz", "update Pipe on the server; /update check"),
     ("providerzy", "providers", "providerzy LLM: klucz, model, przełączenie (/providerzy groq)",
      "LLM providers: key, model, switching (/providers groq)"),
+    ("plik", "file", "wyślij plik albo zrzut ekranu: /plik <ścieżka> [pytanie], w wiadomości @ścieżka",
+     "send a file or screenshot: /file <path> [question], in a message @path"),
     ("yolo", "yolo", "zmiany bez pytania o TAK: /yolo on, /yolo off", "changes without asking for YES: /yolo on, /yolo off"),
     ("jezyk", "language", "język Pipe: /jezyk en albo /jezyk pl", "Pipe's language: /language pl or /language en"),
     ("pomoc", "help", "lista komend", "list of commands"),
@@ -658,6 +661,7 @@ HELP_TEXT = """**Komendy**
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
 - `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq` — potem model z listy providera, `/providerzy groq llama` — model po fragmencie nazwy, `/providerzy model` — tylko zmiana modelu); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
+- `/plik <ścieżka> [pytanie]` — wyślij agentowi plik z tego komputera: log, konfigurację, zrzut ekranu (do 10 MB); w zwykłej wiadomości wystarczy `@ścieżka`, np. „co tu jest nie tak? @nginx.conf” (Tab podpowiada ścieżki)
 - `/yolo [on|off]` — tryb YOLO: zmiany w tej rozmowie wykonują się bez pytania o TAK (kopie, dziennik i `/cofnij` działają dalej; operacje zakazane — nadal odrzucane). Domyślnie wyłączony
 - `/jezyk [pl|en]` — język Pipe: instrukcje agenta, raporty i komunikaty (wspólny dla CLI, weba i Telegrama)
 - `/pomoc` — ta lista
@@ -691,6 +695,7 @@ HELP_TEXT_EN = """**Commands**
 - `/cost` — token usage and LLM cost
 - `/history` — latest audit-log entries
 - `/providers` — LLM providers: add a key, change the model or switch (`/providers groq` — then a model from the provider's list, `/providers groq llama` — a model by part of its name, `/providers model` — change only the model); `/providers forget <id>` — remove a key added from the interface
+- `/file <path> [question]` — send the agent a file from this computer: a log, a config, a screenshot (up to 10 MB); in a normal message `@path` is enough, e.g. "what is wrong here? @nginx.conf" (Tab completes paths)
 - `/yolo [on|off]` — YOLO mode: changes in this conversation run without asking for YES (backups, the journal and `/undo` still work; forbidden operations are still refused). Off by default
 - `/language [pl|en]` — Pipe's language: the agent's instructions, reports and messages (shared by the CLI, web and Telegram)
 - `/help` — this list
@@ -755,13 +760,127 @@ def _slash_options(text: str, skills: list[dict] | None = None) -> list[tuple[st
     return sorted(options, key=lambda o: 0 if o[0].lower() == query else 1 if o[0].lower().startswith(query) else 2)
 
 
+# ─── Załączniki: /plik <ścieżka> i @ścieżka ─────────────────────────────────────
+# Limity jak w backendzie (backend/core/attachments.py) — za duzy plik odrzucamy, zanim pojdzie przez tunel.
+MAX_FILE_BYTES = 10 * 1024 * 1024
+MAX_TOTAL_BYTES = 20 * 1024 * 1024
+MAX_FILES = 10
+# @sciezka na poczatku albo po spacji (adres e-mail user@host sie nie liczy); w cudzyslowie moze miec spacje
+AT_PATH = re.compile(r"""(?:(?<=\s)|^)@(?:"([^"]+)"|'([^']+)'|(\S+))""")
+PATH_OPTIONS_SHOWN = 60
+
+
+class AttachmentError(ValueError):
+    """Pliku nie da sie wyslac (komunikat dla uzytkownika)."""
+
+
+def _extract_files(text: str) -> tuple[str, list[Path]]:
+    """
+    (wiadomosc, pliki) z wpisu uzytkownika. `/plik <sciezka> [pytanie]` — plik musi istniec;
+    `@sciezka` w zwyklej wiadomosci — tylko istniejace pliki (inaczej zostaje tekstem, np. @admin).
+    """
+    head, _, rest = text.partition(" ")
+    name = COMMAND_ALIASES.get(head[1:].lower(), head[1:].lower()) if head.startswith("/") else ""
+    if name == "plik":
+        rest = rest.strip()
+        if not rest:
+            raise AttachmentError(tr("Podaj ścieżkę: /plik <ścieżka> [pytanie]", "Give a path: /file <path> [question]"))
+        match = re.match(r"""^(?:"([^"]+)"|'([^']+)'|(\S+))\s*(.*)$""", rest, re.DOTALL)
+        raw = next(group for group in match.groups()[:3] if group)
+        path = Path(raw.lstrip("@")).expanduser()
+        if not path.is_file():
+            raise AttachmentError(tr(f"Nie ma takiego pliku: {raw}", f"No such file: {raw}"))
+        message, files = _extract_files(match.group(4)) if match.group(4) else ("", [])
+        return message, [path, *files]
+
+    files: list[Path] = []
+
+    def take(found: re.Match) -> str:
+        raw = next(group for group in found.groups() if group)
+        path = Path(raw).expanduser()
+        if not path.is_file():
+            return found.group(0)
+        files.append(path)
+        return path.name              # w tresci zostaje nazwa pliku — model wie, o ktory chodzi
+
+    message = AT_PATH.sub(take, text).strip()
+    return message, files
+
+
+def _load_files(paths: list[Path]) -> list[dict]:
+    """Pliki -> [{name, mime, data(base64)}] (pole `attachments` w docs/protocol.md)."""
+    import mimetypes
+
+    if len(paths) > MAX_FILES:
+        raise AttachmentError(tr(f"Najwyżej {MAX_FILES} plików w jednej wiadomości.",
+                                 f"At most {MAX_FILES} files in one message."))
+    attachments, total = [], 0
+    for path in paths:
+        size = path.stat().st_size
+        if size > MAX_FILE_BYTES:
+            raise AttachmentError(tr(f"Plik {path.name} jest za duży ({size // 1048576} MB, limit 10 MB).",
+                                     f"{path.name} is too large ({size // 1048576} MB, limit 10 MB)."))
+        total += size
+        if total > MAX_TOTAL_BYTES:
+            raise AttachmentError(tr("Pliki razem przekraczają 20 MB.", "The files together exceed 20 MB."))
+        attachments.append({"name": path.name, "mime": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+                            "data": base64.b64encode(path.read_bytes()).decode("ascii")})
+    return attachments
+
+
+def _size_label(size: int) -> str:
+    return f"{max(1, round(size / 1024))} kB" if size < 1048576 else f"{size / 1048576:.1f} MB"
+
+
+def _path_options(partial: str) -> list[str]:
+    """Podpowiedzi sciezek dla `/plik ...` i `@...`: pelne uzupelnienia `partial` (katalogi z '/' na koncu)."""
+    expanded = os.path.expanduser(partial) if partial.startswith("~") else partial
+    folder, prefix = os.path.split(expanded)
+    base = Path(folder or ".")
+    try:
+        entries = sorted(base.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except OSError:
+        return []
+    shown_folder = partial[: len(partial) - len(prefix)]
+    options = []
+    for entry in entries:
+        if not entry.name.lower().startswith(prefix.lower()) or (entry.name.startswith(".") and not prefix.startswith(".")):
+            continue
+        try:
+            is_dir = entry.is_dir()
+        except OSError:
+            continue
+        options.append(shown_folder + entry.name + ("/" if is_dir else ""))
+        if len(options) >= PATH_OPTIONS_SHOWN:
+            break
+    return options
+
+
+def _path_fragment(text: str) -> str | None:
+    """Fragment sciezki pod kursorem, gdy uzytkownik wpisuje `/plik ...` albo `@...` — inaczej None."""
+    head = text.split(" ", 1)[0]
+    if head.startswith("/") and COMMAND_ALIASES.get(head[1:].lower(), head[1:].lower()) == "plik" and " " in text:
+        rest = text.split(" ", 1)[1]
+        if " " not in rest:
+            return rest.lstrip("@")
+    found = re.search(r"(?:^|\s)@(\S*)$", text)
+    return found.group(1) if found else None
+
+
 if PromptSession is not None:
     class SlashCompleter(Completer):
-        """Lista komend i skilli pod promptem — pojawia sie po "/", Tab wstawia wybrana."""
+        """Lista komend i skilli pod promptem — pojawia sie po "/", Tab wstawia wybrana; po @ i /plik — sciezki."""
 
         def get_completions(self, document, complete_event):
-            for name, description in _slash_options(document.text_before_cursor):
-                yield Completion(name, start_position=1 - len(document.text_before_cursor),
+            before = document.text_before_cursor
+            fragment = _path_fragment(before)
+            if fragment is not None:
+                for option in _path_options(fragment):
+                    yield Completion(option, start_position=-len(fragment), display=option.rstrip("/").rsplit("/", 1)[-1]
+                                     + ("/" if option.endswith("/") else ""))
+                return
+            for name, description in _slash_options(before):
+                yield Completion(name, start_position=1 - len(before),
                                  display="/" + name, display_meta=description)
 
 
@@ -1494,6 +1613,27 @@ async def run_cli(client: RemoteClient, host: str) -> None:
                 continue
             if user_input.lower() in ("/exit", "exit", "quit", "wyjðź", "koniec"):
                 break
+
+            # /plik <sciezka> i @sciezka — pliki z tego komputera ida razem z wiadomoscia
+            try:
+                message, paths = _extract_files(user_input)
+                attachments = _load_files(paths)
+            except (AttachmentError, OSError) as exc:
+                console.print(f"[red]{escape(str(exc))}[/red]\n")
+                continue
+            if attachments:
+                console.print()
+                for path in paths:
+                    console.print(f"[dim]  ↑ {escape(path.name)} ({_size_label(path.stat().st_size)})[/dim]")
+                try:
+                    await _handle_responses(await client.send_message(message, attachments), client)
+                    await _show_due_reminders(client)
+                    await _after_reconnect(client)
+                except Exception as exc:
+                    console.print(tr(f"[red]Błąd komunikacji: {escape(str(exc))}[/red]",
+                                     f"[red]Communication error: {escape(str(exc))}[/red]"))
+                console.print()
+                continue
 
             # /server, /skille, /pomoc i skille jako komendy
             if user_input.startswith("/"):

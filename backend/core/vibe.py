@@ -31,7 +31,7 @@ def recent_user_messages(session: Session, limit: int) -> list[str]:
     for message in reversed(session.messages):
         if message.get("role") != "user" or message.get("pipe_generated"):
             continue
-        content = message.get("content")
+        content = message.get("pipe_text", message.get("content"))   # bez tresci zalacznikow
         if isinstance(content, str) and content.strip():
             messages.append(content.strip()[:MAX_MESSAGE_CHARS])
         if len(messages) >= limit:

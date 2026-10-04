@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 ## Opis
 
@@ -20,9 +20,16 @@ W trybie Kubernetes dostep do portu TCP daje `kubectl port-forward svc/pipe 7379
   "message": "tekst wiadomosci",
   "session_id": "uuid-per-uzytkownik",
   "interface": "cli|telegram:user_id|discord:user_id",
-  "token": "tajny-token"
+  "token": "tajny-token",
+  "attachments": [{"name": "zrzut.png", "mime": "image/png", "data": "<base64>"}]
 }
 ```
+
+`attachments` jest opcjonalne (pliki, zdjecia, zrzuty ekranu); z zalacznikami `message` moze byc puste. Limity:
+10 MB na plik, 20 MB i 10 plikow na wiadomosc -- przekroczenie albo zly base64 konczy sie ramka bledu bez wywolania
+agenta. Rodzaj backend ustala z zawartosci: obraz idzie do modelu jako `image_url`, tekst jest wklejany do wiadomosci
+(po redakcji sekretow), inne pliki zapisuje w `DATA_DIR/uploads/` i podaje agentowi sciezke. Linia zadania moze
+miec do 32 MiB (`READ_LIMIT` serwera).
 
 ### Zadanie -- potwierdzenie operacji
 
@@ -84,7 +91,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `approvals` | -- | `"data": {"pending": [zdarzenie approval]}` |
 | `approve` | `id`, `decision` (bool) | tylko admin; zatwierdzenie wykonuje operacje przez bezpiecznik, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamiec incydentow (co sie zdarzalo, ustalenia, co pomoglo) |
-| `transcribe` | `audio` (base64, maks. ~2.5 MB), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomosci glosowej (STT) |
+| `transcribe` | `audio` (base64, maks. 10 MB; OGG, WAV, MP3...), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomosci glosowej (STT) |
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |

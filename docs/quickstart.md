@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 ## Wymagania wstepne
 

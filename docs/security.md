@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 ## Model
 
@@ -150,6 +150,22 @@ Agent sam decyduje, kiedy siegnac do sieci, wiec internet jest traktowany jak ni
   zaproponowana pod wplywem strony zawsze czeka na TAK.
 - Wyszukiwarki bez klucza to nieoficjalne endpointy (DuckDuckGo) i publiczne API (Stack Exchange, Wikipedia,
   endoflife.date, OSV.dev); `WEB_SEARCH=off` zabiera agentowi internet calkowicie.
+
+## Zalaczniki (pliki, zrzuty ekranu, glosowki)
+
+Plik wyslany przez uzytkownika to tez obcy tekst -- log moze zawierac linie napisana przez atakujacego:
+
+- tresc pliku jest opisana w wiadomosci jako DANE, nie polecenia, a po wiadomosci z zalacznikiem tryb YOLO jest
+  wstrzymany do nastepnej wiadomosci (`Session.web_tainted`) -- zmiana zaproponowana pod wplywem pliku czeka na TAK,
+- pliki tekstowe przechodza przez `memory.redact_secrets()` przed wyslaniem do modelu (jak wyniki narzedzi),
+- tekst z zalacznika nie uczy VIBE i nie liczy sie jako adres *wpisany przez uzytkownika* dla `web_fetch`
+  (`pipe_text` trzyma tylko to, co uzytkownik napisal),
+- obraz jest w historii tylko w swojej turze; pliki binarne leza w `DATA_DIR/uploads/` z prawami 0600 przez 7 dni,
+  zapis trafia do audit logu; viewer nie moze zapisac pliku na serwerze (obrazy i tekst -- tak),
+- rodzaj pliku wynika z zawartosci (sygnatura, UTF-8), nie z nazwy ani typu MIME od klienta; nazwa jest
+  sprowadzana do bezpiecznych znakow (bez katalogow),
+- limity: 10 MB na plik, 20 MB na wiadomosc; `READ_LIMIT` serwera i `MAX_BODY` mostu `pipe web` (32 MiB)
+  wynikaja z nich.
 
 ## Role i tokeny
 

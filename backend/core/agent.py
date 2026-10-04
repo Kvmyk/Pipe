@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -28,7 +28,7 @@ from openai.types.chat import ChatCompletion
 
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, LLMConfig, chat_model_ids, model_available
-from backend.core import audit, executor, llm as llm_choice, memory, runtime, usage
+from backend.core import attachments as attachments_module, audit, executor, llm as llm_choice, memory, runtime, usage
 from backend.core.i18n import tr
 from backend.core.events import Activity, Event, Progress
 from backend.core.session import ConfirmationRequest, Session
@@ -133,15 +133,24 @@ class VPSAgent:
         generated: bool = False,
         owner: str = "",
         role: str = "admin",
+        attachments: list[Any] | None = None,
     ) -> AsyncGenerator[Event, None]:
         """
         Przetwarza wiadomosc uzytkownika i strumieniuje zdarzenia odpowiedzi.
         Nie rzuca wyjatkow — bledy wracaja jako tekst [BLAD].
 
         `generated=True` — tresc zbudowal backend (skan, /status, skill), nie
-        uzytkownik; nie uczy VIBE.
+        uzytkownik; nie uczy VIBE. `attachments` — pliki z core/attachments.parse().
         """
         session = self.get_or_create_session(session_id, interface, owner=owner, role=role)
+        built = None
+        if attachments:
+            try:
+                built = attachments_module.build(user_message, attachments, redact=settings.REDACT_SECRETS,
+                                                 allow_save=role != "viewer")
+            except (attachments_module.AttachmentError, OSError) as exc:
+                yield tr(f"[BLAD] Zalacznik odrzucony: {exc}", f"[BLAD] Attachment rejected: {exc}")
+                return
 
         # Nowa wiadomosc zamiast TAK/NIE: operacja przepada, a wywolanie narzedzia
         # dostaje odpowiedz — inaczej provider odrzuci historie z nieodpowiedzianym tool_call.
@@ -152,8 +161,16 @@ class VPSAgent:
                                      "content": tr(ABANDONED_CONFIRMATION, ABANDONED_CONFIRMATION_EN)})
 
         _repair_history(session)
+        attachments_module.forget_images(session.messages)   # obraz idzie do modelu tylko w swojej turze
         session.web_tainted = False      # uzytkownik widzial odpowiedz — YOLO wraca (core/handlers/web.py)
         message: dict[str, Any] = {"role": "user", "content": user_message}
+        if built is not None:
+            message["content"] = built.content
+            message["pipe_text"] = user_message     # to napisal uzytkownik (VIBE, adresy dla web_fetch)
+            # Tresc pliku to dane spoza rozmowy — jak strona z internetu wstrzymuje YOLO do nastepnej wiadomosci.
+            session.web_tainted = True
+            for path in built.saved:
+                await audit.log_file_write(interface, f"{path} (upload)", 0)
         if generated:
             message["pipe_generated"] = True
         session.messages.append(message)
@@ -164,7 +181,21 @@ class VPSAgent:
             async for event in self.run_loop(session):
                 yield event
         except Exception as exc:
-            yield tr(f"[BLAD] Blad wykonania: {exc}", f"[BLAD] Execution error: {exc}")
+            if not (attachments_module.has_images(message) and _rejects_images(exc)):
+                yield tr(f"[BLAD] Blad wykonania: {exc}", f"[BLAD] Execution error: {exc}")
+                return
+            # Model bez obslugi obrazow: jasny komunikat zamiast cichego pominiecia, potem odpowiedz bez obrazu.
+            attachments_module.strip_images(message, unseen=True)
+            model = self.active_llm()[0].model
+            yield tr(f"[OSTRZEZENIE] Model {model} nie przyjal obrazu — ten model nie widzi obrazow. "
+                     f"Odpowiadam bez niego; obrazy obsluguje np. Gemini, GPT-4o albo Claude (/providerzy).",
+                     f"[OSTRZEZENIE] Model {model} rejected the image — this model cannot see images. "
+                     f"Answering without it; images work with e.g. Gemini, GPT-4o or Claude (/providers).")
+            try:
+                async for event in self.run_loop(session):
+                    yield event
+            except Exception as retry_exc:
+                yield tr(f"[BLAD] Blad wykonania: {retry_exc}", f"[BLAD] Execution error: {retry_exc}")
 
     async def confirm(self, session_id: str, confirmed: bool) -> AsyncGenerator[Event, None]:
         """Obsluguje TAK/NIE dla oczekujacej operacji i kontynuuje petle."""
@@ -543,6 +574,8 @@ def _for_provider(message: dict[str, Any], provider_id: str) -> dict[str, Any]:
     """
     origin = message.get("pipe_provider")
     clean = {k: v for k, v in message.items() if not k.startswith("pipe_")}
+    if isinstance(clean.get("content"), list):
+        clean["content"] = attachments_module.for_provider(clean["content"])
     if origin is None or origin == provider_id or message.get("role") != "assistant":
         return clean
     plain: dict[str, Any] = {"role": "assistant", "content": clean.get("content") or ""}
@@ -553,6 +586,15 @@ def _for_provider(message: dict[str, Any], provider_id: str) -> dict[str, Any]:
     if calls:
         plain["tool_calls"] = calls
     return plain
+
+
+def _rejects_images(exc: Exception) -> bool:
+    """Czy blad providera wyglada na odrzucenie obrazu (a nie np. awarie sieci albo limit)."""
+    status = getattr(exc, "status_code", None)
+    text = str(exc).lower()
+    if any(word in text for word in ("image", "vision", "multimodal", "content type", "must be a string")):
+        return True
+    return status in (415, 422)
 
 
 def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = True) -> None:

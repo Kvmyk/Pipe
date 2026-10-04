@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -13,6 +13,7 @@ Funkcje:
   - Czuwanie: alerty i raporty rutyn przychodza same, z przyciskiem "Zbadaj"
   - Przypomnienia: "napisz do mnie za 10 minut" -- wiadomosc przychodzi sama o czasie (/przypomnienia)
   - InlineKeyboard dla potwierdzen (TAK / NIE)
+  - Zdjecia, zrzuty ekranu i dokumenty (podpis = tresc wiadomosci, album = jedna wiadomosc) oraz glosowki
   - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
     /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
     (angielskie aliasy: /report /changes /chart /health /map /undo ... — dzialaja w obu jezykach)
@@ -175,8 +176,11 @@ class TelegramSocketClient:
     async def collect(self, data: dict) -> list[dict]:
         return [frame async for frame in self.stream(data)]
 
-    def chat(self, message: str) -> AsyncIterator[dict]:
-        return self.stream({"message": message, "session_id": self.session_id, "interface": self.interface})
+    def chat(self, message: str, attachments: list[dict] | None = None) -> AsyncIterator[dict]:
+        request = {"message": message, "session_id": self.session_id, "interface": self.interface}
+        if attachments:
+            request["attachments"] = attachments      # [{name, mime, data(base64)}] — docs/protocol.md
+        return self.stream(request)
 
     def confirm(self, confirmed: bool) -> AsyncIterator[dict]:
         return self.stream({"confirm": confirmed, "session_id": self.session_id})
@@ -887,7 +891,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 _last_message_time: dict[int, float] = {}
-MAX_VOICE_BYTES = 2_500_000
+MAX_VOICE_BYTES = 10 * 1024 * 1024
+# Limit backendu na plik (core/attachments.py); Bot API i tak nie pobierze wiecej niz 20 MB.
+MAX_FILE_BYTES = 10 * 1024 * 1024
+ALBUM_WAIT = 1.2           # album (kilka zdjec naraz) przychodzi jako osobne wiadomosci — zbieramy je razem
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -909,12 +916,75 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         data = bytes(await file.download_as_bytearray())
         name = "voice.ogg" if update.message.voice else (getattr(media, "file_name", None) or "audio.mp3")
         client = get_client(user_id)
-        text = response_data([f async for f in client.command(
-            "transcribe", audio=base64.b64encode(data).decode("ascii"), filename=name)]).get("text", "")
+        try:
+            text = response_data([f async for f in client.command(
+                "transcribe", audio=base64.b64encode(data).decode("ascii"), filename=name)]).get("text", "")
+        except RuntimeError as exc:
+            await update.message.reply_text(str(exc).replace("[BLAD] ", ""))
+            return
         await update.message.reply_text(tr(f"Uslyszalem: {text}", f"I heard: {text}"))
         await _run_and_reply(context, update.effective_chat.id, user_id, client.chat(text))
 
     await _backend_call(update, context, go())
+
+
+_albums: dict[str, dict] = {}
+
+
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Zdjecie albo dokument -> zalacznik wiadomosci do agenta; podpis to tresc wiadomosci."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    message = update.message
+    if message.photo:
+        media, name, mime = message.photo[-1], f"photo-{message.message_id}.jpg", "image/jpeg"
+    elif message.document:
+        media = message.document
+        name = media.file_name or f"file-{message.message_id}"
+        mime = media.mime_type or "application/octet-stream"
+    else:
+        return
+    if (media.file_size or 0) > MAX_FILE_BYTES:
+        await message.reply_text(tr(f"Plik jest za duzy (limit {MAX_FILE_BYTES // (1024 * 1024)} MB).",
+                                    f"The file is too large (limit {MAX_FILE_BYTES // (1024 * 1024)} MB)."))
+        return
+
+    async def download() -> dict:
+        file = await media.get_file()
+        data = bytes(await file.download_as_bytearray())
+        return {"name": name, "mime": mime, "data": base64.b64encode(data).decode("ascii")}
+
+    group = message.media_group_id
+    if not group:
+        async def go() -> None:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+            attachment = await download()
+            await _run_and_reply(context, update.effective_chat.id, user_id,
+                                 get_client(user_id).chat(message.caption or "", [attachment]))
+
+        await _backend_call(update, context, go())
+        return
+
+    # Album: pierwsza wiadomosc czeka chwile na reszte, potem wszystko idzie jedna wiadomoscia do agenta.
+    key = f"{user_id}:{group}"
+    album = _albums.get(key)
+    if album is not None:
+        album["items"].append(download())
+        if message.caption:
+            album["caption"] = message.caption
+        return
+    album = _albums[key] = {"items": [download()], "caption": message.caption or ""}
+
+    async def go_album() -> None:
+        await asyncio.sleep(ALBUM_WAIT)
+        _albums.pop(key, None)
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        attachments = list(await asyncio.gather(*album["items"]))
+        await _run_and_reply(context, update.effective_chat.id, user_id,
+                             get_client(user_id).chat(album["caption"], attachments))
+
+    await _backend_call(update, context, go_album())
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1253,6 +1323,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_file))
     # Po wbudowanych -- skille jako komendy i odpowiedz na nieznana komende
     app.add_handler(MessageHandler(filters.COMMAND, handle_other_command))
     # Grupa 1 dziala po obsludze kazdej wiadomosci

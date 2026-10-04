@@ -267,3 +267,63 @@ def test_language_chosen_on_the_server_applies_on_subscribe(monkeypatch, tmp_pat
     monkeypatch.setattr(bot, "refresh_menu", refresh_menu)
     _run_loop(monkeypatch, tmp_path, [_event({"type": "subscribed", "lang": "en", "lang_chosen": True})], seconds=0.15)
     assert bot.tr("pl", "en") == "en"
+
+
+class FakeFile:
+    def __init__(self, data):
+        self.data = data
+
+    async def download_as_bytearray(self):
+        return bytearray(self.data)
+
+
+class FakeMedia:
+    def __init__(self, data, file_name=None, mime_type=None):
+        self.data, self.file_size, self.file_name, self.mime_type = data, len(data), file_name, mime_type
+
+    async def get_file(self):
+        return FakeFile(self.data)
+
+
+def file_update(message_id, *, photo=None, document=None, caption=None, group=None):
+    from types import SimpleNamespace
+
+    message = SimpleNamespace(photo=[photo] if photo else [], document=document, caption=caption,
+                              media_group_id=group, message_id=message_id, replies=[])
+
+    async def reply_text(text, **kwargs):
+        message.replies.append(text)
+    message.reply_text = reply_text
+    return SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_chat=SimpleNamespace(id=1),
+                           message=message, effective_message=message)
+
+
+def test_photo_and_album_go_to_the_agent_as_attachments(monkeypatch):
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {42})
+    monkeypatch.setattr(bot, "ALBUM_WAIT", 0.05)
+    sent = []
+
+    class Client:
+        def chat(self, message, attachments=None):
+            sent.append((message, attachments))
+            return frames({"response": "ok", "status": "ok", "done": True})
+
+    monkeypatch.setattr(bot, "get_client", lambda user_id: Client())
+
+    async def scenario():
+        context = Context()
+        await bot.handle_file(file_update(1, document=FakeMedia(b"log", "app.log", "text/plain"),
+                                          caption="co tu nie gra?"), context)
+        album = [file_update(2 + i, photo=FakeMedia(b"\xff\xd8\xff" + bytes([i])), group="g", caption="porownaj" if i else None)
+                 for i in range(3)]
+        await asyncio.gather(*(bot.handle_file(update, context) for update in album))
+        too_big = file_update(9, document=FakeMedia(b"x", "big.iso"))
+        too_big.message.document.file_size = bot.MAX_FILE_BYTES + 1
+        await bot.handle_file(too_big, context)
+        return too_big.message.replies
+
+    replies = asyncio.run(scenario())
+    (text, [doc]), (caption, photos) = sent
+    assert text == "co tu nie gra?" and doc["name"] == "app.log" and base64.b64decode(doc["data"]) == b"log"
+    assert caption == "porownaj" and len(photos) == 3 and all(p["mime"] == "image/jpeg" for p in photos)
+    assert len(sent) == 2 and "za duzy" in replies[0]

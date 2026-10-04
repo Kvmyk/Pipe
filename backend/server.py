@@ -11,6 +11,7 @@ Dostęp z laptopa odbywa się przez tunel SSH:
 
 Protokół JSON (linia po linii) — pełny opis w docs/protocol.md:
   Żądanie:  {"message": "tekst", "session_id": "uuid", "interface": "cli|telegram:123", "token": "..."}
+            + opcjonalnie "attachments": [{"name", "mime", "data" (base64)}] (core/attachments.py)
   Żądanie:  {"confirm": true|false, "session_id": "uuid", "token": "..."}
   Żądanie:  {"command": "<nazwa>", "session_id": "uuid", ...}   (lista w _handle_command)
   (pole "token" wymagane tylko gdy AGENT_TOKEN jest ustawiony w .env)
@@ -39,8 +40,8 @@ from backend.core.agent import get_agent
 from backend.core.events import Activity, Attachment, Progress
 from backend.core.watch import get_watcher
 
-# Wiadomosc uzytkownika moze zawierac wklejone logi — domyslne 64 KiB to za malo.
-READ_LIMIT = 4 * 1024 * 1024
+# Wiadomosc moze niesc zalaczniki (do 20 MB razem, base64 +33%) — domyslne 64 KiB to za malo.
+READ_LIMIT = 32 * 1024 * 1024
 
 
 async def handle_client(
@@ -101,13 +102,20 @@ async def handle_client(
                 await _handle_command(writer, agent, request, session_id, interface, identity, role)
                 continue
 
-            # Obsłuż wiadomość
-            message = request.get("message", "").strip()
-            if not message:
+            # Obsłuż wiadomość (z zalacznikami: pliki, zdjecia, zrzuty ekranu)
+            from backend.core import attachments
+            message = str(request.get("message", "") or "").strip()
+            try:
+                uploads = attachments.parse(request.get("attachments"))
+            except attachments.AttachmentError as exc:
+                await _send(writer, _error(str(exc)))
+                continue
+            if not message and not uploads:
                 await _send(writer, _error(tr("Pusta wiadomość.", "Empty message.")))
                 continue
 
-            await _stream_chat(writer, agent, session_id, message, interface, owner=identity, role=role)
+            await _stream_chat(writer, agent, session_id, message, interface, owner=identity, role=role,
+                               attachments=uploads)
 
     except ConnectionResetError:
         pass
@@ -159,12 +167,16 @@ async def _stream(writer, events, texts: list[str] | None = None) -> int:
 
 
 async def _stream_chat(writer, agent, session_id: str, message: str, interface: str, *,
-                       generated: bool = False, owner: str = "", role: str = "admin") -> list[str]:
+                       generated: bool = False, owner: str = "", role: str = "admin",
+                       attachments: list | None = None) -> list[str]:
     """Przekazuje wiadomosc agentowi i streamuje odpowiedz (JSON lines, ostatnia z done=true). Zwraca teksty."""
-    print(f"[server] Wiadomość od {interface}: {message[:80]}", flush=True)
+    files = f" (+{len(attachments)} zal.)" if attachments else ""
+    print(f"[server] Wiadomość od {interface}: {message[:80]}{files}", flush=True)
     kwargs: dict = {"owner": owner, "role": role}
     if generated:
         kwargs["generated"] = True
+    if attachments:
+        kwargs["attachments"] = attachments
     texts: list[str] = []
     count = await _stream(writer, agent.chat(session_id, message, interface, **kwargs), texts)
     print(f"[server] Odpowiedź wysłana ({count} fragmentów)", flush=True)
@@ -333,7 +345,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 return
             await _undo(writer, request, interface)
         elif command == "transcribe":
-            await _transcribe(writer, request)
+            await _transcribe(writer, request, interface)
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
             await _providers(writer, command, request, interface, role)
         elif command == "language":
@@ -559,12 +571,13 @@ async def _approve(writer, request: dict, identity: str, role: str) -> None:
     await _send(writer, _data({"id": approval.id, "status": approval.status, "text": approval.describe()}))
 
 
-async def _transcribe(writer, request: dict) -> None:
+async def _transcribe(writer, request: dict, interface: str = "") -> None:
     """Wiadomosc glosowa -> tekst (klient wysyla potem tekst jak zwykla wiadomosc)."""
     import base64
     import binascii
 
-    from backend.core import voice
+    from backend.core import llm, voice
+    from backend.core.agent import _record_usage
 
     try:
         data = base64.b64decode(str(request.get("audio", "")), validate=True)
@@ -573,8 +586,16 @@ async def _transcribe(writer, request: dict) -> None:
         return
     try:
         usage.check_budget(settings.DAILY_TOKEN_LIMIT, settings.DAILY_COST_LIMIT)
+        # Provider wybrany teraz (core/llm.py) — na Gemini transkrybuje sam model czatu (input_audio).
+        current = llm.resolve(settings.LLM) if settings.LLM else None
+        base = settings.LLM.provider_id if settings.LLM else ""
+
+        def on_usage(model, response_usage):
+            _record_usage(model, response_usage, interface,
+                          priced=current is not None and current.provider_id == base and model == current.model)
+
         text = await voice.transcribe(data, str(request.get("filename", "") or "voice.ogg"),
-                                      voice.resolve(dict(os.environ), settings.LLM))
+                                      voice.resolve(dict(os.environ), current), on_usage=on_usage)
     except (voice.TranscriptionError, usage.BudgetExceeded) as exc:
         await _send(writer, _error(str(exc)))
         return

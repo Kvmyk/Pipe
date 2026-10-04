@@ -27,6 +27,8 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 ## Co jest na stronie
 
 - **Rozmowa** -- odpowiedzi agenta, diagramy, potwierdzenia z planem bezpiecznika i roznica pliku.
+- **Zalaczniki i glos** -- spinacz, przeciagniecie pliku albo wklejenie zrzutu ekranu dolacza pliki do wiadomosci
+  (miniatury przed wyslaniem, do 10 MB na plik); mikrofon nagrywa glosowke (WAV 16 kHz) i wysyla jej tekst.
 - **Schemat** -- generowany automatycznie, trzy poziomy: serwery -> wnetrze serwera -> projekt compose.
   Element, na ktorym agent pracuje, jest podswietlony; *Sledze agenta* przenosi widok za nim. Dowolny ruch
   na schemacie wylacza sledzenie, przycisk wlacza je z powrotem. Pod schematem os czasu dzialan.

@@ -45,8 +45,16 @@
       </div>
       <div class="palette model-menu" id="model-menu" role="listbox" hidden><div class="palette-glow" id="model-menu-glow"></div><div class="palette-list" id="model-menu-list"></div></div>
       <div class="palette" id="palette" role="listbox" hidden><div class="palette-glow" id="palette-glow"></div><div class="palette-list" id="palette-list"></div></div>
+      <div class="tray" id="tray" hidden></div>
       <form class="composer" id="composer" autocomplete="off">
+        <input type="file" id="file-input" multiple hidden>
+        <button type="button" id="attach" class="tool" aria-label="attach">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <textarea id="input" rows="1"></textarea>
+        <button type="button" id="mic" class="tool" aria-label="voice" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <button type="submit" id="send" class="primary" aria-label="send">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12l15-7-5 16-3-7z" fill="currentColor"/></svg>
         </button>
@@ -119,6 +127,7 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <div class="lightbox" id="lightbox" hidden><img alt=""></div>
+  <div class="dropzone" id="dropzone" hidden><div id="dropzone-text"></div></div>
 
   <script type="application/json" id="pipe-config">__PIPE_CONFIG__</script>
   <script src="/static/theme.js"></script>

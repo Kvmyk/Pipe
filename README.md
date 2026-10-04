@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.25.4-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.26.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -57,6 +57,7 @@ Tak wyglądają typowe prośby:
 | *sprawdź dyski na wszystkich serwerach* | wysyła równoległych pomocników (workerów) na zdalne maszyny przez SSH |
 | *czy nasz PostgreSQL jest jeszcze wspierany?* | sprawdza wersję na serwerze i porównuje z endoflife.date |
 | *cofnij ostatnią zmianę* | przywraca pliki z kopii zrobionej przed zmianą |
+| *czemu to nie działa?* + zrzut ekranu albo log | ogląda zrzut, czyta log (sekrety ukrywa przed modelem) i szuka przyczyny na serwerze |
 
 Pełna lista funkcji z przykładami: [docs/features.md](./docs/features.md).
 

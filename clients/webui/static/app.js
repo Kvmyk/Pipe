@@ -263,14 +263,187 @@
 
   async function send(text) {
     text = text.trim();
-    if (!text || busy) return;
+    if ((!text && !pending.length) || busy || reading) return;
     closePalette();
     input.value = ""; autosize();
-    if (text.startsWith("/") && await slash(text)) return;
+    if (!pending.length && text.startsWith("/") && await slash(text)) return;
     if (pendingCard) pendingCard.supersede();
-    add("user", text);
-    await run({ message: text });
+    const files = pending.splice(0);
+    renderTray();
+    add("user", userBubble(text, files));
+    const payload = { message: text };
+    if (files.length) payload.attachments = files.map((f) => ({ name: f.name, mime: f.mime, data: f.data }));
+    await run(payload);
   }
+
+  // ---------------------------------------------------------------- zalaczniki
+  // Pliki, zdjecia i zrzuty ekranu (spinacz, przeciagniecie, wklejenie) ida z wiadomoscia jako base64; backend
+  // (core/attachments.py) rozpoznaje obraz / tekst / plik binarny. Limity takie same jak w backendzie.
+  const MAX_FILE_MB = 10, MAX_TOTAL_MB = 20, MAX_FILES = 10;
+  const pending = [];
+  let reading = 0;
+  const fmt = (key, vars) => Object.entries(vars || {}).reduce((text, [k, v]) => text.replace("{" + k + "}", v), t(key));
+  function sizeLabel(bytes) { return bytes < 1048576 ? Math.max(1, Math.round(bytes / 1024)) + " kB" : (bytes / 1048576).toFixed(1) + " MB"; }
+  function readBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",", 2)[1] || "");
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+  async function addFiles(list) {
+    for (const file of Array.from(list || [])) {
+      if (pending.length >= MAX_FILES) { toast(t("attachment"), fmt("tooMany", { limit: MAX_FILES })); break; }
+      if (file.size > MAX_FILE_MB * 1048576) { toast(t("attachment"), fmt("tooBig", { name: file.name, limit: MAX_FILE_MB })); continue; }
+      const total = pending.reduce((sum, f) => sum + f.size, 0) + file.size;
+      if (total > MAX_TOTAL_MB * 1048576) { toast(t("attachment"), fmt("tooMuch", { limit: MAX_TOTAL_MB })); break; }
+      // Zrzut ekranu ze schowka nazywa sie zwykle "image.png" — nadajemy nazwe z data i godzina.
+      const pasted = !file.name || file.name === "image.png";
+      const name = pasted ? "screenshot-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".png" : file.name;
+      const image = /^image\/(png|jpeg|gif|webp)$/.test(file.type);
+      reading++;
+      try {
+        const data = await readBase64(file);
+        // Podglad jako data URL (jak obrazy od agenta) — bez blob: nie trzeba pamietac o zwalnianiu adresow.
+        pending.push({ name, mime: file.type || "application/octet-stream", size: file.size, data,
+                       url: image ? `data:${file.type};base64,${data}` : "" });
+      } catch (error) {
+        toast(t("attachment"), name + ": " + error);
+      } finally { reading--; }
+      renderTray();
+    }
+    input.focus();
+  }
+  function fileTile(file) {
+    if (file.url) { const img = el("img"); img.src = file.url; img.alt = file.name; return img; }
+    const ext = file.name.match(/\.([a-z0-9]{1,4})$/i);
+    return el("span", "ext", ext ? ext[1] : "file");
+  }
+  function renderTray() {
+    const tray = $("tray");
+    tray.textContent = "";
+    tray.hidden = !pending.length;
+    pending.forEach((file, index) => {
+      const item = el("div", "file"), meta = el("div", "meta"), remove = el("button", "x", "×");
+      item.appendChild(fileTile(file));
+      meta.appendChild(el("span", "", file.name)); meta.appendChild(el("small", "", sizeLabel(file.size)));
+      item.appendChild(meta);
+      remove.type = "button"; remove.title = t("remove"); remove.setAttribute("aria-label", t("remove") + " " + file.name);
+      remove.addEventListener("click", () => { pending.splice(index, 1); renderTray(); input.focus(); });
+      item.appendChild(remove);
+      tray.appendChild(item);
+    });
+  }
+  function userBubble(text, files) {
+    if (!files.length) return text;
+    const box = el("div");
+    if (text) box.appendChild(el("div", "", text));
+    const row = el("div", "files");
+    files.forEach((file) => {
+      if (file.url) {
+        const img = el("img"); img.src = file.url; img.alt = file.name; img.title = file.name;
+        img.addEventListener("click", () => { $("lightbox").firstElementChild.src = img.src; $("lightbox").hidden = false; });
+        row.appendChild(img);
+      } else row.appendChild(el("span", "name", file.name + " · " + sizeLabel(file.size)));
+    });
+    box.appendChild(row);
+    return box;
+  }
+  $("attach").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", (event) => { addFiles(event.target.files); event.target.value = ""; });
+  input.addEventListener("paste", (event) => {
+    const files = event.clipboardData && event.clipboardData.files;
+    if (files && files.length) { event.preventDefault(); addFiles(files); }
+  });
+  let dragDepth = 0;
+  const hasFiles = (event) => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files");
+  document.addEventListener("dragenter", (event) => { if (!hasFiles(event)) return; dragDepth++; $("dropzone").hidden = false; });
+  document.addEventListener("dragleave", (event) => {
+    if (!hasFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) $("dropzone").hidden = true;
+  });
+  document.addEventListener("dragover", (event) => { if (hasFiles(event)) event.preventDefault(); });
+  document.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault(); dragDepth = 0; $("dropzone").hidden = true;
+    addFiles(event.dataTransfer.files);
+  });
+
+  // ---------------------------------------------------------------- glosowki
+  // Nagranie z mikrofonu -> WAV 16 kHz mono (przyjmuje go i Whisper, i Gemini) -> komenda `transcribe` -> wiadomosc.
+  const MAX_RECORDING_S = 300;
+  let recorder = null, recordTimer = 0;
+  async function toggleMic() {
+    if (recorder) { recorder.stop(); return; }
+    if (busy) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) { toast(t("mic"), t("micUnsupported")); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (error) { toast(t("mic"), fmt("micDenied", { error: error.message || error.name })); return; }
+    const chunks = [], started = Date.now();
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      clearInterval(recordTimer);
+      recorder = null;
+      micState(false);
+      setWorking("");
+      if (chunks.length) await sendVoice(new Blob(chunks, { type: chunks[0].type }));
+    };
+    recorder.start();
+    micState(true);
+    const tick = () => {
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      setWorking(fmt("recording", { time: Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0") }));
+      if (seconds >= MAX_RECORDING_S && recorder) recorder.stop();
+    };
+    tick(); recordTimer = setInterval(tick, 500);
+  }
+  function micState(on) {
+    const mic = $("mic");
+    mic.classList.toggle("recording", on);
+    mic.setAttribute("aria-pressed", String(on));
+    mic.title = t(on ? "micStop" : "mic");
+    $("send").disabled = on;
+  }
+  async function toWav(blob) {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    const context = new Context();
+    let decoded;
+    try { decoded = await context.decodeAudioData(await blob.arrayBuffer()); } finally { context.close(); }
+    const rate = 16000, frames = Math.max(1, Math.ceil(decoded.duration * rate));
+    const offline = new OfflineAudioContext(1, frames, rate), source = offline.createBufferSource();
+    source.buffer = decoded; source.connect(offline.destination); source.start();
+    const samples = (await offline.startRendering()).getChannelData(0);
+    const buffer = new ArrayBuffer(44 + samples.length * 2), view = new DataView(buffer);
+    const ascii = (at, text) => { for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i)); };
+    ascii(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); ascii(8, "WAVE"); ascii(12, "fmt ");
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); ascii(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+  async function sendVoice(blob) {
+    setWorking(t("transcribing"));
+    let text = "";
+    try {
+      const wav = await toWav(blob);
+      text = String((await command({ command: "transcribe", audio: await readBase64(wav), filename: "voice.wav" })).text || "").trim();
+    } catch (error) {
+      setWorking("");
+      add("agent error", md(t("errorPrefix") + ": " + stripTags(error.message || String(error))));
+      return;
+    }
+    setWorking("");
+    if (!text) { add("note", t("noSpeech")); return; }
+    // Tekst trafia do agenta od razu (jak glosowka w Telegramie); to, co bylo juz wpisane, idzie razem z nim.
+    await send((input.value.trim() ? input.value.trim() + " " : "") + text);
+  }
+  $("mic").addEventListener("click", toggleMic);
   function autosize() { input.style.height = "auto"; input.style.height = Math.min(160, input.scrollHeight) + "px"; }
   input.addEventListener("input", () => { autosize(); updatePalette(); });
   input.addEventListener("keydown", (event) => {
@@ -1453,6 +1626,9 @@
   splitter.title = t("resizePanel"); splitter.setAttribute("aria-label", t("resizePanel"));
   applyStage();
   input.placeholder = t("placeholder");
+  $("attach").title = t("attach"); $("attach").setAttribute("aria-label", t("attach"));
+  $("mic").title = t("mic"); $("mic").setAttribute("aria-label", t("mic"));
+  $("dropzone-text").textContent = t("dropHere");
   $("server-name").textContent = config.server || "";
 
   welcome();

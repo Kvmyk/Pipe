@@ -323,8 +323,10 @@ def format_help(skills: list[dict]) -> str:
     if with_command:
         lines.append(tr(f"\n<b>Skille ({len(with_command)})</b> — kazdy ma wlasna komende, pelna lista: /skille",
                         f"\n<b>Skills ({len(with_command)})</b> — each has its own command, full list: /skills"))
-    lines.append(tr("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>",
-                    "\nYou can also just write, e.g. <i>\"how much free space do I have?\"</i>"))
+    lines.append(tr("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>, nagrac glosowke "
+                    "albo wyslac zrzut ekranu, log czy plik konfiguracyjny (podpis to pytanie).",
+                    "\nYou can also just write, e.g. <i>\"how much free space do I have?\"</i>, record a voice note "
+                    "or send a screenshot, a log or a config file (the caption is the question)."))
     return "\n".join(lines)
 
 

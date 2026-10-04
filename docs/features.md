@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -404,12 +404,33 @@ W Dockerze port jest publikowany tylko na `127.0.0.1:7380`; nadawcy spoza serwer
 
 ---
 
+## Zalaczniki: pliki, zrzuty ekranu, logi
+
+Agentowi mozna wyslac plik razem z pytaniem: zrzut ekranu z bledem, log, konfiguracje nginx. Na Telegramie
+zdjecie albo dokument (podpis to pytanie, album kilku zdjec idzie jako jedna wiadomosc), w `pipe web` spinacz,
+przeciagniecie pliku na okno albo wklejenie zrzutu ze schowka (miniatury przed wyslaniem), w CLI `/plik <sciezka>
+[pytanie]` albo `@sciezka` w zwyklej wiadomosci (Tab podpowiada sciezki).
+
+Backend (`core/attachments.py`) rozpoznaje plik po zawartosci, nie po nazwie:
+
+- obraz (PNG, JPEG, GIF, WebP) idzie do modelu jako obraz i zostaje w historii tylko na jedna ture -- potem
+  zastepuje go znacznik, zeby kolejne pytania nie wysylaly go od nowa. Gdy model nie przyjmuje obrazow (np. czesc
+  modeli Ollamy), Pipe mowi to wprost: *model nie widzi obrazow* i odpowiada bez obrazu,
+- tekst (UTF-8) jest wklejany do wiadomosci po redakcji sekretow i przycieciu do 24 tys. znakow,
+- reszta (archiwa, binarki, PDF) trafia do `DATA_DIR/uploads/` (0600, sprzatane po 7 dniach), a agent dostaje
+  sciezke; przeniesienie pliku gdzie indziej to zwykla zmiana z potwierdzeniem.
+
+Limity: 10 MB na plik, 20 MB i 10 plikow na wiadomosc. Tresc zalacznika to dane, nie polecenia: tryb YOLO jest
+wstrzymany do nastepnej wiadomosci, tak jak po przeczytaniu strony z internetu.
+
 ## Wiadomosci glosowe
 
 Na Telegramie wystarczy nagrac wiadomosc: *"sprawdz, czemu sklep nie dziala"*. Bot odpisze *Uslyszalem: ...*
-i przekaze tekst agentowi. Transkrypcja: endpoint Whisper zgodny z OpenAI -- przy `LLM_PROVIDER=openai` albo
-`groq` dziala bez konfiguracji; przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`
-(np. darmowy Groq `whisper-large-v3-turbo` albo lokalny faster-whisper). Nagranie OGG idzie bez konwersji.
+i przekaze tekst agentowi. W `pipe web` jest przycisk mikrofonu: nagranie (do 5 minut) przegladarka zamienia na
+WAV 16 kHz i wysyla do transkrypcji, a tekst idzie do agenta. Transkrypcja: przy `LLM_PROVIDER=gemini` robi ja
+sam model Gemini (wejscie audio), przy `openai` albo `groq` endpoint Whisper tego providera -- w obu przypadkach
+bez konfiguracji. Przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy Groq
+`whisper-large-v3-turbo` albo lokalny faster-whisper); `STT_*` ma zawsze pierwszenstwo.
 
 ---
 

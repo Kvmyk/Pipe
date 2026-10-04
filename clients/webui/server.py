@@ -37,12 +37,12 @@ from urllib.parse import parse_qs, urlsplit
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 mimetypes.add_type("font/woff2", ".woff2")       # kroj IBM Plex (static/fonts) — nie kazdy system zna to rozszerzenie
 READ_LIMIT = 32 * 1024 * 1024          # ramki z diagramami (base64) sa duze
-MAX_BODY = 4 * 1024 * 1024
+MAX_BODY = 32 * 1024 * 1024           # zalaczniki: do 20 MB razem (core/attachments.py), base64 +33%
 DEFAULT_PORT = 7400
 COOKIE = "pipe_key"
 # Pola zadania, ktore przegladarka moze ustawic — reszte (token, interface) dodaje ten proces.
 ALLOWED_FIELDS = {"message", "confirm", "command", "name", "args", "id", "execute", "decision", "cancel", "claim",
-                  "key", "model"}
+                  "key", "model", "attachments", "audio", "filename"}
 SECURITY_HEADERS = (
     "X-Content-Type-Options: nosniff\r\n"
     "X-Frame-Options: DENY\r\n"

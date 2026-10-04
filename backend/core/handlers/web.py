@@ -36,13 +36,14 @@ def _short(text: str, limit: int = 120) -> str:
 
 
 def _user_gave(session: Session, url: str) -> bool:
-    """Czy uzytkownik sam wpisal ten adres (wiadomosci zbudowane przez backend sie nie licza)."""
+    """
+    Czy uzytkownik sam wpisal ten adres (wiadomosci zbudowane przez backend sie nie licza, tresc
+    zalacznikow tez nie — `pipe_text` to sam tekst wpisany przez uzytkownika).
+    """
     key = websearch.normalize_url(url)
-    return bool(key) and any(
-        m.get("role") == "user" and not m.get("pipe_generated") and isinstance(m.get("content"), str)
-        and key in m["content"]
-        for m in session.messages
-    )
+    typed = (m.get("pipe_text", m.get("content")) for m in session.messages
+             if m.get("role") == "user" and not m.get("pipe_generated"))
+    return bool(key) and any(isinstance(text, str) and key in text for text in typed)
 
 
 async def handle_web_search(agent: Any, session: Session, tool_call: Any, args: dict[str, Any]) -> AsyncGenerator[Event, None]:

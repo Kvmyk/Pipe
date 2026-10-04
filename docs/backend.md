@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -40,7 +40,8 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/reminders.py` | Przypomnienia: jednorazowe wiadomosci i zadania o czasie (`reminders.json`), odpala je czuwanie |
 | `core/incidents.py` | Pamiec incydentow: alert -> ustalenia z "Zbadaj" -> co pomoglo (dziennik) |
 | `core/webhooks.py` | Serwer HTTP alertow z zewnatrz (Alertmanager, Grafana, Uptime Kuma, GitHub) |
-| `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI) |
+| `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI albo model Gemini z wejsciem audio) |
+| `core/attachments.py` | Zalaczniki wiadomosci: limity, obraz / tekst / plik binarny po zawartosci, `DATA_DIR/uploads/` |
 | `tokens.py` | Tokeny klientow z rolami admin/viewer (`python3 -m backend.tokens`) |
 | `core/mcp/` | MCP: `server.py` (Pipe jako serwer, obie ery protokolu, Streamable HTTP), `client.py` (stdio/HTTP), `registry.py` (`mcp.json`, polityka) |
 | `core/approvals.py` | Zgody administratora dla operacji zewnetrznych agentow |
@@ -318,7 +319,7 @@ Powinienes zobaczyc:
 | `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Serwer alertow z zewnatrz (0 = wylaczony; bez tokenu nie wystartuje) |
 | `WEBHOOK_INVESTIGATE` | 1 | Nowy alert z webhooka bada worker (tylko odczyty), raport na Telegram; limit 1/h na alert, 10/dzien |
 | `MCP_PORT`, `MCP_HOST`, `MCP_ALLOWED_ORIGINS` | 0, 127.0.0.1, -- | Pipe jako serwer MCP po HTTP (`/mcp`, token Pipe jako Bearer) |
-| `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (openai/groq -- automatycznie) |
+| `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (gemini/openai/groq -- automatycznie; `STT_*` ma pierwszenstwo) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 

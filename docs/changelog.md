@@ -1,5 +1,33 @@
 # Historia zmian -- Pipe
 
+## v0.26.0 (2026-10-04)
+
+### Zalaczniki: pliki, zrzuty ekranu, logi
+
+- Agentowi mozna wyslac plik razem z pytaniem. Telegram: zdjecie albo dokument, podpis to pytanie, album kilku
+  zdjec idzie jako jedna wiadomosc. `pipe web`: spinacz, przeciagniecie pliku na okno, wklejenie zrzutu ze schowka,
+  miniatury przed wyslaniem. CLI: `/plik <sciezka> [pytanie]` albo `@sciezka` w zwyklej wiadomosci, Tab podpowiada
+  sciezki
+- Protokol: opcjonalne pole `attachments: [{name, mime, data}]` w zadaniu `message` (stare klienty dzialaja bez
+  zmian). Limity: 10 MB na plik, 20 MB i 10 plikow na wiadomosc; `READ_LIMIT` serwera i limit mostu `pipe web`
+  podniesione do 32 MiB
+- Rodzaj pliku wynika z zawartosci: obraz idzie do modelu jako obraz i zostaje w historii tylko na jedna ture,
+  tekst jest wklejany po ukryciu sekretow i przycieciu do 24 tys. znakow, reszta trafia do `DATA_DIR/uploads/`
+  (prawa 0600, sprzatane po 7 dniach), a agent dostaje sciezke (w Dockerze takze sciezke na hoscie)
+- Model, ktory nie przyjmuje obrazow, nie przemilcza tego: Pipe pisze, ze ten model nie widzi obrazow, i odpowiada
+  bez obrazu
+- Tresc zalacznika to dane, nie polecenia: YOLO jest wstrzymane do nastepnej wiadomosci, tekst z pliku nie uczy
+  VIBE i nie liczy sie jako adres wpisany przez uzytkownika dla `web_fetch`. Viewer moze wysylac obrazy i tekst,
+  ale nie pliki do zapisania na serwerze
+
+### Glosowki
+
+- Na Gemini transkrypcja dziala bez `STT_*`: nagranie przepisuje sam model (wejscie audio w Chat Completions).
+  Transkrypcja korzysta z providera wybranego w interfejsie, a jej koszt trafia do licznika `/koszt`
+- `pipe web` ma przycisk mikrofonu: nagranie do 5 minut, w przegladarce zamieniane na WAV 16 kHz, tekst idzie do
+  agenta od razu
+- Limit nagrania podniesiony do 10 MB; bot pokazuje blad transkrypcji zamiast wysylac pusta wiadomosc
+
 ## v0.25.4 (2026-10-04)
 
 ### Strona projektu i README

@@ -36,7 +36,7 @@
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh --lang en</code></pre>
     <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.25.4</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.26.0</a></p>
 
     <figure class="shot">
       <img src="../assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and asks for approval to change the nginx config; on the right a map of the server with the element the agent works on highlighted">
@@ -137,11 +137,12 @@ sudo bash scripts/install-server.sh --lang en</code></pre>
       </div>
       <table class="table">
         <tr><th>Terminal</th><td>The <code>pipe</code> command on your computer (Windows, macOS, Linux). Confirmations show
-          the command and the safety plan; diagrams are saved as PNG.</td></tr>
+          the command and the safety plan; diagrams are saved as PNG. Attach a file with <code>@path</code>.</td></tr>
         <tr><th>Browser</th><td><code>pipe web</code> opens the conversation next to a map of the server that shows where
-          the agent is working. Every change has a diff preview and an undo button.</td></tr>
+          the agent is working. Every change has a diff preview and an undo button. Paste a screenshot into the
+          conversation, or ask by voice with the microphone.</td></tr>
         <tr><th>Telegram</th><td>Alerts, reminders and the morning report arrive here, with an "Investigate" button on
-          alerts. Voice messages work once transcription is set up (out of the box with OpenAI and Groq).</td></tr>
+          alerts. You can send a voice note, a photo or a log file (voice works out of the box with Gemini, OpenAI and Groq).</td></tr>
       </table>
     </div>
   </section>
@@ -236,7 +237,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.25.4 · MIT license</span>
+    <span>Pipe 0.26.0 · MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/README.en.md">README</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>

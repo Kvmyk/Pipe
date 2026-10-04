@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.25.4-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.26.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -55,6 +55,7 @@ Pipe works with any model that speaks the OpenAI API. The default is Google Gemi
 | *check the disks on all servers* | sends parallel helpers (workers) to remote machines over SSH |
 | *is our PostgreSQL still supported?* | reads the version on the server and checks it against endoflife.date |
 | *undo the last change* | restores the files from the backup taken before the change |
+| *why is this broken?* + a screenshot or a log | looks at the screenshot, reads the log (secrets hidden from the model) and looks for the cause on the server |
 
 ## What it does
 

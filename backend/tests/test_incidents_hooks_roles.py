@@ -263,7 +263,9 @@ class TestVoice:
     def test_resolve(self):
         llm = SimpleNamespace(provider_id="groq", base_url="https://api.groq.com/openai/v1", api_key="k")
         assert voice.resolve({}, llm).model == "whisper-large-v3-turbo"
-        assert voice.resolve({}, SimpleNamespace(provider_id="gemini", base_url="x", api_key="k")) is None
+        gemini = voice.resolve({}, SimpleNamespace(provider_id="gemini", base_url="x", api_key="k", model="gemini-flash"))
+        assert (gemini.mode, gemini.model) == ("chat", "gemini-flash")
+        assert voice.resolve({}, SimpleNamespace(provider_id="mistral", base_url="x", api_key="k", model="m")) is None
         custom = voice.resolve({"STT_BASE_URL": "http://stt:8000/v1", "STT_MODEL": "large-v3", "STT_LANGUAGE": "en"},
                                None)
         assert (custom.base_url, custom.model, custom.language, custom.api_key) == \
@@ -299,7 +301,7 @@ class TestVoice:
 
         monkeypatch.setattr(server, "get_agent", lambda: FakeAgent())
 
-        async def fake(data, filename, config):
+        async def fake(data, filename, config, **kwargs):
             assert data == b"nagranie" and filename == "voice.ogg"
             return "ile mam miejsca"
 

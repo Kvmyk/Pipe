@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.25.4
+Pipe v0.26.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -86,7 +86,8 @@ zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w ad
 
 Na stronie: rozmowa, schemat serwera na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk
 *Sledze agenta*), os czasu dzialan, zakladka *Zmiany* z roznicami i cofaniem, zakladka *Alerty* ze zdarzeniami na
-zywo, zakladka *Skille* z podgladem i uruchamianiem. Po wpisaniu `/` w polu rozmowy rozwija sie lista komend
+zywo, zakladka *Skille* z podgladem i uruchamianiem. Spinacz przy polu rozmowy (albo przeciagniecie pliku,
+albo wklejenie zrzutu ekranu) dolacza pliki do wiadomosci, a mikrofon nagrywa glosowke. Po wpisaniu `/` w polu rozmowy rozwija sie lista komend
 i skilli -- dzialaja te same komendy co ponizej. Przy pierwszym wejsciu strona pyta o providera LLM (klucz API
 i model), a przelacznik nad polem rozmowy pozwala skakac miedzy providerami, do ktorych jest klucz (`/provider`). W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
 
@@ -176,6 +177,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
+| `/plik <sciezka> [pytanie]` | Wyslij agentowi plik z tego komputera (log, konfiguracja, zrzut ekranu; do 10 MB). W zwyklej wiadomosci wystarczy `@sciezka`, np. `co tu nie gra? @nginx.conf`; Tab podpowiada sciezki. Alias: `/file` |
 | `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez pytania o TAK (bezpiecznik, dziennik i `/cofnij` dzialaja dalej, operacje zakazane sa nadal odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu; prompt pokazuje wtedy czerwone `YOLO` |
 | `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
 | `/mermaid` | Kod Mermaid ostatniego diagramu |
