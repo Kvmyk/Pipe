@@ -49,3 +49,6 @@ backend/data/
 
 # zrzut ekranu z przerwanego nagrania demo (scripts/demo/record.py)
 docs/assets/*.failure.png
+
+# strona projektu zlozona lokalnie (scripts/build_site.py)
+_site/

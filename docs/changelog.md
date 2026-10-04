@@ -1,5 +1,20 @@
 # Historia zmian -- Pipe
 
+## v0.25.4 (2026-10-04)
+
+### Strona projektu i README
+
+- Nowa strona projektu na GitHub Pages (`site/`: polska pod `/`, angielska pod `/en/`): czym jest Pipe, zapis
+  przykladowej rozmowy z karta potwierdzenia, co agent robi sam, o co pyta i czego nie zrobi nigdy, instalacja
+  i uczciwa lista ograniczen. Kroje i kolory jak w `pipe web`, jasny lub ciemny motyw wedlug systemu
+- `scripts/build_site.py` sklada strone (site/ + logo, nagrania, kroje IBM Plex), a workflow
+  `.github/workflows/pages.yml` publikuje ja po kazdej zmianie. Jednorazowo trzeba wlaczyc w repozytorium
+  Settings -> Pages -> Source: GitHub Actions
+- README (polskie i angielskie) przepisane prostszym jezykiem i z polskimi znakami: czym jest Pipe, przyklady,
+  co potrafi, instalacja, bezpieczenstwo z ograniczeniami. Szczegoly (narzedzia, komendy, architektura) zostaly
+  w `docs/`
+- `bump_version.py` podbija tez wersje na stronie
+
 ## v0.25.3 (2026-10-04)
 
 ### Dokumentacja

@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.25.3
+Pipe v0.25.4
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 

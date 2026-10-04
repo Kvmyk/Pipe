@@ -5,253 +5,142 @@
 <h1 align="center">Pipe</h1>
 
 <p align="center">
-  <b>An AI agent that looks after your servers instead of just answering questions.</b>
+  An AI agent that runs on your Linux server. It watches the server, messages you when something breaks,<br>
+  and makes every change only after you say yes, with a backup and a way to undo it.
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.25.3-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.25.4-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-1a1b1d?style=flat-square">
-  <img alt="Docker, systemd, Kubernetes" src="https://img.shields.io/badge/deploy-docker%20%C2%B7%20systemd%20%C2%B7%20k8s-1a1b1d?style=flat-square">
 </p>
 
 <p align="center">
   <a href="./README.md">Polski</a> · <b>English</b> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="docs/features.md">Features</a> ·
-  <a href="docs/security.md">Security</a>
+  <a href="https://kvmyk.github.io/pipe/en/">Website</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="docs/">Documentation (Polish)</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent investigates 502 errors, searches the web, proposes an nginx fix with a safety-fuse plan and applies it after YES" width="100%">
+  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent checks the logs, looks up the cause of 502 errors on the web and fixes the nginx config after approval" width="100%">
   <br>
-  <sub><code>pipe web</code> demo: the agent checks the logs, looks up the cause on the web and fixes nginx after your YES -- while the map next to the chat shows where it works.
-  Recorded from a scripted session (<a href="scripts/demo">scripts/demo</a>).</sub>
+  <sub><code>pipe web</code> recorded from a scripted session (<a href="scripts/demo">scripts/demo</a>).</sub>
 </p>
 
-Pipe lives on the server permanently: it knows it (SERVER.md, a map of directories), watches it and speaks up
-first when something breaks. You talk to it from a terminal (CLI over an SSH tunnel) or from your phone
-(Telegram) -- in English or Polish. Every command goes through a safety classifier that lives in code, not in
-the prompt: reads run immediately, changes wait for your YES, destructive operations are rejected.
+## What it is
 
----
+You install Pipe on a server and leave it there. You talk to it from a terminal, a browser or Telegram, in English
+or Polish. Ask it to diagnose something ("why is the shop slow?"), change something ("raise the PHP memory limit")
+or explain something ("what changed since yesterday?").
 
-## How it differs from Claude Code, Codex or Hermes Agent
+Pipe keeps working between conversations. Every two minutes it checks disks, memory, load, containers and ports
+open to the internet. Every hour it records the state of the server, so it knows what changed and when. When
+something is wrong it sends an alert to Telegram, and every morning a short report.
 
-Those tools are general agents for code or "for everything". Pipe is an **operations** agent:
+The agent can read the server freely, but it changes nothing without asking. Every command goes through a
+classifier written in code (not in the prompt): reads run right away, changes wait for your confirmation, and
+destructive operations are always refused.
 
-| | Pipe |
+Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
+
+## Examples
+
+| You write | Pipe |
 |---|---|
-| **Writes first** | Every 2 minutes the watcher checks disks, RAM, load, containers in a restart loop and **new public ports**. The alert arrives on Telegram with an *Investigate* button. No LLM, no cost. Every morning -- a **report** with a chart. |
-| **Knows what changed** | An hourly host snapshot: packages, container images, ports, cron, accounts, SSH keys, configs. *"What changed since yesterday?"* has an answer with a timestamp -- and when investigating an alert the agent gets it automatically. |
-| **Zero-config monitoring** | Pipe finds the domains in nginx/Caddy/Traefik and the backups in its directory map by itself: it watches certificate expiry, site responses, DNS and backup freshness. You define nothing. |
-| **Shows what it is doing** | `pipe web`: next to the chat, a map of the server that shows live where the agent works -- servers, inside a server, a project. Every change has a before -> after diff and an undo button. |
-| **Sees the architecture** | `/map` draws a diagram of what runs on the server: domains -> reverse proxy -> containers -> databases, compose projects, ports exposed to the world. On Telegram it arrives as an image, in the CLI as a PNG + a terminal preview. |
-| **Manages a fleet** | Remote servers (SSH), containers and Kubernetes clusters are *targets*. The agent sends **workers** to them -- sub-agents that examine every target in parallel and report to the agent, not to you. Nothing is installed on the other side. |
-| **MCP gateway for other agents** | Claude Code, Cursor or your own agent connect to Pipe over MCP (`pipe --mcp --host root@server`) and work on the server through the classifier: reads immediately, changes only after your approval on Telegram -- with a backup and `/undo`. Pipe itself also uses other MCP servers (GitHub, Grafana...). |
-| **Learns from incidents** | A resolved alert stays in memory with the findings and what helped. When the problem returns, the alert comes with *"previously: cause ..., what helped ..."* and the agent starts from the proven fix. Local, no extra cost. |
-| **Joins your monitoring** | Webhooks from Alertmanager, Grafana, Uptime Kuma and GitHub -- the alert goes to Telegram and a worker immediately investigates the cause on the server and sends a report. |
-| **Watches security** | `/audit` scores the server (0-100): SSH passwords, firewall, databases exposed to the world (also through Docker, which bypasses ufw), containers with `docker.sock`, uid 0 accounts, updates -- every finding with a ready-made fix. Every 2 minutes it looks for new accounts, SSH keys, SUID programs and suspicious logins. |
-| **Changes you can undo** | Before every approved change a backup goes to the journal. `nginx -t`, `sshd -t`, `docker compose config` run **before** the reload; after the change comes verification: service active, container healthy, sites still responding. A broken config rolls back by itself, the rest -- `/undo`. |
-| **Security in code** | A fail-closed classifier (unknown command = a question), the confirmation shows exactly what will run, workers only read. Secrets from files (`.env`, keys) are **redacted before they reach the LLM provider**. |
-| **Remembers the server, not a repo** | `SERVER.md` (facts about the server), `DIRECTORY` (where repositories, apps, configs and backups live), skills (procedures) and **VIBE** -- over time the agent learns how you like to talk. |
-| **Runs on a cheap model** | Any OpenAI-compatible endpoint: Gemini (free tier), OpenRouter, Groq, DeepSeek, local Ollama... Workers can use a cheaper model. `/cost` counts tokens and a daily limit guards the budget. |
-| **Runs anywhere** | Docker on a VPS, natively with systemd, in Kubernetes (kustomize), cloud-init for any cloud. amd64 and arm64 images. |
+| *the site went down overnight, what changed?* | goes through the change history (packages, container images, ports, configs) and points at what changed right before the outage |
+| *show me the server architecture* | draws a diagram: domains, reverse proxy, containers, databases, ports exposed to the internet |
+| *how secure is this server?* | scores it 0–100 and gives a ready fix for every finding; *"fix 1"* applies it with a backup |
+| *every day at 7 check backups and certificates* | sets up a routine and messages you on Telegram only when something is off |
+| *check the disks on all servers* | sends parallel helpers (workers) to remote machines over SSH |
+| *is our PostgreSQL still supported?* | reads the version on the server and checks it against endoflife.date |
+| *undo the last change* | restores the files from the backup taken before the change |
 
----
+## What it does
 
-## Language
+**Watches the server on its own.** The two-minute checks run without a language model, so they cost nothing.
+Pipe finds domains in the nginx, Caddy and Traefik configuration by itself and watches certificate expiry, site
+responses and DNS. It notices new accounts, SSH keys and suspicious logins. It also accepts alerts from
+Alertmanager, Grafana, Uptime Kuma and GitHub and starts looking into the cause right away.
 
-Pipe speaks Polish by default; one switch turns everything to English -- the agent's prompts and tool
-descriptions, confirmation messages, alerts, the morning report, the security audit, built-in skills,
-the setup wizard and both clients.
+**Changes things carefully.** Before every approved change it backs up the files. It validates configuration before
+reloading (`nginx -t`, `sshd -t`, `docker compose config`) and afterwards checks that the service runs and the sites
+still respond. If they don't, it restores the previous version by itself. Everything goes into a journal and can be
+undone with `/undo`.
 
-| Where | How |
-|-------|-----|
-| Backend | `PIPE_LANG=en` in `backend/.env` (the wizard asks; `scripts/install-server.sh --lang en`) |
-| Telegram bot | `PIPE_LANG=en` in `clients/telegram/.env` (the installer copies it from the backend) |
-| CLI | `pipe --lang en` or `export PIPE_LANG=en` |
+**Remembers the server.** It keeps facts about the server in `SERVER.md`, a map of where repositories, applications
+and backups live, and proven procedures as skills. It also remembers resolved incidents: when a problem comes back,
+it starts from what helped last time.
 
-Slash commands have English names (`/report`, `/changes`, `/undo`...); the Polish ones (`/raport`, `/zmiany`,
-`/cofnij`...) keep working in both languages. Protocol tags inside tool results (`[POTWIERDZ]`, `[BLAD]`,
-`[ZREDAGOWANO: ...]`) stay language-independent -- the clients turn them into English labels.
-To switch a running server, type `/language pl` or `/language en` in the CLI, in `pipe web` (or use the PL/EN button
-in its header) or on Telegram -- no restart, all channels switch together (administrators only).
+**Manages several machines.** Remote servers (SSH), containers and Kubernetes clusters are added as targets. Nothing
+is installed on the other side. Workers investigate targets in parallel and only read; changes come back to you as
+proposals.
 
----
+**Searches the web when it doesn't know something.** An unknown error message, a new version, a CVE: Pipe searches
+the web (DuckDuckGo, Stack Exchange, Wikipedia) and cites its sources. No API key needed.
 
-## Quick start
+**Works with other agents.** Claude Code, Cursor or your own agent can work on the server through Pipe (MCP). Reads
+run right away, and every change waits for your approval on Telegram.
 
-### 1. Put the backend on the server
+## Installation
+
+On the server (Docker; the wizard asks for the model provider and API key):
 
 ```bash
 git clone https://github.com/Kvmyk/pipe && cd pipe
-sudo bash scripts/install-server.sh --lang en             # Docker; the wizard asks for the provider and key
-# or: sudo bash scripts/install-server.sh --lang en --mode native   (no Docker, systemd)
+sudo bash scripts/install-server.sh --lang en
 ```
 
-The wizard fetches the current model list straight from the provider and checks that the chosen model
-supports tool calling. No questions (automation):
-`PIPE_LANG=en LLM_PROVIDER=gemini LLM_API_KEY=... bash scripts/install-server.sh -y`.
-A new cloud server: [deploy/cloud-init/user-data.yaml](./deploy/cloud-init/user-data.yaml).
-Kubernetes: [deploy/kubernetes](./deploy/kubernetes/README.md). All modes: [docs/deploy.md](./docs/deploy.md).
+Without Docker: `sudo bash scripts/install-server.sh --mode native --lang en`. No API key? Pick Google Gemini and
+create a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
-### 2. Connect the CLI from your laptop
-
-```powershell
-# Windows
-.\install.ps1
-```
+On your own computer install the client and type `pipe`. It connects to the server through an SSH tunnel:
 
 ```bash
-# Linux / macOS
-bash install.sh
+bash install.sh          # Linux and macOS
+.\install.ps1            # Windows (PowerShell)
 ```
 
-From now on you type `pipe --lang en` in any terminal (or put `export PIPE_LANG=en` in your shell profile and
-just type `pipe`). The CLI sets up an SSH tunnel and connects to the agent.
+`pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
+is opened on the server.
 
-Prefer a browser? `pipe web` opens an interface with the chat, a **live map of the server** (you see which
-element the agent is working on right now), a view of changes with undo and an **LLM provider switcher** (add API
-keys in the browser and jump between models mid-conversation). It runs locally over the same
-tunnel -- no port is opened on the server.
+Telegram (recommended, alerts arrive there): fill in `clients/telegram/.env` (bot token and your user id) and run the
+installer again. Language: `PIPE_LANG=en` in `backend/.env` and `clients/telegram/.env`, `pipe --lang en` in the CLI,
+or `/language en` at runtime.
 
-### 3. Telegram (optional, recommended -- alerts arrive here)
-
-```bash
-cd pipe/clients/telegram
-cp .env.example .env    # TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_IDS
-sudo bash ../../scripts/install-server.sh   # also starts the bot
-```
-
----
-
-## What you can write
-
-- *"show me the server architecture"* -- a diagram as an image; *"draw how a request reaches the shop"* -- the agent's own diagram
-- *"why is the shop slow?"* -- a diagnosis: logs, resources, containers
-- *"add the server 10.0.0.5 as web-2 (ssh, root)"*, then *"check disks and updates on all servers"* -- workers in parallel
-- *"every day at 7 check the backups and certificate validity, write only when something is wrong"* -- a routine
-- *"remind me tomorrow at 9 to renew the domain"*, *"in an hour check whether the backup finished"* -- the reminder arrives by itself
-- *"where is the blog repository?"* -- an answer from DIRECTORY
-- *"answer shorter and without preambles"* -- it saves that in VIBE
-- *"the site went down overnight -- what changed?"* -- the agent starts from the change history: packages, images, ports, configs
-- *"has RAM been growing for a week?"* -- a chart from the watcher's history
-- *"how secure is this server?"* or `/audit`, then *"fix 1"* -- a fix with a backup and verification
-- *"set up shop.example.com on port 3000 with a certificate"* -- the built-in `nginx-vhost` skill
-- a voice message on Telegram: *"check why the shop is down"* -- transcription and diagnosis
-- *"undo the last change"* or `/undo` -- restores files and reverses the operations from the journal
-
-Commands in both clients: `/status` `/update` `/report` `/changes` `/chart` `/health` `/map` `/server` `/directory` `/skills`
-`/audit` `/incidents` `/approvals` `/mcp` `/alerts` `/routines` `/reminders` `/targets` `/vibe` `/journal` `/undo` `/cost` `/history` `/providers` `/yolo` `/language` `/help`.
-
----
-
-## Architecture
-
-| Component | Where it runs | Connection to the backend |
-|-----------|---------------|---------------------------|
-| `backend/` | Server (Docker / systemd / Kubernetes) | -- this is the backend |
-| `clients/cli/` | Your laptop | SSH tunnel -> TCP `127.0.0.1:7379` (or `kubectl port-forward`) |
-| `clients/telegram/` | Server | Unix socket |
-| `clients/webui/` | Your laptop (`pipe web`) | page on `127.0.0.1:7400`, same SSH tunnel as the CLI |
-| `clients/discord/` | -- | Placeholder -- PRs welcome |
-
-```
-CLI / Telegram ──JSON lines──> server.py ──> agent (LLM loop + tools)
-                                  │              ├─ handlers ─> security (safe/confirm/forbidden) ─> executor
-                                  │              ├─ workers ─> targets: ssh / docker exec / kubectl
-                                  │              └─ diagram ─> infra (discovery) ─> Mermaid ─> PNG
-                                  └── watcher + routines ──(subscribe)──> alerts on Telegram
-```
-
-Protocol: JSON lines, frames with text, attachments (PNG diagrams), worker progress and watcher
-events -- [docs/protocol.md](./docs/protocol.md).
-
----
-
-## Agent tools
-
-| Tool | Description |
-|------|-------------|
-| `execute_command` | A shell command on the server (through the classifier) |
-| `read_file` / `write_file` | Reading (secrets redacted) and writing files (always with confirmation) |
-| `change_directory` | Working directory |
-| `git_command` | Git: status, log, diff (immediately); pull, commit, push (with confirmation) |
-| `system_stats` | CPU, RAM, disks, processes -- from the host's `/proc` |
-| `docker_manage` | Containers, images, compose projects |
-| `network_info` | Host ports (public ones marked), connections, ping, curl, DNS |
-| `cron_manage` | Host cron |
-| `diagram` | Infrastructure map or a custom Mermaid diagram -> an image for the user |
-| `target_manage` / `remote_exec` | Remote targets (SSH, containers, Kubernetes) and commands on them |
-| `delegate` | Workers: parallel sub-agents, read-only, report to the agent |
-| `routine_manage` | Scheduled tasks with a report on Telegram |
-| `reminder` | A one-off reminder or task at a given time ("write in 10 minutes") |
-| `pipe_update` | Update of Pipe itself: version check and rebuild in a separate container ("update yourself") |
-| `mcp_manage` | External MCP servers and their tools (`mcp__<server>__<tool>`, confirmation by default) |
-| `security_audit` | Security audit with a score and ready-made fixes |
-| `web_search` / `web_fetch` | Internet without an API key: search (DuckDuckGo, Stack Exchange, Wikipedia) and reading pages; the agent searches by itself when it needs knowledge from outside the server |
-| `software_info` | End of support of a version (endoflife.date) and known vulnerabilities of a package (OSV.dev) |
-| `journal` | Journal of approved changes with backups, and undo (`/undo`) |
-| `server_history` | What changed on the server (and when), load/RAM/disk charts, certificates/sites/DNS/backups |
-| `server_md` / `directory` / `skill_manage` / `vibe` | The agent's memory |
-
----
-
-## Agent memory
-
-Everything lives in `backend/data/` on the server (outside git, editable by hand):
-
-- **SERVER.md** -- facts about the server: services, domains, decisions. In the prompt of every conversation.
-- **DIRECTORY** (`directory.json`) -- a map of places: repositories (with remote and branch), app directories, compose projects, configs, data, logs, backups. A scan finds repositories and compose projects by itself.
-- **Skills** (`skills/<name>/SKILL.md`) -- procedures; every skill has its own `/name` command. In English mode
-  Pipe starts with: `nginx-vhost`, `swap`, `fail2ban-ssh`, `backup-postgres`, `update-container`, `harden-ssh`,
-  `free-disk-space` -- you can change and delete them.
-- **VIBE** (`vibe/<user>.md`) -- how to talk to you. Updated in the background every few messages; `/vibe` shows it, `/vibe reset` clears it.
-- **Targets, routines, reminders** (`targets.json`, `routines.json`, `reminders.json`) and the audit log.
-
----
+Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described in
+[docs/deploy.md](./docs/deploy.md).
 
 ## Security
 
-- **Fail-closed classifier** -- `safe` only for recognised reads (token-level: `ss` is not `ssh`); redirects, `$(...)`, flags like `find -delete` or `curl -o` -> a question.
-- **The confirmation shows exactly what will run** -- also for commands on remote targets.
-- **Secret redaction** -- API keys, tokens, passwords and private keys in tool results are replaced with `[ZREDAGOWANO: ...]` before being sent to the LLM; the agent cannot overwrite a file with redacted content.
-- **Workers and routines only read** -- changes come back as proposals to approve.
-- **Audit log** of every operation (without file contents). `AGENT_TOKEN` protects the socket and the port.
+- The classifier lets only recognised reads through without asking. An unknown command means a confirmation prompt.
+- The confirmation shows exactly the command that will run, together with the backup and verification plan.
+- API keys, passwords and tokens from files are hidden before any text reaches the model provider.
+- Workers and routines only read. Every operation is written to an audit log.
 
-Details and limitations (e.g. `docker.sock` = root privileges): [docs/security.md](./docs/security.md).
-
----
+An important limitation: in Docker mode Pipe has access to `docker.sock`, which in practice means root on the server.
+The protection is your confirmation of every change. Full description: [docs/security.md](./docs/security.md).
 
 ## Documentation
 
-The detailed documentation in `docs/` is written in Polish; this README and the product itself
-(`PIPE_LANG=en`) are fully English.
+The detailed documentation is in Polish; the commands, configuration names and examples read the same in both
+languages.
 
-- [Quick start](./docs/quickstart.md)
-- [Deployment: Docker, native, Kubernetes, clouds](./docs/deploy.md)
-- [Backend](./docs/backend.md)
-- [Workers, targets, routines, watcher, diagrams](./docs/features.md)
-- [CLI](./docs/cli.md)
-- [Telegram](./docs/telegram.md)
-- [Security](./docs/security.md)
-- [Wire protocol](./docs/protocol.md)
-- [Changelog](./docs/changelog.md)
-
----
+| | |
+|---|---|
+| [Quick start](./docs/quickstart.md) | installation step by step |
+| [Features](./docs/features.md) | watching, workers, routines, diagrams, `pipe web`, MCP |
+| [Deployment](./docs/deploy.md) | Docker, systemd, Kubernetes, clouds |
+| [Backend](./docs/backend.md) | configuration, `.env` variables, agent tools |
+| [CLI](./docs/cli.md) and [Telegram](./docs/telegram.md) | clients and commands |
+| [Security](./docs/security.md) | classifier, confirmations, limitations |
+| [Protocol](./docs/protocol.md) | how clients talk to the backend |
+| [Changelog](./docs/changelog.md) | what changed in each version |
 
 ## License
 
-MIT -- see [LICENSE](./LICENSE). Pipe is and will stay a free, open-source project;
-bug reports and pull requests are welcome.
+MIT, see [LICENSE](./LICENSE). Bug reports and pull requests are welcome.
 
----
-
-The LLM provider logos in `pipe web` are trademarks of their respective owners and are used only to indicate whose
-models the agent connects to. Pipe is not affiliated with or endorsed by these companies
-(`clients/webui/static/providers/NOTICE.md`).
-
-`pipe web` uses the IBM Plex Sans and IBM Plex Mono typefaces (SIL Open Font License 1.1,
-`clients/webui/static/fonts/OFL.txt`).
+<sub>LLM provider logos in `pipe web` are trademarks of their owners and only indicate whose models the agent connects
+to; Pipe is not affiliated with these companies (`clients/webui/static/providers/NOTICE.md`). IBM Plex Sans and IBM
+Plex Mono typefaces: SIL Open Font License 1.1 (`clients/webui/static/fonts/OFL.txt`).</sub>

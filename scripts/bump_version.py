@@ -46,6 +46,10 @@ PATTERNS: list[tuple[str, str]] = [
     ("backend/config/prompts_en.py", r"Software version: (?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/core/tools_en.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("README.en.md", r"badge/version-v(?P<ver>\d+\.\d+(?:\.\d+)?)-"),
+    ("site/index.html", r"Pipe (?P<ver>\d+\.\d+\.\d+) ·"),
+    ("site/index.html", r"wersja (?P<ver>\d+\.\d+\.\d+)</a>"),
+    ("site/en/index.html", r"Pipe (?P<ver>\d+\.\d+\.\d+) ·"),
+    ("site/en/index.html", r"version (?P<ver>\d+\.\d+\.\d+)</a>"),
     ("clients/telegram/bot.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("clients/cli/cli.py", r"\| v(?P<ver>\d+\.\d+(?:\.\d+)?)\[/dim\]"),
 ]
