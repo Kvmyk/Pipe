@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.23.0
+Pipe v0.24.0
 
 ## Model
 
@@ -129,6 +129,27 @@ Wykonanie bez pytania jest widoczne: klient dostaje `progress` „YOLO — wykon
 czerwony znacznik nad polem wpisywania, CLI -- `YOLO` w prompcie, a audit log i dziennik zapisuja interfejs z dopiskiem
 `[yolo]` (np. `cli:kuba [yolo]`). Model dostaje w prompcie blok o trybie YOLO (ostroznosc, najmniejsza zmiana,
 bez nieodwracalnych operacji bez wyraznej prosby). YOLO usuwa czlowieka z petli -- wlaczaj je na czas konkretnej pracy.
+
+## Internet (`web_search`, `web_fetch`, `software_info`)
+
+Agent sam decyduje, kiedy siegnac do sieci, wiec internet jest traktowany jak niezaufane zrodlo:
+
+- **Nic poufnego nie wychodzi**: zapytanie, adres i argumenty `software_info` z sekretem (`memory.find_secret()`)
+  sa odrzucane, prompt kaze pisac zapytania ogolnie (tresc bledu, oprogramowanie i wersja -- bez domen, IP, nazw
+  uzytkownikow). Kazde zapytanie trafia do audit logu.
+- **Adres to tez kanal wycieku** (`https://obcy.example/?d=<dane>`): `web_fetch` czyta bez pytania tylko adresy
+  z wynikow `web_search` tej sesji (`Session.web_urls`) albo wpisane przez uzytkownika (wiadomosci zbudowane przez
+  backend, np. alerty z webhookow, sie nie licza). Inny adres -- potwierdzenie.
+- **Tylko publiczny internet** (SSRF): host musi wskazywac wylacznie na adresy publiczne (`ipaddress.is_global`);
+  loopback, sieci prywatne, link-local (metadane chmury `169.254.169.254`), CGNAT i adresy IPv4 w IPv6 sa
+  odrzucane -- przy kazdym przekierowaniu osobno. Ograniczenie: sprawdzenie DNS i polaczenie to dwa kroki
+  (teoretycznie mozliwy DNS rebinding); lokalne uslugi agent sprawdza przez `network_info`.
+- **Prompt injection**: wyniki sa oznaczone jako dane, nie polecenia. Strone z pytaniem czyta osobne zapytanie
+  do modelu **bez narzedzi** (`WEB_READER_PROMPT`) -- do agenta trafia tylko odpowiedz. Po przeczytaniu czegokolwiek
+  z internetu (`Session.web_tainted`) tryb YOLO jest wstrzymany do nastepnej wiadomosci uzytkownika: zmiana
+  zaproponowana pod wplywem strony zawsze czeka na TAK.
+- Wyszukiwarki bez klucza to nieoficjalne endpointy (DuckDuckGo) i publiczne API (Stack Exchange, Wikipedia,
+  endoflife.date, OSV.dev); `WEB_SEARCH=off` zabiera agentowi internet calkowicie.
 
 ## Role i tokeny
 

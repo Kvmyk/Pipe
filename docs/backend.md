@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.23.0
+Pipe v0.24.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -280,6 +280,9 @@ Powinienes zobaczyc:
 | `pipe_update` | Aktualizacja samego Pipe (check / apply) | apply: tak |
 | `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
 | `mcp_manage` | Serwery MCP, z ktorych korzysta Pipe; ich narzedzia `mcp__<serwer>__<narzedzie>` | Dodanie: tak; narzedzia wg polityki |
+| `web_search` | Wyszukiwanie w internecie bez klucza (DuckDuckGo → Stack Exchange → Wikipedia) | Nie |
+| `web_fetch` | Czytanie strony; z `question` strone czyta osobny model bez narzedzi | Nie dla adresow z wynikow i od uzytkownika, inne: tak |
+| `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | Nie |
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
@@ -294,6 +297,7 @@ Powinienes zobaczyc:
 | `AGENT_MAX_ITERATIONS` | 15 | Limit krokow petli na jedna wiadomosc |
 | `CONFIRMED_COMMAND_TIMEOUT` | 900 | Limit czasu (s) komend zatwierdzonych przez uzytkownika; odczyty maja 30 s |
 | `REDACT_SECRETS` | 1 | Redakcja sekretow w wynikach narzedzi |
+| `WEB_SEARCH` | on | Internet dla agenta (`web_search`, `web_fetch`, `software_info`); `off` wylacza |
 | `WORKER_MODEL` | model agenta | Model workerow i nauki VIBE |
 | `WORKER_MAX_ITERATIONS`, `WORKER_TIMEOUT`, `MAX_WORKERS` | 8, 240, 6 | Limity workerow |
 | `VIBE_EVERY` | 6 | Co ile wiadomosci odswiezac VIBE (0 = wylaczone) |

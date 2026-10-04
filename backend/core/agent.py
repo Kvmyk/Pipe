@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.23.0
+Pipe v0.24.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -152,6 +152,7 @@ class VPSAgent:
                                      "content": tr(ABANDONED_CONFIRMATION, ABANDONED_CONFIRMATION_EN)})
 
         _repair_history(session)
+        session.web_tainted = False      # uzytkownik widzial odpowiedz — YOLO wraca (core/handlers/web.py)
         message: dict[str, Any] = {"role": "user", "content": user_message}
         if generated:
             message["pipe_generated"] = True
@@ -386,7 +387,7 @@ class VPSAgent:
             yield activity
         failed = False
         # YOLO: pytanie o TAK nie trafia do uzytkownika — operacja wykonuje sie od razu, przez bezpiecznik.
-        yolo = session.runs_yolo and dispatch is None
+        yolo = session.yolo_now and dispatch is None
         held: list[Event] = []
 
         buffered: list[Event] = []
@@ -580,6 +581,8 @@ def tools_for_agent() -> list[dict]:
     from backend.core.i18n import is_en
 
     base = _english_tools() if is_en() else TOOLS
+    if settings.WEB_SEARCH == "off":
+        base = [t for t in base if t["function"]["name"] not in ("web_search", "web_fetch", "software_info")]
     extra = get_manager().tool_schemas()
     return base + extra if extra else base
 

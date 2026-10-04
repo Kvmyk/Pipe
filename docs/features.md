@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.23.0
+Pipe v0.24.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -547,6 +547,20 @@ bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
 - `/mcp` pokazuje serwery i ich stan; *"polacz ponownie serwery MCP"* -- `mcp_manage reload`.
 
 ---
+
+## Internet bez kluczy API
+
+Agent sam siega do sieci, gdy odpowiedz zalezy od wiedzy spoza serwera -- nie trzeba go o to prosic ani
+podawac zadnego klucza:
+
+- `web_search` -- DuckDuckGo, a gdy nie odpowiada: Stack Exchange (Server Fault, Stack Overflow), potem Wikipedia.
+- `web_fetch` -- czyta strone; z pytaniem strone czyta osobny model bez narzedzi i oddaje agentowi tylko odpowiedz.
+- `software_info eol` -- czy wersja jest wspierana i do kiedy (endoflife.date); `software_info vulns` -- znane
+  podatnosci pakietu w zainstalowanej wersji (OSV.dev), z wersja, ktora je naprawia.
+
+Przyklady: *"nginx sypie upstream prematurely closed -- co to?"*, *"czy nasz PostgreSQL jest jeszcze wspierany?"*,
+*"czy nginx na tym serwerze ma znane dziury?"*. Agent podaje zrodla. Zabezpieczenia (sekrety, adresy spoza wynikow,
+siec prywatna, wstrzymanie YOLO) opisuje `docs/security.md`. `WEB_SEARCH=off` wylacza internet.
 
 ## Aktualizacja samego Pipe
 

@@ -112,6 +112,10 @@ WORKER_MAX_ITERATIONS: int = _int("WORKER_MAX_ITERATIONS", 8)
 WORKER_TIMEOUT: int = _int("WORKER_TIMEOUT", 240)
 MAX_WORKERS: int = _int("MAX_WORKERS", 6)
 
+# ─── Internet (web_search / web_fetch) ──────────────────────────────────────
+# on (domyslnie): DuckDuckGo, a gdy nie odpowiada — Wikipedia (bez klucza API); off: agent nie ma dostepu do internetu.
+WEB_SEARCH: str = "off" if os.getenv("WEB_SEARCH", "on").strip().lower() in ("0", "off", "false", "no", "nie") else "on"
+
 # ─── VIBE ───────────────────────────────────────────────────────────────────
 # Co ile wiadomosci uzytkownika agent odswieza notatke o jego stylu (0 = wylaczone).
 VIBE_EVERY: int = _int("VIBE_EVERY", 6)

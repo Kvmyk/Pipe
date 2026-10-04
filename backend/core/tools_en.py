@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.23.0
+Pipe v0.24.0
 """
 
 from __future__ import annotations
@@ -167,6 +167,36 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
                  "and what the report should contain.",
          "kind": "message by default.", "target": "For kind=task: the target (local by default).",
          "id": "For cancel: the reminder id from list."}),
+    "web_search": (
+        "Searches the internet (no API key) and returns titles, addresses and page snippets. Use it ON YOUR OWN when "
+        "the answer depends on knowledge from outside the server that you may lack or that may have changed: an "
+        "unknown error message, changes in a new version, CVEs, documentation, the current version or end of "
+        "support. Do not search for what you can check on the server. The query leaves the server: write it in "
+        "general terms (error text, software name and version), never with passwords, tokens, domains, IP addresses "
+        "or user names.",
+        {"query": "A short query, preferably in English, e.g. 'nginx upstream prematurely closed connection 502'.",
+         "max_results": "How many results (1-10, 6 by default)."}),
+    "web_fetch": (
+        "Reads a page from the internet. With a question a separate model reads the page and returns only the answer "
+        "— read documentation, release notes and bug threads that way. Without a question the start of the page text "
+        "comes back. Addresses from web_search results and given by the user are read right away, others require "
+        "confirmation. Public internet only — check local services with network_info.",
+        {"url": "Page address (http/https), preferably from web_search results.",
+         "question": "What you are looking for on the page, e.g. 'which option disables X in version 2.4?'."}),
+    "software_info": (
+        "Software knowledge from public databases (no key). eol — endoflife.date: whether a product version (OS, "
+        "database, language, web server) is still supported, until when and what the latest one is. vulns — OSV.dev: "
+        "known vulnerabilities (CVEs) of a package in the installed version, with the version that fixes them. Check the "
+        "versions on the server first (/etc/os-release, dpkg-query, apk, pip). More precise than web_search for these "
+        "questions.",
+        {"product": "For eol: the endoflife.date name, e.g. 'ubuntu', 'debian', 'postgresql', 'nginx', 'nodejs', "
+                    "'python', 'php'.",
+         "version": "Version: for eol a cycle or full version ('22.04', '16.4'); for vulns the exact package version "
+                    "(e.g. '1.22.1-9+deb12u2').",
+         "ecosystem": "For vulns: 'Debian:12', 'Ubuntu:22.04:LTS', 'Alpine:v3.20', 'PyPI', 'npm', 'Go', 'Maven', "
+                      "'crates.io', 'RubyGems'.",
+         "package": "For vulns: the package name; on Debian and Ubuntu the SOURCE package "
+                    "(dpkg-query -W -f='${source:Package} ${Version}' name)."}),
     "pipe_update": (
         "Update of Pipe itself (you): 'update yourself', 'get the new Pipe version', 'which version are you, is there a "
         "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "

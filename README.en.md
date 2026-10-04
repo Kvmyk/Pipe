@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.23.0** -- An AI agent that looks after your servers instead of just answering questions.
+**v0.24.0** -- An AI agent that looks after your servers instead of just answering questions.
 
 [Polski](./README.md) · **English**
 
@@ -165,6 +165,8 @@ events -- [docs/protocol.md](./docs/protocol.md).
 | `pipe_update` | Update of Pipe itself: version check and rebuild in a separate container ("update yourself") |
 | `mcp_manage` | External MCP servers and their tools (`mcp__<server>__<tool>`, confirmation by default) |
 | `security_audit` | Security audit with a score and ready-made fixes |
+| `web_search` / `web_fetch` | Internet without an API key: search (DuckDuckGo, Stack Exchange, Wikipedia) and reading pages; the agent searches by itself when it needs knowledge from outside the server |
+| `software_info` | End of support of a version (endoflife.date) and known vulnerabilities of a package (OSV.dev) |
 | `journal` | Journal of approved changes with backups, and undo (`/undo`) |
 | `server_history` | What changed on the server (and when), load/RAM/disk charts, certificates/sites/DNS/backups |
 | `server_md` / `directory` / `skill_manage` / `vibe` | The agent's memory |

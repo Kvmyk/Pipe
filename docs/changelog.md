@@ -1,5 +1,30 @@
 # Historia zmian -- Pipe
 
+## v0.24.0 (2026-10-04)
+
+### Internet dla agenta -- bez kluczy API
+
+- Nowe narzedzie `web_search`: agent sam decyduje, kiedy szukac w sieci (nieznany blad, zmiany w nowej wersji,
+  CVE, dokumentacja). Zrodla po kolei: DuckDuckGo (strony html i lite), a gdy nie odpowiada -- publiczne API
+  Stack Exchange (Server Fault, Stack Overflow), na koncu Wikipedia. Zadnego klucza ani konta, wyniki
+  pamietane 15 minut, odstep miedzy zapytaniami do DuckDuckGo
+- Nowe narzedzie `web_fetch`: czyta strone. Z pytaniem strone czyta osobne zapytanie do modelu (`WORKER_MODEL`)
+  bez zadnych narzedzi, a do agenta trafia tylko odpowiedz -- mniej tokenow i mniejsze ryzyko prompt injection
+- Nowe narzedzie `software_info`: `eol` -- koniec wsparcia wersji z endoflife.date (np. "PostgreSQL 16 wspierane
+  do 2028-11-09, w cyklu jest 16.15"), `vulns` -- znane podatnosci pakietu w zainstalowanej wersji z OSV.dev,
+  najpierw te, ktore naprawia aktualizacja
+- `WEB_SEARCH=off` w `backend/.env` zabiera agentowi internet (domyslnie `on`)
+
+### Bezpieczenstwo internetu
+
+- Zapytanie, adres albo argumenty z sekretem sa odrzucane, zanim cokolwiek wyjdzie z serwera
+- `web_fetch` czyta bez pytania tylko adresy z wynikow wyszukiwania tej rozmowy albo wpisane przez uzytkownika;
+  kazdy inny adres wymaga potwierdzenia (adres moze wynosic dane)
+- Tylko publiczny internet: adresy prywatne, loopback, link-local i metadane chmury (`169.254.169.254`) sa
+  odrzucane, takze po przekierowaniu
+- Tresc z internetu jest oznaczona jako dane, nie polecenia; po jej przeczytaniu tryb YOLO jest wstrzymany do
+  nastepnej wiadomosci uzytkownika -- kazda zmiana znow czeka na TAK
+
 ## v0.23.0 (2026-10-04)
 
 ### Nowy wyglad `pipe web`

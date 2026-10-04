@@ -49,10 +49,19 @@ class Session:
     # Tryb YOLO (/yolo): operacje wymagajace potwierdzenia wykonuja sie bez pytania — tylko admin,
     # tylko ta sesja, domyslnie wylaczony i zapominany przy restarcie backendu.
     yolo: bool = False
+    # Internet: adresy z wynikow web_search (web_fetch czyta je bez pytania) i znacznik, ze w tej
+    # turze model czytal tresc z internetu — wtedy YOLO jest wstrzymane do nastepnej wiadomosci uzytkownika.
+    web_urls: set[str] = field(default_factory=set)
+    web_tainted: bool = False
 
     @property
     def runs_yolo(self) -> bool:
         return self.yolo and self.role == "admin"
+
+    @property
+    def yolo_now(self) -> bool:
+        """YOLO w tej chwili: wstrzymane, gdy w tej turze model czytal tresc z internetu (prompt injection)."""
+        return self.runs_yolo and not self.web_tainted
 
     @property
     def is_telegram(self) -> bool:
@@ -89,6 +98,6 @@ class Session:
             + prompt_context(self.user_key)
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
-            + (prompt("YOLO_BLOCK") if self.runs_yolo else "")
+            + (prompt("YOLO_BLOCK") if self.yolo_now else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

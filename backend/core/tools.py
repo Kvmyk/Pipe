@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.23.0
+Pipe v0.24.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -366,6 +366,52 @@ TOOLS: list[dict] = [
         "restartuje sie, rozmowa zostaje przerwana, a wynik przychodzi sam jako wiadomosc. NIGDY nie aktualizuj Pipe "
         "recznie przez git/docker compose — z wnetrza kontenera to sie nie uda.",
         {"operation": {"type": "string", "enum": ["check", "apply"]}},
+        ["operation"],
+    ),
+    _tool(
+        "web_search",
+        "Wyszukuje w internecie (bez klucza API) i zwraca tytuly, adresy i fragmenty stron. Uzywaj SAM, gdy "
+        "odpowiedz zalezy od wiedzy spoza serwera, ktorej mozesz nie miec albo ktora mogla sie zmienic: nieznany "
+        "komunikat bledu, zmiany w nowej wersji, CVE, dokumentacja, aktualna wersja albo koniec wsparcia. Nie "
+        "szukaj tego, co sprawdzisz na serwerze. Zapytanie wychodzi poza serwer: pisz ogolnie (tresc bledu, "
+        "nazwa i wersja oprogramowania), nigdy z haslami, tokenami, domenami, adresami IP ani nazwami uzytkownikow.",
+        {
+            "query": {"type": "string", "description": "Krotkie zapytanie, najlepiej po angielsku, np. "
+                                                       "'nginx upstream prematurely closed connection 502'."},
+            "max_results": {"type": "integer", "description": "Ile wynikow (1-10, domyslnie 6)."},
+        },
+        ["query"],
+    ),
+    _tool(
+        "web_fetch",
+        "Czyta strone z internetu. Z pytaniem (question) strone czyta osobny model i zwraca tylko odpowiedz — "
+        "tak czytaj dokumentacje, release notes i watki z bledami. Bez pytania wraca poczatek tekstu strony. "
+        "Adresy z wynikow web_search i podane przez uzytkownika czytasz od razu, inne wymagaja potwierdzenia. "
+        "Tylko publiczny internet — lokalne uslugi sprawdzaj przez network_info.",
+        {
+            "url": {"type": "string", "description": "Adres strony (http/https), najlepiej z wynikow web_search."},
+            "question": {"type": "string",
+                         "description": "Czego szukasz na stronie, np. 'jaka opcja wylacza X w wersji 2.4?'."},
+        },
+        ["url"],
+    ),
+    _tool(
+        "software_info",
+        "Wiedza o oprogramowaniu z publicznych baz (bez klucza). eol — endoflife.date: czy wersja produktu "
+        "(system, baza, jezyk, serwer www) jest jeszcze wspierana, do kiedy i jaka jest najnowsza. vulns — OSV.dev: "
+        "znane podatnosci (CVE) pakietu w zainstalowanej wersji, z wersja, ktora je naprawia. Wersje sprawdz najpierw "
+        "na serwerze (/etc/os-release, dpkg-query, apk, pip). Dokladniejsze niz web_search dla tych pytan.",
+        {
+            "operation": {"type": "string", "enum": ["eol", "vulns"]},
+            "product": {"type": "string", "description": "Dla eol: nazwa z endoflife.date, np. 'ubuntu', 'debian', "
+                                                         "'postgresql', 'nginx', 'nodejs', 'python', 'php'."},
+            "version": {"type": "string", "description": "Wersja: dla eol cykl albo pelna wersja ('22.04', '16.4'); "
+                                                         "dla vulns dokladna wersja pakietu (np. '1.22.1-9+deb12u2')."},
+            "ecosystem": {"type": "string", "description": "Dla vulns: 'Debian:12', 'Ubuntu:22.04:LTS', 'Alpine:v3.20', "
+                                                           "'PyPI', 'npm', 'Go', 'Maven', 'crates.io', 'RubyGems'."},
+            "package": {"type": "string", "description": "Dla vulns: nazwa pakietu; w Debianie i Ubuntu pakietu "
+                                                         "ZRODLOWEGO (dpkg-query -W -f='${source:Package} ${Version}' nazwa)."},
+        },
         ["operation"],
     ),
 ]

@@ -1,6 +1,6 @@
 # Pipe
 
-**v0.23.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
+**v0.24.0** -- Agent AI, ktory pilnuje Twoich serwerow, a nie tylko odpowiada na pytania.
 
 **Polski** · [English](./README.en.md)
 
@@ -163,6 +163,8 @@ czuwania -- [docs/protocol.md](./docs/protocol.md).
 | `pipe_update` | Aktualizacja samego Pipe: sprawdzenie wersji i przebudowa w osobnym kontenerze ("zaktualizuj sie") |
 | `mcp_manage` | Zewnetrzne serwery MCP i ich narzedzia (`mcp__<serwer>__<narzedzie>`, domyslnie z potwierdzeniem) |
 | `security_audit` | Audyt bezpieczenstwa z ocena i gotowymi poprawkami |
+| `web_search` / `web_fetch` | Internet bez klucza API: wyszukiwanie (DuckDuckGo, Stack Exchange, Wikipedia) i czytanie stron; agent szuka sam, gdy potrzebuje wiedzy spoza serwera |
+| `software_info` | Koniec wsparcia wersji (endoflife.date) i znane podatnosci pakietu (OSV.dev) |
 | `journal` | Dziennik zatwierdzonych zmian z kopiami i cofanie (`/cofnij`) |
 | `server_history` | Co sie zmienilo na serwerze (i kiedy), wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy |
 | `server_md` / `directory` / `skill_manage` / `vibe` | Pamiec agenta |
