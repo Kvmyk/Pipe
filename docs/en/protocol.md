@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 ## Overview
 
@@ -19,7 +19,7 @@ In Kubernetes mode `kubectl port-forward svc/pipe 7379:7379` gives access to the
 {
   "message": "message text",
   "session_id": "uuid-per-user",
-  "interface": "cli|telegram:user_id|discord:user_id",
+  "interface": "cli:<user>|telegram:<user_id>|web:<user>",
   "token": "secret-token",
   "attachments": [{"name": "screenshot.png", "mime": "image/png", "data": "<base64>"}]
 }

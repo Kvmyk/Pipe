@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.31.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.31.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -160,6 +160,7 @@ read-only), `/root` is read-only, and every change is refused without asking. Pi
 questions and sends alerts. Turn on full mode later with `--profile full`.
 
 Found a vulnerability? Report it privately, not in a public issue: [SECURITY.md](./SECURITY.md).
+Want to help another way? See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Documentation
 

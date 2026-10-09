@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 ## Opis
 
@@ -19,7 +19,7 @@ W trybie Kubernetes dostep do portu TCP daje `kubectl port-forward svc/pipe 7379
 {
   "message": "tekst wiadomosci",
   "session_id": "uuid-per-uzytkownik",
-  "interface": "cli|telegram:user_id|discord:user_id",
+  "interface": "cli:<user>|telegram:<user_id>|web:<user>",
   "token": "tajny-token",
   "attachments": [{"name": "zrzut.png", "mime": "image/png", "data": "<base64>"}]
 }

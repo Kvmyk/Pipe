@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -78,6 +78,9 @@ Agent z czasem dopasowuje sie do tego, jak piszesz i czego oczekujesz.
 
 ## Zdalne cele
 
+> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
+> Jesli cos nie gra, zglos to w issue.
+
 Cel to miejsce, na ktorym Pipe wykonuje komendy **bez instalowania czegokolwiek po drugiej stronie**:
 
 | Rodzaj | Jak Pipe wykonuje komende | Pola |
@@ -102,6 +105,9 @@ Przyklad: *"dodaj serwer 10.0.0.5 jako db-backup, ssh, uzytkownik root"* -> TAK 
 ---
 
 ## Workery
+
+> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
+> Jesli cos nie gra, zglos to w issue.
 
 Worker to pod-agent, z ktorym rozmawia agent, a nie Ty. Narzedzie `delegate` wysyla kilka naraz:
 
@@ -425,6 +431,9 @@ wstrzymany do nastepnej wiadomosci, tak jak po przeczytaniu strony z internetu.
 
 ## Wiadomosci glosowe
 
+> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
+> Jesli cos nie gra, zglos to w issue.
+
 Na Telegramie wystarczy nagrac wiadomosc: *"sprawdz, czemu sklep nie dziala"*. Bot odpisze *Uslyszalem: ...*
 i przekaze tekst agentowi. W `pipe web` jest przycisk mikrofonu: nagranie (do 5 minut) przegladarka zamienia na
 WAV 16 kHz i wysyla do transkrypcji, a tekst idzie do agenta. Transkrypcja: przy `LLM_PROVIDER=gemini` robi ja
@@ -556,6 +565,9 @@ Obslugiwane wersje protokolu: 2026-07-28 (`server/discover`, wersja w `_meta`, n
 i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
 
 ### Pipe jako klient MCP
+
+> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
+> Jesli cos nie gra, zglos to w issue.
 
 Narzedzia innych serwerow MCP staja sie narzedziami agenta (`mcp__github__create_issue`...). Dodasz je zdaniem --
 *"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github, token w GITHUB_PERSONAL_ACCESS_TOKEN,

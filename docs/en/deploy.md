@@ -1,6 +1,6 @@
 # Deployment -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 Pipe runs in three modes (`PIPE_RUNTIME`, auto-detected by default). The mode decides how the agent sees the managed
 machine; everything else (tools, memory, clients, protocol) is the same.
@@ -58,6 +58,9 @@ In this mode `cron_manage` can edit the crontab, and `systemctl`/`apt` work on t
 The Ollama preset (`host.docker.internal`) is automatically replaced with `127.0.0.1`.
 
 ## Kubernetes
+
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
 
 [deploy/kubernetes/README.md](../../deploy/kubernetes/README.md) -- the base (cluster management, read-only RBAC,
 no secrets) and overlays: `operator` (changes in the cluster), `telegram` (the bot as a sidecar),

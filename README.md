@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.31.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.31.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -161,6 +161,7 @@ widzi tylko do odczytu), `/root` jest tylko do odczytu, a każda zmiana jest odr
 pilnuje serwera, odpowiada na pytania i wysyła alerty. Pełny tryb włączysz później przez `--profile full`.
 
 Znalazłeś podatność? Zgłoś ją prywatnie, nie w publicznym issue: [SECURITY.md](./SECURITY.md).
+Chcesz pomóc w inny sposób? Zobacz [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Dokumentacja
 

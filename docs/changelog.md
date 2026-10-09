@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.31.1 (2026-10-10)
+
+### Porzadki
+
+- Zamrozenie funkcji do czasu pierwszych uzytkownikow spoza autora; priorytety w `docs/roadmap.md`
+- Dokumentacja oznacza jako eksperymentalne: zdalne cele, workery, wiadomosci glosowe, Pipe jako klient MCP
+  i wdrozenie w Kubernetesie
+- Usuniety placeholder klienta Discord (`clients/discord/`) — obiecywal cos, czego nie ma
+- Nowy `CONTRIBUTING.md` (po angielsku): w czym pomoc jest teraz najcenniejsza, jak uruchomic testy, zasady zmian
+
 ## v0.31.0 (2026-10-10)
 
 ### Piaskownica: wyprobuj Pipe bez serwera

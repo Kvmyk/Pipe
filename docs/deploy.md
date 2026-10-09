@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -57,6 +57,9 @@ W tym trybie `cron_manage` moze edytowac crontab, a `systemctl`/`apt` dzialaja n
 Preset Ollamy (`host.docker.internal`) jest automatycznie zamieniany na `127.0.0.1`.
 
 ## Kubernetes
+
+> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
+> Jesli cos nie gra, zglos to w issue.
 
 [deploy/kubernetes/README.md](../deploy/kubernetes/README.md) -- baza (zarzadzanie klastrem, RBAC tylko
 do odczytu, bez sekretow) i nakladki: `operator` (zmiany w klastrze), `telegram` (bot jako sidecar),

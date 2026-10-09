@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.31.0
+Pipe v0.31.1
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -77,6 +77,9 @@ Over time the agent adapts to how you write and what you expect.
 
 ## Remote targets
 
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
+
 A target is a place where Pipe runs commands **without installing anything on the other side**:
 
 | Kind | How Pipe runs a command | Fields |
@@ -101,6 +104,9 @@ Example: *"add server 10.0.0.5 as db-backup, ssh, user root"* -> YES -> *"check 
 ---
 
 ## Workers
+
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
 
 A worker is a sub-agent the agent talks to, not you. The `delegate` tool sends several at once:
 
@@ -431,6 +437,9 @@ paused until the next message, just like after reading a web page.
 
 ## Voice messages
 
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
+
 On Telegram just record a message: *"find out why the shop is down"*. The bot replies *I heard: ...* and passes the
 text to the agent. In `pipe web` there is a microphone button: the browser turns the recording (up to 5 minutes) into
 16 kHz WAV and sends it for transcription, and the text goes to the agent. Transcription: with `LLM_PROVIDER=gemini`
@@ -565,6 +574,9 @@ Supported protocol versions: 2026-07-28 (`server/discover`, the version in `_met
 and older ones with `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
 
 ### Pipe as an MCP client
+
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
 
 Tools of other MCP servers become the agent's tools (`mcp__github__create_issue`...). You add them with a sentence
 (*"add the MCP server github: npx -y @modelcontextprotocol/server-github, token in GITHUB_PERSONAL_ACCESS_TOKEN,

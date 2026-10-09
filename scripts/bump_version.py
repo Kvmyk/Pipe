@@ -44,7 +44,6 @@ PATTERNS: list[tuple[str, str]] = [
     ("docs/en/security.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/en/backend.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("docs/en/protocol.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
-    ("clients/discord/README.md", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/version.py", r'VERSION = "(?P<ver>\d+\.\d+(?:\.\d+)?)"'),
     ("backend/core/agent.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
     ("backend/core/tools.py", r"Pipe v(?P<ver>\d+\.\d+(?:\.\d+)?)"),
