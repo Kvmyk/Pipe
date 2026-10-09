@@ -1,0 +1,17 @@
+# Kontekst budowania z korzenia repozytorium (clients/telegram/Dockerfile, sandbox/Dockerfile).
+# Sekrety i dane nigdy nie trafiaja do obrazu — bez tego `COPY clients/telegram/ .` zabieralby token bota.
+**/.env
+**/.env.*
+!**/.env.example
+backend/data/
+**/data/llm_keys.json
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+.hypothesis/
+.pytest_cache/
+_site/
+docs/assets/*.gif
+docs/assets/*.failure.png
+TODO.md

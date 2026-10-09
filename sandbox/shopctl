@@ -1,0 +1,18 @@
+#!/bin/sh
+# Sterowanie aplikacja sklepu (w piaskownicy nie ma systemd): shopctl start|stop|restart|status
+PIDFILE=/run/shop.pid
+LOG=/var/log/shop/app.log
+running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+case "${1:-status}" in
+  start)
+    if running; then echo "shop juz dziala (pid $(cat $PIDFILE))"; exit 0; fi
+    nohup python3 /opt/sandbox/app/app.py >> "$LOG" 2>&1 &
+    echo $! > "$PIDFILE"; sleep 1
+    if running; then echo "shop uruchomiony (pid $(cat $PIDFILE))"; else echo "shop nie wystartowal — patrz $LOG" >&2; exit 1; fi ;;
+  stop)
+    if running; then kill "$(cat "$PIDFILE")"; fi; rm -f "$PIDFILE"; echo "shop zatrzymany" ;;
+  restart) "$0" stop; "$0" start ;;
+  status)
+    if running; then echo "shop dziala (pid $(cat $PIDFILE))"; else echo "shop nie dziala"; exit 3; fi ;;
+  *) echo "uzycie: shopctl start|stop|restart|status" >&2; exit 2 ;;
+esac

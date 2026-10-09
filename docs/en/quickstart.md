@@ -1,6 +1,25 @@
 # Quick start -- step by step
 
-Pipe v0.30.1
+Pipe v0.31.0
+
+## Try it without a server
+
+No spare server, or you want to see how Pipe works first? On your own computer with Docker:
+
+```bash
+git clone https://github.com/Kvmyk/pipe && cd pipe
+LLM_PROVIDER=gemini LLM_API_KEY=... python3 sandbox/run.py try --scenario nginx-502
+pipe --no-tunnel --local-port 7390        # or: pipe web --no-tunnel --local-port 7390
+```
+
+This starts a container that pretends to be a small server with a shop (nginx and an app), with Pipe inside. With
+`--scenario` the server starts broken: `nginx-502` (wrong port in nginx), `app-down` (the app won't start),
+`static-403` (wrong permissions), `disk-hog` (a forgotten big log). Ask Pipe for help and watch it look for the cause,
+ask for approval and take backups. Without a key the sandbox still starts, and Pipe then runs without a model. Stop it
+with `docker rm -f pipe-sandbox`.
+
+The same scenarios are used to evaluate models: `python3 sandbox/run.py eval` runs each one, approves every proposed
+change and checks whether the server was really fixed (details: `sandbox/README.md`).
 
 ## Prerequisites
 

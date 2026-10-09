@@ -55,3 +55,6 @@ _site/
 
 # baza przykladow hypothesis (backend/tests/test_security_fuzz.py)
 .hypothesis/
+
+# wyniki `python3 sandbox/run.py eval`
+sandbox/results/

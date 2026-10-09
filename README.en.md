@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.30.1-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.31.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -140,6 +140,10 @@ or `/language en` at runtime.
 
 Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described in
 [docs/en/deploy.md](./docs/en/deploy.md).
+
+Want to see how it works first, without your own server? `python3 sandbox/run.py try --scenario nginx-502` starts a
+container on your computer that pretends to be a server with a broken nginx, with Pipe inside. The same scenarios are
+used to check which models can handle the fixes: [sandbox/README.md](./sandbox/README.md) (in Polish).
 
 ## Security
 

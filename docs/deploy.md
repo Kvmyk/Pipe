@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.30.1
+Pipe v0.31.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.

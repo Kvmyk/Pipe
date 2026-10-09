@@ -1,0 +1,6 @@
+{
+  "title": {"pl": "pliki statyczne 403 — zle uprawnienia", "en": "static files 403 — wrong permissions"},
+  "prompt": {"pl": "Pliki statyczne sklepu pod /static/ (np. /static/logo.txt) zwracaja 403. Napraw to.",
+             "en": "The shop's static files under /static/ (e.g. /static/logo.txt) return 403. Fix it."},
+  "kind": "fix"
+}

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.30.1-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.31.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -141,6 +141,10 @@ Telegram (polecany, bo tam przychodzą alerty): uzupełnij `clients/telegram/.en
 i uruchom instalator jeszcze raz. Szczegóły: [docs/telegram.md](./docs/telegram.md).
 
 Inne sposoby wdrożenia (natywnie z systemd, Kubernetes, cloud-init): [docs/deploy.md](./docs/deploy.md).
+
+Chcesz najpierw zobaczyć, jak to działa, bez własnego serwera? `python3 sandbox/run.py try --scenario nginx-502`
+uruchamia na Twoim komputerze kontener udający serwer z zepsutym nginx, a w nim Pipe. Te same scenariusze służą do
+sprawdzania, które modele radzą sobie z naprawami: [sandbox/README.md](./sandbox/README.md).
 
 ## Bezpieczeństwo
 

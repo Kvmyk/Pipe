@@ -1,0 +1,6 @@
+{
+  "title": {"pl": "aplikacja nie startuje — bledna konfiguracja", "en": "the app won't start — broken config"},
+  "prompt": {"pl": "Sklep nie odpowiada. Sprawdz, co sie stalo, i przywroc go do dzialania.",
+             "en": "The shop doesn't respond. Check what happened and get it working again."},
+  "kind": "fix"
+}

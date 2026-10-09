@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.30.1** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.31.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings); `docs/en/` mirrors the user docs in English, file for file and section for section (the website renders both, `test_site.py` checks that every page exists in both languages with the same number of `##` sections and that links/anchors resolve). A change to a `docs/*.md` page needs the same change in `docs/en/`. The site's page list is `DOCS` in `scripts/build_site.py`; its Markdown renderer is a small stdlib one that supports only what `docs/` uses. Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README. The project website (`site/`, Polish at `/`, English at `/en/`) and both READMEs are written in plain language with Polish diacritics — avoid AI-sounding copy (no "not just X but Y", no bold-first bullets, few dashes, concrete numbers).
 
@@ -18,6 +18,9 @@ pytest backend/tests/test_security.py::TestClassifyCommandSafe -v   # single cla
 PIPE_FUZZ_EXAMPLES=5000 pytest backend/tests/test_security_fuzz.py  # deeper classifier fuzzing (hypothesis; CI: 300)
 python -m backend.server                  # local run; needs backend/.env (PIPE_RUNTIME=native outside Docker)
 python scripts/demo/record.py --lang pl  # README GIF: scripted demo backend + real `pipe web` + Playwright/ffmpeg (docs/assets/)
+python3 sandbox/run.py try --scenario nginx-502   # sandbox: a container posing as a server (nginx + shop app + Pipe native), port 7390
+python3 sandbox/run.py self-test         # every scenario breaks/fixes correctly (no model; CI runs it)
+python3 sandbox/run.py eval --env-file backend/.env --repeat 3   # agent fixes scenarios with auto-YES, check.sh grades; results in sandbox/results/
 python scripts/build_site.py             # project website (GitHub Pages) from site/ + docs/assets + Plex fonts + docs pages rendered from docs/*.md (/docs/) and docs/en/*.md (/en/docs/) -> _site/; deployed by .github/workflows/pages.yml
 ```
 
@@ -34,7 +37,7 @@ cd backend && docker compose logs -f vps-agent      # or: journalctl -u pipe -f
 
 CLI install (client machine): `.\install.ps1` (Windows) or `bash install.sh` (Linux/macOS), then `pipe`.
 
-There is no linter or formatter. CI (`.github/workflows/ci.yml`, on push to `main` and PRs) runs pytest on Python 3.11 and 3.13 with the Telegram requirements installed, builds both Docker images without pushing, renders every kustomize overlay, and runs `bash -n` on the install scripts.
+There is no linter or formatter. CI (`.github/workflows/ci.yml`, on push to `main` and PRs) runs pytest on Python 3.11 and 3.13 with the Telegram requirements installed, builds both Docker images without pushing, renders every kustomize overlay, runs `bash -n` on the install scripts, and runs `sandbox/run.py self-test`. Scenarios live in `sandbox/scenarios/<name>/` (`scenario.json` with pl/en prompt and `kind` fix|diagnose, `break.sh`, `check.sh`, `fix.sh`). The root `.dockerignore` keeps every `.env` (except `.env.example`) and `backend/data/` out of images built from the repo root (Telegram, sandbox).
 
 ## Architecture
 

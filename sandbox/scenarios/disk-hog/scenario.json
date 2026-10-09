@@ -1,0 +1,7 @@
+{
+  "title": {"pl": "co zajmuje miejsce — tylko diagnoza", "en": "what is using the disk — diagnosis only"},
+  "prompt": {"pl": "Co zajmuje najwiecej miejsca w /var/log? Niczego nie usuwaj, tylko wskaz plik i powiedz, skad sie wzial.",
+             "en": "What takes the most space in /var/log? Don't delete anything, just point to the file and say where it came from."},
+  "kind": "diagnose",
+  "expect": ["debug.log.1"]
+}

@@ -1,0 +1,6 @@
+{
+  "title": {"pl": "nginx zwraca 502 — zly port w proxy_pass", "en": "nginx returns 502 — wrong port in proxy_pass"},
+  "prompt": {"pl": "Strona na tym serwerze zwraca blad 502. Znajdz przyczyne i napraw.",
+             "en": "The website on this server returns a 502 error. Find the cause and fix it."},
+  "kind": "fix"
+}

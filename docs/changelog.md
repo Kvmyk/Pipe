@@ -1,5 +1,28 @@
 # Historia zmian -- Pipe
 
+## v0.31.0 (2026-10-10)
+
+### Piaskownica: wyprobuj Pipe bez serwera
+
+- `python3 sandbox/run.py try` uruchamia na wlasnym komputerze kontener udajacy maly serwer (nginx, aplikacja sklepu,
+  bez systemd), a w nim Pipe. Laczysz sie przez `pipe --no-tunnel --local-port 7390` albo `pipe web`. Bez klucza
+  piaskownica tez startuje, Pipe dziala wtedy bez modelu
+- Cztery scenariusze awarii (`--scenario`): `nginx-502`, `app-down`, `static-403`, `disk-hog`
+
+### Ocena modeli na scenariuszach
+
+- `python3 sandbox/run.py eval` daje kazdy scenariusz agentowi, zgadza sie na proponowane zmiany i sprawdza
+  skryptem, czy serwer naprawde dziala. Wynik: liczba zdanych, potwierdzenia, czas; szczegoly w `sandbox/results/`.
+  `--repeat` do porownan (modele nie sa deterministyczne)
+- `python3 sandbox/run.py self-test` sprawdza bez modelu, ze scenariusze psuja sie i naprawiaja poprawnie; uruchamia
+  go CI
+
+### Bezpieczenstwo
+
+- Nowy `.dockerignore` w korzeniu repozytorium. Wczesniej obraz bota Telegram budowany na serwerze (`--build` albo
+  brak obrazu wydania) zawieral `clients/telegram/.env` z tokenem bota. Obrazy z ghcr.io byly czyste (CI buduje
+  z repozytorium bez `.env`). Jesli budowales obraz bota lokalnie i gdzies go wypychales, zmien token bota
+
 ## v0.30.1 (2026-10-10)
 
 ### Fuzzing klasyfikatora komend
