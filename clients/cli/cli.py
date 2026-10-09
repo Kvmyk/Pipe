@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.28.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.28.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.28.1[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.28.1[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()

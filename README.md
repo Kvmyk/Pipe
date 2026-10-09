@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.28.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.28.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -61,6 +61,27 @@ Tak wyglądają typowe prośby:
 
 Pełna lista funkcji z przykładami: [docs/features.md](./docs/features.md).
 
+## Dla Claude Code, Codexa i innych agentów
+
+Jeśli pracujesz już z agentem w terminalu, nie musisz dawać mu SSH do produkcji. Podłącz go do Pipe przez MCP.
+Agent dostaje narzędzie `run_command`, które przechodzi przez ten sam klasyfikator co rozmowa z Pipe. Odczyty
+wykonują się od razu, zakazane komendy są odrzucane, a każda zmiana czeka na Twoją zgodę na Telegramie (w CLI:
+`/zgody`). Po zgodzie Pipe robi kopię plików, sprawdza konfigurację przed przeładowaniem i po nim, a gdy coś
+przestaje działać, przywraca poprzednią wersję. Każda zmiana trafia do dziennika i można ją cofnąć.
+
+Agent dostaje też to, co Pipe wie o serwerze: historię zmian, mapę usług, wyniki sprawdzeń i audytu.
+
+Na serwerze utwórz osobny token dla agenta, a na swoim komputerze dodaj Pipe jako serwer MCP:
+
+```bash
+python3 -m backend.tokens add claude-code --role admin                 # na serwerze, w katalogu Pipe
+claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@serwer   # Claude Code na laptopie
+```
+
+Inne programy (Codex, Cursor, własny agent) dostają to samo polecenie: `pipe --mcp --host root@serwer`
+ze zmienną `AGENT_TOKEN`. Pipe nie potrzebuje do tego własnego modelu: przy `LLM_PROVIDER=none` myśli Twój agent,
+a Pipe pilnuje tego, co się wykonuje. Szczegóły: [docs/features.md](./docs/features.md) (sekcja MCP).
+
 ## Co potrafi
 
 **Pilnuje serwera bez Twojego udziału.** Sprawdzenia co dwie minuty działają bez modelu językowego, więc nic nie
@@ -85,7 +106,8 @@ Ciebie jako propozycje.
 (DuckDuckGo, Stack Exchange, Wikipedia) i podaje źródła. Nie potrzeba do tego żadnego klucza API.
 
 **Współpracuje z innymi agentami.** Claude Code, Cursor albo Twój własny agent mogą pracować na serwerze przez
-Pipe (MCP). Odczyty wykonują się od razu, a każda zmiana czeka na Twoją zgodę na Telegramie.
+Pipe (MCP). Odczyty wykonują się od razu, a każda zmiana czeka na Twoją zgodę na Telegramie
+([wyżej](#dla-claude-code-codexa-i-innych-agentów)).
 
 ## Instalacja
 
@@ -96,8 +118,14 @@ git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh
 ```
 
-Bez Dockera: `sudo bash scripts/install-server.sh --mode native`. Nie masz klucza API? Wybierz Google Gemini, darmowy
-klucz wygenerujesz na [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+Instalator pobiera gotowy obraz z ghcr.io, podpisany przy wydaniu (z `--build` zbuduje go na serwerze ze źródeł).
+Bez Dockera: `sudo bash scripts/install-server.sh --mode native`.
+
+Nie masz klucza API? Wybierz Google Gemini, darmowy klucz wygenerujesz na
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). W darmowym planie Google może jednak uczyć się
+na Twoich zapytaniach, a te zawierają logi i konfigurację serwera, więc na produkcji włącz płatności albo wybierz
+innego dostawcę. Możesz też wybrać „Bez modelu”: Pipe pilnuje serwera, wysyła alerty i raporty, działa jako bramka
+MCP i nic nie wysyła na zewnątrz. Rozmowę włączysz później, dodając dostawcę.
 
 Na swoim komputerze zainstaluj klienta i wpisz `pipe`. Klient łączy się z serwerem przez tunel SSH:
 
@@ -123,6 +151,8 @@ Inne sposoby wdrożenia (natywnie z systemd, Kubernetes, cloud-init): [docs/depl
 
 Ważne ograniczenie: w trybie Docker Pipe ma dostęp do `docker.sock`, czyli w praktyce uprawnienia roota na serwerze.
 Ochroną jest Twoje potwierdzenie przy każdej zmianie. Pełny opis: [docs/security.md](./docs/security.md).
+
+Znalazłeś podatność? Zgłoś ją prywatnie, nie w publicznym issue: [SECURITY.md](./SECURITY.md).
 
 ## Dokumentacja
 

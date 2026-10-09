@@ -201,7 +201,9 @@ def render_markdown(source: str, link=lambda url: url) -> Rendered:
             level, text = len(heading.group(1)), heading.group(2)
             if level == 1 and not title:
                 title = re.sub(r"\s+--\s+Pipe$", "", plain(text)).replace(" -- ", " – ")
-                out.append(f"<h1>{inline(re.sub(r'\s+--\s+Pipe$', '', text), link)}</h1>")
+                # bez backslasha w f-stringu — Python 3.11 (obraz Dockera, CI) tego nie przyjmuje
+                bare = re.sub(r"\s+--\s+Pipe$", "", text)
+                out.append(f"<h1>{inline(bare, link)}</h1>")
             else:
                 anchor = slugify(plain(text), used)
                 if level == 2:

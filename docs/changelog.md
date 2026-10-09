@@ -1,5 +1,20 @@
 # Historia zmian -- Pipe
 
+## v0.28.1 (2026-10-09)
+
+### Poprawki
+
+- `scripts/build_site.py` znowu dziala na Pythonie 3.11 (f-string z backslashem jest dozwolony dopiero od 3.12).
+  Przez to od v0.26.1 nie przechodzily testy w CI na 3.11 i nie powstalo wydanie v0.28.0 — pierwszym wydaniem
+  z obrazami w GHCR jest v0.28.1
+
+### README
+
+- Nowa sekcja „Dla Claude Code, Codexa i innych agentow”: jak podlaczyc swojego agenta do serwera przez Pipe (MCP)
+  zamiast przez SSH, z gotowym poleceniem dla Claude Code
+- Instalacja: gotowy obraz z ghcr.io, ostrzezenie o darmowym tierze Gemini i opcja „Bez modelu”;
+  w sekcji o bezpieczenstwie link do `SECURITY.md`
+
 ## v0.28.0 (2026-10-09)
 
 ### Podpisane wydania i gotowe obrazy

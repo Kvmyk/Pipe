@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.28.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.28.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -57,6 +57,28 @@ Pipe works with any model that speaks the OpenAI API. The default is Google Gemi
 | *undo the last change* | restores the files from the backup taken before the change |
 | *why is this broken?* + a screenshot or a log | looks at the screenshot, reads the log (secrets hidden from the model) and looks for the cause on the server |
 
+## For Claude Code, Codex and other agents
+
+If you already work with an agent in the terminal, you don't have to give it SSH to production. Connect it to Pipe
+over MCP. The agent gets a `run_command` tool that goes through the same classifier as a chat with Pipe. Reads run
+right away, forbidden commands are refused, and every change waits for your approval on Telegram (in the CLI:
+`/zgody`). After you approve, Pipe backs up the files, checks the config before the reload and after it, and when
+something stops working it restores the previous version. Every change goes to the journal and can be undone.
+
+The agent also gets what Pipe knows about the server: the history of changes, the service map, check and audit
+results.
+
+Create a separate token for the agent on the server, then add Pipe as an MCP server on your computer:
+
+```bash
+python3 -m backend.tokens add claude-code --role admin                 # on the server, in the Pipe directory
+claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@server   # Claude Code on your laptop
+```
+
+Other programs (Codex, Cursor, your own agent) get the same command: `pipe --mcp --host root@server` with the
+`AGENT_TOKEN` variable. Pipe doesn't need its own model for this: with `LLM_PROVIDER=none` your agent does the
+thinking and Pipe guards what gets executed. Details: [docs/en/features.md](./docs/en/features.md) (MCP section).
+
 ## What it does
 
 **Watches the server on its own.** The two-minute checks run without a language model, so they cost nothing.
@@ -81,7 +103,8 @@ proposals.
 the web (DuckDuckGo, Stack Exchange, Wikipedia) and cites its sources. No API key needed.
 
 **Works with other agents.** Claude Code, Cursor or your own agent can work on the server through Pipe (MCP). Reads
-run right away, and every change waits for your approval on Telegram.
+run right away, and every change waits for your approval on Telegram
+([above](#for-claude-code-codex-and-other-agents)).
 
 ## Installation
 
@@ -92,8 +115,14 @@ git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh --lang en
 ```
 
-Without Docker: `sudo bash scripts/install-server.sh --mode native --lang en`. No API key? Pick Google Gemini and
-create a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+The installer pulls a ready image from ghcr.io, signed at release (with `--build` it builds it on the server from
+source). Without Docker: `sudo bash scripts/install-server.sh --mode native --lang en`.
+
+No API key? Pick Google Gemini and create a free key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). On the free plan, though, Google may learn from your
+prompts, and those contain the server's logs and configs, so on production enable billing or pick another provider.
+You can also choose "No model": Pipe watches the server, sends alerts and reports, works as an MCP gateway and
+sends nothing out. You turn chat on later by adding a provider.
 
 On your own computer install the client and type `pipe`. It connects to the server through an SSH tunnel:
 
@@ -121,6 +150,8 @@ Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described
 
 An important limitation: in Docker mode Pipe has access to `docker.sock`, which in practice means root on the server.
 The protection is your confirmation of every change. Full description: [docs/en/security.md](./docs/en/security.md).
+
+Found a vulnerability? Report it privately, not in a public issue: [SECURITY.md](./SECURITY.md).
 
 ## Documentation
 
