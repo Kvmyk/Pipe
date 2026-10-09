@@ -6,3 +6,5 @@ python-dotenv>=1.0.0
 mermaidx>=0.9.5
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
+# Fuzzing klasyfikatora komend (backend/tests/test_security_fuzz.py)
+hypothesis>=6.100

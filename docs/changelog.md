@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.30.1 (2026-10-10)
+
+### Fuzzing klasyfikatora komend
+
+- Nowy `backend/tests/test_security_fuzz.py` (hypothesis): tysiace wariantow prob obejscia — doklejona komenda
+  po rozpoznanym odczycie, przekierowanie do pliku, nazwa komendy rozcieta cudzyslowami, zmiany wielkosci liter
+  i bialych znakow, odczyt sekretu ze sciezka w cudzyslowach. Zadna nie moze byc `safe`
+- Przy 5000 przykladach na test nie znalazl obejscia; celowo oslabiony klasyfikator (dodany `touch`) wylapuje
+  od razu. W CI 300 przykladow, glebiej: `PIPE_FUZZ_EXAMPLES=5000`
+
 ## v0.30.0 (2026-10-10)
 
 ### Rozmowa przetrwa restart backendu

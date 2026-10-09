@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.30.0
+Pipe v0.30.1
 
 ## Model
 
@@ -76,6 +76,14 @@ Odmowa nie wraca do modelu jako blad do ponowienia -- dostaje informacje, zeby n
 
 Regresje obejsc znalezionych przy przebudowie: `backend/tests/test_security_hardening.py`,
 `backend/tests/test_review_fixes_v091.py`.
+
+Poza recznymi przypadkami klasyfikator jest fuzzowany (`backend/tests/test_security_fuzz.py`, hypothesis):
+rozpoznany odczyt plus doklejona komenda (`;`, `&&`, `|`, `&`, nowa linia, `$(...)`, backticki, `<(...)`, `${IFS}`,
+`$'\x3b'`), przekierowanie do pliku, nazwa komendy rozcieta cudzyslowami albo backslashem, zmiany wielkosci liter
+i bialych znakow, odczyt sekretu ze sciezka w cudzyslowach. Wlasciwosc jest jedna: nic z tego nie moze byc `safe`,
+a dowolny tekst nie moze wywrocic klasyfikatora. W CI 300 przykladow na test; glebiej lokalnie:
+`PIPE_FUZZ_EXAMPLES=5000 pytest backend/tests/test_security_fuzz.py`. Kontrprzyklady trafiaja na liste
+`KNOWN_BYPASSES` jako stale regresje.
 
 ---
 

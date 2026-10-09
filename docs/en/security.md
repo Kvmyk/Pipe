@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.30.0
+Pipe v0.30.1
 
 ## Model
 
@@ -74,6 +74,13 @@ A refusal doesn't go back to the model as an error to retry; it gets a message t
 
 Regression tests for bypasses found during the rebuild: `backend/tests/test_security_hardening.py`,
 `backend/tests/test_review_fixes_v091.py`.
+
+Besides the hand-written cases the classifier is fuzzed (`backend/tests/test_security_fuzz.py`, hypothesis): a
+recognised read plus an appended command (`;`, `&&`, `|`, `&`, a newline, `$(...)`, backticks, `<(...)`, `${IFS}`,
+`$'\x3b'`), a redirect to a file, a command name split by quotes or a backslash, case and whitespace changes, reading
+a secret with a quoted path. There is one property: none of it may be `safe`, and no text may crash the classifier.
+CI runs 300 examples per test; deeper locally: `PIPE_FUZZ_EXAMPLES=5000 pytest backend/tests/test_security_fuzz.py`.
+Counterexamples go to the `KNOWN_BYPASSES` list as permanent regressions.
 
 ---
 

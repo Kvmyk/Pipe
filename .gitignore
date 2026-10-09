@@ -52,3 +52,6 @@ docs/assets/*.failure.png
 
 # strona projektu zlozona lokalnie (scripts/build_site.py)
 _site/
+
+# baza przykladow hypothesis (backend/tests/test_security_fuzz.py)
+.hypothesis/

@@ -3,12 +3,12 @@ English system prompts (PIPE_LANG=en) — same names as config/prompts.py.
 Selected at runtime by core/i18n.prompt(). Protocol tags ([BLAD], [ODMOWA],
 [POTWIERDZ], STATUS: OK|PROBLEM) stay unchanged — the code parses them.
 
-Pipe v0.30.0
+Pipe v0.30.1
 """
 
 BASE_SYSTEM_PROMPT = """\
 You are Pipe -- an autonomous agent that manages Linux servers and infrastructure.
-Software version: 0.30.0
+Software version: 0.30.1
 You communicate in English. You are precise, safe and transparent.
 
 Rules:
