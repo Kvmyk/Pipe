@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.29.0
+Pipe v0.30.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -28,7 +28,8 @@ from openai.types.chat import ChatCompletion
 
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, LLMConfig, chat_model_ids, model_available
-from backend.core import attachments as attachments_module, audit, executor, llm as llm_choice, memory, runtime, usage
+from backend.core import attachments as attachments_module, audit, executor, llm as llm_choice, memory, runtime, \
+    sessions_store, usage
 from backend.core.i18n import tr
 from backend.core.events import Activity, Event, Progress
 from backend.core.session import ConfirmationRequest, Session
@@ -137,8 +138,8 @@ class VPSAgent:
 
     def get_or_create_session(self, session_id: str, interface: str = "cli", *, owner: str = "",
                               role: str = "admin") -> Session:
-        """Zwraca istniejaca sesje lub tworzy nowa. Rola jest ustawiana przy kazdym zadaniu."""
-        if session_id not in self._sessions:
+        """Zwraca istniejaca sesje (z pamieci albo z dysku po restarcie) lub tworzy nowa. Rola — przy kazdym zadaniu."""
+        if session_id not in self._sessions and not self._restore(session_id):
             self._sessions[session_id] = Session(session_id=session_id, interface=interface, owner=owner)
         session = self._sessions[session_id]
         session.role = role
@@ -146,16 +147,44 @@ class VPSAgent:
 
     def owns(self, session_id: str, owner: str) -> bool:
         """Czy klient o tej tozsamosci moze uzyc sesji (nieistniejaca sesja — tak)."""
-        session = self._sessions.get(session_id)
+        session = self._sessions.get(session_id) or self._restore(session_id)
         return session is None or session.owner in ("", owner)
 
     def delete_session(self, session_id: str) -> None:
         """Usuwa sesje (np. po rozlaczeniu klienta)."""
         self._sessions.pop(session_id, None)
+        sessions_store.remove(session_id)
+
+    def _restore(self, session_id: str) -> Session | None:
+        """Sesja zapisana przed restartem backendu (core/sessions_store.py) albo None."""
+        if settings.SESSION_KEEP_DAYS <= 0:
+            return None
+        session = sessions_store.load(session_id, settings.SESSION_KEEP_DAYS)
+        if session is not None:
+            self._sessions[session_id] = session
+        return session
+
+    def _persist(self, session_id: str) -> None:
+        session = self._sessions.get(session_id)
+        if session is None or settings.SESSION_KEEP_DAYS <= 0:
+            return
+        try:
+            sessions_store.save(session)
+        except (OSError, TypeError, ValueError) as exc:     # rozmowa dziala dalej, tylko nie przetrwa restartu
+            print(f"[VPS Agent] {tr('Nie zapisano sesji', 'Session not saved')}: {exc}", flush=True)
 
     # ─── API dla serwera ────────────────────────────────────────────────────
 
-    async def chat(
+    async def chat(self, session_id: str, user_message: str, interface: str = "cli", **kwargs: Any
+                   ) -> AsyncGenerator[Event, None]:
+        """Jak `_chat()`; po turze (takze przerwanej) sesja trafia na dysk — przetrwa restart backendu."""
+        try:
+            async for event in self._chat(session_id, user_message, interface, **kwargs):
+                yield event
+        finally:
+            self._persist(session_id)
+
+    async def _chat(
         self,
         session_id: str,
         user_message: str,
@@ -232,6 +261,14 @@ class VPSAgent:
                 yield tr(f"[BLAD] Blad wykonania: {retry_exc}", f"[BLAD] Execution error: {retry_exc}")
 
     async def confirm(self, session_id: str, confirmed: bool) -> AsyncGenerator[Event, None]:
+        """Jak `_confirm()`, z zapisem sesji na dysk po zakonczeniu."""
+        try:
+            async for event in self._confirm(session_id, confirmed):
+                yield event
+        finally:
+            self._persist(session_id)
+
+    async def _confirm(self, session_id: str, confirmed: bool) -> AsyncGenerator[Event, None]:
         """Obsluguje TAK/NIE dla oczekujacej operacji i kontynuuje petle."""
         session = self._sessions.get(session_id)
         if not session or not session.pending_confirmation:

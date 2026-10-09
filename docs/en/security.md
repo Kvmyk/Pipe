@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.29.0
+Pipe v0.30.0
 
 ## Model
 
@@ -291,7 +291,11 @@ instructions" framing is not a guarantee.
 
 - **`docker.sock` = root on the host.** Whoever can run `docker run -v /:/x` has full access to the host; mounting `/`
   read-only changes little here. That's why `docker run/exec` always requires confirmation, but the final safeguard is
-  your YES. If you don't need container management, remove the `docker.sock` mount from `docker-compose.yml`.
+  your YES. If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
+  `docker.sock` mount from `docker-compose.yml`.
+- Conversations are kept on disk in `DATA_DIR/sessions` (mode 0600, directory 0700) for `SESSION_KEEP_DAYS` days so
+  they survive a restart. Tool results in them are redacted the same way as in requests to the model, but what you
+  type yourself stays. `SESSION_KEEP_DAYS=0` turns saving off and removes saved sessions at startup.
 - The classifier is not a sandbox. It recognises patterns; the confirmation is there so you see what will run. Read
   commands before YES.
 - Native mode and the Kubernetes `host-agent` overlay run as root on the machine.

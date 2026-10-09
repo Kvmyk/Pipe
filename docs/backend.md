@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.29.0
+Pipe v0.30.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -311,6 +311,7 @@ Powinienes zobaczyc:
 | `PIPE_LANG` | `pl` | Jezyk agenta: `pl` albo `en` (prompty, opisy narzedzi, komunikaty, alerty, raporty, wbudowane skille, kreator). Bot Telegrama czyta te sama zmienna ze swojego `.env`, CLI -- `--lang` / `PIPE_LANG` |
 | `HOST_ROOT`, `HOST_PROC` | wg trybu | Nadpisanie sciezek hosta |
 | `AGENT_MAX_ITERATIONS` | 15 | Limit krokow petli na jedna wiadomosc |
+| `SESSION_KEEP_DAYS` | 7 | Ile dni rozmowy leza w `DATA_DIR/sessions` (0600) i wracaja po restarcie backendu; 0 = bez zapisu |
 | `CONFIRMED_COMMAND_TIMEOUT` | 900 | Limit czasu (s) komend zatwierdzonych przez uzytkownika; odczyty maja 30 s |
 | `REDACT_SECRETS` | 1 | Redakcja sekretow w wynikach narzedzi |
 | `WEB_SEARCH` | on | Internet dla agenta (`web_search`, `web_fetch`, `software_info`); `off` wylacza |

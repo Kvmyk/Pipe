@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.29.0
+Pipe v0.30.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -610,8 +610,8 @@ helper container that runs `git pull --ff-only` in the install directory and swa
 release image from GHCR (or, when there is none, rebuilds them: `docker compose up -d --build`). A separate container is needed because the agent can't replace the container it
 runs in; the process would die halfway.
 
-- The backend is unavailable for a minute or a few, and an ongoing conversation is cut off (sessions don't survive a
-  restart).
+- The backend is unavailable for a minute or a few. The conversation comes back after the restart (sessions are kept
+  in `DATA_DIR/sessions`), but an operation waiting for YES at that moment is dropped and the agent proposes it again.
 - After the restart, a message with the result goes to whoever requested the update. If pulling or building fails,
   the old version keeps running and the message contains the end of the log.
 - Only services that were already running are rebuilt (the Telegram bot won't start if you don't use it).

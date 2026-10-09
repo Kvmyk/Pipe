@@ -745,6 +745,13 @@ async def main() -> None:
     print(f"[VPS Agent] {tr('Jezyk   ', 'Language')}    : {lang()}", flush=True)
     print(tr("[VPS Agent] Serwer gotowy. Ctrl+C aby zatrzymać.", "[VPS Agent] Server ready. Ctrl+C to stop."), flush=True)
 
+    # Sesje sprzed restartu: przeterminowane (albo wszystkie przy SESSION_KEEP_DAYS=0) znikaja z dysku.
+    try:
+        from backend.core import sessions_store
+        sessions_store.prune(settings.SESSION_KEEP_DAYS)
+    except OSError as exc:
+        print(f"[VPS Agent] [{tr('OSTRZEZENIE', 'WARNING')}] sessions: {exc}", flush=True)
+
     # Skille wbudowane (backend/skills_builtin) — nowe i zaktualizowane, bez nadpisywania zmian uzytkownika
     try:
         seeded = memory.seed_builtin_skills()

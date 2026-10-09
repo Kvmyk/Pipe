@@ -1,5 +1,20 @@
 # Historia zmian -- Pipe
 
+## v0.30.0 (2026-10-10)
+
+### Rozmowa przetrwa restart backendu
+
+- Po kazdej turze sesja trafia do `DATA_DIR/sessions` (prawa 0600, nazwa pliku z hasha identyfikatora). Po restarcie
+  (`/aktualizuj`, awaria, restart kontenera) CLI, `pipe web` i Telegram wracaja do tej samej rozmowy: historia,
+  katalog roboczy, historie workerow i adresy z wyszukiwania sa na miejscu
+- Operacja, ktora w chwili restartu czekala na TAK, nie jest wykonywana: model dostaje odpowiedz „nie wykonano,
+  backend zostal zrestartowany” i moze zaproponowac ja ponownie. Tryb YOLO i obrazy nie sa zapisywane
+- Nowe ustawienie `SESSION_KEEP_DAYS` (domyslnie 7); `0` wylacza zapis i przy starcie usuwa zapisane sesje
+
+### Testy
+
+- Kazdy test dostaje domyslny `DATA_DIR` w katalogu tymczasowym — zaden test nie zapisze nic do `backend/data`
+
 ## v0.29.0 (2026-10-09)
 
 ### Tryb obserwacji

@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.29.0
+Pipe v0.30.0
 
 ## Model
 
@@ -289,7 +289,10 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
 - **`docker.sock` = root na hoscie.** Kto moze wykonac `docker run -v /:/x`, ma pelny dostep do hosta --
   montowanie `/` jako read-only niewiele tu zmienia. Dlatego `docker run/exec` zawsze wymaga potwierdzenia,
   ale ostatecznym zabezpieczeniem jest Twoje TAK. Jesli nie potrzebujesz zarzadzania kontenerami,
-  usun montowanie `docker.sock` z `docker-compose.yml`.
+  zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
+- Rozmowy leza na dysku w `DATA_DIR/sessions` (prawa 0600, katalog 0700) przez `SESSION_KEEP_DAYS` dni, zeby
+  przetrwaly restart. Wyniki narzedzi sa w nich zredagowane jak w zapytaniach do modelu, ale to, co sam wpiszesz,
+  zostaje. `SESSION_KEEP_DAYS=0` wylacza zapis i przy starcie usuwa zapisane sesje.
 - Klasyfikator nie jest sandboxem. Rozpoznaje wzorce; potwierdzenie jest po to, zebys widzial, co sie wykona.
   Czytaj komendy przed TAK.
 - Tryb native i nakladka Kubernetes `host-agent` dzialaja jako root na maszynie.

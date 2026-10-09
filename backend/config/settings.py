@@ -98,6 +98,8 @@ def _int(name: str, default: int) -> int:
 
 
 AGENT_MAX_ITERATIONS: int = _int("AGENT_MAX_ITERATIONS", 15)
+# Ile dni sesje rozmow leza na dysku (DATA_DIR/sessions) i wracaja po restarcie backendu; 0 = bez zapisu.
+SESSION_KEEP_DAYS: int = _int("SESSION_KEEP_DAYS", 7)
 # Limit dla komend zatwierdzonych przez uzytkownika (apt upgrade, docker build...).
 CONFIRMED_COMMAND_TIMEOUT: int = _int("CONFIRMED_COMMAND_TIMEOUT", 900)
 # Bezpiecznik: nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii.

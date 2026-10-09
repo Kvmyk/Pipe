@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.29.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.30.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings); `docs/en/` mirrors the user docs in English, file for file and section for section (the website renders both, `test_site.py` checks that every page exists in both languages with the same number of `##` sections and that links/anchors resolve). A change to a `docs/*.md` page needs the same change in `docs/en/`. The site's page list is `DOCS` in `scripts/build_site.py`; its Markdown renderer is a small stdlib one that supports only what `docs/` uses. Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README. The project website (`site/`, Polish at `/`, English at `/en/`) and both READMEs are written in plain language with Polish diacritics — avoid AI-sounding copy (no "not just X but Y", no bold-first bullets, few dashes, concrete numbers).
 
@@ -59,6 +59,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 |------|------|
 | `backend/server.py` | Unix socket + TCP; `event_frame()` maps events → frames; `_handle_command()` for client commands; `_subscribe()`; starts the Watcher |
 | `backend/core/agent.py` | `VPSAgent`: `chat()`, `confirm()`, `run_loop()` (parametrised: prompt/tools/model/dispatch — reused by workers), `call_llm()`, `complete()`, `_execute_tool_confirmed()`; redacts + truncates tool results; trims history |
+| `backend/core/sessions_store.py` | Sessions on disk across restarts: `save()` / `load()` / `prune()`; file name = sha256 of the session id, 0600 in a 0700 dir; images stripped — **no `settings` import** |
 | `backend/core/session.py` | `Session` (history, `cwd`, `pending_confirmation`, `workers`, `learns_vibe`, `user_key`) and `ConfirmationRequest` (incl. optional `action` callback); `Session.system_prompt` |
 | `backend/core/events.py` | Stream events: `str`, `Attachment` (file, e.g. PNG), `Progress` |
 | `backend/core/handlers/` | Tool implementations; `common.py` has `reply()`, `format_result()`, `run_classified()` (forbidden/confirm/safe flow) |
@@ -225,7 +226,7 @@ The `/ship` skill (`.claude/skills/ship/SKILL.md`) is the release workflow: bump
 
 ## Known limitations
 
-- Sessions (history, pending confirmations, worker histories) are in process memory — a backend restart forgets them; the Kubernetes Deployment therefore runs one replica.
+- Sessions live in process memory and are saved to `DATA_DIR/sessions/<sha256>.json` (0600) after every `chat()` / `confirm()` (`core/sessions_store.py`, `SESSION_KEEP_DAYS`, 0 = off); a restart restores history, cwd, workers and `web_urls` on the next request, but not a pending confirmation (its tool call gets a "not executed, restarted" answer), YOLO or images. Disk is per pod, so the Kubernetes Deployment still runs one replica.
 - `cron_manage` can only list host cron in docker/kubernetes mode (host root is read-only); add/remove works in native mode. Agent-run schedules belong in routines.
 - `pipe_update apply` works only in docker mode started by compose; native and Kubernetes get manual steps. `docker compose` is deliberately not a CLI plugin in the image (paths under `/hostfs` would be wrong), so the agent cannot run compose on host projects.
 - The CLI does not subscribe to watcher events; it shows alerts via `/alerty`. Reminders (incl. the `pipe_update` result) are polled every `REMINDER_POLL` s while the prompt is idle (`_watch_reminders`, `RemoteClient.probe()` — one quiet attempt) and printed above the prompt. Telegram and `pipe web` receive events live.
