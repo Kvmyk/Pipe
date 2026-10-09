@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.27.0
+Pipe v0.28.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -23,9 +23,14 @@ sudo bash scripts/install-server.sh
 ```
 
 Skrypt instaluje Dockera z repozytorium dystrybucji (apt, dnf, apk, pacman, zypper), uruchamia kreator
-providera LLM i `docker compose up -d --build`. Bot Telegram startuje, gdy istnieje `clients/telegram/.env`.
+providera LLM i uruchamia kontenery. Bot Telegram startuje, gdy istnieje `clients/telegram/.env`.
 
-Recznie: `python3 -m backend.configure && cd backend && docker compose up -d --build`.
+Obraz pochodzi z wydania: `ghcr.io/kvmyk/pipe:<wersja z pliku VERSION>` (amd64 i arm64, podpisany cosign w CI,
+polecenie weryfikacji jest w notatkach wydania na GitHubie). Gdy takiego obrazu nie ma (wersja bez wydania, brak
+dostepu do ghcr.io) albo podasz `--build`, obraz jest budowany na serwerze ze zrodel. `/aktualizuj` robi to samo.
+
+Recznie: `python3 -m backend.configure && cd backend && PIPE_VERSION=$(cat ../VERSION) docker compose up -d`
+(bez `PIPE_VERSION`: `docker compose up -d --build` buduje lokalnie obraz z tagiem `local`).
 
 Montowania (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/hostfs/root` (rw),
 `/proc` -> `/hostproc:ro`, `docker.sock`, `/root/.ssh:ro` (git, cele ssh), opcjonalnie `/root/.kube:ro`

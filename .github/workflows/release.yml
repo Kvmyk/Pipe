@@ -1,0 +1,134 @@
+name: Wydanie
+
+# Tag vX.Y.Z (wypychany przez /ship) -> obrazy w GHCR (amd64 + arm64, podpisane cosign bez kluczy)
+# + GitHub Release z sekcja changelogu. Instalator i compose pobieraja obraz o tagu z pliku VERSION.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Istniejacy tag do (ponownego) wydania, np. v0.27.0"
+        required: true
+
+permissions:
+  contents: write      # GitHub Release
+  packages: write      # GHCR
+  id-token: write      # cosign keyless (OIDC)
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  check:
+    name: Tag zgodny z VERSION
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG nie zgadza sie z VERSION ($version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: Testy
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            clients/telegram/requirements.txt
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r clients/telegram/requirements.txt
+      - run: pytest backend/tests/ -q
+
+  images:
+    name: Obraz ${{ matrix.image }}
+    needs: [check, tests]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: pipe
+            context: backend
+            dockerfile: backend/Dockerfile
+          - image: pipe-telegram
+            context: .
+            dockerfile: clients/telegram/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        # GHCR wymaga malych liter (wlasciciel repozytorium to "Kvmyk")
+        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.name.outputs.repo }}:${{ needs.check.outputs.version }}
+            ${{ steps.name.outputs.repo }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.image }}
+      - name: Podpis cosign (keyless)
+        run: cosign sign --yes "${{ steps.name.outputs.repo }}@${{ steps.build.outputs.digest }}"
+
+  release:
+    name: GitHub Release
+    needs: [check, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Notatki z changelogu
+        run: python scripts/release_notes.py "${{ needs.check.outputs.version }}" > notes.md
+      - name: Utworz albo zaktualizuj wydanie
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --title "Pipe $TAG" --notes-file notes.md --verify-tag
+          fi

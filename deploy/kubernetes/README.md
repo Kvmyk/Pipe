@@ -14,14 +14,15 @@ trzyma na PVC.
 ## Instalacja
 
 ```bash
-# 1. Obrazy (amd64 + arm64) do Twojego rejestru
-docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG --push backend/
-# (tylko z nakladka telegram)
-docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-telegram:TAG -f clients/telegram/Dockerfile --push .
+# 1. Obrazy (amd64 + arm64): gotowe wydania sa w ghcr.io/kvmyk/pipe i ghcr.io/kvmyk/pipe-telegram
+#    (tag = wersja, np. 0.27.0; podpis cosign — patrz notatki wydania na GitHubie).
+#    Wlasne obrazy w Twoim rejestrze:
+#      docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG --push backend/
+#      docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-telegram:TAG -f clients/telegram/Dockerfile --push .
 
 # 2. Wskaz obrazy — w wybranej nakladce albo bazie:
 cd deploy/kubernetes/overlays/telegram     # albo base/, overlays/operator/ ...
-kustomize edit set image pipe-backend=REJESTR/pipe-backend:TAG pipe-telegram=REJESTR/pipe-telegram:TAG
+kustomize edit set image pipe-backend=ghcr.io/kvmyk/pipe:WERSJA pipe-telegram=ghcr.io/kvmyk/pipe-telegram:WERSJA
 #   (bez kustomize: zmien newName/newTag w sekcji images pliku kustomization.yaml)
 
 # 3. Sekrety (nie trzymaj ich w repozytorium)

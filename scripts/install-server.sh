@@ -11,6 +11,7 @@
 # English: sudo bash scripts/install-server.sh --lang en
 #
 # Na swiezym serwerze bez repozytorium skrypt sam je sklonuje (--repo, --dir).
+# Docker: pobiera podpisany obraz wydania z ghcr.io (tag = plik VERSION); --build buduje lokalnie ze zrodel.
 # Kubernetes: patrz deploy/kubernetes/README.md (kubectl apply -k).
 set -euo pipefail
 
@@ -19,11 +20,12 @@ DIR="/opt/pipe"
 REPO="${PIPE_REPO:-https://github.com/Kvmyk/pipe.git}"
 BRANCH="${PIPE_BRANCH:-main}"
 NON_INTERACTIVE=0
+BUILD=0
 
 usage() {
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
   echo
-  echo "Opcje: --mode docker|native  --dir KATALOG  --repo URL  --branch GALAZ  --lang pl|en  --non-interactive"
+  echo "Opcje: --mode docker|native  --dir KATALOG  --repo URL  --branch GALAZ  --lang pl|en  --build  --non-interactive"
 }
 
 while [ $# -gt 0 ]; do
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
     --branch) BRANCH="${2:?}"; shift 2 ;;
     --lang) case "${2:?}" in pl|en) PIPE_LANG="$2"; export PIPE_LANG ;; *) echo "--lang: pl | en" >&2; exit 2 ;; esac; shift 2 ;;
     --non-interactive|-y) NON_INTERACTIVE=1; shift ;;
+    --build) BUILD=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Nieznana opcja / unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -154,15 +157,27 @@ install_docker() {
   service docker start 2>/dev/null || true
 }
 
+# Obraz wydania (ghcr.io/kvmyk/pipe:<VERSION>, podpisany w CI) albo, gdy go nie ma lub podano --build,
+# budowa lokalna ze zrodel. PIPE_VERSION czyta backend/docker-compose.yml.
+start_containers() {  # start_containers [USLUGA...]
+  if [ "$BUILD" -eq 0 ] && compose pull --quiet "$@"; then
+    compose up -d "$@"
+  else
+    [ "$BUILD" -eq 1 ] || log "$(t "Brak obrazu wydania $PIPE_VERSION w ghcr.io — buduje lokalnie" "No release image $PIPE_VERSION on ghcr.io — building locally")"
+    compose up -d --build "$@"
+  fi
+}
+
 if [ "$MODE" = "docker" ]; then
   install_docker
+  PIPE_VERSION="$(tr -d '[:space:]' < VERSION)"; export PIPE_VERSION
   cd backend
   if [ -f ../clients/telegram/.env ]; then
-    log "$(t 'Buduje i uruchamiam backend + bota Telegram' 'Building and starting the backend + Telegram bot')"
-    compose up -d --build
+    log "$(t 'Uruchamiam backend + bota Telegram' 'Starting the backend + Telegram bot')"
+    start_containers
   else
-    log "$(t 'Buduje i uruchamiam backend (bot Telegram: utworz clients/telegram/.env i powtorz)' 'Building and starting the backend (Telegram bot: create clients/telegram/.env and run again)')"
-    compose up -d --build vps-agent
+    log "$(t 'Uruchamiam backend (bot Telegram: utworz clients/telegram/.env i powtorz)' 'Starting the backend (Telegram bot: create clients/telegram/.env and run again)')"
+    start_containers vps-agent
   fi
   cd ..
 fi

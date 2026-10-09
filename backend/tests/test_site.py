@@ -76,3 +76,16 @@ def test_built_site_has_no_broken_internal_links(tmp_path):
             assert target.exists(), f"{page.relative_to(out)}: {href}"
             if anchor and target.suffix == ".html":
                 assert f'id="{anchor}"' in target.read_text(encoding="utf-8"), f"{page.relative_to(out)}: {href}"
+
+
+def test_release_notes_take_the_version_section_from_the_changelog():
+    spec = importlib.util.spec_from_file_location("release_notes", ROOT / "scripts" / "release_notes.py")
+    notes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notes)
+    changelog = "# Historia\n\n## v1.2.0 (2026-10-09)\n\n### Nowe\n\n- a\n\n## v1.1.0 (2026-10-01)\n\n- b\n"
+    assert notes.section(changelog, "1.2.0") == "### Nowe\n\n- a"
+    assert notes.section(changelog, "1.1.0") == "- b" and notes.section(changelog, "1.1") == ""
+    text = notes.notes(changelog, "1.2.0")
+    assert "ghcr.io/kvmyk/pipe:1.2.0" in text and "cosign verify" in text and "Kvmyk/Pipe/" in text
+    current = (ROOT / "VERSION").read_text().strip()
+    assert notes.section((ROOT / "docs" / "changelog.md").read_text(encoding="utf-8"), current)   # /ship pisze sekcje

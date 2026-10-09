@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.27.0
+Pipe v0.28.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -596,7 +596,7 @@ siec prywatna, wstrzymanie YOLO) opisuje `docs/security.md`. `WEB_SEARCH=off` wy
 Wpisz `/aktualizuj` (po angielsku `/update`) albo napisz agentowi "zaktualizuj sie"; `/aktualizuj sprawdz` tylko
 pokazuje wersje i to, czy jest nowsza. Agent sprawdza zdalne repozytorium, a po Twoim
 potwierdzeniu uruchamia osobny kontener pomocniczy, ktory w katalogu instalacji wykonuje `git pull --ff-only`
-i przebudowuje uslugi Pipe (`docker compose up -d --build`). Osobny kontener jest potrzebny, bo agent nie moze
+i podmienia uslugi Pipe na podpisany obraz wydania z GHCR (a gdy go nie ma, buduje je: `docker compose up -d --build`). Osobny kontener jest potrzebny, bo agent nie moze
 wymienic kontenera, w ktorym sam dziala -- proces zginalby w polowie.
 
 - Backend jest niedostepny przez minute lub kilka, a trwajaca rozmowa zostaje przerwana (sesje nie przetrwaja restartu).

@@ -72,7 +72,9 @@ class TestLocateAndScript:
     def test_script_pulls_then_rebuilds_only_running_services(self, docker):
         text = selfupdate.script(asyncio.run(selfupdate.locate()))
         assert text.startswith("set -e; sleep ") and "git -c safe.directory='*' pull --ff-only" in text
-        assert text.index("pull --ff-only") < text.index("up -d --build telegram vps-agent")
+        assert text.index("pull --ff-only") < text.index("PIPE_VERSION") < text.index("pull --quiet telegram vps-agent")
+        # najpierw obraz wydania z GHCR, budowa lokalna tylko gdy go nie ma
+        assert text.index("pull --quiet telegram vps-agent") < text.index("up -d --build telegram vps-agent")
         assert "-p backend -f /root/pipe/backend/docker-compose.yml" in text
 
     def test_values_from_labels_are_quoted(self, docker):

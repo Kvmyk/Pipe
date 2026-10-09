@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.27.0
+Pipe v0.28.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -36,7 +36,7 @@ and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
 | `core/welcome.py` | Welcome after installation: map, security score, what Pipe watches |
 | `skills_builtin/`, `skills_builtin_en/` | Built-in skills (Polish and English), installed into `data/skills` at startup according to `PIPE_LANG` |
 | `core/i18n.py` | Pipe's language (`PIPE_LANG=pl\|en`): `tr("polski", "english")` next to the source text, `prompt()` picks `prompts_en.py` / `tools_en.py` |
-| `core/selfupdate.py` | Updating Pipe itself: a helper container (`git pull` + `docker-compose up -d --build`), report after the restart |
+| `core/selfupdate.py` | Updating Pipe itself: a helper container (`git pull`, the release image from GHCR or `docker-compose up -d --build`), report after the restart |
 | `core/reminders.py` | Reminders: one-off messages and timed tasks (`reminders.json`), fired by the watcher |
 | `core/incidents.py` | Incident memory: alert -> findings from "Investigate" -> what helped (journal) |
 | `core/webhooks.py` | HTTP server for alerts from outside (Alertmanager, Grafana, Uptime Kuma, GitHub) |

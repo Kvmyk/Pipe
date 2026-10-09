@@ -1,5 +1,9 @@
 services:
   vps-agent:
+    # Obraz wydania z GHCR (podpisany cosign w CI, .github/workflows/release.yml). Instalator i /aktualizuj
+    # ustawiaja PIPE_VERSION z pliku VERSION i pobieraja go; gdy go nie ma, compose buduje obraz z `build`.
+    # Bez PIPE_VERSION (reczne `docker compose up --build`) obraz jest budowany lokalnie z tagiem `local`.
+    image: ghcr.io/kvmyk/pipe:${PIPE_VERSION:-local}
     build: .
     restart: unless-stopped
     pid: host
@@ -73,7 +77,8 @@ services:
     network_mode: bridge
 
   telegram:
-    build: 
+    image: ghcr.io/kvmyk/pipe-telegram:${PIPE_VERSION:-local}
+    build:
       context: ..
       dockerfile: clients/telegram/Dockerfile
     restart: unless-stopped

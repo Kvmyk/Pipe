@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.27.0
+Pipe v0.28.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -606,8 +606,8 @@ outside the search results, private network, pausing YOLO) are described in [Sec
 
 Type `/update` (in Polish `/aktualizuj`) or tell the agent "update yourself"; `/update check` only shows the versions
 and whether a newer one exists. The agent checks the remote repository, and after your confirmation starts a separate
-helper container that runs `git pull --ff-only` in the install directory and rebuilds Pipe's services
-(`docker compose up -d --build`). A separate container is needed because the agent can't replace the container it
+helper container that runs `git pull --ff-only` in the install directory and swaps Pipe's services for the signed
+release image from GHCR (or, when there is none, rebuilds them: `docker compose up -d --build`). A separate container is needed because the agent can't replace the container it
 runs in; the process would die halfway.
 
 - The backend is unavailable for a minute or a few, and an ongoing conversation is cut off (sessions don't survive a

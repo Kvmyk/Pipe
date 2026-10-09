@@ -1,5 +1,21 @@
 # Historia zmian -- Pipe
 
+## v0.28.0 (2026-10-09)
+
+### Podpisane wydania i gotowe obrazy
+
+- Tag `vX.Y.Z` uruchamia wydanie (`.github/workflows/release.yml`): testy, obrazy `ghcr.io/kvmyk/pipe`
+  i `ghcr.io/kvmyk/pipe-telegram` dla amd64 i arm64 z SBOM, podpis cosign bez kluczy i wydanie na GitHubie
+  z sekcja changelogu i poleceniem weryfikacji (`scripts/release_notes.py`)
+- Instalator pobiera obraz wydania o wersji z pliku `VERSION` zamiast budowac go na serwerze; buduje tylko wtedy,
+  gdy obrazu nie ma albo podasz `--build`. `/aktualizuj` po `git pull` tez najpierw pobiera obraz
+- Manifesty Kubernetes moga wskazywac gotowe obrazy z GHCR (`deploy/kubernetes/README.md`)
+
+### Zglaszanie podatnosci
+
+- Nowy `SECURITY.md` (po polsku i angielsku): prywatne zgloszenie przez GitHub, co jest, a co nie jest podatnoscia,
+  jak sprawdzic podpis obrazu
+
 ## v0.27.0 (2026-10-09)
 
 ### Pipe bez modelu jezykowego

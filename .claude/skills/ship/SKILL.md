@@ -121,7 +121,19 @@ Push jest widoczny na zewnatrz i trudny do cofniecia, wiec:
 git push -u origin <galaz>
 ```
 
+Na `main` po udanym pushu wypchnij tag wersji — to on uruchamia wydanie
+(`.github/workflows/release.yml`: testy, obrazy `ghcr.io/kvmyk/pipe` i `pipe-telegram` dla amd64 + arm64
+podpisane cosign, GitHub Release z sekcja changelogu przez `scripts/release_notes.py`):
+
+```bash
+git tag -a "v$(cat VERSION)" -m "Pipe v$(cat VERSION)"
+git push origin "v$(cat VERSION)"
+```
+
+Workflow odrzuca tag niezgodny z `VERSION`. Instalator i `/aktualizuj` pobieraja obraz o tagu z `VERSION`
+(gdy go nie ma — buduja lokalnie), wiec wersja bez tagu dziala, tylko wolniej sie instaluje.
+
 ## 7. Podsumuj
 
 Krotko, po polsku: nowa wersja, typ podbicia wraz z uzasadnieniem, lista zaktualizowanych
-dokumentow, wynik testow, hash commita i to, czy push doszedl do skutku.
+dokumentow, wynik testow, hash commita, to, czy push doszedl do skutku, i czy tag wydania zostal wypchniety.

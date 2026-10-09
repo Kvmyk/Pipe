@@ -160,10 +160,16 @@ def script(install: Install) -> str:
     compose = [COMPOSE_BIN, "-p", install.project]
     for path in install.config_files:
         compose += ["-f", path]
-    compose += ["up", "-d", "--build", *install.services]
+    base = " ".join(shlex.quote(part) for part in compose)
+    services = " ".join(shlex.quote(service) for service in install.services)
+    # Obraz wydania z GHCR (tag = VERSION po git pull, podpisany w CI); gdy go nie ma (wersja bez wydania,
+    # brak sieci do ghcr.io) — budowa lokalna jak dotad. PIPE_VERSION czyta docker-compose.yml.
     return (f"set -e; sleep {START_DELAY}; cd {shlex.quote(install.root)}; "
             "git -c safe.directory='*' pull --ff-only; "
-            f"cd {shlex.quote(install.workdir)}; {' '.join(shlex.quote(part) for part in compose)}; echo PIPE_UPDATE_OK")
+            "export PIPE_VERSION=\"$(tr -d '[:space:]' < VERSION)\"; "
+            f"cd {shlex.quote(install.workdir)}; "
+            f"{{ {base} pull --quiet {services} && {base} up -d {services}; }} || {base} up -d --build {services}; "
+            "echo PIPE_UPDATE_OK")
 
 
 async def _helpers() -> list[dict]:
