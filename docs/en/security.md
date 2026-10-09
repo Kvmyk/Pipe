@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 ## Model
 
@@ -127,6 +127,35 @@ shows a red badge above the input box, the CLI shows `YOLO` in the prompt, and t
 interface with a `[yolo]` suffix (for example `cli:kuba [yolo]`). The model gets a block about YOLO mode in its prompt
 (caution, the smallest change, no irreversible operations without an explicit request). YOLO takes the human out of
 the loop, so turn it on for a specific piece of work.
+
+## Observe mode (`PIPE_OBSERVE=1`)
+
+To start with, before you trust the agent, you can install it so that it changes nothing:
+`sudo bash scripts/install-server.sh --profile observe`. Pipe still watches the server, sends alerts and reports,
+answers questions, draws diagrams and works as a read-only MCP gateway. Changes are refused on two levels.
+
+In the application (`runtime.observe()`, native mode included):
+
+- a state-changing command, a file write, `journal undo`, `cron_manage add/remove`, `mcp_manage` and
+  `pipe_update apply` are refused without asking for YES, in YOLO mode too; the model gets an observe-mode block
+  in its prompt,
+- `run_command` in the MCP gateway refuses instead of creating an approval, and an existing approval can't be approved,
+- `undo` with `execute` (the button in `pipe web`, `/undo` in the CLI and Telegram) returns an error,
+- Pipe's registries and memory keep working, with confirmation as usual: routines (they read), targets, SERVER.md,
+  skills.
+
+In the container (`backend/docker-compose.observe.yml`, docker mode only):
+
+- the agent has no `docker.sock`; it sees Docker through `tecnativa/docker-socket-proxy` with a read-only API
+  (`ps`, `inspect`, `logs`, `info` work; `run`, `exec`, `restart`, `stop` get 403). The proxy sits on a separate
+  internal network with no outside access,
+- the host's `/root` is read-only (no rw overlay),
+- the container has no kernel capabilities except `DAC_READ_SEARCH` (reading files) and `NET_RAW` (ping) and runs
+  with `no-new-privileges`; `/proc/*/environ` of host processes is then unreadable.
+
+`backend/data` (Pipe's memory) and the host's `/tmp` (the socket for the Telegram bot) stay writable. In native mode
+only the application-level protection applies: the process runs as root. Full mode comes back with
+`sudo bash scripts/install-server.sh --profile full`.
 
 ## Internet (`web_search`, `web_fetch`, `software_info`)
 

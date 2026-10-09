@@ -12,6 +12,8 @@
 #
 # Na swiezym serwerze bez repozytorium skrypt sam je sklonuje (--repo, --dir).
 # Docker: pobiera podpisany obraz wydania z ghcr.io (tag = plik VERSION); --build buduje lokalnie ze zrodel.
+# --profile observe: Pipe tylko czyta (bez zapisu do Dockera, /root tylko do odczytu, PIPE_OBSERVE=1);
+# --profile full wraca do pelnego trybu. Bez --profile ponowna instalacja zostawia tryb z backend/.env.
 # Kubernetes: patrz deploy/kubernetes/README.md (kubectl apply -k).
 set -euo pipefail
 
@@ -21,11 +23,12 @@ REPO="${PIPE_REPO:-https://github.com/Kvmyk/pipe.git}"
 BRANCH="${PIPE_BRANCH:-main}"
 NON_INTERACTIVE=0
 BUILD=0
+PROFILE=""
 
 usage() {
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
   echo
-  echo "Opcje: --mode docker|native  --dir KATALOG  --repo URL  --branch GALAZ  --lang pl|en  --build  --non-interactive"
+  echo "Opcje: --mode docker|native  --profile full|observe  --dir KATALOG  --repo URL  --branch GALAZ  --lang pl|en  --build  --non-interactive"
 }
 
 while [ $# -gt 0 ]; do
@@ -37,6 +40,7 @@ while [ $# -gt 0 ]; do
     --lang) case "${2:?}" in pl|en) PIPE_LANG="$2"; export PIPE_LANG ;; *) echo "--lang: pl | en" >&2; exit 2 ;; esac; shift 2 ;;
     --non-interactive|-y) NON_INTERACTIVE=1; shift ;;
     --build) BUILD=1; shift ;;
+    --profile) case "${2:?}" in full|observe) PROFILE="$2" ;; *) echo "--profile: full | observe" >&2; exit 2 ;; esac; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Nieznana opcja / unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -118,6 +122,21 @@ if [ -f backend/.env ]; then
 fi
 mkdir -p backend/data
 
+# Profil: observe = PIPE_OBSERVE=1 w backend/.env (+ nakladka compose w trybie docker), full = 0, brak = bez zmian.
+if [ -n "$PROFILE" ] && [ -f backend/.env ]; then
+  observe_value=0; [ "$PROFILE" = observe ] && observe_value=1
+  if grep -q '^PIPE_OBSERVE=' backend/.env; then
+    sed -i "s#^PIPE_OBSERVE=.*#PIPE_OBSERVE=$observe_value#" backend/.env
+  else
+    printf 'PIPE_OBSERVE=%s\n' "$observe_value" >> backend/.env
+  fi
+fi
+OBSERVE=0
+if [ -f backend/.env ] && grep -qE '^PIPE_OBSERVE=(1|true|yes|on)$' backend/.env; then
+  OBSERVE=1
+  log "$(t 'Profil obserwacji: Pipe czyta i pilnuje, ale niczego nie zmienia (--profile full wylacza)' 'Observe profile: Pipe reads and watches but changes nothing (--profile full turns it off)')"
+fi
+
 # Zsynchronizuj AGENT_TOKEN (inaczej bot sie nie polaczy) i PIPE_LANG (ten sam jezyk) do .env bota Telegram.
 sync_to_telegram() {  # sync_to_telegram KLUCZ
   local key="$1" value
@@ -160,11 +179,14 @@ install_docker() {
 # Obraz wydania (ghcr.io/kvmyk/pipe:<VERSION>, podpisany w CI) albo, gdy go nie ma lub podano --build,
 # budowa lokalna ze zrodel. PIPE_VERSION czyta backend/docker-compose.yml.
 start_containers() {  # start_containers [USLUGA...]
-  if [ "$BUILD" -eq 0 ] && compose pull --quiet "$@"; then
-    compose up -d "$@"
+  local files=(-f docker-compose.yml)
+  [ "$OBSERVE" -eq 1 ] && files+=(-f docker-compose.observe.yml)
+  # --remove-orphans: po przejsciu observe -> full znika kontener proxy Dockera
+  if [ "$BUILD" -eq 0 ] && compose "${files[@]}" pull --quiet "$@"; then
+    compose "${files[@]}" up -d --remove-orphans "$@"
   else
     [ "$BUILD" -eq 1 ] || log "$(t "Brak obrazu wydania $PIPE_VERSION w ghcr.io — buduje lokalnie" "No release image $PIPE_VERSION on ghcr.io — building locally")"
-    compose up -d --build "$@"
+    compose "${files[@]}" up -d --build --remove-orphans "$@"
   fi
 }
 

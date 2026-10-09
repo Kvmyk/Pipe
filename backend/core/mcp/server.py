@@ -206,6 +206,11 @@ async def _run_command(caller: Caller, args: dict) -> tuple[str, bool]:
     if caller.role == "viewer":
         return tr("ODMOWA: token ma role viewer (tylko odczyt) — komenda zmieniajaca stan nie zostanie wykonana.",
                   "REFUSED: the token has the viewer role (read-only) — a state-changing command will not run."), True
+    if runtime.observe():
+        return tr("ODMOWA: Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — komenda zmieniajaca stan nie zostanie "
+                  "wykonana ani przekazana do zgody.",
+                  "REFUSED: Pipe runs in observe mode (PIPE_OBSERVE=1) — a state-changing command will not run "
+                  "or be sent for approval."), True
     plan = await safety.plan_for_command(command, "/") if target.kind == "local" \
         else safety.Plan(notes=[tr("zdalny cel — bez kopii i weryfikacji po stronie Pipe",
                                "remote target — no backup or verification on Pipe's side")])

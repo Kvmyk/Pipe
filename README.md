@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.28.1-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.29.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -151,6 +151,10 @@ Inne sposoby wdrożenia (natywnie z systemd, Kubernetes, cloud-init): [docs/depl
 
 Ważne ograniczenie: w trybie Docker Pipe ma dostęp do `docker.sock`, czyli w praktyce uprawnienia roota na serwerze.
 Ochroną jest Twoje potwierdzenie przy każdej zmianie. Pełny opis: [docs/security.md](./docs/security.md).
+
+Jeśli wolisz zacząć ostrożnie, zainstaluj Pipe z `--profile observe`. Wtedy nie dostaje `docker.sock` (Dockera
+widzi tylko do odczytu), `/root` jest tylko do odczytu, a każda zmiana jest odrzucana bez pytania. Pipe dalej
+pilnuje serwera, odpowiada na pytania i wysyła alerty. Pełny tryb włączysz później przez `--profile full`.
 
 Znalazłeś podatność? Zgłoś ją prywatnie, nie w publicznym issue: [SECURITY.md](./SECURITY.md).
 

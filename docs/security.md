@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 ## Model
 
@@ -129,6 +129,33 @@ Wykonanie bez pytania jest widoczne: klient dostaje `progress` „YOLO — wykon
 czerwony znacznik nad polem wpisywania, CLI -- `YOLO` w prompcie, a audit log i dziennik zapisuja interfejs z dopiskiem
 `[yolo]` (np. `cli:kuba [yolo]`). Model dostaje w prompcie blok o trybie YOLO (ostroznosc, najmniejsza zmiana,
 bez nieodwracalnych operacji bez wyraznej prosby). YOLO usuwa czlowieka z petli -- wlaczaj je na czas konkretnej pracy.
+
+## Tryb obserwacji (`PIPE_OBSERVE=1`)
+
+Na poczatek, zanim zaufasz agentowi, mozesz zainstalowac go tak, zeby niczego nie zmienial:
+`sudo bash scripts/install-server.sh --profile observe`. Pipe dalej pilnuje serwera, wysyla alerty i raporty,
+odpowiada na pytania, rysuje schematy i dziala jako bramka MCP do odczytu. Zmiany sa odrzucane na dwoch poziomach.
+
+W aplikacji (`runtime.observe()`, takze w trybie native):
+
+- komenda zmieniajaca stan, zapis pliku, `journal undo`, `cron_manage add/remove`, `mcp_manage` i `pipe_update apply`
+  sa odrzucane bez pytania o TAK, rowniez w trybie YOLO; model dostaje w prompcie blok o trybie obserwacji,
+- `run_command` w bramce MCP odmawia zamiast tworzyc zgode, a juz istniejacej zgody nie da sie zatwierdzic,
+- `undo` z `execute` (przycisk w `pipe web`, `/cofnij` w CLI i Telegramie) zwraca blad,
+- rejestry i pamiec Pipe dzialaja dalej z potwierdzeniem jak zwykle: rutyny (czytaja), cele, SERVER.md, skille.
+
+W kontenerze (`backend/docker-compose.observe.yml`, tylko tryb docker):
+
+- agent nie ma `docker.sock`; Dockera widzi przez `tecnativa/docker-socket-proxy` z API tylko do odczytu
+  (`ps`, `inspect`, `logs`, `info` dzialaja; `run`, `exec`, `restart`, `stop` dostaja 403). Proxy jest w osobnej
+  sieci wewnetrznej, bez dostepu z zewnatrz,
+- `/root` hosta jest tylko do odczytu (bez nakladki rw),
+- kontener nie ma uprawnien jadra poza `DAC_READ_SEARCH` (czytanie plikow) i `NET_RAW` (ping) i dziala
+  z `no-new-privileges`; `/proc/*/environ` procesow hosta jest wtedy nieczytelny.
+
+Zapisywalne zostaja `backend/data` (pamiec Pipe) i `/tmp` hosta (socket dla bota Telegram). W trybie native
+obowiazuje tylko ochrona w aplikacji: proces dziala jako root. Pelny tryb przywraca
+`sudo bash scripts/install-server.sh --profile full`.
 
 ## Internet (`web_search`, `web_fetch`, `software_info`)
 

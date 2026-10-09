@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -63,6 +63,23 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "skill_manage": frozenset({"save", "delete"}),
     "target_manage": frozenset({"add", "remove"}),
     "routine_manage": frozenset({"add", "remove", "enable", "disable"}),
+    "journal": frozenset({"undo"}),
+    "cron_manage": frozenset({"add", "remove"}),
+    "mcp_manage": frozenset({"add", "remove", "reload"}),
+    "pipe_update": frozenset({"apply"}),
+}
+OBSERVE_NOTICE = ("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
+                  "Zmiany wymagaja wylaczenia trybu obserwacji.")
+OBSERVE_NOTICE_EN = ("Pipe runs in observe mode (PIPE_OBSERVE=1) — I will not make this change. "
+                     "Changes need observe mode turned off.")
+OBSERVE_REFUSAL = ("ODMOWA SYSTEMOWA: Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1). Operacja nie zostala "
+                   "wykonana — opisz, co trzeba zrobic; zmiany wymagaja wylaczenia trybu obserwacji.")
+OBSERVE_REFUSAL_EN = ("SYSTEM REFUSAL: Pipe runs in observe mode (PIPE_OBSERVE=1). The operation was not executed — "
+                      "describe what needs to be done; changes need observe mode turned off.")
+# Tryb obserwacji: operacje, ktore zmieniaja host albo uruchamiaja programy, zablokowane z gory. Rejestry i pamiec
+# Pipe (cele, rutyny, SERVER.md, skille) zostaja; ich potwierdzenia (`action`) dzialaja.
+OBSERVE_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
+    "write_file": None,
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
     "mcp_manage": frozenset({"add", "remove", "reload"}),
@@ -430,6 +447,12 @@ class VPSAgent:
                                      "content": tr(VIEWER_REFUSAL, VIEWER_REFUSAL_EN)})
             yield f"[ODMOWA] {tr(VIEWER_NOTICE, VIEWER_NOTICE_EN)}"
             return
+        observe = runtime.observe() and dispatch is None
+        if observe and _blocked(OBSERVE_WRITE_OPERATIONS, tool_call.function.name, args):
+            session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
+                                     "content": tr(OBSERVE_REFUSAL, OBSERVE_REFUSAL_EN)})
+            yield f"[ODMOWA] {tr(OBSERVE_NOTICE, OBSERVE_NOTICE_EN)}"
+            return
 
         # Interfejs webowy rysuje schemat na zywo: co agent robi i na ktorym elemencie.
         activity: Activity | None = None
@@ -449,8 +472,8 @@ class VPSAgent:
         buffered: list[Event] = []
         try:
             async for event in handler(session, tool_call, args):
-                if viewer:
-                    buffered.append(event)   # przegladajacy nie moze zobaczyc pytania o TAK, ktorego nie zatwierdzi
+                if viewer or observe:
+                    buffered.append(event)   # nie pokazujemy pytania o TAK, ktorego i tak nie da sie zatwierdzic
                 elif yolo and isinstance(event, str) and "[POTWIERDZ]" in event:
                     held.append(event)
                 else:
@@ -463,16 +486,22 @@ class VPSAgent:
             yield tr(f"[BLAD] Narzedzie {tool_call.function.name} zglosilo blad: {exc}",
                      f"[BLAD] Tool {tool_call.function.name} raised an error: {exc}")
 
-        if viewer:
+        if viewer or observe:
             pending = session.pending_confirmation
-            if pending is not None and pending.tool_call_id == tool_call.id:
+            # Viewer: zadnej zmiany. Obserwacja: zadnej zmiany hosta — komenda i zapis pliku (bez `action`);
+            # potwierdzenia rejestrow i pamieci Pipe (`action`) przechodza.
+            if pending is not None and pending.tool_call_id == tool_call.id and (viewer or pending.action is None):
                 session.pending_confirmation = None
-                session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
-                                         "content": tr(VIEWER_REFUSAL, VIEWER_REFUSAL_EN)})
+                refusal, notice = ((VIEWER_REFUSAL, VIEWER_REFUSAL_EN), (VIEWER_NOTICE, VIEWER_NOTICE_EN)) if viewer \
+                    else ((OBSERVE_REFUSAL, OBSERVE_REFUSAL_EN), (OBSERVE_NOTICE, OBSERVE_NOTICE_EN))
+                session.messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": tr(*refusal)})
                 buffered = [e for e in buffered if not (isinstance(e, str) and "[POTWIERDZ]" in e)]
-                buffered.append(f"[ODMOWA] {tr(VIEWER_NOTICE, VIEWER_NOTICE_EN)}")
+                buffered.append(f"[ODMOWA] {tr(*notice)}")
             for event in buffered:
-                yield event
+                if yolo and not viewer and isinstance(event, str) and "[POTWIERDZ]" in event:
+                    held.append(event)
+                else:
+                    yield event
 
         executed = False
         if yolo:
@@ -666,9 +695,13 @@ def _english_tools() -> list[dict]:
 
 
 def viewer_blocked(tool_name: str, args: dict[str, Any]) -> bool:
-    if tool_name not in VIEWER_WRITE_OPERATIONS:
+    return _blocked(VIEWER_WRITE_OPERATIONS, tool_name, args)
+
+
+def _blocked(table: dict[str, frozenset[str] | None], tool_name: str, args: dict[str, Any]) -> bool:
+    if tool_name not in table:
         return False
-    operations = VIEWER_WRITE_OPERATIONS[tool_name]
+    operations = table[tool_name]
     return operations is None or str(args.get("operation", "") or "").strip().lower() in operations
 
 

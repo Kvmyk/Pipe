@@ -104,6 +104,10 @@ class Approvals:
         if approval.status != "pending":
             raise ApprovalError(tr(f"Zgoda {approval.id} ma juz status {approval.status}.",
                                    f"Approval {approval.id} already has status {approval.status}."))
+        from backend.core import runtime
+        if approve and runtime.observe():
+            raise ApprovalError(tr("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — zmian nie zatwierdzisz.",
+                                   "Pipe runs in observe mode (PIPE_OBSERVE=1) — changes cannot be approved."))
         approval.decided_by = decided_by
         if not approve:
             approval.status, approval.result = "denied", tr("Administrator odrzucil operacje.", "The administrator rejected the operation.")

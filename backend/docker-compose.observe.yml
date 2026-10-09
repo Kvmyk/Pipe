@@ -1,0 +1,58 @@
+# Profil obserwacji — Pipe czyta i pilnuje serwera, ale niczego na nim nie zmienia.
+#
+#   sudo bash scripts/install-server.sh --profile observe
+#   (recznie: docker compose -f docker-compose.yml -f docker-compose.observe.yml up -d)
+#
+# Roznice wobec docker-compose.yml:
+#   - brak docker.sock w kontenerze agenta; Docker widzi tylko przez proxy z API do odczytu
+#     (docker ps / inspect / logs / info dzialaja, run / exec / restart / stop zwracaja 403),
+#   - /root hosta tylko do odczytu (bez nakladki rw),
+#   - PIPE_OBSERVE=1: agent, bramka MCP, zgody i /cofnij odrzucaja kazda zmiane hosta,
+#   - kontener bez uprawnien jadra poza czytaniem plikow (DAC_READ_SEARCH) i pingiem (NET_RAW),
+#     no-new-privileges; /proc/*/environ procesow hosta jest wtedy nieczytelny.
+#
+# Zmiany wlaczysz, instalujac ponownie bez --profile observe (backend/.env: PIPE_OBSERVE=0).
+# Wymaga docker compose >= 2.24.4 (znaczniki !reset / !override).
+services:
+  vps-agent:
+    network_mode: !reset null
+    networks: [egress, docker-api]
+    depends_on: [docker-proxy]
+    environment:
+      - PIPE_OBSERVE=1
+      - DOCKER_HOST=tcp://docker-proxy:2375
+    volumes: !override
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+      - /tmp:/tmp
+      - /:/hostfs:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /proc:/hostproc:ro
+      - /root/.ssh:/root/.ssh:ro
+    cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH, NET_RAW]
+    security_opt: ["no-new-privileges:true"]
+
+  docker-proxy:
+    # Ten sam obraz co tecnativa/docker-socket-proxy:latest (2026-07); POST=0 = tylko zapytania GET/HEAD.
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    networks: [docker-api]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - INFO=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - EVENTS=1
+      - VERSION=1
+      - POST=0
+
+networks:
+  # Siec agenta: wyjscie do providera LLM i porty publikowane na 127.0.0.1 (jak w docker-compose.yml).
+  egress: {}
+  # Tylko agent <-> proxy; bez dostepu z zewnatrz i bez wyjscia do internetu.
+  docker-api:
+    internal: true

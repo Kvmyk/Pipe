@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pipe v0.28.1** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
+**Pipe v0.29.0** — an LLM-powered operations agent for Linux servers. It runs on the server permanently, knows it (SERVER.md, DIRECTORY), remembers how it changes (hourly snapshots, metric history), watches it (proactive alerts, zero-config cert/site/backup checks, morning digest), draws its architecture (Mermaid diagrams), and manages other machines through agentless *targets* and parallel *workers*. Users talk to it via CLI (SSH tunnel or `kubectl port-forward`), a local web UI (`pipe web`) or a Telegram bot; Discord is a placeholder. The backend runs in Docker (default), natively under systemd, or in Kubernetes, and talks to any OpenAI-compatible LLM API (default: Google Gemini).
 
 Code comments, docstrings and `docs/` are in **Polish** (ASCII-transliterated in prompts/user-facing strings); `docs/en/` mirrors the user docs in English, file for file and section for section (the website renders both, `test_site.py` checks that every page exists in both languages with the same number of `##` sections and that links/anchors resolve). A change to a `docs/*.md` page needs the same change in `docs/en/`. The site's page list is `DOCS` in `scripts/build_site.py`; its Markdown renderer is a small stdlib one that supports only what `docs/` uses. Everything the user or the model sees exists in two languages, selected by `PIPE_LANG=pl|en` (default `pl`) — see *Language* below. `README.en.md` is the English README. The project website (`site/`, Polish at `/`, English at `/en/`) and both READMEs are written in plain language with Polish diacritics — avoid AI-sounding copy (no "not just X but Y", no bold-first bullets, few dashes, concrete numbers).
 
@@ -62,7 +62,7 @@ Telegram bot (same host / sidecar) --Unix socket----------------┤
 | `backend/core/session.py` | `Session` (history, `cwd`, `pending_confirmation`, `workers`, `learns_vibe`, `user_key`) and `ConfirmationRequest` (incl. optional `action` callback); `Session.system_prompt` |
 | `backend/core/events.py` | Stream events: `str`, `Attachment` (file, e.g. PNG), `Progress` |
 | `backend/core/handlers/` | Tool implementations; `common.py` has `reply()`, `format_result()`, `run_classified()` (forbidden/confirm/safe flow) |
-| `backend/core/runtime.py` | `kind()` docker/native/kubernetes, `host_root()`, `host_proc()`, `to_local()`, `to_host()`, `describe()` — **no `settings` import** |
+| `backend/core/runtime.py` | `observe()` (`PIPE_OBSERVE=1`, read on every call), `kind()` docker/native/kubernetes, `host_root()`, `host_proc()`, `to_local()`, `to_host()`, `describe()` — **no `settings` import** |
 | `backend/core/security.py` | `classify_command()`, `split_command()`, `classify_file_write()`, `validate_workspace_access()` |
 | `backend/core/hostinfo.py` | Host state from `/proc` (memory, load, cpus, disks, sockets) without running commands |
 | `backend/core/infra.py` | Discovery (docker inspect, nginx/Caddy/Traefik routes, systemd, git repos, Kubernetes) + `to_mermaid()` |
@@ -200,6 +200,8 @@ Persistence defence: `skill_manage save` and `server_md` full `write` require co
 `server.py` compares the token with `hmac.compare_digest`. `settings.validate()` requires `AGENT_TOKEN` in kubernetes mode (ClusterIP reachable from any pod); the wizard, `--from-env` and the installer auto-generate one when empty (`ensure_agent_token`), and the installer syncs it into the Telegram `.env`. `deploy/kubernetes/base/networkpolicy.yaml` denies pod ingress (port-forward still works). `diagram.render` has a `RENDER_TIMEOUT`.
 
 `docker.sock` is effectively root on the host; `docker run/exec` always require confirmation, but the real guard is the user's TAK (documented in `docs/security.md`).
+
+Observe mode (`runtime.observe()`, `install-server.sh --profile observe|full`): `agent._handle_tool_call()` refuses `OBSERVE_WRITE_OPERATIONS` upfront and turns a pending confirmation **without** `action` (shell command, file write) into `OBSERVE_REFUSAL` (YOLO included); `action` confirmations (registries, memory in `DATA_DIR`) still work. MCP `run_command` refuses instead of queueing, `approvals.decide()` refuses approve, server `undo` refuses `execute`, `Session.system_prompt` adds `OBSERVE_BLOCK`. In docker mode `backend/docker-compose.observe.yml` (`!override`/`!reset`, compose ≥ 2.24.4) removes `docker.sock` (read-only `tecnativa/docker-socket-proxy` on an internal network, `DOCKER_HOST=tcp://docker-proxy:2375`), makes `/root` read-only and drops all capabilities except `DAC_READ_SEARCH` and `NET_RAW`.
 
 ## Environment
 

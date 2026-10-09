@@ -343,6 +343,12 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 await _send(writer, _error(tr("Rola viewer: tylko odczyt — cofniecie moze wykonac administrator.",
                                               "Viewer role: read-only — an administrator can run the undo.")))
                 return
+            if runtime.observe() and request.get("execute"):
+                await _send(writer, _error(tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe niczego nie zmienia na serwerze, "
+                                              "takze nie cofa zmian.",
+                                              "Observe mode (PIPE_OBSERVE=1): Pipe changes nothing on the server, "
+                                              "undo included.")))
+                return
             await _undo(writer, request, interface)
         elif command == "transcribe":
             await _transcribe(writer, request, interface)

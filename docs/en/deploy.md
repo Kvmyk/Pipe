@@ -1,6 +1,6 @@
 # Deployment -- Pipe
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 Pipe runs in three modes (`PIPE_RUNTIME`, auto-detected by default). The mode decides how the agent sees the managed
 machine; everything else (tools, memory, clients, protocol) is the same.
@@ -38,6 +38,11 @@ Mounts (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/ho
 (cluster targets). Port 7379 is published **only on 127.0.0.1**, access goes through an SSH tunnel; 7380 (webhooks,
 active once `WEBHOOK_PORT` and `WEBHOOK_TOKEN` are set) is also only on 127.0.0.1. The whole `backend/.env` reaches the
 container (`env_file`), so every setting from `backend/.env.example` works without editing compose.
+
+`--profile observe` installs Pipe in observe mode: it adds `backend/docker-compose.observe.yml` (no `docker.sock`,
+read-only Docker through a proxy, read-only `/root`, no kernel capabilities) and sets `PIPE_OBSERVE=1`. Pipe watches
+and answers but changes nothing. `--profile full` goes back to full mode, and reinstalling without `--profile` keeps
+the current one. Details: [security.md](security.md#observe-mode-pipe_observe1).
 
 ## Native (systemd, without Docker)
 

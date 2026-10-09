@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -37,6 +37,11 @@ Montowania (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> 
 (cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH; 7380 (webhooki,
 dziala po ustawieniu `WEBHOOK_PORT` i `WEBHOOK_TOKEN`) -- tez tylko na 127.0.0.1. Caly `backend/.env` trafia do
 kontenera (`env_file`), wiec kazde ustawienie z `backend/.env.example` dziala bez edycji compose.
+
+`--profile observe` instaluje Pipe w trybie obserwacji: dodaje `backend/docker-compose.observe.yml` (bez
+`docker.sock`, Docker tylko do odczytu przez proxy, `/root` tylko do odczytu, bez uprawnien jadra) i ustawia
+`PIPE_OBSERVE=1`. Pipe pilnuje i odpowiada, ale niczego nie zmienia. `--profile full` wraca do pelnego trybu,
+a ponowna instalacja bez `--profile` zostawia ten, ktory jest. Szczegoly: [security.md](security.md#tryb-obserwacji-pipe_observe1).
 
 ## Native (systemd, bez Dockera)
 

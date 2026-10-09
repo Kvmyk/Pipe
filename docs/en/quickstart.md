@@ -1,6 +1,6 @@
 # Quick start -- step by step
 
-Pipe v0.28.1
+Pipe v0.29.0
 
 ## Prerequisites
 

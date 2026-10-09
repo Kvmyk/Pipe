@@ -98,6 +98,7 @@ class Session:
             + prompt_context(self.user_key)
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
+            + (prompt("OBSERVE_BLOCK") if runtime.observe() else "")
             + (prompt("YOLO_BLOCK") if self.yolo_now else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

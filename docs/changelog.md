@@ -1,5 +1,19 @@
 # Historia zmian -- Pipe
 
+## v0.29.0 (2026-10-09)
+
+### Tryb obserwacji
+
+- `sudo bash scripts/install-server.sh --profile observe` instaluje Pipe tak, zeby niczego nie zmienial na serwerze.
+  Pilnuje, wysyla alerty i raporty, odpowiada na pytania, rysuje schematy i dziala jako bramka MCP do odczytu
+- W aplikacji (`PIPE_OBSERVE=1`, takze w trybie native): komendy zmieniajace stan, zapis plikow, `/cofnij`, cron,
+  `mcp_manage` i `pipe_update apply` sa odrzucane bez pytania o TAK, rowniez w trybie YOLO. Bramka MCP odmawia
+  zamiast tworzyc zgode, a zgody nie da sie zatwierdzic. Rutyny, cele, SERVER.md i skille dzialaja jak dotad
+- W kontenerze (`backend/docker-compose.observe.yml`): bez `docker.sock` (Docker tylko do odczytu przez
+  `tecnativa/docker-socket-proxy` w sieci wewnetrznej), `/root` tylko do odczytu, bez uprawnien jadra poza czytaniem
+  plikow i pingiem, `no-new-privileges`
+- `--profile full` wraca do pelnego trybu; ponowna instalacja bez `--profile` zostawia biezacy
+
 ## v0.28.1 (2026-10-09)
 
 ### Poprawki

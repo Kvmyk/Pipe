@@ -34,6 +34,15 @@ DOCKER_HOST_ROOT = "/hostfs"
 DOCKER_HOST_PROC = "/hostproc"
 
 
+def observe() -> bool:
+    """
+    Tryb obserwacji (PIPE_OBSERVE=1, profil `--profile observe` instalatora): Pipe czyta i pilnuje, ale niczego
+    nie zmienia na hoscie — komendy zmieniajace stan, zapis plikow, /cofnij i zgody MCP sa odrzucane.
+    Rejestry i pamiec Pipe (DATA_DIR) dzialaja jak zwykle. Czytane przy kazdym wywolaniu (testy: setenv).
+    """
+    return os.getenv("PIPE_OBSERVE", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 def kind() -> RuntimeKind:
     """Tryb dzialania: z PIPE_RUNTIME albo wykryty automatycznie."""
     configured = os.getenv("PIPE_RUNTIME", "auto").strip().lower()
