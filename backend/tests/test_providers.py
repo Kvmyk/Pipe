@@ -235,3 +235,28 @@ class TestModelAvailable:
 
     def test_missing_model(self):
         assert not model_available("gemini-2.0-flash", ["gemini-3.8-flash"])
+
+
+class TestPrivacyNote:
+    """Darmowy tier Gemini: kreator i interfejsy ostrzegaja, ze dane z serwera moga trafic do Google."""
+
+    def test_gemini_has_note_in_both_languages(self, monkeypatch):
+        from backend.config.providers import privacy_note
+        monkeypatch.setenv("PIPE_LANG", "pl")
+        assert "darmowym tierze" in privacy_note("gemini")
+        monkeypatch.setenv("PIPE_LANG", "en")
+        assert "free tier" in privacy_note("gemini")
+
+    def test_other_providers_have_none(self):
+        from backend.config.providers import privacy_note
+        assert privacy_note("ollama") == ""
+        assert privacy_note("my-custom") == ""
+
+    def test_wizard_from_env_prints_warning(self, tmp_path, monkeypatch, capsys):
+        from backend import configure
+        monkeypatch.setattr(configure, "ENV_PATH", tmp_path / ".env")
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        monkeypatch.setenv("PIPE_LANG", "en")
+        assert configure.run_from_env() == 0
+        assert "free tier" in capsys.readouterr().out

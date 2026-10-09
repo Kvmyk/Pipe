@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.26.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.26.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.27.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.27.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -1062,6 +1062,8 @@ def _announce_provider(data: dict) -> None:
 async def _setup_provider(client: "RemoteClient", provider: dict, query: str = "", *, ask_key: bool = True) -> None:
     """Klucz (gdy trzeba; wpisywany bez echa) -> model z listy providera -> przelaczenie. Klucz idzie tylko do backendu."""
     key = ""
+    if provider.get("privacy"):
+        console.print(f"[yellow]{escape(provider['privacy'])}[/yellow]")
     if provider.get("requires_key"):
         change = False
         if provider.get("has_key") and ask_key:

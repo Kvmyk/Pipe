@@ -31,6 +31,7 @@ from typing import Any
 
 from backend.config.providers import (
     NO_KEY_PLACEHOLDER,
+    NO_LLM_ID,
     LLMConfig,
     Provider,
     ProviderConfigError,
@@ -38,6 +39,7 @@ from backend.config.providers import (
     chat_model_ids,
     model_available,
     normalize_base_url,
+    privacy_note,
     provider_notes,
     resolve_llm_config,
     save_user_provider,
@@ -89,12 +91,16 @@ def render_env(text: str, updates: dict[str, str], remove: set[str] = frozenset(
     return "\n".join(out) + "\n"
 
 
-def read_env_file(path: Path = ENV_PATH) -> dict[str, str]:
+# Sciezka domyslna liczona przy wywolaniu, nie przy imporcie — testy podmieniaja ENV_PATH
+# i nie moga przy tym trafic w prawdziwy backend/.env.
+def read_env_file(path: Path | None = None) -> dict[str, str]:
+    path = path or ENV_PATH
     return parse_env(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def write_env_file(updates: dict[str, str], remove: set[str], path: Path = ENV_PATH) -> None:
+def write_env_file(updates: dict[str, str], remove: set[str], path: Path | None = None) -> None:
     """Aktualizuje .env (tworzy go z .env.example, jesli nie istnieje). Uprawnienia 600."""
+    path = path or ENV_PATH
     if path.exists():
         base = path.read_text(encoding="utf-8")
     elif ENV_EXAMPLE_PATH.exists():
@@ -234,8 +240,8 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or tr("wlasny", "custom")
 
 
-def choose_provider(providers: dict[str, Provider], current_id: str) -> Provider | None:
-    """Zwraca wybranego providera albo None, gdy uzytkownik chce dodac wlasnego."""
+def choose_provider(providers: dict[str, Provider], current_id: str) -> Provider | str | None:
+    """Zwraca wybranego providera, None (uzytkownik dodaje wlasnego) albo NO_LLM_ID (bez modelu)."""
     items = list(providers.values())
     print(tr("\nWybierz providera LLM:\n", "\nChoose an LLM provider:\n"))
     for i, p in enumerate(items, start=1):
@@ -245,14 +251,25 @@ def choose_provider(providers: dict[str, Provider], current_id: str) -> Provider
         if provider_notes(p):
             print(f"      {provider_notes(p)}")
     custom_index = len(items) + 1
-    print(tr(f"  {custom_index:2}) Inny — dowolny endpoint zgodny z OpenAI (vLLM, LM Studio, LiteLLM, Azure...)\n",
-             f"  {custom_index:2}) Other — any OpenAI-compatible endpoint (vLLM, LM Studio, LiteLLM, Azure...)\n"))
+    print(tr(f"  {custom_index:2}) Inny — dowolny endpoint zgodny z OpenAI (vLLM, LM Studio, LiteLLM, Azure...)",
+             f"  {custom_index:2}) Other — any OpenAI-compatible endpoint (vLLM, LM Studio, LiteLLM, Azure...)"))
+    none_index = custom_index + 1
+    marker = tr("  (obecny)", "  (current)") if current_id == NO_LLM_ID else ""
+    print(tr(f"  {none_index:2}) Bez modelu{marker}\n"
+             "      Czuwanie, alerty, raport, audyt, /cofnij i bramka MCP dzialaja; nic nie wychodzi z serwera.\n"
+             "      Rozmowe wlaczysz pozniej, dodajac providera w pipe web albo /providerzy.\n",
+             f"  {none_index:2}) No model{marker}\n"
+             "      Watching, alerts, digest, audit, /undo and the MCP gateway work; nothing leaves the server.\n"
+             "      Turn chat on later by adding a provider in pipe web or /providers.\n"))
 
-    default_index = next((i for i, p in enumerate(items, start=1) if p.id == current_id), 1)
+    default_index = none_index if current_id == NO_LLM_ID else \
+        next((i for i, p in enumerate(items, start=1) if p.id == current_id), 1)
     while True:
         answer = ask(tr("Numer", "Number"), str(default_index))
-        if answer.isdigit() and 1 <= int(answer) <= custom_index:
+        if answer.isdigit() and 1 <= int(answer) <= none_index:
             index = int(answer)
+            if index == none_index:
+                return NO_LLM_ID
             return None if index == custom_index else items[index - 1]
         print(tr("  Podaj numer z listy.", "  Enter a number from the list."))
 
@@ -351,8 +368,12 @@ def run_wizard() -> int:
         return 1
 
     provider = choose_provider(providers, current.get("LLM_PROVIDER", ""))
+    if provider == NO_LLM_ID:
+        return save_without_llm(current, language)
     if provider is None:
         provider = create_custom_provider(providers_file)
+    if privacy_note(provider.id):
+        print(f"\n  [{tr('UWAGA', 'WARNING')}] {privacy_note(provider.id)}")
 
     new_key = ask_api_key(provider, current)
     api_key = current.get("LLM_API_KEY", "") if new_key is None else new_key
@@ -405,6 +426,26 @@ def run_wizard() -> int:
     return 0
 
 
+def save_without_llm(current: dict[str, str], language: str) -> int:
+    """Kreator: Pipe bez modelu jezykowego (LLM_PROVIDER=none)."""
+    updates = {"LLM_PROVIDER": NO_LLM_ID, "PIPE_LANG": language}
+    token = ensure_agent_token(current)
+    if token:
+        updates["AGENT_TOKEN"] = token
+    try:
+        write_env_file(updates, remove={"LLM_BASE_URL", "LLM_MODEL"})
+    except OSError as exc:
+        print(tr(f"[BLAD] Nie moge zapisac {ENV_PATH}: {exc}", f"[ERROR] Cannot write {ENV_PATH}: {exc}"))
+        return 1
+    print(tr(f"\nZapisano {ENV_PATH}", f"\nSaved {ENV_PATH}"))
+    print(tr("  Provider: bez modelu (LLM_PROVIDER=none)", "  Provider: no model (LLM_PROVIDER=none)"))
+    print(tr(f"  Jezyk:    {language}", f"  Language: {language}"))
+    if token:
+        print(tr("  AGENT_TOKEN: wygenerowany (ten sam podaj klientom: pipe --token ..., clients/telegram/.env)",
+                 "  AGENT_TOKEN: generated (give the same one to clients: pipe --token ..., clients/telegram/.env)"))
+    return 0
+
+
 def choose_language(current: dict[str, str]) -> str:
     """Pyta o jezyk Pipe (PIPE_LANG) i od razu przelacza na niego kreator."""
     existing = (os.environ.get("PIPE_LANG") or current.get("PIPE_LANG") or "pl").strip().lower()
@@ -444,6 +485,10 @@ def run_check() -> int:
         return 1
 
     print(f"Provider: {config.provider_name} ({config.provider_id})")
+    if not config.enabled:
+        print(tr("[OK] Pipe dziala bez modelu: czuwanie, raporty, audyt i bramka MCP; rozmowa po dodaniu providera.",
+                 "[OK] Pipe runs without a model: watching, reports, audit and the MCP gateway; chat once a provider is added."))
+        return 0
     print(tr(f"Adres:    {config.base_url}", f"Address:  {config.base_url}"))
     print(f"Model:    {config.model}")
     if config.requires_key and not config.api_key:
@@ -507,6 +552,8 @@ def run_from_env(test: bool = False) -> int:
     print(tr("Zapisano", "Saved") + f" {ENV_PATH}: {', '.join(sorted(k for k in updates if k != 'LLM_API_KEY'))}"
           + (" + LLM_API_KEY" if "LLM_API_KEY" in updates else ""))
     print(f"  Provider: {config.provider_name}, model: {config.model}")
+    if privacy_note(config.provider_id):
+        print(f"  [{tr('UWAGA', 'WARNING')}] {privacy_note(config.provider_id)}")
     if token:
         print(tr("  AGENT_TOKEN: wygenerowany (podaj klientom, np. w clients/telegram/.env)",
                  "  AGENT_TOKEN: generated (give it to clients, e.g. in clients/telegram/.env)"))
@@ -517,6 +564,10 @@ def run_models() -> int:
     config = _load_config()
     if config is None:
         return 1
+    if not config.enabled:
+        print(tr("Pipe dziala bez modelu (LLM_PROVIDER=none) — nie ma listy modeli.",
+                 "Pipe runs without a model (LLM_PROVIDER=none) — there is no model list."))
+        return 0
     try:
         models = fetch_models(config.base_url, config.api_key)
     except ApiError as exc:

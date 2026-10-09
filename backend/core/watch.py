@@ -333,8 +333,8 @@ class Watcher:
         from backend.core import incidents, workers
         from backend.core.session import Session
 
-        if self.agent is None:
-            return
+        if self.agent is None or not getattr(self.agent, "llm_enabled", lambda: True)():
+            return                                   # bez modelu alert i tak dociera; badania nie ma komu zrobic
         target = targets.get_target("local")
         task = prompt("EXTERNAL_ALERT_TASK").format(title=alert.title, detail=alert.detail or "-")
         task += incidents.context_for(alert.key)

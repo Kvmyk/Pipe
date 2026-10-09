@@ -1,5 +1,27 @@
 # Historia zmian -- Pipe
 
+## v0.27.0 (2026-10-09)
+
+### Pipe bez modelu jezykowego
+
+- Nowa opcja `LLM_PROVIDER=none` (w kreatorze ostatnia pozycja: „Bez modelu”). Pipe pilnuje wtedy serwera bez
+  zadnego LLM: czuwanie i alerty, migawki, poranny raport, certyfikaty i strony, audyt, dziennik i `/cofnij`,
+  diagramy, webhooki i bramka MCP dzialaja, a z serwera nic nie wychodzi. Rozmowa, rutyny i badanie alertow
+  odpowiadaja jasnym komunikatem zamiast bledu polaczenia
+- Provider dodany pozniej w `pipe web` albo `/providerzy` wlacza rozmowe bez restartu
+- `python3 -m backend.configure --check` i `--models` rozumieja tryb bez modelu, baner przy starcie mowi „bez modelu”
+
+### Prywatnosc przy darmowym Gemini
+
+- Kreator (takze `--from-env`), `pipe web` i CLI ostrzegaja przy wyborze Gemini, ze w darmowym tierze Google moze
+  uzywac tresci zapytan (logow, konfiguracji, wynikow komend) do ulepszania swoich uslug, i podpowiadaja platny
+  tier albo lokalna Ollame. Lista providerow ma nowe pole `privacy`
+
+### Testy
+
+- Kreator liczy domyslna sciezke `backend/.env` przy wywolaniu, a nie przy imporcie, a kazdy test dostaje wlasny
+  plik `.env` — test nie moze juz nadpisac prawdziwej konfiguracji
+
 ## v0.26.1 (2026-10-04)
 
 ### Dokumentacja na stronie projektu

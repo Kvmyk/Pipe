@@ -722,8 +722,12 @@ async def main() -> None:
 
     print(f"[VPS Agent] Unix socket : {socket_path}", flush=True)
     print(f"[VPS Agent] TCP         : {tcp_host}:{tcp_port} ({tr('tylko localhost — użyj SSH tunnel', 'localhost only — use an SSH tunnel')})", flush=True)
-    print(f"[VPS Agent] Provider    : {settings.LLM.provider_name} ({settings.LLM.base_url})", flush=True)
-    print(f"[VPS Agent] Model       : {settings.LLM.model}", flush=True)
+    if settings.LLM.enabled:
+        print(f"[VPS Agent] Provider    : {settings.LLM.provider_name} ({settings.LLM.base_url})", flush=True)
+        print(f"[VPS Agent] Model       : {settings.LLM.model}", flush=True)
+    else:
+        print(tr("[VPS Agent] Provider    : bez modelu (LLM_PROVIDER=none) — rozmowa po dodaniu providera",
+                 "[VPS Agent] Provider    : no model (LLM_PROVIDER=none) — chat once a provider is added"), flush=True)
     print(f"[VPS Agent] Audit log   : {settings.AUDIT_LOG_PATH}", flush=True)
     print(f"[VPS Agent] Runtime     : {runtime.kind()} (host: {runtime.workspace_root()}, proc: {runtime.host_proc()})", flush=True)
     print(f"[VPS Agent] {tr('Diagramy', 'Diagrams')}    : "

@@ -12,6 +12,9 @@ Skad sie bierze konfiguracja (od najwyzszego priorytetu):
      (kompatybilnosc ze starymi plikami .env sprzed v0.5.0)
   4. nic nie ustawione — domyslny provider (Gemini, darmowy tier)
 
+LLM_PROVIDER=none — Pipe bez modelu jezykowego: czuwanie, snapshoty, raport, audyt, /cofnij
+i narzedzia MCP dzialaja, rozmowa czeka na providera dodanego pozniej (pipe web, /providerzy).
+
 Wlasni providerzy: plik JSON wskazany przez LLM_PROVIDERS_FILE
 (domyslnie backend/data/providers.json). Wpis o id wbudowanego providera
 nadpisuje wbudowany preset — mozna tak poprawic nieaktualny adres bez
@@ -31,6 +34,8 @@ from backend.core.i18n import tr
 
 DEFAULT_PROVIDER_ID = "gemini"
 DEFAULT_TIMEOUT_SECONDS = 120.0
+# LLM_PROVIDER=none: bez modelu jezykowego (patrz docstring modulu).
+NO_LLM_ID = "none"
 
 # Klient OpenAI wymaga niepustego klucza nawet dla endpointow bez autoryzacji.
 NO_KEY_PLACEHOLDER = "brak-klucza"
@@ -73,6 +78,11 @@ class LLMConfig:
     reasoning_effort: str | None
     timeout: float
 
+    @property
+    def enabled(self) -> bool:
+        """False dla LLM_PROVIDER=none — Pipe dziala bez modelu."""
+        return self.provider_id != NO_LLM_ID
+
 
 # ─── Wbudowani providerzy ───────────────────────────────────────────────────
 # Adresy i modele zweryfikowane w dokumentacji providerow (wrzesien 2026).
@@ -86,7 +96,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         default_model="gemini-3.8-flash",
         key_envs=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
         key_url="https://aistudio.google.com/apikey",
-        notes="Darmowy tier dla wszystkich modeli Flash.",
+        notes="Darmowy tier dla modeli Flash (Google moze z niego uczyc swoje modele).",
     ),
     Provider(
         id="openai",
@@ -202,7 +212,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
 
 # Angielskie uwagi do presetow (PIPE_LANG=en) — po id providera.
 NOTES_EN: dict[str, str] = {
-    "gemini": "Free tier for all Flash models.",
+    "gemini": "Free tier for Flash models (Google may use it to improve its models).",
     "openai": "GPT-6 needs the Responses API for tool calling — over Chat Completions use the GPT-5.6 family.",
     "anthropic": "Through the OpenAI SDK compatibility layer; LLM_REASONING_EFFORT is ignored.",
     "openrouter": "One key, several hundred models (DeepSeek, Qwen, GLM, Kimi, Llama and more).",
@@ -217,6 +227,27 @@ def provider_notes(provider: Provider) -> str:
     if provider.builtin and provider.id in NOTES_EN:
         return tr(provider.notes, NOTES_EN[provider.id])
     return provider.notes
+
+
+# Ostrzezenia o prywatnosci — agent wysyla providerowi logi, konfiguracje i wyniki komend z serwera
+# (sekrety sa redagowane, ale reszta trafia do modelu). Kreator pokazuje je po wyborze providera.
+PRIVACY_NOTES: dict[str, tuple[str, str]] = {
+    "gemini": (
+        "Prywatnosc: w darmowym tierze Gemini API Google moze uzywac tresci zapytan (u Ciebie: logow, "
+        "konfiguracji i wynikow komend z serwera) do ulepszania swoich uslug, a czytac je moga ludzie. "
+        "Na serwerze produkcyjnym wlacz platnosci w Google AI Studio (wtedy obowiazuja warunki platnego "
+        "tieru) albo wybierz innego providera, np. lokalna Ollame.",
+        "Privacy: on the free tier of the Gemini API Google may use prompt content (here: logs, configs "
+        "and command output from your server) to improve its services, and humans may read it. "
+        "On a production server enable billing in Google AI Studio (paid-tier terms apply then) "
+        "or choose another provider, e.g. a local Ollama.",
+    ),
+}
+
+
+def privacy_note(provider_id: str) -> str:
+    """Ostrzezenie o prywatnosci dla providera (po id) albo pusty tekst."""
+    return tr(*PRIVACY_NOTES[provider_id]) if provider_id in PRIVACY_NOTES else ""
 
 
 # ─── Pliki uzytkownika ──────────────────────────────────────────────────────
@@ -313,6 +344,8 @@ def resolve_llm_config(env: Mapping[str, str], path: Path | None = None) -> LLMC
     provider_id = get("LLM_PROVIDER").lower()
     explicit_url = get("LLM_BASE_URL")
 
+    if provider_id == NO_LLM_ID:
+        return no_llm_config()
     if provider_id:
         provider = providers.get(provider_id)
         if provider is None:
@@ -364,6 +397,12 @@ def resolve_llm_config(env: Mapping[str, str], path: Path | None = None) -> LLMC
         reasoning_effort=get("LLM_REASONING_EFFORT") or None,
         timeout=timeout,
     )
+
+
+def no_llm_config() -> LLMConfig:
+    """Konfiguracja "bez modelu" — nic nie wysyla, call_llm odmawia (core/agent.py)."""
+    return LLMConfig(provider_id=NO_LLM_ID, provider_name=tr("bez modelu", "no model"), base_url="", api_key="",
+                     model="", requires_key=False, reasoning_effort=None, timeout=DEFAULT_TIMEOUT_SECONDS)
 
 
 # ─── Listy modeli ───────────────────────────────────────────────────────────

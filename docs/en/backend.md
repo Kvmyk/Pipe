@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -90,7 +90,7 @@ All through an API compatible with OpenAI Chat Completions. Addresses verified i
 
 | `LLM_PROVIDER` | Provider | Default model | Notes |
 |---|---|---|---|
-| `gemini` | Google Gemini | `gemini-3.8-flash` | Default. Free tier for Flash models |
+| `gemini` | Google Gemini | `gemini-3.8-flash` | Default. Free tier for Flash models, but see below (privacy) |
 | `openai` | OpenAI | `gpt-5.6-terra` | GPT-6 needs the Responses API for tool calling, use GPT-5.6 |
 | `anthropic` | Anthropic Claude | `claude-sonnet-5` | Through the OpenAI SDK compatibility layer |
 | `openrouter` | OpenRouter | `google/gemini-3.8-flash` | One key, hundreds of models (DeepSeek, Qwen, GLM, Kimi...) |
@@ -107,6 +107,21 @@ All through an API compatible with OpenAI Chat Completions. Addresses verified i
 
 The default model is only a starting point. At startup the backend checks whether the configured model is still on
 the provider's list and prints a warning with suggestions if it was retired.
+
+Privacy: Pipe sends the provider logs, configs and command output from the server (secrets are redacted). On the
+free tier of the Gemini API Google may use prompt content to improve its services and humans may read it. The wizard,
+`pipe web` and the CLI warn about this when you pick Gemini. On a production server enable billing in Google AI
+Studio or choose another provider, for example a local Ollama.
+
+### No model (`LLM_PROVIDER=none`)
+
+Pipe can run without any model. Nothing leaves the server and nothing costs money, and these keep working:
+watching and alerts, snapshots and "what changed", the morning digest, certificate and site checks, the security
+audit, the journal and `/undo`, diagrams, webhooks (the alert arrives, nobody investigates it) and the MCP gateway
+for other agents (without `ask_pipe`). Chat, routines and alert investigations answer that there is no model.
+When you add a provider later in `pipe web` or `/providers`, chat turns on without a restart.
+
+In the wizard it is the last item on the list; without questions: `LLM_PROVIDER=none bash scripts/install-server.sh -y`.
 
 ### Configuring `.env` by hand
 

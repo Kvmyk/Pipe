@@ -1,6 +1,6 @@
 # Quick start -- step by step
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 ## Prerequisites
 
@@ -21,7 +21,9 @@ sudo bash scripts/install-server.sh --lang en  # or --mode native (without Docke
 
 The wizard asks for the LLM provider and API key, fetches the current list of models, checks that the chosen model
 supports tool calling, and writes `backend/.env`. No key? Pick **Google Gemini** -- you can create a free key at
-https://aistudio.google.com/apikey
+https://aistudio.google.com/apikey (on the free tier Google may learn from your prompts, so on production enable
+billing). You can also pick **No model**: Pipe watches the server and sends alerts and reports, and nothing leaves the
+server; you turn chat on later ([backend.md](backend.md#no-model-llm_providernone)).
 
 The script installs Docker (if it is missing) and starts the backend. The same by hand:
 `python3 -m backend.configure && cd backend && docker compose up -d --build`.

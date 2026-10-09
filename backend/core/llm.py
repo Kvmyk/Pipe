@@ -25,7 +25,7 @@ import re
 from dataclasses import replace
 from typing import Any, Mapping
 
-from backend.config.providers import LLMConfig, Provider, all_providers, provider_notes, user_providers_path
+from backend.config.providers import LLMConfig, Provider, all_providers, privacy_note, provider_notes, user_providers_path
 from backend.core import memory, runtime
 from backend.core.i18n import tr
 
@@ -155,11 +155,12 @@ def listing(base: LLMConfig, env: Mapping[str, str] | None = None) -> dict[str, 
             "ready": bool(key) if requires_key else bool(provider_id == base.provider_id or state["models"].get(provider_id)),
             "key_url": provider.key_url if provider else "",
             "notes": provider_notes(provider) if provider else "",
+            "privacy": privacy_note(provider_id) if provider else "",
             "base": provider_id == base.provider_id,
             "active": provider_id == current.provider_id,
         }
 
-    if base.provider_id not in providers:          # wlasny endpoint z LLM_BASE_URL, spoza presetow
+    if base.provider_id not in providers and base.enabled:   # wlasny endpoint z LLM_BASE_URL, spoza presetow
         rows.append(row(base.provider_id, None))
     rows.extend(row(provider_id, provider) for provider_id, provider in providers.items())
     # gotowi na gorze, aktywny pierwszy; reszta w kolejnosci presetow

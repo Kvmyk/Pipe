@@ -1,3 +1,3 @@
 """Wersja Pipe widziana przez dzialajacy backend (podbija ja scripts/bump_version.py)."""
 
-VERSION = "0.26.1"
+VERSION = "0.27.0"

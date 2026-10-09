@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 ## Wymagania wstepne
 
@@ -21,7 +21,10 @@ sudo bash scripts/install-server.sh            # albo --mode native (bez Dockera
 
 Kreator zapyta o providera LLM i klucz API, pobierze aktualna liste modeli, sprawdzi, czy wybrany model
 obsluguje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
-darmowy klucz wygenerujesz na https://aistudio.google.com/apikey
+darmowy klucz wygenerujesz na https://aistudio.google.com/apikey (w darmowym tierze Google moze uczyc sie na
+zapytaniach, wiec na produkcji lepiej wlaczyc platnosci). Mozesz tez wybrac **Bez modelu**: Pipe pilnuje serwera,
+wysyla alerty i raporty, a nic nie wychodzi z serwera; rozmowe wlaczysz pozniej
+([backend.md](backend.md#bez-modelu-llm_providernone)).
 
 Skrypt zainstaluje Dockera (jesli go nie ma) i uruchomi backend. Recznie to samo:
 `python3 -m backend.configure && cd backend && docker compose up -d --build`.

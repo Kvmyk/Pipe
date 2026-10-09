@@ -1144,6 +1144,7 @@
     title.appendChild(providerBadge(p)); title.appendChild(document.createTextNode(p.name));
     stepKey.appendChild(title);
     if (p.notes) stepKey.appendChild(el("p", "lead", p.notes));
+    if (p.privacy) stepKey.appendChild(el("p", "lead privacy", p.privacy));
     const form = el("form", "provider-form");
     form.autocomplete = "off"; form.noValidate = true;
     stepKey.appendChild(form);

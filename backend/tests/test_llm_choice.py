@@ -46,6 +46,7 @@ class TestStore:
         assert found["openai"]["ready"] and not found["openai"]["active"]          # klucz z OPENAI_API_KEY
         assert not found["groq"]["ready"] and found["groq"]["key_url"].startswith("https://")
         assert not found["ollama"]["ready"] and not found["ollama"]["requires_key"]
+        assert found["gemini"]["privacy"] and not found["ollama"]["privacy"]       # ostrzezenie o darmowym tierze
         assert state["providers"][0]["id"] == "gemini" and state["providers"][1]["id"] == "openai"   # gotowi na gorze
         assert "gem-key" not in json.dumps(state) and "oai-key" not in json.dumps(state)
 

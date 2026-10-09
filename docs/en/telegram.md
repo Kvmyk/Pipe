@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 A Telegram bot for managing a VPS through an AI agent.
 

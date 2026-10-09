@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -80,6 +80,19 @@ ABANDONED_CONFIRMATION_EN = (
 )
 
 
+class NoLLM(RuntimeError):
+    """Pipe dziala bez modelu jezykowego (LLM_PROVIDER=none) — zapytanie nie zostalo wyslane."""
+
+
+def no_llm_message() -> str:
+    return tr("[BLAD] Pipe dziala bez modelu jezykowego (LLM_PROVIDER=none), wiec rozmowa i zadania agenta sa "
+              "wylaczone. Czuwanie, alerty, raport, audyt, /cofnij, diagramy i bramka MCP dzialaja dalej. "
+              "Rozmowe wlaczysz, dodajac providera: pipe web albo /providerzy.",
+              "[BLAD] Pipe runs without a language model (LLM_PROVIDER=none), so chat and agent tasks are off. "
+              "Watching, alerts, the digest, audit, /undo, diagrams and the MCP gateway keep working. "
+              "Turn chat on by adding a provider: pipe web or /providers.")
+
+
 class VPSAgent:
     """
     Autonomiczny agent AI do zarzadzania serwerami.
@@ -90,11 +103,12 @@ class VPSAgent:
 
     def __init__(self, client: Any = None) -> None:
         llm = settings.LLM
-        self._client = client or AsyncOpenAI(
+        # LLM_PROVIDER=none: bez klienta — call_llm odmawia, zanim cokolwiek wysle.
+        self._client = client or (AsyncOpenAI(
             api_key=llm.api_key or NO_KEY_PLACEHOLDER,
             base_url=llm.base_url,
             timeout=llm.timeout,  # modele rozumujace potrafia odpowiadac dluzej niz minute
-        )
+        ) if llm.enabled else None)
         # Klienci providerow wybranych w trakcie pracy (core/llm.py), po (adres, klucz).
         self._injected = client is not None
         self._clients: dict[tuple[str, str], Any] = {}
@@ -142,6 +156,9 @@ class VPSAgent:
         `generated=True` — tresc zbudowal backend (skan, /status, skill), nie
         uzytkownik; nie uczy VIBE. `attachments` — pliki z core/attachments.parse().
         """
+        if not self.llm_enabled():
+            yield no_llm_message()
+            return
         session = self.get_or_create_session(session_id, interface, owner=owner, role=role)
         built = None
         if attachments:
@@ -286,6 +303,10 @@ class VPSAgent:
             "Write \"continue\" so I can finish, or split the task into smaller steps."
         )
 
+    def llm_enabled(self) -> bool:
+        """False, gdy Pipe dziala bez modelu (LLM_PROVIDER=none i nikt nie wybral providera)."""
+        return self.active_llm()[0].enabled
+
     def active_llm(self) -> tuple[LLMConfig, Any]:
         """
         (konfiguracja, klient) providera, z ktorego agent korzysta teraz — bazowy z .env albo
@@ -315,12 +336,14 @@ class VPSAgent:
         licznika (core/usage.py) z etykieta `who` (interfejs sesji); przy
         wyczerpanym dziennym limicie rzuca usage.BudgetExceeded bez zapytania.
         """
+        config, client = self.active_llm()
+        if not config.enabled:
+            raise NoLLM(no_llm_message())
         usage.check_budget(settings.DAILY_TOKEN_LIMIT, settings.DAILY_COST_LIMIT)
         # tool_choice pomijamy celowo: "auto" jest i tak domyslne, gdy podano
         # tools, a czesc providerow (np. Ollama) nie obsluguje tego parametru.
         # reasoning_effort idzie przez extra_body, zeby dzialal na kazdej
         # wersji SDK; providerzy, ktorzy go nie znaja, ignoruja pole.
-        config, client = self.active_llm()
         switched = config.provider_id != settings.LLM.provider_id
         extra_body: dict[str, Any] = {}
         if config.reasoning_effort:
@@ -351,6 +374,8 @@ class VPSAgent:
         Zwraca tresc ostrzezenia albo None. Nigdy nie rzuca wyjatku.
         """
         llm, client = self.active_llm()
+        if not llm.enabled:
+            return None
         try:
             page = await asyncio.wait_for(client.models.list(), timeout=15)
             available = chat_model_ids([m.model_dump() for m in page.data])

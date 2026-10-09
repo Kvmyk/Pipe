@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.26.1
+Pipe v0.27.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -89,7 +89,7 @@ Wszyscy przez API zgodne z OpenAI Chat Completions. Adresy zweryfikowane we wrze
 
 | `LLM_PROVIDER` | Provider | Domyslny model | Uwagi |
 |---|---|---|---|
-| `gemini` | Google Gemini | `gemini-3.8-flash` | Domyslny. Darmowy tier dla modeli Flash |
+| `gemini` | Google Gemini | `gemini-3.8-flash` | Domyslny. Darmowy tier dla modeli Flash, ale patrz nizej (prywatnosc) |
 | `openai` | OpenAI | `gpt-5.6-terra` | GPT-6 wymaga Responses API do tool callingu -- uzyj GPT-5.6 |
 | `anthropic` | Anthropic Claude | `claude-sonnet-5` | Przez warstwe zgodnosci z OpenAI SDK |
 | `openrouter` | OpenRouter | `google/gemini-3.8-flash` | Jeden klucz, kilkaset modeli (DeepSeek, Qwen, GLM, Kimi...) |
@@ -106,6 +106,21 @@ Wszyscy przez API zgodne z OpenAI Chat Completions. Adresy zweryfikowane we wrze
 
 Domyslny model to tylko punkt startowy. Przy starcie backend sprawdza, czy skonfigurowany model nadal
 jest na liscie providera, i wypisuje ostrzezenie z propozycjami, jesli zostal wycofany.
+
+Prywatnosc: Pipe wysyla providerowi logi, konfiguracje i wyniki komend z serwera (sekrety redaguje). W darmowym
+tierze Gemini API Google moze uzywac tresci zapytan do ulepszania swoich uslug i moga je czytac ludzie. Kreator,
+`pipe web` i CLI ostrzegaja o tym przy wyborze Gemini. Na serwerze produkcyjnym wlacz platnosci w Google AI Studio
+albo wybierz innego providera, np. lokalna Ollame.
+
+### Bez modelu (`LLM_PROVIDER=none`)
+
+Pipe moze dzialac bez zadnego modelu. Wtedy nic nie wychodzi z serwera i nic nie kosztuje, a dalej dzialaja:
+czuwanie i alerty, migawki i „co sie zmienilo”, poranny raport, monitoring certyfikatow i stron, audyt
+bezpieczenstwa, dziennik i `/cofnij`, diagramy, webhooki (alert dociera, ale nikt go nie bada) oraz bramka MCP
+dla innych agentow (bez `ask_pipe`). Rozmowa, rutyny i badanie alertow odpowiadaja komunikatem, ze modelu nie ma.
+Gdy pozniej dodasz providera w `pipe web` albo `/providerzy`, rozmowa wlacza sie bez restartu.
+
+W kreatorze to ostatnia pozycja listy, a bez pytan: `LLM_PROVIDER=none bash scripts/install-server.sh -y`.
 
 ### Reczna konfiguracja `.env`
 
