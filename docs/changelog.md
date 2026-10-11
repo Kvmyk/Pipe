@@ -1,5 +1,35 @@
 # Historia zmian -- Pipe
 
+## v0.32.0 (2026-10-11)
+
+### Podatnosci w pakietach
+
+- Pipe sam sprawdza, czy w pakietach systemu (Debian, Ubuntu, Alpine) sa znane podatnosci: czyta baze dpkg/apk
+  bez uruchamiania czegokolwiek i pyta OSV.dev o dokladne wersje (po pakiecie zrodlowym). Priorytet z katalogu
+  CISA KEV (aktywnie wykorzystywane) i z oceny dystrybucji albo CVSS. Liczy sie tylko to, co ma poprawke;
+  podatnosci bez poprawki sa liczba
+- Skan bez LLM i bez kluczy: przy kazdej zmianie listy pakietow (OSV dostaje tylko zmienione) i co `VULN_INTERVAL`
+  (domyslnie 6 h) dla wszystkich. `VULN_INTERVAL=0` wylacza skan; do OSV trafiaja wylacznie nazwy i wersje pakietow
+- Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA); rekord CVE
+  objety biuletynem nie jest liczony drugi raz. Pierwszy skan trwa okolo minuty, kolejne korzystaja z zapisanych
+  szczegolow
+- Alert `vuln:system` przychodzi tylko o nowych pilnych podatnosciach (KEV, krytyczne, wysokie), z lista pakietow
+  i komenda; znane nie wracaja po restarcie Pipe. Reszta jest w porannym raporcie
+- `/audyt` pokazuje podatnosci jako najwyzej trzy punkty (KEV, krytyczne i wysokie, pozostale) z komenda
+  `apt-get install --only-upgrade ...`, ktora podbija tylko te pakiety
+
+### Latki na potwierdzenie
+
+- Nowa komenda `/zalataj [pilne]` (`/patch`) w CLI, Telegramie i `pipe web`, a przy alercie o podatnosciach przycisk
+  *Zalataj* (w Telegramie tylko dla administratorow). Dziala bez LLM: podglad z lista pakietow i dokladna komenda,
+  potem *Zainstaluj*
+- Komende sklada serwer z ostatniego skanu, klient przysyla tylko token z podgladu; gdy lista sie zmienila, nic sie
+  nie instaluje. Instalacja idzie przez bezpiecznik (strony przed i po, wpis w dzienniku), potem Pipe skanuje
+  zmienione pakiety i mowi, co zostalo
+- Sam instaluje tylko w trybie native. W trybie docker (system hosta tylko do odczytu), w trybie obserwacji
+  i dla roli viewer jest podglad z komenda do wykonania na serwerze. Pakietow nie cofa automatycznie i mowi to
+  w podgladzie
+
 ## v0.31.1 (2026-10-10)
 
 ### Porzadki

@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -327,6 +327,7 @@ removed containers and volumes, `git clean`, directories removed with `rm -r`, p
 | Containers | `privileged`, mounted `docker.sock`, host network |
 | Accounts | uid 0 other than root, accounts without a password (only account names are read from `/etc/shadow`) |
 | Updates | unattended-upgrades, pending security fixes, reboot required |
+| Vulnerabilities | known vulnerabilities with a fix in system packages (OSV.dev, CISA KEV) -- see below |
 | Protection | fail2ban / CrowdSec (more important when SSH accepts passwords) |
 | Secrets | world-readable `.env` files in application directories from DIRECTORY |
 | Hygiene | time sync, swap on a small machine, certificates |
@@ -343,6 +344,27 @@ configs (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). A new account with
 
 **SSH log** (`/var/log/auth.log` or `/var/log/secure`, read incrementally): a series of failed logins, a successful
 password login from an address that was guessing passwords before, a login from a new address.
+
+**Package vulnerabilities** (Debian, Ubuntu, Alpine). Pipe reads the package list from the dpkg/apk database (it runs
+nothing) and asks [OSV.dev](https://osv.dev) about known vulnerabilities for the exact versions. Only what has a fix
+counts -- vulnerabilities without a fix show up as a number, because a plain Debian has hundreds of them. Only package
+names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
+
+- When: whenever the package list changes (a new application, an update -- then OSV only gets the changed packages)
+  and every `VULN_INTERVAL` (6 h) for all of them, because new vulnerabilities show up in old versions.
+- An alert comes only about **new urgent** ones: actively exploited (the CISA KEV catalog) or critical and high.
+  One alert with the package list and the command; known vulnerabilities don't come back after a Pipe restart. The
+  rest is in the morning report and in `/audit`.
+- In `/audit` vulnerabilities take at most three points (KEV, critical and high, the rest), each with an
+  `apt-get install --only-upgrade ...` command that upgrades only those packages. Pipe always asks before installing.
+  In docker mode the command is *in the host shell*; Pipe can patch by itself only in native mode.
+- `/patch` (or the *Patch* button on the alert in Telegram and `pipe web`) works without the LLM: the package list,
+  the exact command and *Install*. The server builds the command from the last scan, the install goes through the
+  safety fuse (sites before and after, a journal entry), then Pipe scans the changed packages and says what is left.
+- System packages can't be reliably rolled back (the old version is often gone from the repository), so `/undo`
+  doesn't cover them. Libraries and the kernel apply after a service or server restart.
+- The kernel has thousands of CVE records, so for it Pipe only takes distribution advisories (USN, DSA, DLA).
+  The first scan takes about a minute, later ones reuse the saved details.
 
 ---
 

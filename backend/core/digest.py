@@ -9,6 +9,7 @@ wie, i wysyla go subskrybentom (Telegram). Na zadanie: /raport.
   Zmiany      co sie zmienilo na serwerze od wczoraj (migawki)
   Zdrowie     certyfikaty, strony, backupy (sprawdzenia bez konfiguracji)
   Aktualizacje  pakiety do aktualizacji i wymagany restart (Ubuntu/Debian)
+  Podatnosci  pakiety z poprawkami znanych podatnosci (ostatni skan core/vulns.py)
   Rutyny      ostatni status kazdej rutyny
   LLM         zuzycie tokenow wczoraj
 
@@ -88,6 +89,25 @@ def updates_lines() -> list[str]:
         lines.append(tr("wymagany restart serwera", "server restart required")
                      + (tr(f" (po aktualizacji: {names})", f" (after updating: {names})") if packages else ""))
     return lines[:4]
+
+
+def vuln_lines(scan: Any) -> list[str]:
+    """Wynik ostatniego skanu podatnosci — bez pytania OSV (to robi czuwanie)."""
+    from backend.core import vulns
+
+    if scan is None or scan.ecosystem is None:
+        return []
+    lines = []
+    if scan.items:
+        lines.append(vulns.summary_line(scan))
+        lines += [vulns.describe_item(p, limit=2) for p in scan.items[:3]]
+        lines.append(tr("szczegoly i komenda: /audyt", "details and the command: /audit"))
+    elif scan.ok:
+        lines.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow)",
+                        f"no vulnerabilities with a fix ({scan.checked} packages)"))
+    if scan.error:
+        lines.append(tr(f"ostatni skan nieudany: {scan.error}", f"last scan failed: {scan.error}"))
+    return lines
 
 
 def change_lines(current: dict[str, dict[str, str]] | None, hours: float = 24, now: float | None = None) -> list[str]:
@@ -170,13 +190,14 @@ def alert_lines(active: list[Any], history: list[dict[str, Any]], now: float | N
 
 def build(*, hostname: str, active: list[Any], history: list[dict[str, Any]], current: dict | None,
           report: Any, usage_line: str, cert_days: int, backup_hours: int, load_factor: int,
-          proc: str | None = None, now: float | None = None) -> Digest:
+          proc: str | None = None, now: float | None = None, vuln_scan: Any = None) -> Digest:
     when = datetime.fromtimestamp(now if now is not None else time.time()).strftime("%d.%m.%Y %H:%M")
     sections = [Section(tr("Stan", "Health"), health_lines(proc, load_factor=load_factor)),
                 Section(tr("Alerty", "Alerts"), alert_lines(active, history, now))]
     for title, lines in ((tr("Zmiany od wczoraj", "Changes since yesterday"), change_lines(current, now=now)),
                          (tr("Zdrowie", "Checks"), checks_lines(report, cert_days=cert_days, backup_hours=backup_hours)),
                          (tr("Aktualizacje", "Updates"), updates_lines()),
+                         (tr("Podatnosci", "Vulnerabilities"), vuln_lines(vuln_scan)),
                          (tr("Rutyny", "Routines"), routine_lines()),
                          ("LLM", [usage_line] if usage_line else [])):
         if lines:

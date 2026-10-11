@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -323,6 +323,7 @@ usunietych kontenerow i wolumenow, `git clean`, katalogow usuwanych `rm -r`, pop
 | Kontenery | `privileged`, zamontowany `docker.sock`, siec hosta |
 | Konta | uid 0 poza rootem, konta bez hasla (z `/etc/shadow` odczytywane sa tylko nazwy kont) |
 | Aktualizacje | unattended-upgrades, oczekujace poprawki bezpieczenstwa, wymagany restart |
+| Podatnosci | znane podatnosci z poprawka w pakietach systemu (OSV.dev, CISA KEV) -- ponizej |
 | Ochrona | fail2ban / CrowdSec (wazniejsze, gdy SSH przyjmuje hasla) |
 | Sekrety | pliki `.env` czytelne dla wszystkich w katalogach aplikacji z DIRECTORY |
 | Higiena | synchronizacja czasu, swap na malej maszynie, certyfikaty |
@@ -339,6 +340,27 @@ SUID albo `ld.so.preload` -- alert krytyczny. Zmiany zrobione przez Pipe (sa w d
 
 **Log SSH** (`/var/log/auth.log` albo `/var/log/secure`, czytany przyrostowo): seria nieudanych logowan,
 udane logowanie haslem z adresu, ktory wczesniej zgadywal hasla, logowanie z nowego adresu.
+
+**Podatnosci w pakietach** (Debian, Ubuntu, Alpine). Pipe czyta liste pakietow z bazy dpkg/apk (niczego nie
+uruchamia) i pyta [OSV.dev](https://osv.dev) o znane podatnosci dla dokladnych wersji. Liczy sie tylko to, co ma
+poprawke -- podatnosci bez poprawki widac jako liczbe, bo zwykly Debian ma ich setki. Do OSV trafiaja wylacznie
+nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
+
+- Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)
+  i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach.
+- Alert przychodzi tylko o **nowych pilnych**: aktywnie wykorzystywanych (katalog CISA KEV) albo krytycznych
+  i wysokich. Jeden alert z lista pakietow i komenda; znane podatnosci nie wracaja po restarcie Pipe. Reszta jest
+  w porannym raporcie i w `/audyt`.
+- W `/audyt` podatnosci sa najwyzej trzema punktami (KEV, krytyczne i wysokie, pozostale), kazdy z komenda
+  `apt-get install --only-upgrade ...` podbijajaca tylko te pakiety. Pipe zawsze pyta przed instalacja.
+  W trybie docker komenda jest *w powloce hosta*; latac sam moze tylko w trybie native.
+- `/zalataj` (albo przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) dziala bez LLM: lista pakietow,
+  dokladna komenda i *Zainstaluj*. Komende sklada serwer z ostatniego skanu, instalacja idzie przez bezpiecznik
+  (strony przed i po, wpis w dzienniku), potem Pipe skanuje zmienione pakiety i mowi, co zostalo.
+- Pakietow systemowych nie da sie wiarygodnie cofnac (starej wersji czesto nie ma juz w repozytorium), wiec
+  `/cofnij` ich nie obejmuje. Biblioteki i jadro dzialaja po restarcie uslug albo serwera.
+- Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA).
+  Pierwszy skan trwa okolo minuty, kolejne korzystaja z zapisanych szczegolow.
 
 ---
 

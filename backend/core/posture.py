@@ -8,6 +8,7 @@ Audyt to deterministyczne sprawdzenia konfiguracji hosta z ocena 0-100:
   Kontenery tryb uprzywilejowany, zamontowany docker.sock, siec hosta
   Konta     uid 0 poza rootem, konta bez hasla
   Aktualizacje  automatyczne aktualizacje bezpieczenstwa, oczekujace poprawki, restart
+  Podatnosci  znane podatnosci z poprawka w pakietach systemu (core/vulns.py, OSV.dev, CISA KEV)
   Ochrona   fail2ban / CrowdSec przy logowaniu haslem
   Sekrety   pliki .env czytelne dla wszystkich w katalogach aplikacji z DIRECTORY
   Higiena   synchronizacja czasu, swap na malej maszynie, certyfikaty
@@ -492,8 +493,60 @@ def cert_findings(audit: Audit, report: Any, cert_days: int) -> None:
                                                  "check automatic renewal (certbot.timer, proxy)")))
 
 
+def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
+    """Podatnosci w pakietach (core/vulns.py) — najwyzej trzy pozycje, zeby ocena nie spadla do zera od jednego jadra."""
+    from backend.core import vulns
+
+    label = tr("podatnosci pakietow", "package vulnerabilities")
+    if scan is None:
+        audit.unknown.append(f"{label} ({note or tr('skan jeszcze sie nie wykonal', 'no scan yet')})")
+        return
+    if scan.ecosystem is None:
+        audit.unknown.append(tr(f"{label} (system {scan.system} nie jest obslugiwany)",
+                                f"{label} ({scan.system} is not supported)"))
+        return
+    if scan.error:
+        audit.unknown.append(tr(f"{label} (OSV.dev: {scan.error}; ponizej ostatni udany wynik)" if scan.items
+                                else f"{label} (OSV.dev: {scan.error})",
+                                f"{label} (OSV.dev: {scan.error}; last good result below)" if scan.items
+                                else f"{label} (OSV.dev: {scan.error})"))
+    if scan.partial:
+        audit.unknown.append(tr(f"{label}: czesc szczegolow niepobrana, dokoncze przy nastepnym skanie",
+                                f"{label}: some details not fetched yet, the next scan finishes them"))
+    kev = [p for p in scan.items if p.kev]
+    urgent = [p for p in scan.items if p.urgent and not p.kev]
+    other = [p for p in scan.items if not p.urgent]
+    groups = (
+        ("vuln-kev", "high", kev, tr(f"Aktywnie wykorzystywane podatnosci (CISA KEV) w {len(kev)} pakietach",
+                                     f"Actively exploited vulnerabilities (CISA KEV) in {len(kev)} packages")),
+        ("vuln-high", "high", urgent, tr(f"Krytyczne i wysokie podatnosci z poprawka w {len(urgent)} pakietach",
+                                         f"Critical and high vulnerabilities with a fix in {len(urgent)} packages")),
+        ("vuln-other", "medium", other, tr(f"Podatnosci z poprawka w {len(other)} pakietach",
+                                           f"Vulnerabilities with a fix in {len(other)} packages")),
+    )
+    for finding_id, severity, items, title in groups:
+        if not items:
+            continue
+        shown = "; ".join(vulns.describe_item(p) for p in items[:5])
+        more = len(items) - 5
+        if more > 0:
+            shown += tr(f"; i {more} innych pakietow", f"; and {more} more packages")
+        audit.findings.append(Finding(
+            finding_id, severity, title, shown,
+            tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera",
+               "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server restart"),
+            vulns.upgrade_command(scan.ecosystem, items), _host_only()))
+    if scan.items:
+        audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
+    elif not scan.error:
+        without = tr(f", {scan.unfixed} znanych jeszcze bez poprawki", f", {scan.unfixed} known without a fix yet") \
+            if scan.unfixed else ""
+        audit.passed.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow{without})",
+                               f"no vulnerabilities with a fix ({scan.checked} packages{without})"))
+
+
 def run_audit(*, containers: list[Any] | None, sockets: list[Any], report: Any = None, cert_days: int = 14,
-              proc: str | None = None) -> Audit:
+              proc: str | None = None, vuln_scan: Any = None, vuln_note: str = "") -> Audit:
     """Pelny audyt (synchronicznie — same odczyty plikow)."""
     from backend.core import snapshots
 
@@ -512,10 +565,11 @@ def run_audit(*, containers: list[Any] | None, sockets: list[Any], report: Any =
     secret_file_findings(audit)
     hygiene_findings(audit, units, proc)
     cert_findings(audit, report, cert_days)
+    vuln_findings(audit, vuln_scan, vuln_note)
     return audit
 
 
-async def audit_now(report: Any = None, cert_days: int = 14) -> Audit:
+async def audit_now(report: Any = None, cert_days: int = 14, vuln_scan: Any = None, vuln_note: str = "") -> Audit:
     import asyncio
 
     from backend.core import infra
@@ -523,7 +577,7 @@ async def audit_now(report: Any = None, cert_days: int = 14) -> Audit:
     containers = await infra.docker_containers()
     sockets = await asyncio.to_thread(hostinfo.sockets)
     return await asyncio.to_thread(run_audit, containers=containers, sockets=sockets, report=report,
-                                   cert_days=cert_days)
+                                   cert_days=cert_days, vuln_scan=vuln_scan, vuln_note=vuln_note)
 
 
 # ─── Log SSH: wlamania i nowe logowania ─────────────────────────────────────

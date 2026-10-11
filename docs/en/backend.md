@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -326,6 +326,7 @@ You should see:
 | `METRICS_KEEP_DAYS` | 8 | How long to keep measurement history (charts) |
 | `SNAPSHOT_INTERVAL`, `SNAPSHOT_KEEP_DAYS` | 3600, 30 | Host state snapshots ("what changed") |
 | `CHECKS_INTERVAL` | 3600 | How often (s) to check certificates, sites, DNS and backups |
+| `VULN_INTERVAL` | 21600 | How often (s) to ask OSV.dev about vulnerabilities in all packages (changed packages right away); 0 = off |
 | `WATCH_SITES` | 1 | 0 turns off network checks (certificates, sites, DNS) |
 | `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS` | 14, 26 | Thresholds: days until a certificate expires, age of the newest backup |
 | `WATCH_SSH_FAILURES` | 60 | Alert at this many failed SSH logins in 10 min (0 = off) |

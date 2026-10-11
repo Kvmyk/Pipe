@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.31.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.31.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.32.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.32.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -597,7 +597,7 @@ COMMAND_ALIASES = {
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
-    "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik",
+    "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -608,6 +608,7 @@ COMMANDS = [
     ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
     ("zdrowie", "health", "certyfikaty, strony, DNS, backupy", "certificates, sites, DNS, backups"),
     ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
+    ("zalataj", "patch", "zainstaluj łatki podatności; /zalataj pilne", "install vulnerability patches; /patch urgent"),
     ("mapa", "map", "diagram infrastruktury", "infrastructure diagram"),
     ("mermaid", "mermaid", "kod ostatniego diagramu", "source of the last diagram"),
     ("server", "server", "notatki o serwerze (SERVER.md); /server aktualizuj", "server notes (SERVER.md); /server update"),
@@ -645,6 +646,7 @@ HELP_TEXT = """**Komendy**
 - `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
 - `/zdrowie` — certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów
 - `/audyt` — ocena bezpieczeństwa hosta z gotowymi poprawkami („napraw 1”)
+- `/zalataj [pilne]` — łatki znanych podatności w pakietach: podgląd, komenda i instalacja po TAK
 - `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
 - `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
 - `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
@@ -679,6 +681,7 @@ HELP_TEXT_EN = """**Commands**
 - `/chart [load|ram|disk] [24h|7d]` — chart from the watcher's history (PNG)
 - `/health` — TLS certificates, site responses, DNS and backup freshness
 - `/audit` — host security score with ready-made fixes ("fix 1")
+- `/patch [urgent]` — patches for known package vulnerabilities: preview, command and install after YES
 - `/map` — infrastructure diagram (PNG + terminal preview); `/mermaid` — source of the last diagram
 - `/server` — show SERVER.md (`/server update` — explore the server again)
 - `/directory` — map of repositories and directories (DIRECTORY)
@@ -1278,6 +1281,27 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             confirmed = False
         if confirmed:
             result = _response_data(await client.send_command("undo", id=data["id"], execute=True))
+            console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
+        else:
+            console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
+        return True
+
+    if name == "zalataj":
+        scope = "urgent" if args.strip().lower() in ("pilne", "urgent") else "all"
+        data = _response_data(await client.send_command("patch", scope=scope))
+        console.print(Markdown(data.get("text", "")))
+        if not data.get("can_execute") or not data.get("token"):
+            return True
+        try:
+            confirmed = Confirm.ask(tr("[yellow]Zainstalować te łatki?[/yellow]", "[yellow]Install these patches?[/yellow]"),
+                                    default=False)
+        except (KeyboardInterrupt, EOFError):
+            confirmed = False
+        if confirmed:
+            console.print(tr("[dim]Instaluję łatki — to może potrwać kilka minut...[/dim]",
+                             "[dim]Installing patches — this can take a few minutes...[/dim]"))
+            result = _response_data(await client.send_command("patch", scope=data.get("scope", scope),
+                                                              token=data["token"], execute=True))
             console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
         else:
             console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))

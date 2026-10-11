@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 ## Overview
 
@@ -95,6 +95,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **without the LLM** |
 | `welcome` | -- | a frame with `attachment` (map), then `"data"` like the `welcome` event |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- change journal |
+| `patch` | `scope` (`urgent`\|`all`); `execute: true` + `token` | without `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; with `execute` and the token from the preview: the install through the safety fuse (`progress` frames), `"data": {"text", "exit_code", "entry_id"}`. The server builds the command from the last scan; a different token = the list changed. Refused: viewer, observe mode, any mode other than native. **Without the LLM** |
 | `undo` | optionally `id`; `execute: true` | without `execute`: `"data": {"id", "undoable", "preview"}` (the last entry to undo when there is no `id`); with `execute` and `id`: the undo, `"data": {"id", "text"}`. **Without the LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
 | `subscribe` | -- | the connection stays open; watcher events (below) until the client disconnects |
@@ -201,6 +202,7 @@ the first subscriber connects.
 port, a stopped container). `investigate` with an `id` asks the agent to investigate the alert.
 Alert keys have a group prefix: `disk:`, `memory`, `load`, `container:`, `port:` (every `WATCH_INTERVAL`)
 and `cert:`, `site:`, `dns:`, `backup:` (checks without configuration, every `CHECKS_INTERVAL`).
+`vuln:system` -- urgent fixable vulnerabilities in system packages (persistent; sent again when a new one appears).
 `hook:<source>:<name>` -- webhook alerts (persistent until a `resolved` message). `auth:ssh` (a series of failed
 logins) is persistent; `security:<section>:<key>`, `auth:breach:...` and `auth:login:...` are one-off events.
 `digest` arrives once a day at `DIGEST_TIME`.

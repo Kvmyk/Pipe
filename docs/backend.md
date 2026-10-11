@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -323,6 +323,7 @@ Powinienes zobaczyc:
 | `METRICS_KEEP_DAYS` | 8 | Jak dlugo trzymac historie pomiarow (wykresy) |
 | `SNAPSHOT_INTERVAL`, `SNAPSHOT_KEEP_DAYS` | 3600, 30 | Migawki stanu hosta ("co sie zmienilo") |
 | `CHECKS_INTERVAL` | 3600 | Co ile sekund sprawdzac certyfikaty, strony, DNS i backupy |
+| `VULN_INTERVAL` | 21600 | Co ile sekund pytac OSV.dev o podatnosci wszystkich pakietow (zmienione pakiety od razu); 0 = wylaczone |
 | `WATCH_SITES` | 1 | 0 wylacza sprawdzenia sieciowe (certyfikaty, strony, DNS) |
 | `WATCH_CERT_DAYS`, `WATCH_BACKUP_HOURS` | 14, 26 | Progi: dni do wygasniecia certyfikatu, wiek najnowszego backupu |
 | `WATCH_SSH_FAILURES` | 60 | Alert przy tylu nieudanych logowaniach SSH w 10 min (0 = wylaczone) |

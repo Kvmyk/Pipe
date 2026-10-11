@@ -289,7 +289,7 @@ class TestWelcome:
         async def discover(include_kube=None):
             return found
 
-        async def audit_now(report=None, cert_days=14):
+        async def audit_now(report=None, cert_days=14, vuln_scan=None, vuln_note=""):
             return posture.Audit(findings=[posture.Finding("ssh-password", "high", "SSH pozwala logowac sie haslem")])
 
         monkeypatch.setattr(infra, "discover", discover)

@@ -33,7 +33,10 @@ AUDIT_HINT_EN = (
 async def run_audit_text() -> tuple[posture.Audit, str]:
     from backend.core.watch import get_watcher
 
-    audit = await posture.audit_now(report=get_watcher().checks_report, cert_days=settings.WATCH_CERT_DAYS)
+    watcher = get_watcher()
+    scan, note = await watcher.vuln_for_audit()
+    audit = await posture.audit_now(report=watcher.checks_report, cert_days=settings.WATCH_CERT_DAYS,
+                                    vuln_scan=scan, vuln_note=note)
     return audit, audit.render()
 
 

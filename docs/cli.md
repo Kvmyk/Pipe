@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -154,7 +154,7 @@ Pythonie / venv, z ktorego startuje `pipe` -- CLI przy starcie podaje gotowe pol
 bez niego CLI dziala jak dotad, bez podpowiedzi.
 
 Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
-`/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`,
+`/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/patch`,
 `/approvals`, `/cost`, `/history`, `/providers`, `/language`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski
 tylko w tym uruchomieniu; `/jezyk en` (`/language pl`) zmienia jezyk calego Pipe -- instrukcje agenta, raporty,
 komunikaty -- bez restartu, takze w `pipe web` i na Telegramie. Wybor zostaje po restarcie i CLI przejmuje go
@@ -174,6 +174,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
+| `/zalataj [pilne]` | Latki znanych podatnosci w pakietach: lista, dokladna komenda, instalacja po TAK przez bezpiecznik (tryb native; w dockerze komenda do wykonania na hoscie). Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |

@@ -138,6 +138,9 @@ CHECKS_INTERVAL: int = _int("CHECKS_INTERVAL", 3600)
 WATCH_SITES: bool = os.getenv("WATCH_SITES", "1").strip().lower() not in ("0", "false", "no", "nie")
 WATCH_CERT_DAYS: int = _int("WATCH_CERT_DAYS", 14)
 WATCH_BACKUP_HOURS: int = _int("WATCH_BACKUP_HOURS", 26)
+# Podatnosci w pakietach (core/vulns.py, OSV.dev): pelny skan przy zmianie listy pakietow i co tyle sekund
+# (nowe podatnosci w starych pakietach). 0 = wylaczone — wtedy nic nie trafia do OSV.
+VULN_INTERVAL: int = _int("VULN_INTERVAL", 6 * 3600)
 # Log SSH: alert przy tylu nieudanych logowaniach w 10 min (0 = wylaczone) i przy logowaniu z nowego adresu.
 WATCH_SSH_FAILURES: int = _int("WATCH_SSH_FAILURES", 60)
 WATCH_SSH_LOGINS: bool = os.getenv("WATCH_SSH_LOGINS", "1").strip().lower() not in ("0", "false", "no", "nie")

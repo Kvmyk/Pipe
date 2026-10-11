@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -236,8 +236,21 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def _investigate_keyboard(alert_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton(tr("Zbadaj", "Investigate"), callback_data=f"investigate:{alert_id}")]])
+def _alert_keyboard(event: dict, user_id: int) -> InlineKeyboardMarkup | None:
+    """Zbadaj przy kazdym aktywnym alercie; przy podatnosciach administrator dostaje tez Zalataj."""
+    if event.get("state") == "resolved" or not event.get("id"):
+        return None
+    row = [InlineKeyboardButton(tr("Zbadaj", "Investigate"), callback_data=f"investigate:{event['id']}")]
+    if str(event.get("key", "")).startswith("vuln:") and _is_admin(user_id):
+        row.append(InlineKeyboardButton(tr("Zalataj", "Patch"), callback_data=f"patch:urgent:{user_id}"))
+    return InlineKeyboardMarkup([row])
+
+
+def _patch_keyboard(scope: str, token: str, user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(tr("Zainstaluj", "Install"), callback_data=f"patchx:yes:{scope}:{token}:{user_id}"),
+        InlineKeyboardButton(tr("Anuluj", "Cancel"), callback_data=f"patchx:no:{scope}:{token}:{user_id}"),
+    ]])
 
 
 async def _send_html(bot, chat_id: int, text: str, reply_markup=None) -> None:
@@ -718,6 +731,57 @@ async def cmd_cofnij(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await _backend_call(update, context, go())
 
 
+async def _patch_preview(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, scope: str) -> None:
+    data = response_data([f async for f in get_client(user_id).command("patch", scope=scope)])
+    markup = None
+    if data.get("can_execute") and data.get("token"):
+        markup = _patch_keyboard(data.get("scope", scope), data["token"], user_id)
+    await _send_html(context.bot, chat_id, to_telegram_html(data.get("text", "")), markup)
+
+
+async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/zalataj [pilne] -- latki podatnosci: podglad i przyciski (bez LLM)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    if not _is_admin(user_id):
+        await update.message.reply_text(tr("Latki instaluje tylko administrator — podatnosci pokazuje /audyt.",
+                                           "Only an administrator installs patches — /audit shows the vulnerabilities."))
+        return
+    scope = "urgent" if " ".join(context.args or []).strip().lower() in ("pilne", "urgent") else "all"
+    await _backend_call(update, context, _patch_preview(context, update.effective_chat.id, user_id, scope))
+
+
+async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """patch:<scope>:<user> — podglad z alertu; patchx:yes|no:<scope>:<token>:<user> — instalacja."""
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    owner = parts[-1]
+    if not user or not _is_admin(user.id) or str(user.id) != owner or len(parts) not in (3, 5):
+        await query.answer(tr("Latki instaluje tylko administrator.", "Only an administrator installs patches."), show_alert=True)
+        return
+    if parts[0] == "patch":
+        await query.answer()
+        await _backend_call(update, context, _patch_preview(context, query.message.chat_id, user.id, parts[1]))
+        return
+    await query.answer(tr("Instaluje...", "Installing...") if parts[1] == "yes" else tr("Anulowano", "Cancelled"))
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if parts[1] != "yes":
+        await query.message.reply_text(tr("Anulowano — nic nie zainstalowalem.", "Cancelled — I installed nothing."))
+        return
+
+    async def go() -> None:
+        result = response_data([f async for f in get_client(user.id).command(
+            "patch", scope=parts[2], token=parts[3], execute=True)])
+        await _send_html(context.bot, query.message.chat_id, format_listing(tr("Latki", "Patches"), result.get("text", "")))
+
+    await _backend_call(update, context, go())
+
+
 async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -997,6 +1061,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _handle_undo_callback(update, context, data)
         return
 
+    if data.startswith(("patch:", "patchx:")):
+        await _handle_patch_callback(update, context, data)
+        return
+
     if data.startswith("appr:"):
         await _handle_approval_callback(update, context, data)
         return
@@ -1150,8 +1218,7 @@ async def _broadcast(app: Application, event: dict) -> None:
                 print(f"[Pipe Telegram] Nie wyslano przypomnienia do {user_id}: {exc}", flush=True)
         return
     if kind == "alert":
-        text = format_alert(event)
-        markup = _investigate_keyboard(event["id"]) if event.get("state") != "resolved" and event.get("id") else None
+        text, markup = format_alert(event), None
     elif kind == "routine":
         text, markup = format_routine(event), None
     elif kind in ("digest", "welcome"):
@@ -1162,7 +1229,7 @@ async def _broadcast(app: Application, event: dict) -> None:
         return
     for user_id in sorted(ALLOWED_USER_IDS | VIEWER_USER_IDS):
         try:
-            await _send_html(app.bot, user_id, text, markup)
+            await _send_html(app.bot, user_id, text, _alert_keyboard(event, user_id) if kind == "alert" else markup)
             if event.get("attachment"):
                 await _send_attachment(app.bot, user_id, event["attachment"])
         except Exception as exc:
@@ -1317,7 +1384,7 @@ def main() -> None:
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
-        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo),
+        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

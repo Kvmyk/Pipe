@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 ## Model
 
@@ -185,6 +185,9 @@ Agent sam decyduje, kiedy siegnac do sieci, wiec internet jest traktowany jak ni
   zaproponowana pod wplywem strony zawsze czeka na TAK.
 - Wyszukiwarki bez klucza to nieoficjalne endpointy (DuckDuckGo) i publiczne API (Stack Exchange, Wikipedia,
   endoflife.date, OSV.dev); `WEB_SEARCH=off` zabiera agentowi internet calkowicie.
+- **Skan podatnosci** (czuwanie, bez agenta) wysyla do OSV.dev nazwy i wersje pakietow systemu i pobiera katalog
+  CISA KEV; nic wiecej nie opuszcza serwera. Wylacza go `VULN_INTERVAL=0` (niezaleznie od `WEB_SEARCH`). Komende
+  latki sklada serwer z nazw pasujacych do wzorca nazwy pakietu; klient przysyla tylko token z podgladu.
 
 ## Zalaczniki (pliki, zrzuty ekranu, glosowki)
 

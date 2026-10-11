@@ -15,6 +15,7 @@ Co minute wykonywane sa tez rutyny (core/routines.py) — przez workerow.
 Przy kazdym sprawdzeniu zapisywana jest probka do historii (core/metrics.py,
 wykresy). Rzadziej, we wlasnych petlach:
   - migawka stanu hosta co SNAPSHOT_INTERVAL (core/snapshots.py, "co sie zmienilo"),
+  - podatnosci w pakietach (core/vulns.py, OSV.dev) przy zmianie pakietow i co VULN_INTERVAL,
   - sprawdzenia bez konfiguracji co CHECKS_INTERVAL (core/checks.py): certyfikaty,
     strony i DNS domen z konfiguracji proxy, swiezosc backupow z DIRECTORY,
   - poranny raport o DIGEST_TIME (core/digest.py).
@@ -43,6 +44,10 @@ MAX_HISTORY = 50
 # Zakresy alertow (prefiks klucza przed ':') — kazda petla rozwiazuje tylko swoje.
 RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port", "auth"})
 CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
+VULN_SCOPE = frozenset({"vuln"})
+VULN_KEY = "vuln:system"
+# Tyle najwyzej czeka /audyt na skan podatnosci (pierwszy skan pobiera szczegoly setek ID).
+VULN_AUDIT_WAIT = 45
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
 
@@ -194,6 +199,8 @@ class Watcher:
         self._tasks: list[asyncio.Task] = []
         self._routines_running: set[str] = set()
         self.checks_report: Any = None          # ostatni checks.Report
+        self.vuln_scan: Any = None              # ostatni vulns.Scan
+        self._vuln_task: asyncio.Task | None = None
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
         self._reminder_wakeup = asyncio.Event()
@@ -373,6 +380,74 @@ class Watcher:
                     or f.key in self.active]
         return self._publish(self.apply(findings, CHECKS_SCOPE))
 
+    async def vuln_scan_now(self, *, force: bool = False) -> Any:
+        """Skan podatnosci (core/vulns.py). Jeden naraz — audyt i czuwanie czekaja na to samo zadanie."""
+        from backend.core import vulns
+
+        if self._vuln_task is None or self._vuln_task.done():
+            self._vuln_task = asyncio.create_task(
+                asyncio.to_thread(vulns.scan, force=force, max_age=settings.VULN_INTERVAL))
+        result, _ = await asyncio.shield(self._vuln_task)
+        self.vuln_scan = result
+        return result
+
+    async def vuln_for_audit(self) -> tuple[Any, str]:
+        """(wynik skanu albo None, uwaga dla audytu) — nie dluzej niz VULN_AUDIT_WAIT sekund."""
+        from backend.core import vulns
+
+        if settings.VULN_INTERVAL <= 0:
+            return None, tr("wylaczone: VULN_INTERVAL=0", "off: VULN_INTERVAL=0")
+        # Swiezy wynik czuwania wystarczy — zapytanie do OSV trwa okolo minuty (jadro: tysiace ID).
+        last = self.vuln_scan or await asyncio.to_thread(vulns.last_scan)
+        if last is not None and last.ok and time.time() - last.at < 2 * settings.VULN_INTERVAL:
+            return last, ""
+        try:
+            return await asyncio.wait_for(self.vuln_scan_now(), VULN_AUDIT_WAIT), ""
+        except asyncio.TimeoutError:
+            return last, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
+
+    def vuln_findings(self, result: Any) -> list[Finding] | None:
+        """
+        Jeden alert o pilnych podatnosciach (KEV, krytyczne, wysokie) z poprawka. Przychodzi tylko o NOWYCH ID:
+        znane (DATA_DIR/vulns.json) nie wracaja po restarcie, a nowe przy aktywnym alercie wysylaja go od nowa.
+        None = skan sie nie udal, nic nie zmieniamy.
+        """
+        from backend.core import vulns
+
+        if result is None or not result.ok:
+            return None
+        urgent = result.urgent
+        ids = result.urgent_ids
+        known = vulns.notified_ids()
+        if known != ids:
+            vulns.mark_notified(ids)
+        if not urgent:
+            return []
+        kev = [p for p in urgent if p.kev]
+        title = tr(f"Pilne podatnosci z poprawka w {len(urgent)} pakietach", f"Urgent fixable vulnerabilities in {len(urgent)} packages")
+        if kev:
+            title += tr(f" ({len(kev)} aktywnie wykorzystywanych)", f" ({len(kev)} actively exploited)")
+        lines = [vulns.describe_item(p) for p in urgent[:5]]
+        if len(urgent) > 5:
+            lines.append(tr(f"i {len(urgent) - 5} innych pakietow", f"and {len(urgent) - 5} more packages"))
+        command = vulns.upgrade_command(result.ecosystem, urgent)
+        if command:
+            lines.append(tr(f"Komenda: {command}", f"Command: {command}"))
+        lines.append(tr("Wszystkie podatnosci i poprawki: /audyt", "All vulnerabilities and fixes: /audit"))
+        finding = Finding(VULN_KEY, "critical" if kev else "warning", title, "\n".join(lines))
+        new_ids = ids - known
+        if VULN_KEY in self.active and new_ids:
+            self.active.pop(VULN_KEY)                         # nowa podatnosc -> alert jeszcze raz
+        elif VULN_KEY not in self.active and not new_ids:
+            self.active[VULN_KEY] = self._alert(finding, "new")   # juz zgloszone przed restartem — po cichu
+        return [finding]
+
+    async def vulns_once(self) -> list[Alert]:
+        findings = self.vuln_findings(await self.vuln_scan_now())
+        if findings is None:
+            return []
+        return self._publish(self.apply(findings, VULN_SCOPE))
+
     async def build_digest(self, *, fresh_checks: bool = False) -> Any:
         """Poranny raport (core/digest.py) z wykresem obciazenia z ostatniej doby."""
         from backend.core import digest, infra, snapshots, usage
@@ -397,7 +472,7 @@ class Watcher:
             digest.build, hostname=hostname, active=list(self.active.values()), history=self.notifier.history,
             current=current, report=report, usage_line=usage.yesterday_line(priced),
             cert_days=settings.WATCH_CERT_DAYS, backup_hours=settings.WATCH_BACKUP_HOURS,
-            load_factor=settings.WATCH_LOAD_FACTOR)
+            load_factor=settings.WATCH_LOAD_FACTOR, vuln_scan=self.vuln_scan)
         attachment, _ = await chart_attachment("load", 24)
         result.attachment = attachment
         return result
@@ -604,6 +679,10 @@ class Watcher:
                 self._periodic("migawka", self.snapshot_once, settings.SNAPSHOT_INTERVAL, 30)))
             self._tasks.append(asyncio.create_task(
                 self._periodic("sprawdzenia", self.checks_once, settings.CHECKS_INTERVAL, 60)))
+            if settings.VULN_INTERVAL > 0:
+                # lista pakietow co godzine (lokalny odczyt), OSV tylko przy zmianie albo co VULN_INTERVAL
+                self._tasks.append(asyncio.create_task(
+                    self._periodic("podatnosci", self.vulns_once, min(3600, settings.VULN_INTERVAL), 120)))
         self._tasks.append(asyncio.create_task(self._clock_loop()))
         self._tasks.append(asyncio.create_task(self._reminder_loop()))
         self._tasks.append(asyncio.create_task(self._safe(self._welcome_loop(), "powitanie")))

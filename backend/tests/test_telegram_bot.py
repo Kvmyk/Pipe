@@ -327,3 +327,57 @@ def test_photo_and_album_go_to_the_agent_as_attachments(monkeypatch):
     assert text == "co tu nie gra?" and doc["name"] == "app.log" and base64.b64decode(doc["data"]) == b"log"
     assert caption == "porownaj" and len(photos) == 3 and all(p["mime"] == "image/jpeg" for p in photos)
     assert len(sent) == 2 and "za duzy" in replies[0]
+
+
+def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
+    from types import SimpleNamespace
+
+    sent, calls = [], []
+
+    async def fake_send(bot_, chat_id, text, reply_markup=None):
+        sent.append((chat_id, text, reply_markup))
+
+    class Client:
+        def command(self, name, **fields):
+            calls.append((name, fields))
+            data = {"scope": "urgent", "token": "abc123", "can_execute": True, "text": "Latki dla 1 pakietow"} \
+                if not fields.get("execute") else {"text": "zainstalowano"}
+            return frames({"response": "", "status": "ok", "done": True, "data": data})
+
+    monkeypatch.setattr(bot, "_send_html", fake_send)
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {1})
+    monkeypatch.setattr(bot, "VIEWER_USER_IDS", {7})
+    monkeypatch.setattr(bot, "get_client", lambda user_id: Client())
+    app = type("App", (), {"bot": None})()
+    asyncio.run(bot._broadcast(app, {"type": "alert", "id": "v1", "key": "vuln:system", "severity": "critical",
+                                     "state": "new", "title": "Pilne podatnosci", "detail": "openssl"}))
+    keyboards = {chat: [b.callback_data for b in markup.inline_keyboard[0]] for chat, _, markup in sent}
+    assert keyboards == {1: ["investigate:v1", "patch:urgent:1"], 7: ["investigate:v1"]}   # viewer bez Zalataj
+
+    def callback(data, user_id):
+        answers = []
+
+        async def answer(*args, **kwargs):
+            answers.append(kwargs)
+
+        async def edit(**kwargs):
+            pass
+
+        async def reply_text(text, **kwargs):
+            sent.append(("reply", text, None))
+        message = SimpleNamespace(chat_id=user_id, reply_text=reply_text)
+        query = SimpleNamespace(data=data, answer=answer, edit_message_reply_markup=edit, message=message)
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id), effective_message=message)
+        asyncio.run(bot.handle_callback(update, Context()))
+        return answers
+
+    sent.clear()
+    assert callback("patch:urgent:7", 7)[0].get("show_alert")                       # nie admin
+    callback("patch:urgent:1", 1)
+    assert calls[-1] == ("patch", {"scope": "urgent"})
+    assert [b.callback_data for b in sent[-1][2].inline_keyboard[0]] == ["patchx:yes:urgent:abc123:1", "patchx:no:urgent:abc123:1"]
+    callback("patchx:yes:urgent:abc123:1", 1)
+    assert calls[-1] == ("patch", {"scope": "urgent", "token": "abc123", "execute": True})
+    assert "zainstalowano" in sent[-1][1]
+    callback("patchx:no:urgent:abc123:1", 1)
+    assert len(calls) == 2 and "nic nie zainstalowalem" in sent[-1][1]

@@ -825,6 +825,27 @@
     return card;
   }
 
+  // Latki podatnosci (bez LLM): podglad z dokladna komenda; Zainstaluj tylko, gdy Pipe moze sam (tryb native,
+  // administrator). Serwer sklada komende sam — wysylamy tylko token z podgladu.
+  function patchBox(preview) {
+    const box = el("div", "body");
+    box.appendChild(md(preview.text || ""));
+    if (!preview.can_execute || !preview.token) return box;
+    const ask = el("div", "foot"), yes = el("button", "btn yes small", t("patchInstall")), no = el("button", "btn no small", t("no"));
+    ask.appendChild(yes); ask.appendChild(no); box.appendChild(ask);
+    no.addEventListener("click", () => { ask.remove(); box.appendChild(el("div", "meta", t("patchCancelled"))); });
+    yes.addEventListener("click", async () => {
+      if (busy) return;
+      ask.remove(); busy = true; setWorking(t("patching"));
+      try {
+        const result = await command({ command: "patch", scope: preview.scope, token: preview.token, execute: true });
+        box.appendChild(listing(result.text, t("patchDone")));
+      } catch (error) { box.appendChild(el("div", "meta", error.message)); }
+      finally { busy = false; setWorking(""); loadChanges(); }
+    });
+    return box;
+  }
+
   // ---------------------------------------------------------------- alerty i zdarzenia na zywo
   const alertsList = $("alerts");
   const liveEvents = [];
@@ -846,7 +867,13 @@
         if (alert.history) card.appendChild(el("div", "meta", alert.history));
         const foot = el("div", "foot"), look = el("button", "btn no small", t("investigate"));
         look.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("investigate") + ": " + alert.title); run({ command: "investigate", id: alert.id }, t("working")); });
-        foot.appendChild(look); card.appendChild(foot);
+        foot.appendChild(look);
+        if (String(alert.key || "").startsWith("vuln:")) {
+          const patch = el("button", "btn no small", t("patch"));
+          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); dataMessage({ command: "patch", scope: "urgent" }, patchBox); });
+          foot.appendChild(patch);
+        }
+        card.appendChild(foot);
         alertsList.appendChild(card);
       });
     }
@@ -1302,7 +1329,7 @@
   // [nazwa polska, alias angielski, klucz opisu, czy przyjmuje argumenty]
   const COMMANDS = [
     ["status", "status", "c_status"], ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
-    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"],
+    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["zalataj", "patch", "c_patch", true],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
@@ -1368,6 +1395,7 @@
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
     audyt: () => dataMessage({ command: "audit" }, (d) => listing(d.text)),
+    zalataj: (args) => dataMessage({ command: "patch", scope: ["pilne", "urgent"].includes(args.trim().toLowerCase()) ? "urgent" : "all" }, patchBox),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
     koszt: () => dataMessage({ command: "usage" }, (d) => listing(d.text)),
     katalogi: () => dataMessage({ command: "directory" }, (d) => listing(d.text, "DIRECTORY")),

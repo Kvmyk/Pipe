@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.31.1
+Pipe v0.32.0
 
 ## Model
 
@@ -184,6 +184,10 @@ The agent decides by itself when to go to the web, so the internet is treated as
   the influence of a page always waits for YES.
 - Keyless search engines are unofficial endpoints (DuckDuckGo) and public APIs (Stack Exchange, Wikipedia,
   endoflife.date, OSV.dev); `WEB_SEARCH=off` takes the internet away from the agent completely.
+- **The vulnerability scan** (the watcher, not the agent) sends system package names and versions to OSV.dev and
+  downloads the CISA KEV catalog; nothing else leaves the server. `VULN_INTERVAL=0` turns it off (independently of
+  `WEB_SEARCH`). The server builds the patch command from names matching the package-name pattern; the client only
+  sends the token from the preview.
 
 ## Attachments (files, screenshots, voice messages)
 

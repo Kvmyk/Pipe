@@ -350,6 +350,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                                               "undo included.")))
                 return
             await _undo(writer, request, interface)
+        elif command == "patch":
+            await _patch(writer, request, interface, role)
         elif command == "transcribe":
             await _transcribe(writer, request, interface)
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
@@ -392,6 +394,105 @@ async def _undo(writer, request: dict, interface: str) -> None:
                                       "Undo needs the entry id from the preview.")))
         return
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
+
+
+_PATCH_LOCK = asyncio.Lock()
+PATCH_OUTPUT_LINES = 25
+
+
+def _patch_blocker(role: str) -> str:
+    """Powod, dla ktorego Pipe nie zainstaluje latki sam ('' = moze)."""
+    if role == "viewer":
+        return tr("Rola viewer: tylko odczyt — latke instaluje administrator.",
+                  "Viewer role: read-only — an administrator installs the patch.")
+    if runtime.observe():
+        return tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe niczego nie instaluje — wykonaj komende na serwerze.",
+                  "Observe mode (PIPE_OBSERVE=1): Pipe installs nothing — run the command on the server.")
+    if runtime.kind() != "native":
+        return tr("Pipe dziala w kontenerze i widzi system hosta tylko do odczytu — wykonaj komende w powloce serwera "
+                  "(potem /audyt pokaze, co zostalo).",
+                  "Pipe runs in a container and sees the host system read-only — run the command in the server shell "
+                  "(then /audit shows what is left).")
+    return ""
+
+
+async def _patch(writer, request: dict, interface: str, role: str) -> None:
+    """
+    Latki podatnosci bez LLM: najpierw podglad (pakiety, dokladna komenda, token), potem — po TAK
+    w kliencie — {"command": "patch", "scope", "token", "execute": true}. Komende serwer sklada
+    sam z ostatniego skanu (klient przysyla tylko token); inny token = lista sie zmienila, nic nie robie.
+    Wykonanie przez bezpiecznik (strony przed/po, dziennik), potem skan przyrostowy i alert od nowa.
+    """
+    from backend.core import checks, executor, safety, vulns
+
+    scope = str(request.get("scope") or request.get("args") or "").strip().lower()
+    scope = "urgent" if scope in ("urgent", "pilne") else "all"
+    watcher = get_watcher()
+    result, note = await watcher.vuln_for_audit()
+    if result is None:
+        await _send(writer, _error(tr(f"Brak wyniku skanu podatnosci ({note}).", f"No vulnerability scan result ({note}).")
+                                   if note else tr("Brak wyniku skanu podatnosci.", "No vulnerability scan result.")))
+        return
+    if result.ecosystem is None:
+        await _send(writer, _error(tr(f"Skan podatnosci nie obsluguje systemu {result.system}.",
+                                      f"The vulnerability scan does not support {result.system}.")))
+        return
+    items = vulns.select(result, scope)
+    command = vulns.upgrade_command(result.ecosystem, items)
+    if not command:
+        await _send(writer, _data({"scope": scope, "packages": [], "command": "", "token": "", "can_execute": False,
+                                   "text": tr("Nie ma podatnosci z poprawka do zainstalowania.",
+                                              "There are no fixable vulnerabilities to install.")
+                                   + (f" ({note})" if note else "")}))
+        return
+    token = vulns.patch_token(command)
+    blocker = _patch_blocker(role)
+    if not request.get("execute"):
+        await _send(writer, _data({"scope": scope, "packages": [p.name for p in items], "command": command,
+                                   "token": token, "can_execute": not blocker, "reason": blocker,
+                                   "text": vulns.patch_preview(result, items, command, blocker)}))
+        return
+    if blocker:
+        await _send(writer, _error(blocker))
+        return
+    if str(request.get("token") or "") != token:
+        await _send(writer, _error(tr("Lista pakietow zmienila sie od podgladu — pokaz podglad jeszcze raz.",
+                                      "The package list changed since the preview — show the preview again.")))
+        return
+    if _PATCH_LOCK.locked():
+        await _send(writer, _error(tr("Instalacja latek juz trwa.", "A patch install is already running.")))
+        return
+    async with _PATCH_LOCK:
+        plan = safety.plan_command(command)
+        plan.sites = True
+        plan.notes.append(tr("pakietow nie cofam automatycznie — co sie zmienilo, pokaze /zmiany",
+                             "packages are not rolled back automatically — /changes shows what changed"))
+
+        async def operation() -> tuple[str, int]:
+            out, err, code = await executor.execute(command, timeout=settings.CONFIRMED_COMMAND_TIMEOUT)
+            lines = (out + ("\n" + err if err else "")).strip().splitlines()
+            tail = "\n".join(lines[-PATCH_OUTPUT_LINES:])
+            return memory.redact_secrets(tail)[0] or executor.NO_OUTPUT[1 if i18n.is_en() else 0], code
+
+        outcome = None
+        async for event in safety.guarded(plan, operation, interface=interface, tool="patch",
+                                          description=tr(f"latki: {len(items)} pakietow", f"patches: {len(items)} packages"),
+                                          sites_enabled=settings.WATCH_SITES,
+                                          site_ignore=checks.parse_ignore(settings.WATCH_IGNORE)):
+            if isinstance(event, Progress):
+                await _send(writer, event_frame(event))
+            else:
+                outcome = event
+        await audit.log_confirmed(interface, f"patch: {command}", outcome.exit_code if outcome else 1)
+    try:
+        await watcher.vulns_once()
+        left = watcher.vuln_scan
+        after = vulns.summary_line(left) if left and left.items else tr("nie zostalo nic z poprawka", "nothing fixable is left")
+    except Exception as exc:
+        after = tr(f"ponowny skan nie powiodl sie: {exc}", f"the rescan failed: {exc}")
+    text = (outcome.text if outcome else "") + "\n\n" + tr(f"Po instalacji: {after}.", f"After the install: {after}.")
+    await _send(writer, _data({"text": text, "exit_code": outcome.exit_code if outcome else 1,
+                               "entry_id": outcome.entry_id if outcome else ""}))
 
 
 async def _providers(writer, command: str, request: dict, interface: str, role: str) -> None:
