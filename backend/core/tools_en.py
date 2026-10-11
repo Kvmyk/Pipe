@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.32.0
+Pipe v0.33.0
 """
 
 from __future__ import annotations
@@ -188,12 +188,14 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "database, language, web server) is still supported, until when and what the latest one is. vulns — OSV.dev: "
         "known vulnerabilities (CVEs) of a package in the installed version, with the version that fixes them. Check the "
         "versions on the server first (/etc/os-release, dpkg-query, apk, pip). More precise than web_search for these "
-        "questions.",
+        "questions. A question about the whole server's vulnerabilities (packages, container images, applications) is "
+        "security_audit — vulns is for a single package.",
         {"product": "For eol: the endoflife.date name, e.g. 'ubuntu', 'debian', 'postgresql', 'nginx', 'nodejs', "
                     "'python', 'php'.",
          "version": "Version: for eol a cycle or full version ('22.04', '16.4'); for vulns the exact package version "
                     "(e.g. '1.22.1-9+deb12u2').",
-         "ecosystem": "For vulns: 'Debian:12', 'Ubuntu:22.04:LTS', 'Alpine:v3.20', 'PyPI', 'npm', 'Go', 'Maven', "
+         "ecosystem": "For vulns: the ecosystem from this system's /etc/os-release (e.g. Debian 13 -> 'Debian:13', Ubuntu 22.04 -> "
+                      "'Ubuntu:22.04:LTS', 'Alpine:v3.20'), 'PyPI', 'npm', 'Go', 'Maven', "
                       "'crates.io', 'RubyGems'.",
          "package": "For vulns: the package name; on Debian and Ubuntu the SOURCE package "
                     "(dpkg-query -W -f='${source:Package} ${Version}' name)."}),

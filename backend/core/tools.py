@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -400,14 +400,15 @@ TOOLS: list[dict] = [
         "Wiedza o oprogramowaniu z publicznych baz (bez klucza). eol — endoflife.date: czy wersja produktu "
         "(system, baza, jezyk, serwer www) jest jeszcze wspierana, do kiedy i jaka jest najnowsza. vulns — OSV.dev: "
         "znane podatnosci (CVE) pakietu w zainstalowanej wersji, z wersja, ktora je naprawia. Wersje sprawdz najpierw "
-        "na serwerze (/etc/os-release, dpkg-query, apk, pip). Dokladniejsze niz web_search dla tych pytan.",
+        "na serwerze (/etc/os-release, dpkg-query, apk, pip). Dokladniejsze niz web_search dla tych pytan. Pytanie o podatnosci "
+        "calego serwera (pakiety, obrazy kontenerow, aplikacje) to security_audit — vulns jest do pojedynczego pakietu.",
         {
             "operation": {"type": "string", "enum": ["eol", "vulns"]},
             "product": {"type": "string", "description": "Dla eol: nazwa z endoflife.date, np. 'ubuntu', 'debian', "
                                                          "'postgresql', 'nginx', 'nodejs', 'python', 'php'."},
             "version": {"type": "string", "description": "Wersja: dla eol cykl albo pelna wersja ('22.04', '16.4'); "
                                                          "dla vulns dokladna wersja pakietu (np. '1.22.1-9+deb12u2')."},
-            "ecosystem": {"type": "string", "description": "Dla vulns: 'Debian:12', 'Ubuntu:22.04:LTS', 'Alpine:v3.20', "
+            "ecosystem": {"type": "string", "description": "Dla vulns: ekosystem z /etc/os-release tego systemu (np. Debian 13 -> 'Debian:13', Ubuntu 22.04 -> 'Ubuntu:22.04:LTS', 'Alpine:v3.20'), "
                                                            "'PyPI', 'npm', 'Go', 'Maven', 'crates.io', 'RubyGems'."},
             "package": {"type": "string", "description": "Dla vulns: nazwa pakietu; w Debianie i Ubuntu pakietu "
                                                          "ZRODLOWEGO (dpkg-query -W -f='${source:Package} ${Version}' nazwa)."},

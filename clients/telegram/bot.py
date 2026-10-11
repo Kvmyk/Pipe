@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -236,13 +236,23 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ])
 
 
+# Alert o podatnosciach -> zakres latki (zaleznosci aplikacji nie maja latki — to zmiana w kodzie).
+PATCH_SCOPES = {"vuln:system": "urgent", "vuln:images": "images"}
+
+
+def _patch_scope(args: list[str] | None) -> str:
+    word = " ".join(args or []).strip().lower()
+    return {"pilne": "urgent", "urgent": "urgent", "obrazy": "images", "images": "images"}.get(word, "all")
+
+
 def _alert_keyboard(event: dict, user_id: int) -> InlineKeyboardMarkup | None:
     """Zbadaj przy kazdym aktywnym alercie; przy podatnosciach administrator dostaje tez Zalataj."""
     if event.get("state") == "resolved" or not event.get("id"):
         return None
     row = [InlineKeyboardButton(tr("Zbadaj", "Investigate"), callback_data=f"investigate:{event['id']}")]
-    if str(event.get("key", "")).startswith("vuln:") and _is_admin(user_id):
-        row.append(InlineKeyboardButton(tr("Zalataj", "Patch"), callback_data=f"patch:urgent:{user_id}"))
+    scope = PATCH_SCOPES.get(str(event.get("key", "")))
+    if scope and _is_admin(user_id):
+        row.append(InlineKeyboardButton(tr("Zalataj", "Patch"), callback_data=f"patch:{scope}:{user_id}"))
     return InlineKeyboardMarkup([row])
 
 
@@ -482,6 +492,20 @@ async def cmd_zdrowie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """/zdrowie -- certyfikaty, strony, DNS, backupy."""
     await _command_with_image(update, context, "health", "",
                               lambda d: format_listing(tr("Zdrowie uslug", "Service health"), d.get("text", "")))
+
+
+async def cmd_podatnosci(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/podatnosci -- znane podatnosci z wyjasnieniami (raport bez narzedzi; opisy pisze model raz)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        data = response_data([f async for f in get_client(user_id).command("vulns")])
+        await _send_html(context.bot, update.effective_chat.id, to_telegram_html(data.get("text", ""), allow_tags=False))
+
+    await update.message.reply_text(tr("Sprawdzam podatnosci i przygotowuje opisy...", "Checking vulnerabilities and preparing descriptions..."))
+    await _backend_call(update, context, go())
 
 
 async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -736,11 +760,11 @@ async def _patch_preview(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_
     markup = None
     if data.get("can_execute") and data.get("token"):
         markup = _patch_keyboard(data.get("scope", scope), data["token"], user_id)
-    await _send_html(context.bot, chat_id, to_telegram_html(data.get("text", "")), markup)
+    await _send_html(context.bot, chat_id, to_telegram_html(data.get("text", ""), allow_tags=False), markup)
 
 
 async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/zalataj [pilne] -- latki podatnosci: podglad i przyciski (bez LLM)."""
+    """/zalataj [pilne|obrazy] -- latki podatnosci: podglad i przyciski (bez LLM)."""
     user_id = await _guard(update)
     if not user_id:
         return
@@ -748,8 +772,7 @@ async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(tr("Latki instaluje tylko administrator — podatnosci pokazuje /audyt.",
                                            "Only an administrator installs patches — /audit shows the vulnerabilities."))
         return
-    scope = "urgent" if " ".join(context.args or []).strip().lower() in ("pilne", "urgent") else "all"
-    await _backend_call(update, context, _patch_preview(context, update.effective_chat.id, user_id, scope))
+    await _backend_call(update, context, _patch_preview(context, update.effective_chat.id, user_id, _patch_scope(context.args)))
 
 
 async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
@@ -1384,7 +1407,7 @@ def main() -> None:
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
-        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj),
+        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj), ("podatnosci", cmd_podatnosci),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

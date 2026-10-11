@@ -65,7 +65,7 @@ def who_from_interface(interface: str) -> str:
         return "worker"
     if interface.startswith("routine:"):
         return "rutyna"
-    if interface in ("vibe", "digest", "incydent"):
+    if interface in ("vibe", "digest", "incydent", "podatnosci"):
         return interface
     return memory.vibe_key(interface) if interface else "inne"
 

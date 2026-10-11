@@ -46,8 +46,13 @@ RESOURCE_SCOPE = frozenset({"disk", "memory", "load", "container", "port", "auth
 CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
 VULN_SCOPE = frozenset({"vuln"})
 VULN_KEY = "vuln:system"
+VULN_IMAGES_KEY = "vuln:images"
+VULN_APPS_KEY = "vuln:apps"
 # Tyle najwyzej czeka /audyt na skan podatnosci (pierwszy skan pobiera szczegoly setek ID).
 VULN_AUDIT_WAIT = 45
+# Wyjasnienia podatnosci: tyle podatnosci na jedno zapytanie do modelu i tyle czeka na nie /podatnosci.
+EXPLAIN_BATCH = 30
+EXPLAIN_WAIT = 40
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
 
@@ -201,6 +206,7 @@ class Watcher:
         self.checks_report: Any = None          # ostatni checks.Report
         self.vuln_scan: Any = None              # ostatni vulns.Scan
         self._vuln_task: asyncio.Task | None = None
+        self._explain_lock = asyncio.Lock()
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
         self._reminder_wakeup = asyncio.Event()
@@ -382,11 +388,14 @@ class Watcher:
 
     async def vuln_scan_now(self, *, force: bool = False) -> Any:
         """Skan podatnosci (core/vulns.py). Jeden naraz — audyt i czuwanie czekaja na to samo zadanie."""
-        from backend.core import vulns
+        from backend.core import infra, vulns
 
         if self._vuln_task is None or self._vuln_task.done():
-            self._vuln_task = asyncio.create_task(
-                asyncio.to_thread(vulns.scan, force=force, max_age=settings.VULN_INTERVAL))
+            async def run() -> Any:
+                containers = await infra.docker_containers()
+                return await asyncio.to_thread(vulns.scan, force=force, max_age=settings.VULN_INTERVAL,
+                                               containers=containers)
+            self._vuln_task = asyncio.create_task(run())
         result, _ = await asyncio.shield(self._vuln_task)
         self.vuln_scan = result
         return result
@@ -406,47 +415,123 @@ class Watcher:
         except asyncio.TimeoutError:
             return last, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
 
+    def _vuln_alert(self, key: str, ids: set[str], finding: Finding | None) -> list[Finding]:
+        """
+        Alert przychodzi tylko o NOWYCH ID: znane (DATA_DIR/vulns.json) nie wracaja po restarcie,
+        a nowe przy aktywnym alercie wysylaja go jeszcze raz.
+        """
+        from backend.core import vulns
+
+        known = vulns.notified_ids(key)
+        if known != ids:
+            vulns.mark_notified(key, ids)
+        if finding is None:
+            return []
+        new_ids = ids - known
+        if key in self.active and new_ids:
+            self.active.pop(key)                                  # nowa podatnosc -> alert jeszcze raz
+        elif key not in self.active and not new_ids:
+            self.active[key] = self._alert(finding, "new")        # juz zgloszone przed restartem — po cichu
+        return [finding]
+
     def vuln_findings(self, result: Any) -> list[Finding] | None:
         """
-        Jeden alert o pilnych podatnosciach (KEV, krytyczne, wysokie) z poprawka. Przychodzi tylko o NOWYCH ID:
-        znane (DATA_DIR/vulns.json) nie wracaja po restarcie, a nowe przy aktywnym alercie wysylaja go od nowa.
-        None = skan sie nie udal, nic nie zmieniamy.
+        Alerty o pilnych podatnosciach z poprawka: `vuln:system` (pakiety hosta: KEV, krytyczne, wysokie),
+        `vuln:images` (obrazy kontenerow: to samo), `vuln:apps` (zaleznosci aplikacji: tylko KEV i krytyczne —
+        drzewa npm maja mnostwo "wysokich" w narzedziach deweloperskich). None = skan sie nie udal.
         """
         from backend.core import vulns
 
         if result is None or not result.ok:
             return None
+        findings: list[Finding] = []
+
         urgent = result.urgent
-        ids = result.urgent_ids
-        known = vulns.notified_ids()
-        if known != ids:
-            vulns.mark_notified(ids)
-        if not urgent:
-            return []
-        kev = [p for p in urgent if p.kev]
-        title = tr(f"Pilne podatnosci z poprawka w {len(urgent)} pakietach", f"Urgent fixable vulnerabilities in {len(urgent)} packages")
-        if kev:
-            title += tr(f" ({len(kev)} aktywnie wykorzystywanych)", f" ({len(kev)} actively exploited)")
-        lines = [vulns.describe_item(p) for p in urgent[:5]]
-        if len(urgent) > 5:
-            lines.append(tr(f"i {len(urgent) - 5} innych pakietow", f"and {len(urgent) - 5} more packages"))
-        command = vulns.upgrade_command(result.ecosystem, urgent)
-        if command:
-            lines.append(tr(f"Komenda: {command}", f"Command: {command}"))
-        lines.append(tr("Wszystkie podatnosci i poprawki: /audyt", "All vulnerabilities and fixes: /audit"))
-        finding = Finding(VULN_KEY, "critical" if kev else "warning", title, "\n".join(lines))
-        new_ids = ids - known
-        if VULN_KEY in self.active and new_ids:
-            self.active.pop(VULN_KEY)                         # nowa podatnosc -> alert jeszcze raz
-        elif VULN_KEY not in self.active and not new_ids:
-            self.active[VULN_KEY] = self._alert(finding, "new")   # juz zgloszone przed restartem — po cichu
-        return [finding]
+        finding = None
+        if urgent:
+            kev = [p for p in urgent if p.kev]
+            title = tr(f"Pilne podatnosci z poprawka w {len(urgent)} pakietach", f"Urgent fixable vulnerabilities in {len(urgent)} packages")
+            if kev:
+                title += tr(f" ({len(kev)} aktywnie wykorzystywanych)", f" ({len(kev)} actively exploited)")
+            lines = [vulns.describe_item(p) for p in urgent[:5]]
+            if len(urgent) > 5:
+                lines.append(tr(f"i {len(urgent) - 5} innych pakietow", f"and {len(urgent) - 5} more packages"))
+            command = vulns.upgrade_command(result.ecosystem, urgent)
+            if command:
+                lines.append(tr(f"Komenda: {command}", f"Command: {command}"))
+            lines.append(tr("Opisy: /podatnosci, latka: /zalataj", "Descriptions: /vulns, patch: /patch"))
+            finding = Finding(VULN_KEY, "critical" if kev else "warning", title, "\n".join(lines))
+        findings += self._vuln_alert(VULN_KEY, result.urgent_ids, finding)
+
+        images = [t for t in result.of_kind("image") if t.urgent]
+        finding = None
+        if images:
+            title = tr(f"Pilne podatnosci w {len(images)} obrazach kontenerow", f"Urgent vulnerabilities in {len(images)} container images")
+            lines = [vulns.describe_target(t) for t in images[:5]]
+            lines.append(tr("Opisy: /podatnosci, nowsze obrazy: /zalataj obrazy", "Descriptions: /vulns, newer images: /patch images"))
+            finding = Finding(VULN_IMAGES_KEY, "critical" if any(t.kev for t in images) else "warning", title,
+                              "\n".join(lines))
+        findings += self._vuln_alert(VULN_IMAGES_KEY, {f"{t.name}|{v.id}" for t in images for p in t.urgent
+                                                      for v in p.fixable if v.urgent}, finding)
+
+        def serious(item: Any) -> bool:
+            return any(v.kev or v.severity == "critical" for v in item.fixable)
+        apps = [(t, [p for p in t.items if serious(p)]) for t in result.of_kind("app")]
+        apps = [(t, items) for t, items in apps if items]
+        finding = None
+        if apps:
+            title = tr(f"Krytyczne podatnosci w zaleznosciach {len(apps)} aplikacji",
+                       f"Critical vulnerabilities in the dependencies of {len(apps)} applications")
+            lines = [f"{t.label()}: " + "; ".join(vulns.describe_item(p, 1) for p in items[:3]) for t, items in apps[:5]]
+            lines.append(tr("Podbij wersje w lockfile; opisy: /podatnosci", "Bump the versions in the lockfile; descriptions: /vulns"))
+            finding = Finding(VULN_APPS_KEY, "critical" if any(p.kev for _, items in apps for p in items) else "warning",
+                              title, "\n".join(lines))
+        findings += self._vuln_alert(VULN_APPS_KEY, {f"{t.name}|{v.id}" for t, items in apps for p in items
+                                                    for v in p.fixable if v.kev or v.severity == "critical"}, finding)
+        return findings
 
     async def vulns_once(self) -> list[Alert]:
-        findings = self.vuln_findings(await self.vuln_scan_now())
+        result = await self.vuln_scan_now()
+        findings = self.vuln_findings(result)
         if findings is None:
             return []
-        return self._publish(self.apply(findings, VULN_SCOPE))
+        events = self._publish(self.apply(findings, VULN_SCOPE))
+        if result is not None and result.ok:
+            asyncio.create_task(self._safe(self.explain_vulns(result), "wyjasnienia podatnosci"))
+        return events
+
+    async def explain_vulns(self, result: Any, extra: list[Any] | None = None, timeout: float | None = None) -> bool:
+        """
+        Krotkie wyjasnienia pokazywanych podatnosci w jezyku Pipe, pisane przez model (WORKER_MODEL) na podstawie
+        opisu z OSV; zapisane w DATA_DIR/vulns.json, wiec kazda podatnosc kosztuje raz. Bez modelu (albo gdy nie
+        zdazy w `timeout`) raporty pokazuja oryginalny opis z OSV. Zwraca, czy wszystko jest wyjasnione.
+        """
+        from backend.core import vulns
+        from backend.core.i18n import lang
+
+        if result is None or self.agent is None or not self.agent.llm_enabled():
+            return False
+        language = lang()
+        pending = await asyncio.to_thread(vulns.needing_explanation, result, language, extra)
+        if not pending:
+            return True
+
+        async def batch(chunk: list[dict[str, str]]) -> None:
+            answer = await self.agent.complete(prompt("VULN_EXPLAIN_PROMPT"), json.dumps(chunk, ensure_ascii=False),
+                                               model=settings.WORKER_MODEL or None, who="podatnosci")
+            found = vulns.parse_explanations(answer, {item["id"] for item in chunk})
+            if found:
+                await asyncio.to_thread(vulns.save_explanations, language, found)
+
+        async def run() -> None:
+            async with self._explain_lock:
+                await asyncio.gather(*(batch(pending[i:i + EXPLAIN_BATCH]) for i in range(0, len(pending), EXPLAIN_BATCH)),
+                                     return_exceptions=True)
+        try:
+            await asyncio.wait_for(asyncio.shield(run()), timeout) if timeout else await run()
+        except asyncio.TimeoutError:
+            return False
+        return not await asyncio.to_thread(vulns.needing_explanation, result, language, extra)
 
     async def build_digest(self, *, fresh_checks: bool = False) -> Any:
         """Poranny raport (core/digest.py) z wykresem obciazenia z ostatniej doby."""

@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -187,7 +187,8 @@ nazwy dzialaja w obu jezykach.
 | `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
-| `/zalataj [pilne]` | Latki znanych podatnosci: lista pakietow, dokladna komenda, przycisk *Zainstaluj* (tryb native, administrator). Alert o podatnosciach ma przycisk *Zalataj*. Dziala bez LLM |
+| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
+| `/zalataj [pilne\|obrazy]` | Latki znanych podatnosci albo nowsze obrazy kontenerow: lista, dokladna komenda, przyciski *Zainstaluj* i *Anuluj* (tryb native, administrator). Alert o podatnosciach ma przycisk *Zalataj*. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |

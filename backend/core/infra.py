@@ -73,6 +73,9 @@ class Container:
     mounts: list[tuple[str, str]] = field(default_factory=list)   # (sciezka hosta, sciezka w kontenerze)
     privileged: bool = False
     network_mode: str = ""
+    pid: int = 0                                         # proces glowny (host) — /proc/<pid>/root to jego system plikow
+    layers: list[str] = field(default_factory=list)      # katalogi overlay (sciezki hosta): UpperDir, potem LowerDir
+    compose_files: list[str] = field(default_factory=list)   # pliki compose projektu (sciezki hosta)
 
     @property
     def kind(self) -> str:
@@ -156,6 +159,12 @@ class Infra:
 
 # ─── Docker ─────────────────────────────────────────────────────────────────
 
+def _layers(data: dict[str, Any]) -> list[str]:
+    """Warstwy overlay2 od najwyzszej: UpperDir, potem LowerDir (rozdzielone ':')."""
+    upper = [str(data["UpperDir"])] if data.get("UpperDir") else []
+    return upper + [d for d in str(data.get("LowerDir") or "").split(":") if d]
+
+
 def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
     """Kontenery z wyniku `docker inspect` (lista obiektow JSON)."""
     result = []
@@ -206,6 +215,9 @@ def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
                     if m.get("Source") and m.get("Destination")],
             privileged=bool((item.get("HostConfig") or {}).get("Privileged")),
             network_mode=str((item.get("HostConfig") or {}).get("NetworkMode", "")),
+            pid=int(state.get("Pid", 0) or 0),
+            layers=_layers((item.get("GraphDriver") or {}).get("Data") or {}),
+            compose_files=[f for f in str(labels.get("com.docker.compose.project.config_files", "")).split(",") if f],
         ))
     return sorted(result, key=lambda c: (c.project, c.name))
 

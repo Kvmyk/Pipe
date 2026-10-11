@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.32.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.33.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -51,7 +51,8 @@ Pipe works with any model that speaks the OpenAI API. The default is Google Gemi
 | *the site went down overnight, what changed?* | goes through the change history (packages, container images, ports, configs) and points at what changed right before the outage |
 | *show me the server architecture* | draws a diagram: domains, reverse proxy, containers, databases, ports exposed to the internet |
 | *how secure is this server?* | scores it 0–100 and gives a ready fix for every finding; *"fix 1"* applies it with a backup |
-| */patch* | shows packages with known vulnerabilities (OSV.dev) and a command that upgrades only them; installs after your YES |
+| */vulns* | shows known vulnerabilities in packages, container images and applications, each with a short explanation |
+| */patch* | shows a command that upgrades only the vulnerable packages (or images: */patch images*); installs after your YES |
 | *every day at 7 check backups and certificates* | sets up a routine and messages you on Telegram only when something is off |
 | *check the disks on all servers* | sends parallel helpers (workers) to remote machines over SSH |
 | *is our PostgreSQL still supported?* | reads the version on the server and checks it against endoflife.date |

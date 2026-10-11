@@ -494,9 +494,7 @@ def cert_findings(audit: Audit, report: Any, cert_days: int) -> None:
 
 
 def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
-    """Podatnosci w pakietach (core/vulns.py) — najwyzej trzy pozycje, zeby ocena nie spadla do zera od jednego jadra."""
-    from backend.core import vulns
-
+    """Podatnosci (core/vulns.py): pakiety hosta, obrazy kontenerow, zaleznosci aplikacji."""
     label = tr("podatnosci pakietow", "package vulnerabilities")
     if scan is None:
         audit.unknown.append(f"{label} ({note or tr('skan jeszcze sie nie wykonal', 'no scan yet')})")
@@ -504,7 +502,75 @@ def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
     if scan.ecosystem is None:
         audit.unknown.append(tr(f"{label} (system {scan.system} nie jest obslugiwany)",
                                 f"{label} ({scan.system} is not supported)"))
+    else:
+        _system_vuln_findings(audit, scan, label)
+    _image_vuln_findings(audit, scan)
+    _app_vuln_findings(audit, scan)
+
+
+def _image_vuln_findings(audit: Audit, scan: Any) -> None:
+    """Obrazy kontenerow: jedna pozycja na wszystkie obrazy z podatnosciami, z komenda nowszych obrazow."""
+    from backend.core import vulns
+
+    images = scan.of_kind("image")
+    unsupported = [t.label() for t in images if not t.ecosystem]
+    if unsupported:
+        audit.unknown.append(tr("obrazy bez obslugiwanego systemu (np. distroless): ",
+                                "images without a supported system (e.g. distroless): ") + ", ".join(unsupported[:5]))
+    vulnerable = sorted([t for t in images if t.items], key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
+    if not vulnerable:
+        if any(t.ecosystem for t in images) and not scan.error:
+            audit.passed.append(tr(f"obrazy kontenerow bez podatnosci z poprawka ({sum(1 for t in images if t.ecosystem)})",
+                                   f"container images without fixable vulnerabilities ({sum(1 for t in images if t.ecosystem)})"))
         return
+    kev, urgent = any(t.kev for t in vulnerable), any(t.urgent for t in vulnerable)
+    patch = vulns.image_patch(scan)
+    detail = "; ".join(vulns.describe_target(t, 1) for t in vulnerable[:4])
+    if len(vulnerable) > 4:
+        detail += tr(f"; i {len(vulnerable) - 4} innych", f"; and {len(vulnerable) - 4} more")
+    if patch.manual:
+        detail += "; " + "; ".join(patch.manual[:3])
+    audit.findings.append(Finding(
+        "vuln-images", "high" if kev else "medium" if urgent else "low",
+        tr(f"Podatnosci z poprawka w {len(vulnerable)} obrazach kontenerow",
+           f"Fixable vulnerabilities in {len(vulnerable)} container images"),
+        detail,
+        tr("nowszy obraz pod tym samym tagiem (oficjalne obrazy sa przebudowywane); wlasny obraz przebuduj, "
+           "przypiety tag zmien w compose — /zalataj obrazy",
+           "a newer image under the same tag (official images are rebuilt); rebuild your own image, change a pinned "
+           "tag in compose — /patch images"),
+        patch.command, _host_only() and bool(patch.command)))
+
+
+def _app_vuln_findings(audit: Audit, scan: Any) -> None:
+    """Zaleznosci aplikacji: jedna pozycja, bez komendy — zmiana wersji to zmiana w kodzie aplikacji."""
+    from backend.core import vulns
+
+    apps = [t for t in scan.of_kind("app") if t.items]
+    if not apps:
+        if scan.of_kind("app") and not scan.error:
+            audit.passed.append(tr(f"zaleznosci aplikacji bez podatnosci z poprawka ({len(scan.of_kind('app'))})",
+                                   f"application dependencies without fixable vulnerabilities ({len(scan.of_kind('app'))})"))
+        return
+    kev = any(t.kev for t in apps)
+    critical = any(v.severity == "critical" for t in apps for p in t.items for v in p.fixable)
+    detail = "; ".join(f"{t.label()}: " + ", ".join(f"{p.name} {p.version}" + (f" -> {p.fixed_version}" if p.fixed_version else "")
+                                                    for p in t.items[:3])
+                       + (tr(f" i {len(t.items) - 3} innych", f" and {len(t.items) - 3} more") if len(t.items) > 3 else "")
+                       for t in apps[:4])
+    audit.findings.append(Finding(
+        "vuln-apps", "high" if kev else "medium" if critical else "low",
+        tr(f"Podatnosci z poprawka w zaleznosciach {len(apps)} aplikacji",
+           f"Fixable vulnerabilities in the dependencies of {len(apps)} applications"),
+        detail,
+        tr("podbij te zaleznosci w lockfile (npm audit fix, pip install -U, composer update ...) i wdroz aplikacje",
+           "bump these dependencies in the lockfile (npm audit fix, pip install -U, composer update ...) and deploy the app")))
+
+
+def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
+    """Pakiety hosta — najwyzej trzy pozycje, zeby ocena nie spadla do zera od jednego jadra."""
+    from backend.core import vulns
+
     if scan.error:
         audit.unknown.append(tr(f"{label} (OSV.dev: {scan.error}; ponizej ostatni udany wynik)" if scan.items
                                 else f"{label} (OSV.dev: {scan.error})",
@@ -533,8 +599,10 @@ def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
             shown += tr(f"; i {more} innych pakietow", f"; and {more} more packages")
         audit.findings.append(Finding(
             finding_id, severity, title, shown,
-            tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera",
-               "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server restart"),
+            tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera; "
+               "opisy: /podatnosci",
+               "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server "
+               "restart; descriptions: /vulns"),
             vulns.upgrade_command(scan.ecosystem, items), _host_only()))
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej

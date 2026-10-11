@@ -17,6 +17,16 @@ def host(tmp_path, monkeypatch):
     return root
 
 
+@pytest.fixture(autouse=True)
+def no_docker(monkeypatch):
+    """Czuwanie pyta Dockera o kontenery — w testach go nie ma (testy etapu 3 podstawiaja wlasne)."""
+    from backend.core import infra
+
+    async def none():
+        return None
+    monkeypatch.setattr(infra, "docker_containers", none)
+
+
 def write(root, path, text):
     target = root / path.lstrip("/")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -300,7 +310,7 @@ class TestDigest:
     def test_lines(self):
         scan = TestWatcher().scan()
         lines = digest.vuln_lines(scan)
-        assert "1" in lines[0] and lines[1].startswith("openssl") and "/audyt" in lines[-1]
+        assert "1" in lines[0] and lines[1].startswith("openssl") and "/podatnosci" in lines[-1]
         assert digest.vuln_lines(None) == []
         assert "500" in digest.vuln_lines(vulns.Scan(at=1, ecosystem="Debian:12", checked=500))[0]
 
@@ -405,3 +415,329 @@ class TestPatchCommand:
     def test_names_outside_the_package_pattern_never_reach_the_shell(self):
         item = vulns.PackageVulns("x", "1", ["openssl", "evil;rm -rf /", "$(id)", "libc6:i386"])
         assert vulns.upgrade_command("Debian:12", [item]).endswith("--force-confold libc6:i386 openssl")
+
+
+# ─── Etap 3: obrazy kontenerow i zaleznosci aplikacji ───────────────────────
+
+from backend.core import lockfiles  # noqa: E402
+from backend.core.infra import Container  # noqa: E402
+
+
+class TestLockfiles:
+
+    def parse(self, folder, name, text):
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / name
+        path.write_text(text)
+        return lockfiles.parse(str(path))
+
+    def test_npm_v3_and_v1(self, tmp_path):
+        v3 = '{"lockfileVersion": 3, "packages": {"": {"name": "shop"}, "node_modules/lodash": {"version": "4.17.20"},' \
+             ' "node_modules/a/node_modules/@scope/b": {"version": "1.0.0"}, "node_modules/local": {"link": true}}}'
+        assert self.parse(tmp_path, "package-lock.json", v3) == [("npm", "lodash", "4.17.20"), ("npm", "@scope/b", "1.0.0")]
+        v1 = '{"lockfileVersion": 1, "dependencies": {"x": {"version": "1.0.0", "dependencies": {"y": {"version": "2.0.0"}}}}}'
+        assert self.parse(tmp_path / "v1", "npm-shrinkwrap.json", v1) == [("npm", "x", "1.0.0"), ("npm", "y", "2.0.0")]
+
+    def test_python(self, tmp_path):
+        req = "Django==4.2.1\nrequests[socks] == 2.31.0 ; python_version > \"3\"\nflask>=2\n# komentarz\n-e .\n"
+        assert self.parse(tmp_path, "requirements.txt", req) == [("PyPI", "django", "4.2.1"), ("PyPI", "requests", "2.31.0")]
+        assert self.parse(tmp_path, "requirements-prod.txt", "pyyaml==6.0\n") == [("PyPI", "pyyaml", "6.0")]
+        pip = '{"default": {"urllib3": {"version": "==1.26.5"}}, "develop": {"pytest": {"version": "*"}}}'
+        assert self.parse(tmp_path, "Pipfile.lock", pip) == [("PyPI", "urllib3", "1.26.5")]
+
+    def test_toml_based(self, tmp_path):
+        pytest.importorskip("tomllib")
+        poetry = '[[package]]\nname = "Jinja2"\nversion = "3.1.2"\n'
+        assert self.parse(tmp_path, "poetry.lock", poetry) == [("PyPI", "jinja2", "3.1.2")]
+        cargo = '[[package]]\nname = "shop"\nversion = "0.1.0"\n\n[[package]]\nname = "hyper"\nversion = "0.14.10"\n' \
+                'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        assert self.parse(tmp_path, "Cargo.lock", cargo) == [("crates.io", "hyper", "0.14.10")]
+
+    def test_go_composer_gems_and_garbage(self, tmp_path):
+        gomod = ("module example.com/shop\n\ngo 1.21\n\nrequire (\n\tgolang.org/x/net v0.17.0\n"
+                 "\tgithub.com/a/b v1.2.3+incompatible // indirect\n)\nrequire github.com/c/d v0.1.0\n")
+        assert self.parse(tmp_path, "go.mod", gomod) == [("Go", "golang.org/x/net", "v0.17.0"), ("Go", "github.com/a/b", "v1.2.3"),
+                                                        ("Go", "github.com/c/d", "v0.1.0")]
+        composer = '{"packages": [{"name": "guzzlehttp/guzzle", "version": "v7.4.0"}, {"name": "x/y", "version": "dev-main"}]}'
+        assert self.parse(tmp_path, "composer.lock", composer) == [("Packagist", "guzzlehttp/guzzle", "7.4.0")]
+        gems = ("GEM\n  remote: https://rubygems.org/\n  specs:\n    rack (2.2.3)\n      x (>= 1)\n"
+                "    nokogiri (1.13.0-x86_64-linux)\n\nPLATFORMS\n  ruby\n")
+        assert self.parse(tmp_path, "Gemfile.lock", gems) == [("RubyGems", "rack", "2.2.3"), ("RubyGems", "nokogiri", "1.13.0")]
+        assert self.parse(tmp_path / "broken", "package-lock.json", "{nie json") == []
+        assert lockfiles.find(str(tmp_path)) and lockfiles.find(str(tmp_path / "brak")) == []
+
+
+def container(name="shop-nginx", image="nginx:1.25", image_id="sha256:aaaaaaaaaaaa", pid=0, layers=(), **kw):
+    return Container(name=name, image=image, state="running", image_id=image_id, pid=pid, layers=list(layers), **kw)
+
+
+class TestContainers:
+
+    def test_reader_prefers_proc_root_then_layers(self, host, tmp_path):
+        write(tmp_path, "/proc/4242/root/etc/os-release", "ID=debian\nVERSION_ID=12\n")
+        write(host, "/var/lib/docker/overlay2/up/diff/etc/os-release", "ID=alpine\nVERSION_ID=3.19.1\n")
+        write(host, "/var/lib/docker/overlay2/low/diff/lib/apk/db/installed", "P:busybox\nV:1.36.1-r15\n")
+        read = vulns.container_reader(container(pid=4242, layers=["/var/lib/docker/overlay2/up/diff"]))
+        assert "debian" in read("/etc/os-release")
+        layered = container(layers=["/var/lib/docker/overlay2/up/diff", "/var/lib/docker/overlay2/low/diff"])
+        [target] = vulns.image_targets([layered])
+        assert target.ecosystem == "Alpine:v3.19" and [p.name for p in target.packages] == ["busybox"]
+
+    def test_one_target_per_image_with_compose_meta(self, host, tmp_path):
+        write(tmp_path, "/proc/7/root/etc/os-release", "ID=debian\nVERSION_ID=12\n")
+        write(tmp_path, "/proc/7/root/var/lib/dpkg/status", DPKG)
+        web = container(pid=7, project="shop", service="web", compose_files=["/srv/shop/compose.yml"])
+        twin = container(name="shop-nginx-2", pid=7, project="shop", service="web2", compose_files=["/srv/shop/compose.yml"])
+        stopped = Container(name="old", image="x", state="exited", image_id="sha256:bbbbbbbbbbbb")
+        [target] = vulns.image_targets([web, twin, stopped])
+        assert target.meta["containers"] == ["shop-nginx", "shop-nginx-2"] and len(target.meta["compose"]) == 2
+        assert target.ecosystem == "Debian:12" and {p.ecosystem for p in target.packages} == {"Debian:12"}
+
+    def test_inspect_carries_pid_layers_and_compose_files(self):
+        from backend.core.infra import parse_inspect
+
+        [c] = parse_inspect([{"Name": "/web", "Config": {"Image": "nginx", "Labels": {
+            "com.docker.compose.project.config_files": "/srv/a/compose.yml,/srv/a/override.yml"}},
+            "State": {"Status": "running", "Pid": 99}, "Image": "sha256:" + "c" * 64,
+            "GraphDriver": {"Data": {"UpperDir": "/u", "LowerDir": "/l1:/l2"}}}])
+        assert c.pid == 99 and c.layers == ["/u", "/l1", "/l2"]
+        assert c.compose_files == ["/srv/a/compose.yml", "/srv/a/override.yml"]
+
+
+def stage3_host(host, tmp_path, monkeypatch):
+    """Host Debian, kontener z tym samym openssl i aplikacja npm z podatnym lodash."""
+    from backend.core import memory
+
+    debian_host(host)
+    write(tmp_path, "/proc/7/root/etc/os-release", DEBIAN)
+    write(tmp_path, "/proc/7/root/var/lib/dpkg/status", DPKG)
+    write(host, "/srv/shop/package-lock.json", '{"packages": {"node_modules/lodash": {"version": "4.17.20"}}}')
+    memory.upsert_directory("/srv/shop", "app", "sklep")
+    fake = fake_osv(monkeypatch)
+    fake.ids["lodash"] = ["GHSA-1"]
+    fake.details["GHSA-1"] = osv_vuln("GHSA-1", "lodash", "4.17.21", eco="npm")
+    fake.details["GHSA-1"]["database_specific"] = {"severity": "CRITICAL"}
+    web = container(pid=7, project="shop", service="web", compose_files=["/srv/shop/compose.yml"])
+    plain = container(name="adhoc", pid=7)
+    return fake, [web, plain]
+
+
+class TestStage3Scan:
+
+    def test_images_and_apps_in_one_scan(self, host, tmp_path, monkeypatch):
+        fake, containers = stage3_host(host, tmp_path, monkeypatch)
+        result, _ = vulns.scan(containers=containers)
+        [image] = result.of_kind("image")
+        [app] = result.of_kind("app")
+        assert [p.name for p in result.items] == ["openssl"]
+        assert [p.name for p in image.items] == ["openssl"] and image.kev
+        assert image.meta["containers"] == ["adhoc", "shop-nginx"]
+        assert app.name == "/srv/shop" and app.ecosystem == "npm"
+        assert [(p.name, p.fixed_version, p.fixable[0].severity) for p in app.items] == [("lodash", "4.17.21", "critical")]
+        # ten sam pakiet w hoscie i obrazie = jedno zapytanie do OSV
+        assert sorted(sum(fake.batches, [])) == ["bash", "glibc", "lodash", "openssl"]
+        assert vulns.Scan.from_dict(result.to_dict()).of_kind("app")[0].items[0].name == "lodash"
+
+    def test_old_state_format_starts_over(self, host):
+        from backend.core import memory
+
+        memory.data_dir().mkdir(parents=True, exist_ok=True)
+        (memory.data_dir() / vulns.STORE).write_text('{"notified": ["DSA-1"], "details": {"DSA-1": {}}}')
+        assert vulns.load_state() == {"format": vulns.STORE_FORMAT} and vulns.notified_ids("vuln:system") == set()
+
+    def test_image_patch_compose_inverse_and_manual(self, host, tmp_path, monkeypatch):
+        _, containers = stage3_host(host, tmp_path, monkeypatch)
+        result, _ = vulns.scan(containers=containers)
+        patch = vulns.image_patch(result)
+        base = "docker compose -f /srv/shop/compose.yml -p shop"
+        assert patch.command == f"{base} pull web && {base} up -d web"
+        assert patch.inverse == ["docker tag aaaaaaaaaaaa nginx:1.25", f"{base} up -d web"]
+        assert len(patch.manual) == 1 and patch.manual[0].startswith("adhoc")
+        preview = vulns.image_patch_preview(patch)
+        assert "docker compose" in preview and "/cofnij" in preview
+
+    def test_image_patch_rejects_odd_names(self):
+        vuln = vulns.PackageVulns("a", "1", ["a"], [vulns.Vuln("V", [], "", "", "2")])
+        target = vulns.TargetResult("image", "x", "Debian:12", 1, [vuln],
+                                    meta={"image": "nginx", "image_id": "sha256:aaaaaaaaaaaa", "containers": ["c"],
+                                          "compose": [{"container": "c", "project": "shop;rm -rf /", "service": "web",
+                                                       "files": ["/srv/compose.yml"]}]})
+        patch = vulns.image_patch(vulns.Scan(targets=[target]))
+        assert patch.command == "" and patch.inverse == [] and patch.manual
+
+
+class TestStage3AlertsAndAudit:
+
+    def test_alerts_per_kind(self, host, tmp_path, monkeypatch):
+        _, containers = stage3_host(host, tmp_path, monkeypatch)
+        result, _ = vulns.scan(containers=containers)
+        w = watch.Watcher()
+        events = w.apply(w.vuln_findings(result), watch.VULN_SCOPE)
+        assert {e.key for e in events} == {"vuln:system", "vuln:images", "vuln:apps"}
+        images = next(e for e in events if e.key == "vuln:images")
+        assert images.severity == "critical" and "/zalataj obrazy" in images.detail
+        assert w.apply(w.vuln_findings(result), watch.VULN_SCOPE) == []
+        restarted = watch.Watcher()
+        assert restarted.apply(restarted.vuln_findings(result), watch.VULN_SCOPE) == []
+
+    def test_audit_findings_and_unsupported_host(self, host, tmp_path, monkeypatch):
+        _, containers = stage3_host(host, tmp_path, monkeypatch)
+        result, _ = vulns.scan(containers=containers)
+        audit = posture.Audit()
+        posture.vuln_findings(audit, result)
+        by_id = {f.id: f for f in audit.findings}
+        assert set(by_id) == {"vuln-kev", "vuln-images", "vuln-apps"}
+        assert by_id["vuln-images"].severity == "high" and "pull web" in by_id["vuln-images"].command
+        assert by_id["vuln-apps"].severity == "medium" and "lodash 4.17.20 -> 4.17.21" in by_id["vuln-apps"].detail
+        assert by_id["vuln-apps"].command == ""
+
+        write(host, "/etc/os-release", 'ID=rocky\nVERSION_ID="9.4"\nPRETTY_NAME="Rocky Linux 9.4"\n')
+        result, _ = vulns.scan(containers=containers, force=True)
+        assert result.ecosystem is None and result.ok and result.of_kind("image")[0].items
+        audit = posture.Audit()
+        posture.vuln_findings(audit, result)
+        assert "vuln-images" in {f.id for f in audit.findings} and "Rocky" in audit.unknown[0]
+        assert any("obrazy" in line for line in digest.vuln_lines(result))
+
+    def test_patch_images_preview(self, host, tmp_path, monkeypatch):
+        import backend.server as server
+        from backend.config import settings
+        from backend.core import infra
+
+        _, containers = stage3_host(host, tmp_path, monkeypatch)
+
+        async def fake_containers():
+            return containers
+        monkeypatch.setattr(infra, "docker_containers", fake_containers)
+        monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
+        monkeypatch.setattr(watch, "_watcher", None)
+        out = []
+
+        async def send(w, frame):
+            out.append(frame)
+        monkeypatch.setattr(server, "_send", send)
+        asyncio.run(server._patch(None, {"scope": "obrazy"}, "cli:t", "admin"))
+        data = out[-1]["data"]
+        assert data["scope"] == "images" and data["packages"] == ["nginx:1.25"] and "pull web" in data["command"]
+        assert not data["can_execute"] and data["token"]
+
+
+class TestAppDedup:
+
+    def test_same_cve_counted_once_and_highest_fix(self):
+        package = vulns.Package("django", "3.2.0", ["django"], "PyPI")
+        details = {
+            "PYSEC-1": {"cves": ["CVE-1"], "severity": "", "fixed": {"PyPI|django": "3.2.13"}},
+            "GHSA-a": {"cves": ["CVE-1"], "severity": "critical", "fixed": {"PyPI|django": "3.2.13"}},
+            "GHSA-b": {"cves": ["CVE-2"], "severity": "high", "fixed": {"PyPI|django": "3.2.20"}},
+        }
+        item = vulns._package_vulns(package, ["PYSEC-1", "GHSA-a", "GHSA-b"], details, set())
+        assert [v.id for v in item.fixable] == ["GHSA-a", "GHSA-b"] and item.fixed_version == "3.2.20"
+
+
+# ─── Czytelny raport, wyjasnienia, obce rekordy, ostrzezenie software_info ──
+
+class FakeExplainAgent:
+    def __init__(self, answer=None, enabled=True):
+        self.calls, self.answer, self.enabled = [], answer, enabled
+
+    def llm_enabled(self):
+        return self.enabled
+
+    async def complete(self, system_prompt, user_message, model=None, who=""):
+        import json as _json
+        items = _json.loads(user_message)
+        self.calls.append((system_prompt, items, who))
+        if self.answer is not None:
+            return self.answer
+        return _json.dumps({i["id"]: f"Atakujacy przez siec moze przejac {i['package']}. Zobacz https://evil.example <b>x</b>"
+                            for i in items})
+
+
+class TestReadable:
+
+    def scan_with(self, host, monkeypatch):
+        debian_host(host)
+        fake_osv(monkeypatch)
+        result, _ = vulns.scan()
+        return result
+
+    def test_item_markdown_highlights_and_explains(self, host, monkeypatch):
+        result = self.scan_with(host, monkeypatch)
+        lines = vulns.item_markdown(result.items[0], {"DSA-1": "Atakujacy moze odczytac pamiec serwera."})
+        assert lines[0] == "" and lines[1] == "**openssl** `3.0.11-1~deb12u1` → `3.0.13-1~deb12u1`"
+        assert lines[2] == ("- `DSA-1` · CVE-2026-0001 · **aktywnie wykorzystywana (KEV)** — "
+                            "Atakujacy moze odczytac pamiec serwera.")
+        assert lines[3].startswith("- `DEBIAN-CVE-2026-0002` · **krytyczna** — DEBIAN-CVE-2026-0002 summary")
+
+    def test_plain_strips_links_markup_and_length(self):
+        assert vulns.plain("Zobacz https://x.example/a i <script>`kod`</script> **mocno** [link](y) ERR_raise_data") == \
+            "Zobacz i scriptkod/script mocno link(y) ERR_raise_data"
+        assert len(vulns.plain("a" * 1000)) == vulns.MAX_EXPLANATION
+
+    def test_report_sections_and_next_steps(self, host, monkeypatch):
+        result = self.scan_with(host, monkeypatch)
+        text = vulns.report_markdown(result, {})
+        assert "**Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 z poprawkami, 1 pilnych**" in text
+        assert "Bez poprawki (czekaja na dystrybucje): 1." in text and "/zalataj — pakiety serwera" in text
+        assert "Nie ma jeszcze wyniku" in vulns.report_markdown(None, {}, "off")
+
+    def test_explanations_written_once_cleaned_and_cached(self, host, monkeypatch):
+        result = self.scan_with(host, monkeypatch)
+        agent = FakeExplainAgent()
+        w = watch.Watcher(agent)
+        assert asyncio.run(w.explain_vulns(result)) is True
+        (system_prompt, items, who), = agent.calls
+        assert who == "podatnosci" and {i["id"] for i in items} == {"DSA-1", "DEBIAN-CVE-2026-0002"}
+        assert "DSA-1 summary" in items[0]["summary"] or "summary" in items[1]["summary"]
+        saved = vulns.explanations("pl")
+        assert saved["DSA-1"] == "Atakujacy przez siec moze przejac openssl. Zobacz bx/b"
+        assert asyncio.run(w.explain_vulns(result)) is True and len(agent.calls) == 1     # z pamieci
+        monkeypatch.setenv("PIPE_LANG", "en")
+        asyncio.run(w.explain_vulns(result))
+        assert len(agent.calls) == 2 and "English" in agent.calls[1][0]                 # inny jezyk = nowe opisy
+
+    def test_explanations_skip_without_model_and_bad_answers(self, host, monkeypatch):
+        result = self.scan_with(host, monkeypatch)
+        assert asyncio.run(watch.Watcher(FakeExplainAgent(enabled=False)).explain_vulns(result)) is False
+        assert asyncio.run(watch.Watcher(None).explain_vulns(result)) is False
+        broken = FakeExplainAgent(answer='to nie json {"DSA-1": 5, "OBCE-1": "x"}')
+        assert asyncio.run(watch.Watcher(broken).explain_vulns(result)) is False and vulns.explanations("pl") == {}
+
+    def test_vulns_report_command(self, host, monkeypatch):
+        import backend.server as server
+        from backend.config import settings
+
+        self.scan_with(host, monkeypatch)
+        monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
+        monkeypatch.setattr(watch, "_watcher", None)
+        watch.get_watcher(FakeExplainAgent())
+        text = asyncio.run(server._vulns_report())
+        assert "**openssl**" in text and "Atakujacy przez siec moze przejac openssl" in text
+
+    def test_patch_preview_uses_markdown_and_explanations(self, host, monkeypatch):
+        result = self.scan_with(host, monkeypatch)
+        text = vulns.patch_preview(result, result.items, "apt-get x", explain={"DSA-1": "Wyjasnienie."})
+        assert "**openssl**" in text and "`DSA-1`" in text and "Wyjasnienie." in text
+
+
+class TestForeignRecords:
+
+    def test_record_of_another_distro_is_ignored(self):
+        package = vulns.Package("openssl", "3.5.1-1", ["openssl"], "Debian:13")
+        details = {
+            "DEBIAN-CVE-1": {"cves": ["CVE-1"], "severity": "", "fixed": {"Debian:13|openssl": "3.5.4-1"},
+                             "ecosystems": ["Debian:13", "Debian:14"]},
+            "UBUNTU-CVE-1": {"cves": ["CVE-1"], "severity": "high", "fixed": {"Ubuntu:24.04:LTS|openssl": "3.0.13"},
+                             "ecosystems": ["Ubuntu:24.04:LTS"]},
+            "OLD-1": {"cves": [], "severity": "", "fixed": {"Debian|openssl": "3.5.2-1"}},      # stary format bez ecosystems
+        }
+        item = vulns._package_vulns(package, list(details), details, set())
+        assert [v.id for v in item.fixable] == ["DEBIAN-CVE-1", "OLD-1"] and item.unfixed == 0
+
+    def test_software_info_warns_about_wrong_distro(self, host):
+        from backend.core.handlers.web import _ecosystem_warning
+
+        write(host, "/etc/os-release", 'ID=debian\nVERSION_ID="13"\nVERSION="13 (trixie)"\n')
+        assert "Debian:13" in _ecosystem_warning("Ubuntu:24.04:LTS")
+        assert _ecosystem_warning("Debian:13") == "" and _ecosystem_warning("npm") == ""

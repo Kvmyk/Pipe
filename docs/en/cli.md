@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -173,7 +173,8 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/mcp` | MCP servers Pipe uses and their state |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
-| `/patch [urgent]` | Patches for known package vulnerabilities: the list, the exact command, install after YES through the safety fuse (native mode; in docker a command to run on the host). Works without the LLM |
+| `/vulns` | Known vulnerabilities in packages, container images and applications, each with a short explanation in Pipe's language |
+| `/patch [urgent\|images]` | Patches for known package vulnerabilities or newer images for compose containers: the list, the exact command, a choice of *install* / *cancel*, install through the safety fuse (native mode; in docker a command to run on the host). Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
 | `/language [pl\|en]` | Pipe's language: without an argument shows the current one, with an argument switches the whole agent (shared by the CLI, web and Telegram; admin only) |
 | `/providers [id [model]]` | LLM providers: a list, then picking a provider and a model from the list the provider returns (current one preselected, Enter keeps it; a name fragment narrows the list). The API key is typed without echo. `/providers groq` goes straight to Groq's models, `/providers groq llama` picks a model by name fragment, `/providers model` only changes the model of the current provider, `/providers forget <id>` removes a key added from the interface. The choice applies to the whole agent; changing it is admin only |

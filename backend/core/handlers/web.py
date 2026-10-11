@@ -192,4 +192,26 @@ async def handle_software_info(agent: Any, session: Session, tool_call: Any, arg
         return
     await audit.log_safe(session.interface, f"software_info({what})", 0)
     session.web_tainted = True            # opisy podatnosci pisza obcy ludzie — to tez tresc z internetu
+    if operation == "vulns":
+        result = await asyncio.to_thread(_ecosystem_warning, fields["ecosystem"]) + result
     reply(session, tool_call, result)
+
+
+def _ecosystem_warning(asked: str) -> str:
+    """
+    Model potrafi zapytac o pakiet hosta w zlej dystrybucji (Ubuntu na Debianie 13) — wtedy wynik dotyczy
+    innego systemu. Ostrzezenie zamiast poprawiania po cichu: pakiet z kontenera moze miec inny system.
+    """
+    from backend.core import vulns
+
+    if not asked.startswith(vulns.DISTROS):
+        return ""
+    host = vulns.ecosystem()
+    if host is None or asked == host:
+        return ""
+    return tr(f"UWAGA: system tego serwera to {host}, a pytanie dotyczylo {asked}. Dla pakietow hosta powtorz "
+              f"zapytanie z ecosystem={host!r} (pakiety z kontenera moga miec inny system). Pelny przeglad podatnosci "
+              f"serwera, obrazow i aplikacji daje security_audit.\n\n",
+              f"NOTE: this server's system is {host}, and the question was about {asked}. For host packages repeat the "
+              f"query with ecosystem={host!r} (packages from a container may have another system). A full review of the "
+              f"server's, images' and applications' vulnerabilities comes from security_audit.\n\n")

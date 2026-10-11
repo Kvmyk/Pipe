@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -174,7 +174,8 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
-| `/zalataj [pilne]` | Latki znanych podatnosci w pakietach: lista, dokladna komenda, instalacja po TAK przez bezpiecznik (tryb native; w dockerze komenda do wykonania na hoscie). Dziala bez LLM |
+| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
+| `/zalataj [pilne\|obrazy]` | Latki znanych podatnosci w pakietach albo nowsze obrazy kontenerow z compose: lista, dokladna komenda, wybor *zainstaluj* / *anuluj*, instalacja przez bezpiecznik (tryb native; w dockerze komenda do wykonania na hoscie). Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |

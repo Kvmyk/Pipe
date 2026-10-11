@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 ## Opis
 
@@ -95,7 +95,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
-| `patch` | `scope` (`urgent`\|`all`); `execute: true` + `token` | bez `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; z `execute` i tokenem z podgladu: instalacja przez bezpiecznik (ramki `progress`), `"data": {"text", "exit_code", "entry_id"}`. Komende sklada serwer z ostatniego skanu; inny token = lista sie zmienila. Odrzucane: viewer, tryb obserwacji, tryb inny niz native. **Bez LLM** |
+| `vulns` | -- | `"data": {"text"}` -- raport podatnosci w Markdown (pakiety, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
+| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `token` | bez `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; z `execute` i tokenem z podgladu: instalacja przez bezpiecznik (ramki `progress`), `"data": {"text", "exit_code", "entry_id"}`. Komende sklada serwer z ostatniego skanu; inny token = lista sie zmienila. Odrzucane: viewer, tryb obserwacji, tryb inny niz native. **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
@@ -198,7 +199,8 @@ podlaczy sie pierwszy subskrybent.
 (nowy publiczny port, zatrzymany kontener). `investigate` z `id` prosi agenta o zbadanie alertu.
 Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
 oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
-`vuln:system` -- pilne podatnosci z poprawka w pakietach systemu (trwaly; wysylany ponownie, gdy dojdzie nowa).
+`vuln:system` -- pilne podatnosci z poprawka w pakietach systemu, `vuln:images` -- w obrazach kontenerow,
+`vuln:apps` -- krytyczne w zaleznosciach aplikacji (trwale; wysylane ponownie, gdy dojdzie nowa).
 `hook:<zrodlo>:<nazwa>` -- alerty z webhookow (trwale do komunikatu `resolved`). `auth:ssh` (seria nieudanych
 logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
 to zdarzenia jednorazowe.

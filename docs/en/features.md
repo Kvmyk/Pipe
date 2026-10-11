@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -365,6 +365,22 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
   doesn't cover them. Libraries and the kernel apply after a service or server restart.
 - The kernel has thousands of CVE records, so for it Pipe only takes distribution advisories (USN, DSA, DLA).
   The first scan takes about a minute, later ones reuse the saved details.
+- **Container images.** The same scan covers the packages in the images of running containers (Debian, Ubuntu,
+  Alpine): Pipe reads their package database through the container's `/proc/<pid>/root` or from the overlay layers,
+  without running anything in the container. One result per image, alert `vuln:images`. Images without a system
+  (distroless, scratch) are listed as not checked. `/patch images` pulls newer images for compose containers
+  (`docker compose pull` + `up -d` of just those services), and `/undo` goes back to the previous images. It only
+  helps when a newer image exists under the same tag; your own image has to be rebuilt. Containers without compose
+  only get a hint.
+- **Application dependencies.** In application directories from DIRECTORY Pipe reads lockfiles: `package-lock.json`,
+  `requirements*.txt` (only `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
+  `Gemfile.lock`. The result is in `/audit` with the version that removes the vulnerabilities; the `vuln:apps` alert
+  only for actively exploited and critical ones. There is no patch here: changing a version is a change in the app's code.
+- **`/vulns`** shows everything in one place: the package in bold, the version and the fixed version as code, below
+  it the vulnerabilities with their severity and a short explanation in Pipe's language -- what an attacker can do
+  and when it is a risk. The model (`WORKER_MODEL`) writes the explanations from the OSV description, once per
+  vulnerability, and Pipe remembers them; without a model you see the original OSV description. The `/patch` preview
+  uses the same format and asks: *Install* or *Cancel*.
 
 ---
 

@@ -1,6 +1,6 @@
 # Quick start -- step by step
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 ## Try it without a server
 

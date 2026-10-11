@@ -197,7 +197,8 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
     ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
-    ("zalataj", "Zainstaluj latki podatnosci (/zalataj pilne - tylko pilne)"),
+    ("podatnosci", "Znane podatnosci z opisami"),
+    ("zalataj", "Latki podatnosci (/zalataj pilne, /zalataj obrazy)"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
@@ -227,7 +228,8 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("chart", "Chart of load/ram/disk (/chart ram 7d)"),
     ("health", "Certificates, sites, DNS and backups"),
     ("audit", "Security audit with a score and fixes"),
-    ("patch", "Install vulnerability patches (/patch urgent - urgent only)"),
+    ("vulns", "Known vulnerabilities with descriptions"),
+    ("patch", "Vulnerability patches (/patch urgent, /patch images)"),
     ("map", "Server infrastructure diagram (image)"),
     ("server", "Show SERVER.md (/server update - explore the server again)"),
     ("directory", "Map of repositories and directories (DIRECTORY)"),
@@ -255,7 +257,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "map": "mapa", "directory": "katalogi", "skills": "skille", "alerts": "alerty", "routines": "rutyny",
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
-    "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj",
+    "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj", "vulns": "podatnosci",
 }
 
 

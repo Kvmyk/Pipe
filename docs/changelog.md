@@ -1,5 +1,36 @@
 # Historia zmian -- Pipe
 
+## v0.33.0 (2026-10-12)
+
+### Podatnosci w obrazach kontenerow i aplikacjach
+
+- Skan podatnosci obejmuje pakiety w obrazach dzialajacych kontenerow (Debian, Ubuntu, Alpine): Pipe czyta ich baze
+  pakietow przez `/proc/<pid>/root` kontenera albo z warstw overlay, niczego w kontenerze nie uruchamiajac. Jeden
+  wynik na obraz, nowy alert `vuln:images`; obrazy bez systemu (distroless) sa wymienione jako niesprawdzone
+- Zaleznosci aplikacji z katalogow w DIRECTORY: `package-lock.json`, `requirements*.txt`, `poetry.lock`,
+  `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`, `Gemfile.lock`. Wynik w `/audyt` z wersja, ktora usuwa
+  podatnosci; alert `vuln:apps` tylko dla aktywnie wykorzystywanych i krytycznych. Ten sam CVE opisany kilka razy
+  (GHSA, PYSEC) liczy sie raz
+- `/zalataj obrazy` (i przycisk *Zalataj* przy alercie o obrazach) pobiera nowsze obrazy dla kontenerow z compose
+  (`docker compose pull` + `up -d` tylko tych uslug) przez bezpiecznik; `/cofnij` wraca do poprzednich obrazow.
+  W trybie docker gotowa komenda dla hosta, kontenery bez compose dostaja podpowiedz
+- Pierwszy skan po aktualizacji zaczyna od nowa (nowy format pamieci skanu)
+
+### Czytelne podatnosci z opisami
+
+- Nowa komenda `/podatnosci` (`/vulns`) w CLI, Telegramie i `pipe web`: pakiety serwera, obrazy i aplikacje w jednym
+  miejscu. Pakiet pogrubiony, wersje i kody podatnosci wyroznione, waga slowem
+- Kazda pokazywana podatnosc ma krotkie wyjasnienie w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
+  Pisze je model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje; bez modelu
+  widac oryginalny opis z OSV. Tekst z internetu jest czyszczony z linkow i znacznikow
+- Podglad `/zalataj` ma ten sam format i pyta wprost: *Zainstaluj* albo *Anuluj* we wszystkich klientach (w CLI
+  wybor zamiast t/N)
+
+### Poprawki
+
+- `software_info` ostrzega agenta, gdy pyta o pakiet w innej dystrybucji niz system serwera (np. Ubuntu na
+  Debianie 13), a opis narzedzia kaze brac ekosystem z `/etc/os-release`; skan pomija rekordy spoza ekosystemu pakietu
+
 ## v0.32.0 (2026-10-11)
 
 ### Podatnosci w pakietach

@@ -381,3 +381,31 @@ def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
     assert "zainstalowano" in sent[-1][1]
     callback("patchx:no:urgent:abc123:1", 1)
     assert len(calls) == 2 and "nic nie zainstalowalem" in sent[-1][1]
+
+
+def test_vulns_report_is_rendered_without_html_from_the_internet(monkeypatch):
+    from types import SimpleNamespace
+
+    sent = []
+
+    async def fake_send(bot_, chat_id, text, reply_markup=None):
+        sent.append(text)
+
+    class Client:
+        def command(self, name, **fields):
+            text = "**openssl** `3.0.1`\n- `DSA-1` · **krytyczna** — opis <a href=x>klik</a>"
+            return frames({"response": "", "status": "ok", "done": True, "data": {"text": text}})
+
+    replies = []
+
+    async def reply_text(text, **kwargs):
+        replies.append(text)
+    monkeypatch.setattr(bot, "_send_html", fake_send)
+    monkeypatch.setattr(bot, "ALLOWED_USER_IDS", {1})
+    monkeypatch.setattr(bot, "get_client", lambda user_id: Client())
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1), effective_chat=SimpleNamespace(id=1),
+                             message=message, effective_message=message)
+    asyncio.run(bot.cmd_podatnosci(update, Context()))
+    assert "<b>openssl</b> <code>3.0.1</code>" in sent[0] and "<code>DSA-1</code>" in sent[0]
+    assert "<a href" not in sent[0] and "&lt;a href" in sent[0]

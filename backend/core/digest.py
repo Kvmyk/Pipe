@@ -95,16 +95,27 @@ def vuln_lines(scan: Any) -> list[str]:
     """Wynik ostatniego skanu podatnosci — bez pytania OSV (to robi czuwanie)."""
     from backend.core import vulns
 
-    if scan is None or scan.ecosystem is None:
+    if scan is None or not (scan.ecosystem or scan.targets):
         return []
     lines = []
     if scan.items:
         lines.append(vulns.summary_line(scan))
         lines += [vulns.describe_item(p, limit=2) for p in scan.items[:3]]
-        lines.append(tr("szczegoly i komenda: /audyt", "details and the command: /audit"))
-    elif scan.ok:
+    elif scan.ecosystem and not scan.error:
         lines.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow)",
                         f"no vulnerabilities with a fix ({scan.checked} packages)"))
+    images = [t for t in scan.of_kind("image") if t.items]
+    if images:
+        urgent = sum(1 for t in images if t.urgent)
+        lines.append(tr(f"obrazy kontenerow z poprawkami: {len(images)}" + (f" ({urgent} z pilnymi)" if urgent else ""),
+                        f"container images with fixes: {len(images)}" + (f" ({urgent} with urgent ones)" if urgent else "")))
+        lines += [vulns.describe_target(t, 1) for t in images[:2]]
+    apps = [t for t in scan.of_kind("app") if t.items]
+    if apps:
+        lines.append(tr(f"aplikacje z podatnymi zaleznosciami: ", f"applications with vulnerable dependencies: ")
+                     + ", ".join(t.label() for t in apps[:3]))
+    if scan.items or images or apps:
+        lines.append(tr("opisy: /podatnosci, latki: /zalataj", "descriptions: /vulns, patches: /patch"))
     if scan.error:
         lines.append(tr(f"ostatni skan nieudany: {scan.error}", f"last scan failed: {scan.error}"))
     return lines

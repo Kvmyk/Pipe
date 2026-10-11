@@ -831,7 +831,7 @@
     const box = el("div", "body");
     box.appendChild(md(preview.text || ""));
     if (!preview.can_execute || !preview.token) return box;
-    const ask = el("div", "foot"), yes = el("button", "btn yes small", t("patchInstall")), no = el("button", "btn no small", t("no"));
+    const ask = el("div", "foot"), yes = el("button", "btn yes small", t("patchInstall")), no = el("button", "btn no small", t("cancel"));
     ask.appendChild(yes); ask.appendChild(no); box.appendChild(ask);
     no.addEventListener("click", () => { ask.remove(); box.appendChild(el("div", "meta", t("patchCancelled"))); });
     yes.addEventListener("click", async () => {
@@ -868,9 +868,10 @@
         const foot = el("div", "foot"), look = el("button", "btn no small", t("investigate"));
         look.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("investigate") + ": " + alert.title); run({ command: "investigate", id: alert.id }, t("working")); });
         foot.appendChild(look);
-        if (String(alert.key || "").startsWith("vuln:")) {
+        const patchScope = ({ "vuln:system": "urgent", "vuln:images": "images" })[alert.key];
+        if (patchScope) {
           const patch = el("button", "btn no small", t("patch"));
-          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); dataMessage({ command: "patch", scope: "urgent" }, patchBox); });
+          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); dataMessage({ command: "patch", scope: patchScope }, patchBox); });
           foot.appendChild(patch);
         }
         card.appendChild(foot);
@@ -1329,7 +1330,7 @@
   // [nazwa polska, alias angielski, klucz opisu, czy przyjmuje argumenty]
   const COMMANDS = [
     ["status", "status", "c_status"], ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
-    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["zalataj", "patch", "c_patch", true],
+    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
@@ -1395,7 +1396,8 @@
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
     audyt: () => dataMessage({ command: "audit" }, (d) => listing(d.text)),
-    zalataj: (args) => dataMessage({ command: "patch", scope: ["pilne", "urgent"].includes(args.trim().toLowerCase()) ? "urgent" : "all" }, patchBox),
+    podatnosci: () => dataMessage({ command: "vulns" }, (d) => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; }),
+    zalataj: (args) => dataMessage({ command: "patch", scope: ({ pilne: "urgent", urgent: "urgent", obrazy: "images", images: "images" })[args.trim().toLowerCase()] || "all" }, patchBox),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
     koszt: () => dataMessage({ command: "usage" }, (d) => listing(d.text)),
     katalogi: () => dataMessage({ command: "directory" }, (d) => listing(d.text, "DIRECTORY")),

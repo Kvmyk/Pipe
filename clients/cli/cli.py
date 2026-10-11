@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.32.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.32.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.33.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.33.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -597,7 +597,7 @@ COMMAND_ALIASES = {
     "alerts": "alerty", "routines": "rutyny", "targets": "cele", "journal": "dziennik", "undo": "cofnij",
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
-    "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj",
+    "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj", "vulns": "podatnosci",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -608,7 +608,8 @@ COMMANDS = [
     ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
     ("zdrowie", "health", "certyfikaty, strony, DNS, backupy", "certificates, sites, DNS, backups"),
     ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
-    ("zalataj", "patch", "zainstaluj łatki podatności; /zalataj pilne", "install vulnerability patches; /patch urgent"),
+    ("podatnosci", "vulns", "znane podatności z opisami: pakiety, obrazy, aplikacje", "known vulnerabilities with descriptions: packages, images, apps"),
+    ("zalataj", "patch", "łatki podatności; /zalataj pilne, /zalataj obrazy", "vulnerability patches; /patch urgent, /patch images"),
     ("mapa", "map", "diagram infrastruktury", "infrastructure diagram"),
     ("mermaid", "mermaid", "kod ostatniego diagramu", "source of the last diagram"),
     ("server", "server", "notatki o serwerze (SERVER.md); /server aktualizuj", "server notes (SERVER.md); /server update"),
@@ -646,7 +647,8 @@ HELP_TEXT = """**Komendy**
 - `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
 - `/zdrowie` — certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów
 - `/audyt` — ocena bezpieczeństwa hosta z gotowymi poprawkami („napraw 1”)
-- `/zalataj [pilne]` — łatki znanych podatności w pakietach: podgląd, komenda i instalacja po TAK
+- `/podatnosci` — znane podatności w pakietach, obrazach kontenerów i aplikacjach, z krótkim wyjaśnieniem każdej
+- `/zalataj [pilne|obrazy]` — łatki znanych podatności w pakietach albo nowsze obrazy kontenerów: podgląd, komenda i instalacja po TAK
 - `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
 - `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
 - `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
@@ -681,7 +683,8 @@ HELP_TEXT_EN = """**Commands**
 - `/chart [load|ram|disk] [24h|7d]` — chart from the watcher's history (PNG)
 - `/health` — TLS certificates, site responses, DNS and backup freshness
 - `/audit` — host security score with ready-made fixes ("fix 1")
-- `/patch [urgent]` — patches for known package vulnerabilities: preview, command and install after YES
+- `/vulns` — known vulnerabilities in packages, container images and applications, each briefly explained
+- `/patch [urgent|images]` — patches for known package vulnerabilities or newer container images: preview, command and install after YES
 - `/map` — infrastructure diagram (PNG + terminal preview); `/mermaid` — source of the last diagram
 - `/server` — show SERVER.md (`/server update` — explore the server again)
 - `/directory` — map of repositories and directories (DIRECTORY)
@@ -1286,17 +1289,25 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
         return True
 
+    if name == "podatnosci":
+        console.print(tr("[dim]Sprawdzam podatności i przygotowuję opisy...[/dim]",
+                         "[dim]Checking vulnerabilities and preparing descriptions...[/dim]"))
+        console.print(Markdown(_response_data(await client.send_command("vulns")).get("text", "")))
+        return True
+
     if name == "zalataj":
-        scope = "urgent" if args.strip().lower() in ("pilne", "urgent") else "all"
+        scope = {"pilne": "urgent", "urgent": "urgent", "obrazy": "images", "images": "images"}.get(args.strip().lower(), "all")
         data = _response_data(await client.send_command("patch", scope=scope))
         console.print(Markdown(data.get("text", "")))
         if not data.get("can_execute") or not data.get("token"):
             return True
+        install, cancel = tr("zainstaluj", "install"), tr("anuluj", "cancel")
         try:
-            confirmed = Confirm.ask(tr("[yellow]Zainstalować te łatki?[/yellow]", "[yellow]Install these patches?[/yellow]"),
-                                    default=False)
+            choice = Prompt.ask(tr("[yellow]Co robimy?[/yellow]", "[yellow]What now?[/yellow]"),
+                                choices=[install, cancel], default=cancel)
         except (KeyboardInterrupt, EOFError):
-            confirmed = False
+            choice = cancel
+        confirmed = choice == install
         if confirmed:
             console.print(tr("[dim]Instaluję łatki — to może potrwać kilka minut...[/dim]",
                              "[dim]Installing patches — this can take a few minutes...[/dim]"))

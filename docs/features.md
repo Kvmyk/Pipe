@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.32.0
+Pipe v0.33.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -361,6 +361,21 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   `/cofnij` ich nie obejmuje. Biblioteki i jadro dzialaja po restarcie uslug albo serwera.
 - Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA).
   Pierwszy skan trwa okolo minuty, kolejne korzystaja z zapisanych szczegolow.
+- **Obrazy kontenerow.** Ten sam skan obejmuje pakiety w obrazach dzialajacych kontenerow (Debian, Ubuntu, Alpine):
+  Pipe czyta ich baze pakietow przez `/proc/<pid>/root` kontenera albo z warstw overlay, niczego w kontenerze nie
+  uruchamiajac. Jeden wynik na obraz, alert `vuln:images`. Obrazy bez systemu (distroless, scratch) sa wymienione
+  jako niesprawdzone. `/zalataj obrazy` pobiera nowsze obrazy dla kontenerow z compose (`docker compose pull` +
+  `up -d` tylko tych uslug), a `/cofnij` wraca do poprzednich obrazow. Pomaga tylko wtedy, gdy pod tym samym tagiem
+  jest nowszy obraz; wlasny obraz trzeba przebudowac. Kontenery bez compose dostaja tylko podpowiedz.
+- **Zaleznosci aplikacji.** W katalogach aplikacji z DIRECTORY Pipe czyta lockfile'e: `package-lock.json`,
+  `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
+  `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa podatnosci; alert `vuln:apps` tylko dla aktywnie
+  wykorzystywanych i krytycznych. Latki tu nie ma: zmiana wersji to zmiana w kodzie aplikacji.
+- **`/podatnosci`** pokazuje wszystko w jednym miejscu: pakiet pogrubiony, wersja i wersja z poprawka w kodzie,
+  pod nim podatnosci z waga i krotkim wyjasnieniem w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
+  Wyjasnienia pisze model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje;
+  bez modelu widac oryginalny opis z OSV. Ten sam format ma podglad `/zalataj`, ktory pyta: *Zainstaluj* albo
+  *Anuluj*.
 
 ---
 
