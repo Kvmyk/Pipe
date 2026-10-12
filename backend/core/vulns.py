@@ -215,22 +215,46 @@ _HOST_PATH = re.compile(r"^/[A-Za-z0-9._/@+-]{1,4095}$")
 _IMAGE_REF = re.compile(r"^[a-z0-9][a-z0-9._/:@-]{0,254}$")
 
 
-def image_targets(containers: list[Any] | None) -> list[Target]:
-    """Jeden cel na obraz uzywany przez dzialajace kontenery."""
+def _by_image(containers: list[Any] | None) -> dict[str, list[Any]]:
     by_image: dict[str, list[Any]] = {}
     for container in containers or []:
         if container.state == "running" and (container.image_id or container.image):
             by_image.setdefault(container.image_id or container.image, []).append(container)
+    return by_image
+
+
+def _container_meta(group: list[Any]) -> dict[str, Any]:
+    """Kontenery obrazu i ich projekty compose — to, z czego /zalataj obrazy sklada komende."""
+    compose = [{"container": c.name, "project": c.project, "service": c.service, "files": list(c.compose_files)}
+               for c in group if c.project and c.service and c.compose_files]
+    return {"containers": sorted(c.name for c in group), "compose": compose}
+
+
+def image_targets(containers: list[Any] | None) -> list[Target]:
+    """Jeden cel na obraz uzywany przez dzialajace kontenery."""
     targets = []
-    for image_id, group in list(by_image.items())[:MAX_IMAGES]:
+    for image_id, group in list(_by_image(containers).items())[:MAX_IMAGES]:
         first = group[0]
         eco, system, packages = _os_packages(container_reader(first))
-        compose = [{"container": c.name, "project": c.project, "service": c.service, "files": list(c.compose_files)}
-                   for c in group if c.project and c.service and c.compose_files]
         targets.append(Target("image", first.image or image_id, eco, packages,
-                              {"image": first.image, "image_id": image_id, "system": system,
-                               "containers": sorted(c.name for c in group), "compose": compose}))
+                              {"image": first.image, "image_id": image_id, "system": system, **_container_meta(group)}))
     return targets
+
+
+def refresh_containers(result: Scan, containers: list[Any] | None) -> Scan:
+    """
+    Kontenery i compose obrazow z biezacego stanu Dockera. Zapisany skan (bez zmian w pakietach wraca do
+    VULN_INTERVAL) pamieta kontenery i etykiety z chwili skanu — po odtworzeniu kontenera albo po poprawce
+    rozpoznawania compose /zalataj obrazy widzialo stare dane ("kontener bez compose").
+    """
+    if containers is None:
+        return result
+    by_image = _by_image(containers)
+    for target in result.of_kind("image"):
+        group = by_image.get(str(target.meta.get("image_id", "")))
+        if group:
+            target.meta.update(_container_meta(group))
+    return result
 
 
 def app_targets() -> list[Target]:
@@ -1154,7 +1178,7 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
     expired = force or now - float(state.get("queried_at", 0)) >= max_age
     if not expired and state.get("inventory") == digest and isinstance(previous, dict) \
             and not previous.get("error") and not previous.get("partial"):
-        return Scan.from_dict(previous), False
+        return refresh_containers(Scan.from_dict(previous), containers), False
 
     packages = {p.key: p for t in [system] + others if t.ecosystem for p in t.packages}
     cache: dict[str, Any] = {} if expired else state.get("found") or {}

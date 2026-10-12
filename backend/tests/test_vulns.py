@@ -903,3 +903,25 @@ class TestPatchWhatIsThere:
         assert not data["command"] and "nie ma podatnosci z poprawka do zainstalowania" not in text.lower()
         assert "Pakiety serwera nie maja" in text and "dermavision-backend: kontener bez compose" in text
         assert "/root/TeamBIT/Quiz" in text and "npm audit fix" in text and "507" in text
+
+
+class TestRefreshContainers:
+    """Zapisany skan pamieta kontenery z chwili skanu — /zalataj obrazy bierze compose z biezacego stanu Dockera."""
+
+    def test_stale_scan_gets_live_compose(self):
+        from types import SimpleNamespace
+
+        image_id = "sha256:" + "c" * 12
+        stale = vulns.Scan(at=1, targets=[vulns.TargetResult(
+            "image", "dermafoto_backend", "Debian:13", 10,
+            [vulns.PackageVulns("openssl", "3.0.11-1", ["libssl3"], [vulns.Vuln("DSA-1", [], "high", "x", "3.0.13-1")])],
+            meta={"image": "dermafoto_backend", "image_id": image_id, "containers": ["dermavision-backend"], "compose": []})])
+        assert vulns.image_patch(stale).command == "" and vulns.image_patch(stale).manual
+        live = [SimpleNamespace(name="dermavision-backend", state="running", image="dermafoto_backend", image_id=image_id,
+                                project="dermafoto", service="backend", compose_files=["/root/DermaFoto/docker-compose.yml"]),
+                SimpleNamespace(name="inny", state="running", image="redis", image_id="sha256:" + "d" * 12,
+                                project="", service="", compose_files=[])]
+        vulns.refresh_containers(stale, live)
+        patch = vulns.image_patch(stale)
+        assert "-p dermafoto build --pull backend" in patch.command and not patch.manual
+        assert vulns.refresh_containers(stale, None) is stale                # Docker niedostepny — bez zmian

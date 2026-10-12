@@ -456,6 +456,9 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         await _send(writer, _error(tr(f"Brak wyniku skanu podatnosci ({note}).", f"No vulnerability scan result ({note}).")
                                    if note else tr("Brak wyniku skanu podatnosci.", "No vulnerability scan result.")))
         return
+    # kontenery i compose z biezacego stanu Dockera — skan bywa sprzed odtworzenia kontenerow albo aktualizacji Pipe
+    from backend.core import infra
+    vulns.refresh_containers(result, await infra.docker_containers())
     if scope != "images" and not request.get("execute") and not vulns.select(result, scope) \
             and vulns.image_patch(result).command:
         # serwer czysty, a obrazy da sie odswiezyc — /zalataj lata to, co jest do zalatania (klient wykona scope=images)

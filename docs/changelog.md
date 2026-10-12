@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.36.5 (2026-10-12)
+
+### Poprawki
+
+- `/zalataj obrazy` po aktualizacji Pipe dalej mowil "kontener bez compose": skan podatnosci zapisany na dysku wraca
+  bez nowego zapytania do OSV, dopoki nie zmienia sie lista pakietow (do `VULN_INTERVAL`), i pamietal kontenery oraz
+  etykiety compose z chwili skanu. Teraz `/zalataj` i zapisany skan biora kontenery i ich projekty compose z biezacego
+  stanu Dockera — dziala tez po recznym odtworzeniu kontenera
+
 ## v0.36.4 (2026-10-12)
 
 ### Poprawki
