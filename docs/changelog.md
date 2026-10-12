@@ -1,5 +1,19 @@
 # Historia zmian -- Pipe
 
+## v0.34.1 (2026-10-12)
+
+### Repozytorium gotowe na publiczne wydanie
+
+- Linki do strony projektu w README prowadzily do `kvmyk.github.io/pipe/` i konczyly sie bledem 404; strona jest
+  pod `kvmyk.github.io/Pipe/` (GitHub Pages rozroznia wielkosc liter)
+- Nowy naglowek w README i na stronie: "Admin, ktory nie spi i niczego nie rusza bez pytania", a pod nim zwykle
+  wyjasnienie, czym jest Pipe
+- Link do strony albo repo wklejony na LinkedIna czy komunikator pokazuje karte z obrazkiem (okno zgody na zmiane
+  i odpowiedz "tak"), po polsku albo po angielsku
+- Szablony zgloszen (blad, wynik modelu z piaskownicy) i pull requestow, kodeks postepowania (Contributor Covenant
+  2.1), link do prywatnego zglaszania podatnosci przy zakladaniu issue
+- Dependabot raz w miesiacu podbija akcje GitHuba; usuniety nieuzywany plik `standard.flf`
+
 ## v0.34.0 (2026-10-12)
 
 ### Alerty o podatnosciach z opisem kazdej z nich
