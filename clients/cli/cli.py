@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.33.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.33.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.34.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.34.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -713,7 +713,7 @@ You can also ask for diagrams in plain text: "draw how a request reaches the sho
 
 def _print_list(title: str, items: list[str], empty: str) -> None:
     console.print(f"[bold]{escape(title)}[/bold]")
-    if not items:
+    if not items and empty:
         console.print(f"[dim]{escape(empty)}[/dim]")
     for item in items:
         console.print(f"  • {escape(item)}")
@@ -1367,9 +1367,15 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         if not data.get("enabled", True):
             console.print(tr("[dim]Czuwanie jest wyłączone (WATCH_ENABLED=0).[/dim]",
                              "[dim]The watcher is disabled (WATCH_ENABLED=0).[/dim]"))
+        active = data.get("active", [])
         _print_list(tr("Aktywne alerty", "Active alerts"),
-                    [f"[{a.get('severity')}] {a.get('title')} — {a.get('detail')}" for a in data.get("active", [])],
-                    tr("Brak — wszystko w normie.", "None — everything is normal."))
+                    [f"[{a.get('severity')}] {a.get('title')}" + ("" if a.get("report") else f" — {a.get('detail')}")
+                     for a in active if not a.get("report")],
+                    tr("Brak — wszystko w normie.", "None — everything is normal.") if not active else "")
+        # alert z trescia w Markdownie (podatnosci: kazda z opisem) — w calosci, pod lista
+        for alert in (a for a in active if a.get("report")):
+            console.print(f"\n  [bold]\\[{escape(str(alert.get('severity')))}] {escape(str(alert.get('title')))}[/bold]")
+            console.print(Padding(Markdown(str(alert["report"])), (0, 0, 0, 4)))
         return True
 
     if name == "cele":

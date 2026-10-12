@@ -1,5 +1,24 @@
 # Historia zmian -- Pipe
 
+## v0.34.0 (2026-10-12)
+
+### Alerty o podatnosciach z opisem kazdej z nich
+
+- Alert o podatnosciach (pakiety serwera, obrazy kontenerow, zaleznosci aplikacji) przychodzi sam i przy kazdej
+  podatnosci mowi zwyklymi slowami, czego dotyczy i co grozi; numer CVE jest na koncu w nawiasie. Nie trzeba juz
+  wpisywac `/podatnosci`, zeby zobaczyc opisy
+- Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu, dopiero potem wysyla alert; bez modelu albo gdy nie zdazy,
+  alert ma opis z OSV. Gdy tytul biuletynu nic nie mowi ("security update"), Pipe bierze tresc rekordu
+- Pytanie do agenta o podatnosci daje opis kazdej z nich: audyt przekazuje modelowi pelny raport, a prompt kaze
+  tlumaczyc, co grozi, zamiast podawac same numery CVE i wersje
+- Kazdy aktywny problem przychodzi po aktualizacji raz jeszcze, juz w nowej formie
+
+### Czytelniejszy wyglad
+
+- Bez kursywy: w Telegramie alerty i `/audyt` to zwykly tekst z pogrubionymi naglowkami i lista z kropkami
+- Wersje pakietow i numery podatnosci nie sa juz w czcionce kodu; najpierw waga slowem ("Krytyczna:"), potem opis
+- `pipe web` pokazuje tresc alertu jak odpowiedz w czacie, CLI w `/alerty` wypisuje alert o podatnosciach w calosci
+
 ## v0.33.0 (2026-10-12)
 
 ### Podatnosci w obrazach kontenerow i aplikacjach

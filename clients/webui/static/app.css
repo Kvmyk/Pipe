@@ -402,6 +402,12 @@ button { cursor: pointer; border: 0; background: none; }
 .card-item .foot { display: flex; gap: 6px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
 .card-item.alert-critical { border-color: var(--bad-line); } .card-item.alert-warning { border-color: var(--warn-line); }
 .card-item .report { font-size: 13px; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+.card-item .report-md { font-size: 13px; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; color: var(--ink-2); }
+.card-item .report-md h3 { font-size: 13px; font-weight: 600; color: var(--ink); margin: 10px 0 2px; }
+.card-item .report-md p { margin: 6px 0 2px; }
+.card-item .report-md ul { margin: 2px 0 4px; padding-left: 18px; }
+.card-item .report-md li { margin: 2px 0; }
+.card-item .report-md strong { color: var(--ink); font-weight: 600; }
 .section-title { font-size: 11.5px; letter-spacing: .02em; color: var(--ink-3); font-weight: 500; margin: 8px 2px 0; }
 .section-title:first-child { margin-top: 0; }
 

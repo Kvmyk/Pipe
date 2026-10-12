@@ -496,41 +496,51 @@ def sort_items(items: list[PackageVulns]) -> list[PackageVulns]:
     return sorted(items, key=lambda p: (rank.get(p.worst, 4), -len(p.fixable), p.name))
 
 
-def describe_item(item: PackageVulns, limit: int = 3) -> str:
-    """'openssl 3.0.11-1 -> 3.0.13-1: DSA-... (CVE-...) [high], ...'."""
-    vulns = sorted(item.fixable, key=lambda v: (not v.kev, LEVEL_ORDER.get(v.severity, 4), v.id))
+def describe_item(item: PackageVulns, explain: dict[str, str] | None = None, limit: int = 1) -> str:
+    """
+    Jedna linia z opisem: 'openssl 3.0.11-1 → 3.0.13-1 — krytyczna: atakujacy moze... (CVE-...); i 2 inne'.
+    Dla audytu, raportu porannego i promptu — wszedzie, gdzie nie ma miejsca na pelny raport.
+    """
+    vulns = _sorted_vulns(item)
     parts = []
     for vuln in vulns[:limit]:
-        tag = "KEV" if vuln.kev else vuln.severity
-        parts.append(vuln.label() + (f" [{tag}]" if tag else ""))
+        word = severity_word(vuln)
+        parts.append((f"{word.lower()}: " if word else "") + description(vuln, explain or {}) + f" ({vuln_ref(vuln)})")
     more = len(vulns) - limit
     if more > 0:
-        parts.append(tr(f"i {more} innych", f"and {more} more"))
-    target = f" -> {item.fixed_version}" if item.fixed_version else ""
-    return f"{item.name} {item.version}{target}: " + ", ".join(parts)
+        parts.append(tr(f"kolejnych podatnosci: {more}", f"{more} more"))
+    return package_label(item) + (" — " + "; ".join(parts) if parts else "")
 
 
-def describe_target(target: TargetResult, limit: int = 2) -> str:
-    """'nginx:1.25 (shop-nginx): 12 pakietow z poprawkami, 2 pilne — openssl ..., libxml2 ...'."""
+def describe_target(target: TargetResult, explain: dict[str, str] | None = None, limit: int = 1) -> str:
+    """'nginx:1.25 (shop-nginx): 12 pakietow z poprawkami, 2 pilnych — openssl ... — krytyczna: opis (...)'."""
     urgent = len(target.urgent)
     head = tr(f"{target.label()}: {len(target.items)} pakietow z poprawkami", f"{target.label()}: {len(target.items)} packages with fixes")
     if urgent:
         head += tr(f", {urgent} pilnych", f", {urgent} urgent")
-    names = ", ".join(f"{p.name} {p.version}" + (f" -> {p.fixed_version}" if p.fixed_version else "")
-                      for p in target.items[:limit])
-    return head + (f" — {names}" if names else "")
+    items = sort_items(target.items)[:limit]
+    return head + (" — " + "; ".join(describe_item(p, explain) for p in items) if items else "")
 
 
 # ─── Czytelny raport (Markdown) i wyjasnienia ───────────────────────────────
+#
+# Kazda podatnosc ma opis: wyjasnienie modelu (jezyk Pipe), a bez niego tekst z OSV. Numer CVE jest na koncu
+# w nawiasie — najpierw to, co grozi. Bez kodu i kursywy: w Telegramie, pipe web i CLI czyta sie to jak zwykly tekst.
 
-SEVERITY_WORD = {"critical": "krytyczna", "high": "wysoka", "medium": "srednia", "low": "niska"}
-SEVERITY_WORD_EN = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
+SEVERITY_WORD = {"critical": "Krytyczna", "high": "Wysoka", "medium": "Srednia", "low": "Niska"}
+SEVERITY_WORD_EN = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
 REPORT_SYSTEM = 8            # pakietow hosta w raporcie
 REPORT_TARGETS = 4           # obrazow i aplikacji
 REPORT_PER_TARGET = 4        # pakietow na obraz/aplikacje
 VULNS_PER_PACKAGE = 3
+ALERT_PACKAGES = 6           # pakietow hosta w alercie
+ALERT_TARGETS = 4            # obrazow / aplikacji w alercie
+ALERT_PER_TARGET = 3         # pakietow na obraz / aplikacje w alercie
 MAX_EXPLANATION = 280
 _URL = re.compile(r"https?://\S+|www\.\S+")
+_CVE = re.compile(r"CVE-\d{4}-\d+")
+# Tytuly biuletynow, ktore nic nie mowia ('openssl - security update', 'OpenSSL vulnerabilities')
+_GENERIC_SUMMARY = re.compile(r"(security update|vulnerabilit(y|ies)|regression|update)\s*$", re.IGNORECASE)
 
 
 def plain(text: str, limit: int = MAX_EXPLANATION) -> str:
@@ -544,39 +554,66 @@ def plain(text: str, limit: int = MAX_EXPLANATION) -> str:
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
+def osv_text(detail: dict[str, Any]) -> str:
+    """Opis z rekordu OSV: tytul, a gdy tytul jest ogolnikiem biuletynu — tresc rekordu."""
+    summary = str(detail.get("summary") or "").strip()
+    body = str(detail.get("details") or "").strip()
+    if body and (not summary or len(summary) < 30 or _GENERIC_SUMMARY.search(summary)):
+        return body
+    return summary
+
+
 def _sorted_vulns(item: PackageVulns) -> list[Vuln]:
     return sorted(item.fixable, key=lambda v: (not v.kev, LEVEL_ORDER.get(v.severity, 4), v.id))
 
 
-def vuln_markdown(vuln: Vuln, explain: dict[str, str]) -> str:
-    """'- `DSA-1` · CVE-2026-0001 · **aktywnie wykorzystywana (KEV)** — co to oznacza'."""
-    from backend.core.text import as_code
-
-    parts = [as_code(vuln.id)]
-    cve = next((c for c in vuln.cves if c not in vuln.id), "")      # DEBIAN-CVE-2026-1 nie powtarza CVE-2026-1
-    if cve:
-        parts.append(cve)
+def severity_word(vuln: Vuln) -> str:
     if vuln.kev:
-        parts.append(tr("**aktywnie wykorzystywana (KEV)**", "**actively exploited (KEV)**"))
-    elif vuln.severity:
-        word = tr(SEVERITY_WORD, SEVERITY_WORD_EN).get(vuln.severity, vuln.severity)
-        parts.append(f"**{word}**" if vuln.severity in URGENT else word)
-    text = plain(explain.get(vuln.id) or vuln.summary)
-    return "- " + " · ".join(parts) + (f" — {text}" if text else "")
+        return tr("Aktywnie wykorzystywana", "Actively exploited")
+    return tr(SEVERITY_WORD, SEVERITY_WORD_EN).get(vuln.severity, "")
+
+
+def vuln_ref(vuln: Vuln) -> str:
+    """Numer, ktory ludzie znaja: CVE, gdy jest jeden; biuletyn obejmujacy kilka CVE — z ich liczba."""
+    own = _CVE.search(vuln.id)
+    if own:
+        return own.group(0)
+    cves = sorted(set(vuln.cves))
+    if len(cves) == 1:
+        return cves[0]
+    if cves:
+        return f"{plain(vuln.id, 60)}, {len(cves)} CVE"
+    return plain(vuln.id, 60)
+
+
+def description(vuln: Vuln, explain: dict[str, str]) -> str:
+    return plain(explain.get(vuln.id) or vuln.summary) \
+        or tr("baza OSV nie podaje opisu tej podatnosci", "the OSV database gives no description of this vulnerability")
+
+
+def vuln_markdown(vuln: Vuln, explain: dict[str, str]) -> str:
+    """'- **Krytyczna:** Atakujacy przez siec moze ... (CVE-2026-0001)'."""
+    word = severity_word(vuln)
+    return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({vuln_ref(vuln)})"
+
+
+def package_label(item: PackageVulns) -> str:
+    """'openssl 3.0.11-1 → 3.0.13-1' (wersja z poprawka, gdy jedna usuwa wszystko)."""
+    label = f"{plain(item.name, 80)} {plain(item.version, 80)}"
+    return label + (f" → {plain(item.fixed_version, 80)}" if item.fixed_version else "")
 
 
 def item_markdown(item: PackageVulns, explain: dict[str, str], limit: int = VULNS_PER_PACKAGE) -> list[str]:
-    """Pakiet (pogrubiony) z wersja i poprawka w kodzie, pod nim podatnosci z wyjasnieniem."""
-    from backend.core.text import as_code
-
-    head = f"**{plain(item.name, 80)}** {as_code(item.version)}"
+    """Pakiet (nazwa pogrubiona, wersja → poprawka), pod nim jego podatnosci, kazda z opisem."""
+    head = f"**{plain(item.name, 80)}** {plain(item.version, 80)}"
     if item.fixed_version:
-        head += f" → {as_code(item.fixed_version)}"
+        head += f" → {plain(item.fixed_version, 80)}"
     vulns = _sorted_vulns(item)
     # pusta linia przed pakietem — bez niej Markdown dokleilby naglowek do listy poprzedniego pakietu
     lines = ["", head] + [vuln_markdown(v, explain) for v in vulns[:limit]]
     if len(vulns) > limit:
-        lines.append(tr(f"- … i {len(vulns) - limit} innych", f"- … and {len(vulns) - limit} more"))
+        lines.append(tr(f"- … kolejnych podatnosci w tym pakiecie: {len(vulns) - limit}",
+                        f"- … {len(vulns) - limit} more in this package"))
     return lines
 
 
@@ -616,7 +653,7 @@ def report_markdown(result: Scan | None, explain: dict[str, str], note: str = ""
     if not sections:
         lines.append(tr("Brak znanych podatnosci z poprawka.", "No known vulnerabilities with a fix."))
     for head, items, total in sections:
-        lines += ["", f"**{head}**"]
+        lines += ["", f"### {head}"]
         for item in items:
             lines += item_markdown(item, explain)
         if total > len(items):
@@ -639,6 +676,83 @@ def report_markdown(result: Scan | None, explain: dict[str, str], note: str = ""
     return "\n".join(lines).strip()
 
 
+# ─── Alerty: wysylane same, z opisem kazdej podatnosci ──────────────────────
+
+def serious(item: PackageVulns) -> bool:
+    """Zaleznosc aplikacji warta alertu: KEV albo krytyczna (drzewa npm maja mnostwo "wysokich" w narzedziach)."""
+    return any(v.kev or v.severity == "critical" for v in item.fixable)
+
+
+def urgent_images(result: Scan) -> list[TargetResult]:
+    return sorted((t for t in result.of_kind("image") if t.urgent), key=lambda t: (not t.kev, -len(t.urgent)))
+
+
+def serious_apps(result: Scan) -> list[tuple[TargetResult, list[PackageVulns]]]:
+    apps = [(t, sort_items([p for p in t.items if serious(p)])) for t in result.of_kind("app")]
+    return [(t, items) for t, items in apps if items]
+
+
+def alert_items(result: Scan) -> list[PackageVulns]:
+    """Pakiety, ktore pokaza alerty — ich podatnosci trzeba wyjasnic, zanim alert wyjdzie."""
+    items = sort_items(result.urgent)[:ALERT_PACKAGES]
+    items += [p for t in urgent_images(result)[:ALERT_TARGETS] for p in sort_items(t.urgent)[:ALERT_PER_TARGET]]
+    items += [p for _, found in serious_apps(result)[:ALERT_TARGETS] for p in found[:ALERT_PER_TARGET]]
+    return items
+
+
+def _more(lines: list[str], total: int, shown: int, pl: str, en: str) -> None:
+    if total > shown:
+        lines += ["", tr(f"… i {total - shown} {pl}", f"… and {total - shown} {en}")]
+
+
+def system_alert(result: Scan, explain: dict[str, str]) -> str:
+    """Tresc alertu vuln:system (Markdown): pilne pakiety hosta, pod kazdym podatnosci z opisem, co dalej."""
+    urgent = sort_items(result.urgent)
+    lines: list[str] = []
+    for item in urgent[:ALERT_PACKAGES]:
+        lines += item_markdown(item, explain)
+    _more(lines, len(urgent), ALERT_PACKAGES, "kolejnych pakietow", "more packages")
+    lines += ["", tr("Poprawki zainstaluje po Twojej zgodzie: przycisk Zalataj albo /zalataj pilne.",
+                     "I will install the fixes after you approve: the Patch button or /patch urgent.")]
+    return "\n".join(lines).strip()
+
+
+def images_alert(result: Scan, explain: dict[str, str]) -> str:
+    """Tresc alertu vuln:images: obraz (i jego kontenery), pilne pakiety w nim, podatnosci z opisem."""
+    images = urgent_images(result)
+    lines: list[str] = []
+    for target in images[:ALERT_TARGETS]:
+        containers = ", ".join(target.meta.get("containers") or [])
+        lines += ["", "### " + tr(f"Obraz {plain(target.name, 120)}", f"Image {plain(target.name, 120)}")
+                  + (f" ({plain(containers, 200)})" if containers else "")]
+        urgent = sort_items(target.urgent)
+        for item in urgent[:ALERT_PER_TARGET]:
+            lines += item_markdown(item, explain)
+        _more(lines, len(urgent), ALERT_PER_TARGET, "kolejnych pakietow w tym obrazie", "more packages in this image")
+    _more(lines, len(images), ALERT_TARGETS, "kolejnych obrazow", "more images")
+    lines += ["", tr("Nowsze obrazy pobiore i uruchomie po Twojej zgodzie: przycisk Zalataj albo /zalataj obrazy.",
+                     "I will pull and start newer images after you approve: the Patch button or /patch images.")]
+    return "\n".join(lines).strip()
+
+
+def apps_alert(result: Scan, explain: dict[str, str]) -> str:
+    """Tresc alertu vuln:apps: aplikacja, jej krytyczne zaleznosci, podatnosci z opisem."""
+    apps = serious_apps(result)
+    lines: list[str] = []
+    for target, items in apps[:ALERT_TARGETS]:
+        lines += ["", "### " + tr(f"Aplikacja {plain(target.name, 200)}", f"Application {plain(target.name, 200)}")
+                  + f" ({plain(target.ecosystem or '', 60)})"]
+        for item in items[:ALERT_PER_TARGET]:
+            lines += item_markdown(item, explain)
+        _more(lines, len(items), ALERT_PER_TARGET, "kolejnych zaleznosci", "more dependencies")
+    _more(lines, len(apps), ALERT_TARGETS, "kolejnych aplikacji", "more applications")
+    lines += ["", tr("To zaleznosci w kodzie aplikacji: podbij wersje w lockfile (npm audit fix, pip install -U, "
+                     "composer update ...) i wdroz aplikacje.",
+                     "These are dependencies in the application code: bump the versions in the lockfile (npm audit fix, "
+                     "pip install -U, composer update ...) and deploy the app.")]
+    return "\n".join(lines).strip()
+
+
 def explanations(lang: str) -> dict[str, str]:
     """Zapisane wyjasnienia podatnosci w danym jezyku: id -> tekst."""
     return dict((load_state().get("explain") or {}).get(lang) or {})
@@ -657,7 +771,8 @@ def needing_explanation(result: Scan, lang: str, extra: list[PackageVulns] | Non
     """Pokazywane podatnosci bez wyjasnienia w tym jezyku — dane dla modelu (opis z OSV)."""
     known = explanations(lang)
     details = load_state().get("details") or {}
-    items = [item for _, shown, _ in report_sections(result) for item in shown] + list(extra or [])
+    # `extra` najpierw — to, co zaraz zobaczy uzytkownik (alert, podglad latki), nie moze wypasc przez `limit`
+    items = list(extra or []) + [item for _, shown, _ in report_sections(result) for item in shown]
     pending: dict[str, dict[str, str]] = {}
     for item in items:
         for vuln in _sorted_vulns(item)[:VULNS_PER_PACKAGE]:
@@ -799,7 +914,7 @@ def image_patch_preview(patch: ImagePatch, reason: str = "", explain: dict[str, 
                 f"Newer images for {len(patch.targets)} images with vulnerabilities:")]
     for target in patch.targets[:6]:
         containers = ", ".join(target.meta.get("containers") or [])
-        lines += ["", f"**{plain(target.name, 120)}**" + (f" ({plain(containers, 200)})" if containers else "")]
+        lines += ["", f"### {plain(target.name, 120)}" + (f" ({plain(containers, 200)})" if containers else "")]
         for item in target.items[:3]:
             lines += item_markdown(item, explain or {}, 1)
         if len(target.items) > 3:
@@ -955,7 +1070,7 @@ def _package_vulns(package: Package, ids: list[str], details: dict[str, dict[str
         if not severity:
             levels = [str(details[r].get("severity", "")) for r in detail.get("related") or [] if r in details]
             severity = min(levels, key=lambda s: LEVEL_ORDER.get(s, 4), default="")
-        item.fixable.append(Vuln(vid, list(detail.get("cves") or []), severity, str(detail.get("summary", "")),
+        item.fixable.append(Vuln(vid, list(detail.get("cves") or []), severity, osv_text(detail),
                                  fixed, kev=any(c in kev for c in detail.get("cves") or [])))
     return item
 
@@ -1046,16 +1161,21 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
 
 # ─── Powiadomienia ──────────────────────────────────────────────────────────
 
+# Alerty z opisami (v0.34) maja inny klucz niz wczesniejsze — kazdy aktywny problem przychodzi raz w nowej formie.
+NOTIFIED = "notified_described"
+
+
 def notified_ids(key: str) -> set[str]:
     """ID, o ktorych alert `key` juz powiadomil (przezywa restart Pipe)."""
-    return set((load_state().get("notified") or {}).get(key) or [])
+    return set((load_state().get(NOTIFIED) or {}).get(key) or [])
 
 
 def mark_notified(key: str, ids: set[str]) -> None:
     state = load_state()
-    notified = state.get("notified") if isinstance(state.get("notified"), dict) else {}
+    notified = state.get(NOTIFIED) if isinstance(state.get(NOTIFIED), dict) else {}
     notified[key] = sorted(ids)
-    state["notified"] = notified
+    state[NOTIFIED] = notified
+    state.pop("notified", None)
     save_state(state)
 
 

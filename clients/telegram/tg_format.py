@@ -430,13 +430,20 @@ SEVERITY_LABEL_EN = {"critical": "CRITICAL", "warning": "WARNING"}
 
 
 def format_alert(event: dict) -> str:
-    """Alert czuwania jako HTML Telegrama."""
+    """
+    Alert czuwania jako HTML Telegrama. `report` (Markdown, np. podatnosci z opisami) zastepuje krotkie
+    `detail`. Zwykly tekst, bez kursywy — dluzszy tekst pochylony czyta sie zle.
+    """
     title = html.escape(str(event.get("title", "")))
     detail = html.escape(str(event.get("detail", "")))
     if event.get("state") == "resolved":
         return tr(f"<b>ROZWIAZANE</b> — {title}", f"<b>RESOLVED</b> — {title}")
     label = tr(SEVERITY_LABEL, SEVERITY_LABEL_EN).get(str(event.get("severity")), "ALERT")
-    text = f"<b>{label}</b> — {title}\n<i>{detail}</i>" if detail else f"<b>{label}</b> — {title}"
+    text = f"<b>{label}</b> — {title}"
+    if event.get("report"):
+        text += "\n\n" + markdown_html(str(event["report"]))
+    elif detail:
+        text += f"\n{detail}"
     if event.get("history"):
         text += tr("\n<b>Poprzednio:</b> ", "\n<b>Previously:</b> ") + html.escape(str(event["history"]))
     return text
@@ -461,6 +468,14 @@ def _outside_code(text: str, transform) -> str:
         position = end
     out.append(transform(text[position:]))
     return "".join(out)
+
+
+def markdown_html(text: str) -> str:
+    """
+    Markdown z backendu (raport podatnosci, podglad latki, tresc alertu) jako HTML Telegrama: listy z kropkami,
+    naglowki i **pogrubienia** pogrubione, tagi HTML z tekstu pokazane doslownie (tresc moze pochodzic z OSV).
+    """
+    return to_telegram_html(_outside_code(str(text or ""), lambda part: _LIST_DASH.sub(r"\1• ", part)), allow_tags=False)
 
 
 def report_html(report: str, limit: int = 3000, strip_status: bool = False) -> str:
@@ -508,7 +523,8 @@ def format_alerts(data: dict) -> str:
                   "The watcher is disabled (WATCH_ENABLED=0 in backend/.env).")
     active = data.get("active") or []
     lines = [tr("<b>Aktywne alerty</b>", "<b>Active alerts</b>")]
-    lines += [format_alert(a) for a in active] or [tr("Brak — wszystko w normie.", "None — everything is normal.")]
+    # pusta linia miedzy alertami — alert o podatnosciach ma kilka akapitow
+    lines += ["\n".join("\n" + format_alert(a) for a in active)] if active else [tr("Brak — wszystko w normie.", "None — everything is normal.")]
     recent = [e for e in (data.get("recent") or []) if e.get("type") == "alert" and e.get("state") != "new"]
     if recent:
         lines.append(tr("\n<b>Ostatnie zdarzenia</b>", "\n<b>Recent events</b>"))
@@ -615,7 +631,7 @@ def format_audit(data: dict) -> str:
         label = tr(AUDIT_SEVERITY, AUDIT_SEVERITY_EN).get(finding.get("severity"), "")
         lines.append(f"\n<b>{index}. [{label}]</b> {html.escape(str(finding.get('title', '')))}")
         if finding.get("detail"):
-            lines.append(f"<i>{html.escape(str(finding['detail']))}</i>")
+            lines.append(html.escape(str(finding["detail"])))
         if finding.get("fix"):
             lines.append(tr("Poprawka: ", "Fix: ") + html.escape(str(finding["fix"])))
         if finding.get("command"):

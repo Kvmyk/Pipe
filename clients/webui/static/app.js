@@ -863,7 +863,8 @@
         head.appendChild(el("span", "tag " + (alert.severity === "critical" ? "del" : "warn"), t("sev_" + alert.severity) === "sev_" + alert.severity ? alert.severity : t("sev_" + alert.severity)));
         head.appendChild(el("b", "", alert.title));
         card.appendChild(head);
-        if (alert.detail) card.appendChild(el("div", "meta", alert.detail));
+        if (alert.report) card.appendChild(alertReport(alert.report));
+        else if (alert.detail) card.appendChild(el("div", "meta", alert.detail));
         if (alert.history) card.appendChild(el("div", "meta", alert.history));
         const foot = el("div", "foot"), look = el("button", "btn no small", t("investigate"));
         look.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("investigate") + ": " + alert.title); run({ command: "investigate", id: alert.id }, t("working")); });
@@ -894,6 +895,12 @@
       default: return event.type;
     }
   }
+  // Tresc alertu w Markdownie (podatnosci: kazda z opisem) — renderowana jak odpowiedz w czacie, bez innerHTML.
+  function alertReport(text) {
+    const box = el("div", "report-md");
+    box.appendChild(md(String(text)));
+    return box;
+  }
   function eventCard(event) {
     const card = el("div", "card-item" + (event.type === "alert" && event.state !== "resolved" ? " alert-" + event.severity : ""));
     card.dataset.key = "event:" + eventKey(event);
@@ -901,6 +908,7 @@
     head.appendChild(el("b", "", eventTitle(event)));
     card.appendChild(head);
     card.appendChild(el("div", "meta", event.at || ""));
+    if (event.type === "alert" && event.report) { card.appendChild(alertReport(event.report)); return card; }
     const text = event.report || event.detail || (event.sections || []).map((s) => s.title + "\n" + (s.lines || []).map((l) => "• " + l).join("\n")).join("\n\n");
     if (text) card.appendChild(el("div", "report", String(text).slice(0, 4000)));
     return card;

@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.33.0
+Pipe v0.34.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -353,8 +353,11 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 - When: whenever the package list changes (a new application, an update -- then OSV only gets the changed packages)
   and every `VULN_INTERVAL` (6 h) for all of them, because new vulnerabilities show up in old versions.
 - An alert comes only about **new urgent** ones: actively exploited (the CISA KEV catalog) or critical and high.
-  One alert with the package list and the command; known vulnerabilities don't come back after a Pipe restart. The
-  rest is in the morning report and in `/audit`.
+  The alert arrives on its own (Telegram, `pipe web`) and says in plain words what each vulnerability is about and
+  what it risks, with the CVE number at the end in brackets. Pipe first waits (up to 2 minutes) for the model's
+  explanations, without them it sends the OSV description. Known vulnerabilities don't come back after a Pipe
+  restart. The rest is in the morning report and in `/audit`; asking the agent about vulnerabilities also gives a
+  description of each one.
 - In `/audit` vulnerabilities take at most three points (KEV, critical and high, the rest), each with an
   `apt-get install --only-upgrade ...` command that upgrades only those packages. Pipe always asks before installing.
   In docker mode the command is *in the host shell*; Pipe can patch by itself only in native mode.
@@ -376,7 +379,7 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
   `requirements*.txt` (only `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
   `Gemfile.lock`. The result is in `/audit` with the version that removes the vulnerabilities; the `vuln:apps` alert
   only for actively exploited and critical ones. There is no patch here: changing a version is a change in the app's code.
-- **`/vulns`** shows everything in one place: the package in bold, the version and the fixed version as code, below
+- **`/vulns`** shows everything in one place: the package in bold, the version and the fixed version, below
   it the vulnerabilities with their severity and a short explanation in Pipe's language -- what an attacker can do
   and when it is a risk. The model (`WORKER_MODEL`) writes the explanations from the OSV description, once per
   vulnerability, and Pipe remembers them; without a model you see the original OSV description. The `/patch` preview

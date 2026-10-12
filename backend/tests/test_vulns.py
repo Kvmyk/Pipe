@@ -177,7 +177,9 @@ class TestScan:
         assert result.unfixed == 1
         assert vulns.upgrade_command(result.ecosystem, result.items) == \
             "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade -o Dpkg::Options::=--force-confold libssl3 openssl"
-        assert "DSA-1 (CVE-2026-0001) [KEV]" in vulns.describe_item(openssl)
+        line = vulns.describe_item(openssl, {"DSA-1": "Atakujacy moze odczytac pamiec."})
+        assert line == ("openssl 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1 — aktywnie wykorzystywana: "
+                        "Atakujacy moze odczytac pamiec. (CVE-2026-0001); kolejnych podatnosci: 1")
 
     def test_cached_until_inventory_changes_or_interval(self, host, monkeypatch):
         debian_host(host)
@@ -283,7 +285,9 @@ class TestWatcher:
         w = watch.Watcher()
         events = w.apply(w.vuln_findings(self.scan()), watch.VULN_SCOPE)
         assert [(e.state, e.severity) for e in events] == [("new", "critical")]
-        assert "--force-confold openssl" in events[0].detail
+        assert events[0].detail == "openssl 3.0.11-1 → 3.0.13-1"          # jedna linia dla promptu i raportu
+        assert "**openssl** 3.0.11-1 → 3.0.13-1" in events[0].report and "(CVE-2026-0001)" in events[0].report
+        assert "/zalataj pilne" in events[0].report
         assert w.apply(w.vuln_findings(self.scan()), watch.VULN_SCOPE) == []
 
         restarted = watch.Watcher()                     # znane ID nie wracaja po restarcie
@@ -575,7 +579,10 @@ class TestStage3AlertsAndAudit:
         events = w.apply(w.vuln_findings(result), watch.VULN_SCOPE)
         assert {e.key for e in events} == {"vuln:system", "vuln:images", "vuln:apps"}
         images = next(e for e in events if e.key == "vuln:images")
-        assert images.severity == "critical" and "/zalataj obrazy" in images.detail
+        assert images.severity == "critical" and images.detail == "nginx:1.25 (adhoc, shop-nginx)"
+        assert "### Obraz nginx:1.25" in images.report and "/zalataj obrazy" in images.report
+        apps = next(e for e in events if e.key == "vuln:apps")
+        assert "### Aplikacja /srv/shop (npm)" in apps.report and "**lodash** 4.17.20 → 4.17.21" in apps.report
         assert w.apply(w.vuln_findings(result), watch.VULN_SCOPE) == []
         restarted = watch.Watcher()
         assert restarted.apply(restarted.vuln_findings(result), watch.VULN_SCOPE) == []
@@ -588,7 +595,7 @@ class TestStage3AlertsAndAudit:
         by_id = {f.id: f for f in audit.findings}
         assert set(by_id) == {"vuln-kev", "vuln-images", "vuln-apps"}
         assert by_id["vuln-images"].severity == "high" and "pull web" in by_id["vuln-images"].command
-        assert by_id["vuln-apps"].severity == "medium" and "lodash 4.17.20 -> 4.17.21" in by_id["vuln-apps"].detail
+        assert by_id["vuln-apps"].severity == "medium" and "lodash 4.17.20 → 4.17.21 — krytyczna: " in by_id["vuln-apps"].detail
         assert by_id["vuln-apps"].command == ""
 
         write(host, "/etc/os-release", 'ID=rocky\nVERSION_ID="9.4"\nPRETTY_NAME="Rocky Linux 9.4"\n')
@@ -665,10 +672,11 @@ class TestReadable:
     def test_item_markdown_highlights_and_explains(self, host, monkeypatch):
         result = self.scan_with(host, monkeypatch)
         lines = vulns.item_markdown(result.items[0], {"DSA-1": "Atakujacy moze odczytac pamiec serwera."})
-        assert lines[0] == "" and lines[1] == "**openssl** `3.0.11-1~deb12u1` → `3.0.13-1~deb12u1`"
-        assert lines[2] == ("- `DSA-1` · CVE-2026-0001 · **aktywnie wykorzystywana (KEV)** — "
-                            "Atakujacy moze odczytac pamiec serwera.")
-        assert lines[3].startswith("- `DEBIAN-CVE-2026-0002` · **krytyczna** — DEBIAN-CVE-2026-0002 summary")
+        assert lines[0] == "" and lines[1] == "**openssl** 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1"
+        # najpierw co grozi, numer na koncu; bez kodu i kursywy — czyta sie jak zwykly tekst
+        assert lines[2] == "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. (CVE-2026-0001)"
+        assert lines[3] == "- **Krytyczna:** DEBIAN-CVE-2026-0002 summary (CVE-2026-0002)"
+        assert not any("`" in line for line in lines)
 
     def test_plain_strips_links_markup_and_length(self):
         assert vulns.plain("Zobacz https://x.example/a i <script>`kod`</script> **mocno** [link](y) ERR_raise_data") == \
@@ -678,7 +686,7 @@ class TestReadable:
     def test_report_sections_and_next_steps(self, host, monkeypatch):
         result = self.scan_with(host, monkeypatch)
         text = vulns.report_markdown(result, {})
-        assert "**Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 z poprawkami, 1 pilnych**" in text
+        assert "### Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 z poprawkami, 1 pilnych" in text
         assert "Bez poprawki (czekaja na dystrybucje): 1." in text and "/zalataj — pakiety serwera" in text
         assert "Nie ma jeszcze wyniku" in vulns.report_markdown(None, {}, "off")
 
@@ -718,7 +726,7 @@ class TestReadable:
     def test_patch_preview_uses_markdown_and_explanations(self, host, monkeypatch):
         result = self.scan_with(host, monkeypatch)
         text = vulns.patch_preview(result, result.items, "apt-get x", explain={"DSA-1": "Wyjasnienie."})
-        assert "**openssl**" in text and "`DSA-1`" in text and "Wyjasnienie." in text
+        assert "**openssl**" in text and "Wyjasnienie. (CVE-2026-0001)" in text
 
 
 class TestForeignRecords:

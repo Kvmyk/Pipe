@@ -493,6 +493,14 @@ def cert_findings(audit: Audit, report: Any, cert_days: int) -> None:
                                                  "check automatic renewal (certbot.timer, proxy)")))
 
 
+def _explained() -> dict[str, str]:
+    """Wyjasnienia podatnosci w jezyku Pipe (bez nich opisy z OSV) — kazda pozycja audytu mowi, czego dotyczy."""
+    from backend.core import vulns
+    from backend.core.i18n import lang
+
+    return vulns.explanations(lang())
+
+
 def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
     """Podatnosci (core/vulns.py): pakiety hosta, obrazy kontenerow, zaleznosci aplikacji."""
     label = tr("podatnosci pakietow", "package vulnerabilities")
@@ -525,7 +533,7 @@ def _image_vuln_findings(audit: Audit, scan: Any) -> None:
         return
     kev, urgent = any(t.kev for t in vulnerable), any(t.urgent for t in vulnerable)
     patch = vulns.image_patch(scan)
-    detail = "; ".join(vulns.describe_target(t, 1) for t in vulnerable[:4])
+    detail = "; ".join(vulns.describe_target(t, _explained()) for t in vulnerable[:4])
     if len(vulnerable) > 4:
         detail += tr(f"; i {len(vulnerable) - 4} innych", f"; and {len(vulnerable) - 4} more")
     if patch.manual:
@@ -554,9 +562,9 @@ def _app_vuln_findings(audit: Audit, scan: Any) -> None:
         return
     kev = any(t.kev for t in apps)
     critical = any(v.severity == "critical" for t in apps for p in t.items for v in p.fixable)
-    detail = "; ".join(f"{t.label()}: " + ", ".join(f"{p.name} {p.version}" + (f" -> {p.fixed_version}" if p.fixed_version else "")
-                                                    for p in t.items[:3])
-                       + (tr(f" i {len(t.items) - 3} innych", f" and {len(t.items) - 3} more") if len(t.items) > 3 else "")
+    explain = _explained()
+    detail = "; ".join(f"{t.label()}: " + "; ".join(vulns.describe_item(p, explain) for p in vulns.sort_items(t.items)[:3])
+                       + (tr(f"; i {len(t.items) - 3} innych", f"; and {len(t.items) - 3} more") if len(t.items) > 3 else "")
                        for t in apps[:4])
     audit.findings.append(Finding(
         "vuln-apps", "high" if kev else "medium" if critical else "low",
@@ -593,16 +601,16 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
     for finding_id, severity, items, title in groups:
         if not items:
             continue
-        shown = "; ".join(vulns.describe_item(p) for p in items[:5])
+        shown = "; ".join(vulns.describe_item(p, _explained()) for p in items[:5])
         more = len(items) - 5
         if more > 0:
             shown += tr(f"; i {more} innych pakietow", f"; and {more} more packages")
         audit.findings.append(Finding(
             finding_id, severity, title, shown,
             tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera; "
-               "opisy: /podatnosci",
+               "pelny raport: /podatnosci",
                "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server "
-               "restart; descriptions: /vulns"),
+               "restart; full report: /vulns"),
             vulns.upgrade_command(scan.ecosystem, items), _host_only()))
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej

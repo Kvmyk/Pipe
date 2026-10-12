@@ -53,6 +53,8 @@ VULN_AUDIT_WAIT = 45
 # Wyjasnienia podatnosci: tyle podatnosci na jedno zapytanie do modelu i tyle czeka na nie /podatnosci.
 EXPLAIN_BATCH = 30
 EXPLAIN_WAIT = 40
+# Tyle czuwanie czeka na opisy, zanim wysle alert o podatnosciach (bez nich alert ma opisy z OSV).
+VULN_ALERT_EXPLAIN_WAIT = 120
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
 
@@ -64,6 +66,7 @@ class Finding:
     title: str
     detail: str
     transient: bool = False
+    report: str = ""       # pelna tresc alertu w Markdownie (podatnosci: kazda z opisem); detail zostaje krotki
 
     @property
     def scope(self) -> str:
@@ -80,6 +83,7 @@ class Alert:
     since: str
     state: str = "new"      # new | resolved | event
     history: str = ""       # ostatnie wystapienie tego problemu (pamiec incydentow)
+    report: str = ""        # Markdown — klienci pokazuja go zamiast `detail`
 
     def to_event(self) -> dict[str, Any]:
         return {"type": "alert", **asdict(self)}
@@ -218,7 +222,8 @@ class Watcher:
     def _alert(self, finding: Finding, state: str) -> Alert:
         since = datetime.now().strftime("%Y-%m-%d %H:%M")
         alert_id = hashlib.sha1(f"{finding.key}|{since}".encode()).hexdigest()[:10]
-        return Alert(alert_id, finding.key, finding.severity, finding.title, finding.detail, since, state)
+        return Alert(alert_id, finding.key, finding.severity, finding.title, finding.detail, since, state,
+                     report=finding.report)
 
     def apply(self, findings: list[Finding], scope: frozenset[str] | None = None) -> list[Alert]:
         """
@@ -238,7 +243,7 @@ class Watcher:
                 self.active[key] = alert
                 events.append(alert)
             else:
-                known.title, known.detail = finding.title, finding.detail
+                known.title, known.detail, known.report = finding.title, finding.detail, finding.report
         for key in list(self.active):
             if key not in current and (scope is None or key.split(":", 1)[0] in scope):
                 resolved = self.active.pop(key)
@@ -439,66 +444,70 @@ class Watcher:
         Alerty o pilnych podatnosciach z poprawka: `vuln:system` (pakiety hosta: KEV, krytyczne, wysokie),
         `vuln:images` (obrazy kontenerow: to samo), `vuln:apps` (zaleznosci aplikacji: tylko KEV i krytyczne —
         drzewa npm maja mnostwo "wysokich" w narzedziach deweloperskich). None = skan sie nie udal.
+        `report` alertu opisuje kazda podatnosc (wyjasnienie modelu albo opis z OSV) — uzytkownik nie musi
+        o nic prosic; `detail` to jedna linia dla promptu, raportu porannego i powiadomien.
         """
         from backend.core import vulns
+        from backend.core.i18n import lang
 
         if result is None or not result.ok:
             return None
+        explain = vulns.explanations(lang())
         findings: list[Finding] = []
 
-        urgent = result.urgent
+        def names(items: list[Any], limit: int = 4) -> str:
+            shown = ", ".join(vulns.package_label(p) for p in items[:limit])
+            return shown + (tr(f" i {len(items) - limit} innych", f" and {len(items) - limit} more") if len(items) > limit else "")
+
+        urgent = vulns.sort_items(result.urgent)
         finding = None
         if urgent:
             kev = [p for p in urgent if p.kev]
-            title = tr(f"Pilne podatnosci z poprawka w {len(urgent)} pakietach", f"Urgent fixable vulnerabilities in {len(urgent)} packages")
+            title = tr(f"Pilne podatnosci w {len(urgent)} pakietach serwera", f"Urgent vulnerabilities in {len(urgent)} server packages")
             if kev:
                 title += tr(f" ({len(kev)} aktywnie wykorzystywanych)", f" ({len(kev)} actively exploited)")
-            lines = [vulns.describe_item(p) for p in urgent[:5]]
-            if len(urgent) > 5:
-                lines.append(tr(f"i {len(urgent) - 5} innych pakietow", f"and {len(urgent) - 5} more packages"))
-            command = vulns.upgrade_command(result.ecosystem, urgent)
-            if command:
-                lines.append(tr(f"Komenda: {command}", f"Command: {command}"))
-            lines.append(tr("Opisy: /podatnosci, latka: /zalataj", "Descriptions: /vulns, patch: /patch"))
-            finding = Finding(VULN_KEY, "critical" if kev else "warning", title, "\n".join(lines))
+            finding = Finding(VULN_KEY, "critical" if kev else "warning", title, names(urgent),
+                              report=vulns.system_alert(result, explain))
         findings += self._vuln_alert(VULN_KEY, result.urgent_ids, finding)
 
-        images = [t for t in result.of_kind("image") if t.urgent]
+        images = vulns.urgent_images(result)
         finding = None
         if images:
             title = tr(f"Pilne podatnosci w {len(images)} obrazach kontenerow", f"Urgent vulnerabilities in {len(images)} container images")
-            lines = [vulns.describe_target(t) for t in images[:5]]
-            lines.append(tr("Opisy: /podatnosci, nowsze obrazy: /zalataj obrazy", "Descriptions: /vulns, newer images: /patch images"))
             finding = Finding(VULN_IMAGES_KEY, "critical" if any(t.kev for t in images) else "warning", title,
-                              "\n".join(lines))
+                              ", ".join(t.label() for t in images[:4]), report=vulns.images_alert(result, explain))
         findings += self._vuln_alert(VULN_IMAGES_KEY, {f"{t.name}|{v.id}" for t in images for p in t.urgent
                                                       for v in p.fixable if v.urgent}, finding)
 
-        def serious(item: Any) -> bool:
-            return any(v.kev or v.severity == "critical" for v in item.fixable)
-        apps = [(t, [p for p in t.items if serious(p)]) for t in result.of_kind("app")]
-        apps = [(t, items) for t, items in apps if items]
+        apps = vulns.serious_apps(result)
         finding = None
         if apps:
             title = tr(f"Krytyczne podatnosci w zaleznosciach {len(apps)} aplikacji",
                        f"Critical vulnerabilities in the dependencies of {len(apps)} applications")
-            lines = [f"{t.label()}: " + "; ".join(vulns.describe_item(p, 1) for p in items[:3]) for t, items in apps[:5]]
-            lines.append(tr("Podbij wersje w lockfile; opisy: /podatnosci", "Bump the versions in the lockfile; descriptions: /vulns"))
             finding = Finding(VULN_APPS_KEY, "critical" if any(p.kev for _, items in apps for p in items) else "warning",
-                              title, "\n".join(lines))
+                              title, "; ".join(f"{t.label()}: {names(items, 3)}" for t, items in apps[:4]),
+                              report=vulns.apps_alert(result, explain))
         findings += self._vuln_alert(VULN_APPS_KEY, {f"{t.name}|{v.id}" for t, items in apps for p in items
                                                     for v in p.fixable if v.kev or v.severity == "critical"}, finding)
         return findings
 
     async def vulns_once(self) -> list[Alert]:
+        from backend.core import vulns
+
         result = await self.vuln_scan_now()
+        if result is not None and result.ok:
+            # Najpierw opisy (raz na podatnosc, potem z pamieci), dopiero potem alert — ma od razu mowic,
+            # czego dotyczy kazda podatnosc. Po VULN_ALERT_EXPLAIN_WAIT alert idzie z opisami z OSV,
+            # a wyjasnienia koncza sie w tle dla /podatnosci.
+            try:
+                await self.explain_vulns(result, extra=vulns.alert_items(result), timeout=VULN_ALERT_EXPLAIN_WAIT)
+            except Exception as exc:                  # bez opisow modelu alert i tak musi wyjsc
+                print(tr(f"[Czuwanie] Wyjasnienia podatnosci: {exc}", f"[Watcher] Vulnerability explanations: {exc}"),
+                      flush=True)
         findings = self.vuln_findings(result)
         if findings is None:
             return []
-        events = self._publish(self.apply(findings, VULN_SCOPE))
-        if result is not None and result.ok:
-            asyncio.create_task(self._safe(self.explain_vulns(result), "wyjasnienia podatnosci"))
-        return events
+        return self._publish(self.apply(findings, VULN_SCOPE))
 
     async def explain_vulns(self, result: Any, extra: list[Any] | None = None, timeout: float | None = None) -> bool:
         """

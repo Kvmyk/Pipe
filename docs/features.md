@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.33.0
+Pipe v0.34.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -349,8 +349,10 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 - Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)
   i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach.
 - Alert przychodzi tylko o **nowych pilnych**: aktywnie wykorzystywanych (katalog CISA KEV) albo krytycznych
-  i wysokich. Jeden alert z lista pakietow i komenda; znane podatnosci nie wracaja po restarcie Pipe. Reszta jest
-  w porannym raporcie i w `/audyt`.
+  i wysokich. Alert przychodzi sam (Telegram, `pipe web`) i przy kazdej podatnosci mowi zwyklymi slowami, czego
+  dotyczy i co grozi, a numer CVE jest na koncu w nawiasie. Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu,
+  bez nich wysyla opis z OSV. Znane podatnosci nie wracaja po restarcie Pipe. Reszta jest w porannym raporcie
+  i w `/audyt`; pytanie do agenta o podatnosci tez daje opis kazdej z nich.
 - W `/audyt` podatnosci sa najwyzej trzema punktami (KEV, krytyczne i wysokie, pozostale), kazdy z komenda
   `apt-get install --only-upgrade ...` podbijajaca tylko te pakiety. Pipe zawsze pyta przed instalacja.
   W trybie docker komenda jest *w powloce hosta*; latac sam moze tylko w trybie native.
@@ -371,7 +373,7 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
   `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa podatnosci; alert `vuln:apps` tylko dla aktywnie
   wykorzystywanych i krytycznych. Latki tu nie ma: zmiana wersji to zmiana w kodzie aplikacji.
-- **`/podatnosci`** pokazuje wszystko w jednym miejscu: pakiet pogrubiony, wersja i wersja z poprawka w kodzie,
+- **`/podatnosci`** pokazuje wszystko w jednym miejscu: pakiet pogrubiony, wersja i wersja z poprawka,
   pod nim podatnosci z waga i krotkim wyjasnieniem w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
   Wyjasnienia pisze model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje;
   bez modelu widac oryginalny opis z OSV. Ten sam format ma podglad `/zalataj`, ktory pyta: *Zainstaluj* albo

@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.33.0
+Pipe v0.34.0
 """
 
 from __future__ import annotations
@@ -81,8 +81,10 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "security_audit": (
         "Host security audit with a 0-100 score: SSH password/root login, firewall, databases and the Docker API "
         "exposed publicly, privileged containers and ones with docker.sock, accounts with uid 0 or no password, "
-        "automatic updates, fail2ban, world-readable .env files, certificates. Every finding has a fix with the exact "
-        "command. Read-only. Use it when the user asks about server security.",
+        "automatic updates, fail2ban, world-readable .env files, certificates, vulnerabilities (CVE) in the server's "
+        "packages, container images and application dependencies — each with a description of what it is about. Every "
+        "finding has a fix with the exact command. Read-only. Use it when the user asks about server security or its "
+        "vulnerabilities.",
         {}),
     "mcp_manage": (
         "External MCP servers you use (their tools are named mcp__<server>__<tool>). list: server status; add: a new "

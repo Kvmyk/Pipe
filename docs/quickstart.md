@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.33.0
+Pipe v0.34.0
 
 ## Wyprobuj bez serwera
 

@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.core import hostinfo, routines, runtime, snapshots
-from backend.core.i18n import tr
+from backend.core.i18n import lang, tr
 
 
 @dataclass
@@ -100,7 +100,8 @@ def vuln_lines(scan: Any) -> list[str]:
     lines = []
     if scan.items:
         lines.append(vulns.summary_line(scan))
-        lines += [vulns.describe_item(p, limit=2) for p in scan.items[:3]]
+        explain = vulns.explanations(lang())
+        lines += [vulns.describe_item(p, explain) for p in scan.items[:3]]
     elif scan.ecosystem and not scan.error:
         lines.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow)",
                         f"no vulnerabilities with a fix ({scan.checked} packages)"))
@@ -109,13 +110,13 @@ def vuln_lines(scan: Any) -> list[str]:
         urgent = sum(1 for t in images if t.urgent)
         lines.append(tr(f"obrazy kontenerow z poprawkami: {len(images)}" + (f" ({urgent} z pilnymi)" if urgent else ""),
                         f"container images with fixes: {len(images)}" + (f" ({urgent} with urgent ones)" if urgent else "")))
-        lines += [vulns.describe_target(t, 1) for t in images[:2]]
+        lines += [vulns.describe_target(t, vulns.explanations(lang())) for t in images[:2]]
     apps = [t for t in scan.of_kind("app") if t.items]
     if apps:
         lines.append(tr(f"aplikacje z podatnymi zaleznosciami: ", f"applications with vulnerable dependencies: ")
                      + ", ".join(t.label() for t in apps[:3]))
     if scan.items or images or apps:
-        lines.append(tr("opisy: /podatnosci, latki: /zalataj", "descriptions: /vulns, patches: /patch"))
+        lines.append(tr("pelny raport: /podatnosci, latki: /zalataj", "full report: /vulns, patches: /patch"))
     if scan.error:
         lines.append(tr(f"ostatni skan nieudany: {scan.error}", f"last scan failed: {scan.error}"))
     return lines

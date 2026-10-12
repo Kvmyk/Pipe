@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.33.0
+Pipe v0.34.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -85,6 +85,7 @@ from tg_format import (
     format_directory,
     format_help,
     format_investigation,
+    markdown_html,
     MAX_MODEL_LABEL,
     format_model_picker,
     format_providers,
@@ -502,7 +503,7 @@ async def cmd_podatnosci(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     async def go() -> None:
         data = response_data([f async for f in get_client(user_id).command("vulns")])
-        await _send_html(context.bot, update.effective_chat.id, to_telegram_html(data.get("text", ""), allow_tags=False))
+        await _send_html(context.bot, update.effective_chat.id, markdown_html(data.get("text", "")))
 
     await update.message.reply_text(tr("Sprawdzam podatnosci i przygotowuje opisy...", "Checking vulnerabilities and preparing descriptions..."))
     await _backend_call(update, context, go())
@@ -760,7 +761,7 @@ async def _patch_preview(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_
     markup = None
     if data.get("can_execute") and data.get("token"):
         markup = _patch_keyboard(data.get("scope", scope), data["token"], user_id)
-    await _send_html(context.bot, chat_id, to_telegram_html(data.get("text", ""), allow_tags=False), markup)
+    await _send_html(context.bot, chat_id, markdown_html(data.get("text", "")), markup)
 
 
 async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

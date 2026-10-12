@@ -419,3 +419,17 @@ def test_telegram_formatting():
     assert "<b>Poprzednio:</b> 2026-09-01 &lt;nginx&gt;" in text
     report = format_investigation({"title": "Sklep <down>", "report": "USTALENIA: <b>x</b>"})
     assert "Sklep &lt;down&gt;" in report and "&lt;b&gt;x&lt;/b&gt;" in report
+
+
+def test_telegram_vuln_alert_reads_as_plain_text():
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "telegram"))
+    from tg_format import format_alert
+
+    report = ("**openssl** 3.0.11-1 → 3.0.13-1\n- **Krytyczna:** Atakujacy moze odczytac <pamiec>. (CVE-2026-0001)\n\n"
+              "### Obraz nginx:1.25 (shop)\n\nPoprawki: /zalataj pilne")
+    text = format_alert({"severity": "critical", "title": "Pilne podatnosci", "detail": "openssl 3.0.11-1", "report": report})
+    assert "<i>" not in text and "openssl 3.0.11-1\n" not in text           # report zamiast detail, bez kursywy
+    assert "<b>openssl</b> 3.0.11-1 → 3.0.13-1\n• <b>Krytyczna:</b> Atakujacy moze odczytac &lt;pamiec&gt;." in text
+    assert "<b>Obraz nginx:1.25 (shop)</b>" in text
+    assert format_alert({"severity": "warning", "title": "Dysk", "detail": "/ 95%"}) == "<b>OSTRZEZENIE</b> — Dysk\n/ 95%"
