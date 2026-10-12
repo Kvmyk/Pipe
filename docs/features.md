@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.36.2
+Pipe v0.36.3
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -372,9 +372,11 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 - **Obrazy kontenerow.** Ten sam skan obejmuje pakiety w obrazach dzialajacych kontenerow (Debian, Ubuntu, Alpine):
   Pipe czyta ich baze pakietow przez `/proc/<pid>/root` kontenera albo z warstw overlay, niczego w kontenerze nie
   uruchamiajac. Jeden wynik na obraz, alert `vuln:images`. Obrazy bez systemu (distroless, scratch) sa wymienione
-  jako niesprawdzone. `/zalataj obrazy` pobiera nowsze obrazy dla kontenerow z compose (`docker compose pull` +
-  `up -d` tylko tych uslug), a `/cofnij` wraca do poprzednich obrazow. Pomaga tylko wtedy, gdy pod tym samym tagiem
-  jest nowszy obraz; wlasny obraz trzeba przebudowac. Kontenery bez compose dostaja tylko podpowiedz.
+  jako niesprawdzone. `/zalataj obrazy` odswieza obrazy kontenerow z compose: obrazy z rejestru pobiera pod tym
+  samym tagiem (`pull --ignore-buildable`), uslugi z `build:` przebudowuje na aktualnym obrazie bazowym
+  (`build --pull`), potem `up -d` tylko tych uslug; `/cofnij` wraca do poprzednich obrazow. Kontenery bez compose
+  dostaja tylko podpowiedz. Samo `/zalataj` lata to, co jest: gdy pakiety serwera sa czyste, przechodzi do obrazow,
+  a gdy nie ma nic do zainstalowania, mowi, gdzie sa podatnosci i dlaczego ich nie lata.
 - **Zaleznosci aplikacji.** W katalogach aplikacji z DIRECTORY Pipe czyta lockfile'e: `package-lock.json`,
   `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
   `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa podatnosci; alert `vuln:apps` tylko dla aktywnie

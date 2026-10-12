@@ -614,7 +614,7 @@ class TestStage3Scan:
         result, _ = vulns.scan(containers=containers)
         patch = vulns.image_patch(result)
         base = "docker compose -f /srv/shop/compose.yml -p shop"
-        assert patch.command == f"{base} pull web && {base} up -d web"
+        assert patch.command == f"{base} pull --ignore-buildable web && {base} build --pull web && {base} up -d web"
         assert patch.inverse == ["docker tag aaaaaaaaaaaa nginx:1.25", f"{base} up -d web"]
         assert len(patch.manual) == 1 and patch.manual[0].startswith("adhoc")
         preview = vulns.image_patch_preview(patch)
@@ -853,3 +853,53 @@ class TestOneMessage:
         assert "kolejnych pakietow" in report and "/zalataj" in report and "Bez poprawki" in report
         assert "+" in texts["preview"] and "pakietow)" in texts["preview"]        # komenda skrocona, nie 225 nazw
         assert vulns.short_command("apt-get install x") == "apt-get install x"
+
+
+class TestPatchWhatIsThere:
+    """/zalataj lata to, co jest do zalatania — nie mowi "nie ma podatnosci", gdy /podatnosci pokazuje obrazy i aplikacje."""
+
+    def scan(self, compose=True):
+        vuln = vulns.Vuln("DSA-1", ["CVE-2026-1"], "high", "opis", "3.0.13-1")
+        image = vulns.TargetResult("image", "dermafoto_backend", "Debian:13", 10,
+                                   [vulns.PackageVulns("openssl", "3.0.11-1", ["libssl3"], [vuln])],
+                                   meta={"image": "dermafoto_backend", "image_id": "sha256:" + "a" * 64,
+                                         "containers": ["dermavision-backend"],
+                                         "compose": [{"container": "dermavision-backend", "project": "dermafoto",
+                                                      "service": "backend", "files": ["/root/DermaFoto/compose.yml"]}]
+                                         if compose else []})
+        app = vulns.TargetResult("app", "/root/TeamBIT/Quiz", "npm", 300,
+                                 [vulns.PackageVulns("shell-quote", "1.8.3", ["shell-quote"],
+                                                     [vulns.Vuln("GHSA-1", ["CVE-2026-2"], "critical", "x", "1.9.0")])])
+        return vulns.Scan(at=1, ecosystem="Ubuntu:24.04:LTS", system="Ubuntu 24.04", checked=500, items=[],
+                          targets=[image, app], unfixed=507)
+
+    def run_patch(self, monkeypatch, scan, request):
+        import backend.server as server
+        from backend.config import settings
+        from backend.tests.test_server_commands import FakeAgent, exchange
+
+        async def last(self):
+            return scan, ""
+
+        async def explain(self, *args, **kwargs):
+            return True
+
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        monkeypatch.setattr(server, "get_agent", lambda: FakeAgent())
+        monkeypatch.setattr(watch, "_watcher", None)
+        monkeypatch.setattr(watch.Watcher, "vuln_for_audit", last)
+        monkeypatch.setattr(watch.Watcher, "explain_vulns", explain)
+        [[frame]] = exchange([{"command": "patch", **request}])
+        return frame["data"]
+
+    def test_plain_patch_goes_to_images_when_the_server_is_clean(self, monkeypatch):
+        data = self.run_patch(monkeypatch, self.scan(), {})
+        assert data["scope"] == "images" and data["packages"] == ["dermafoto_backend"]
+        assert "build --pull backend" in data["command"] and "pull --ignore-buildable backend" in data["command"]
+
+    def test_nothing_to_install_explains_where_the_vulnerabilities_are(self, monkeypatch):
+        data = self.run_patch(monkeypatch, self.scan(compose=False), {})
+        text = data["text"]
+        assert not data["command"] and "nie ma podatnosci z poprawka do zainstalowania" not in text.lower()
+        assert "Pakiety serwera nie maja" in text and "dermavision-backend: kontener bez compose" in text
+        assert "/root/TeamBIT/Quiz" in text and "npm audit fix" in text and "507" in text

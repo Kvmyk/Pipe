@@ -861,7 +861,8 @@ class ImagePatch:
 
 def image_patch(result: Scan, scope: str = "all") -> ImagePatch:
     """
-    Nowsze obrazy dla kontenerow z compose: `docker compose -f ... -p ... pull <uslugi>` i `up -d <uslugi>`.
+    Nowsze obrazy dla kontenerow z compose: `pull --ignore-buildable` (obrazy z rejestru), `build --pull` (uslugi
+    z `build:` — wlasne obrazy przebudowane na aktualnym obrazie bazowym; uslugi bez `build:` compose pomija) i `up -d`.
     Komendy odwrotne oznaczaja poprzedni obraz jego starym tagiem i odtwarzaja uslugi — to prawdziwy rollback.
     Kontenery bez compose dostaja tylko podpowiedz (docker run trzeba powtorzyc z tymi samymi opcjami).
     """
@@ -893,11 +894,44 @@ def image_patch(result: Scan, scope: str = "all") -> ImagePatch:
     for (project, files), services in projects.items():
         base = "docker compose " + " ".join(f"-f {shlex.quote(f)}" for f in files) + f" -p {shlex.quote(project)}"
         names = " ".join(shlex.quote(s) for s in services)
-        segments.append(f"{base} pull {names} && {base} up -d {names}")
+        segments.append(f"{base} pull --ignore-buildable {names} && {base} build --pull {names} && {base} up -d {names}")
         recreate.append(f"{base} up -d {names}")
     patch.command = " && ".join(segments)
     patch.inverse = [f"docker tag {short} {shlex.quote(ref)}" for ref, short in retag.items()] + recreate
     return patch
+
+
+def nothing_to_patch(result: Scan) -> str:
+    """
+    Gdy /zalataj nie ma czego zainstalowac — gdzie sa podatnosci i dlaczego Pipe ich nie lata. "Nie ma podatnosci",
+    gdy /podatnosci pokazuje dziesiatki, tylko myli.
+    """
+    lines = [tr("Pakiety serwera nie maja podatnosci z poprawka." if result.ecosystem else
+                f"System serwera ({result.system}) nie jest obslugiwany przez skan pakietow.",
+                "The server packages have no vulnerabilities with a fix." if result.ecosystem else
+                f"The server system ({result.system}) is not supported by the package scan.")]
+    images = [t for t in result.of_kind("image") if t.items]
+    if images:
+        manual = image_patch(result).manual
+        lines.append(tr(f"Obrazy kontenerow z podatnosciami: {len(images)}, ale zaden nie jest uruchomiony z compose, wiec "
+                        "nie mam ich jak odswiezyc:", f"Container images with vulnerabilities: {len(images)}, but none runs "
+                        "from compose, so I have no way to refresh them:"))
+        lines += [f"- {m}" for m in manual[:6]]
+    apps = [t for t in result.of_kind("app") if t.items]
+    if apps:
+        lines.append(tr(f"Aplikacje z podatnymi zaleznosciami: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
+                        "To zmiana w kodzie: podbij wersje w lockfile (npm audit fix, pip install -U, composer update ...) "
+                        "i wdroz aplikacje — mozesz poprosic mnie o to w rozmowie.",
+                        f"Applications with vulnerable dependencies: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
+                        "That is a code change: bump the versions in the lockfile (npm audit fix, pip install -U, composer "
+                        "update ...) and deploy the app — you can ask me to do it in the chat."))
+    if not images and not apps:
+        lines = [tr("Nie ma nic do zalatania: brak znanych podatnosci z poprawka.",
+                    "Nothing to patch: no known vulnerabilities with a fix.")]
+    if result.unfixed:
+        lines.append(tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
+                        f"Without a fix (waiting for the distribution): {result.unfixed}."))
+    return "\n\n".join(lines)
 
 
 def select(result: Scan, scope: str) -> list[PackageVulns]:
@@ -947,11 +981,12 @@ def image_patch_preview(patch: ImagePatch, reason: str = "", explain: dict[str, 
     footer: list[str] = []
     if patch.command:
         footer += [tr("Komenda: ", "Command: ") + as_code(short_command(patch.command)), "",
-                   tr("Pomoze tylko wtedy, gdy pod tym samym tagiem jest nowszy obraz (oficjalne obrazy sa regularnie "
-                      "przebudowywane). Wlasny obraz trzeba przebudowac, a przypiety tag zmienic w compose. Bezpiecznik "
-                      "sprawdzi konfiguracje compose, czy kontenery dzialaja i strony; /cofnij wraca do poprzednich obrazow.",
-                      "This only helps when a newer image exists under the same tag (official images are rebuilt "
-                      "regularly). Your own image has to be rebuilt, and a pinned tag changed in compose. The safety fuse "
+                   tr("Obrazy z rejestru: pobiore nowsze pod tym samym tagiem (oficjalne obrazy sa regularnie "
+                      "przebudowywane; przypiety tag zmien w compose). Uslugi z `build:` przebuduje na aktualnym obrazie "
+                      "bazowym. Bezpiecznik sprawdzi konfiguracje compose, czy kontenery dzialaja i strony; /cofnij wraca "
+                      "do poprzednich obrazow.",
+                      "Registry images: I pull newer ones under the same tag (official images are rebuilt regularly; change "
+                      "a pinned tag in compose). Services with `build:` I rebuild on the current base image. The safety fuse "
                       "checks the compose config, that the containers run and the sites; /undo goes back to the previous images.")]
     if patch.manual:
         footer += [""] + [f"- {m}" for m in patch.manual[:4]]

@@ -1,5 +1,18 @@
 # Historia zmian -- Pipe
 
+## v0.36.3 (2026-10-12)
+
+### Poprawki
+
+- `/zalataj` mowil "nie ma podatnosci", choc `/audyt` i `/podatnosci` pokazywaly dziesiatki: samo `/zalataj` patrzylo
+  tylko na pakiety serwera. Teraz lata to, co jest: gdy pakiety serwera sa czyste, a obrazy kontenerow da sie odswiezyc,
+  od razu pokazuje podglad dla obrazow z *Zainstaluj*. Gdy nie ma nic do zainstalowania, mowi, gdzie sa podatnosci
+  (obrazy bez compose z podpowiedzia, aplikacje z podatnymi zaleznosciami, liczba czekajacych na dystrybucje)
+  i dlaczego ich nie lata
+- `/zalataj obrazy` przebudowuje wlasne obrazy: uslugi z `build:` dostaja `docker compose build --pull` (na aktualnym
+  obrazie bazowym), obrazy z rejestru `pull --ignore-buildable`, potem `up -d`. Wczesniej sam `pull` nic nie dawal
+  obrazom budowanym z Dockerfile
+
 ## v0.36.2 (2026-10-12)
 
 ### Poprawki

@@ -455,6 +455,10 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         await _send(writer, _error(tr(f"Brak wyniku skanu podatnosci ({note}).", f"No vulnerability scan result ({note}).")
                                    if note else tr("Brak wyniku skanu podatnosci.", "No vulnerability scan result.")))
         return
+    if scope != "images" and not request.get("execute") and not vulns.select(result, scope) \
+            and vulns.image_patch(result).command:
+        # serwer czysty, a obrazy da sie odswiezyc — /zalataj lata to, co jest do zalatania (klient wykona scope=images)
+        scope = "images"
     from backend.core.watch import EXPLAIN_WAIT
 
     blocker = await _patch_blocker(role)
@@ -474,8 +478,8 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
             return
     else:
         if result.ecosystem is None:
-            await _send(writer, _error(tr(f"Skan podatnosci nie obsluguje systemu {result.system}.",
-                                          f"The vulnerability scan does not support {result.system}.")))
+            await _send(writer, _data({"scope": scope, "packages": [], "command": "", "token": "", "can_execute": False,
+                                       "text": vulns.nothing_to_patch(result)}))
             return
         items = vulns.select(result, scope)
         if not request.get("execute"):
@@ -483,7 +487,9 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         command, names = vulns.upgrade_command(result.ecosystem, items), [p.name for p in items]
         text = vulns.patch_preview(result, items, command, blocker, vulns.explanations(lang())) if command else ""
         description = tr(f"latki: {len(items)} pakietow", f"patches: {len(items)} packages")
-        nothing = tr("Nie ma podatnosci z poprawka do zainstalowania.", "There are no fixable vulnerabilities to install.")
+        nothing = vulns.nothing_to_patch(result) if scope == "all" else \
+            tr("Pakiety serwera nie maja pilnych podatnosci z poprawka — wszystkie z poprawka: /zalataj.",
+               "The server packages have no urgent fixable vulnerabilities — all fixable ones: /patch.")
     if not command:
         await _send(writer, _data({"scope": scope, "packages": [], "command": "", "token": "", "can_execute": False,
                                    "text": nothing + (f" ({note})" if note else "")}))

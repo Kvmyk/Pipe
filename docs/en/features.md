@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.36.2
+Pipe v0.36.3
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -377,10 +377,12 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 - **Container images.** The same scan covers the packages in the images of running containers (Debian, Ubuntu,
   Alpine): Pipe reads their package database through the container's `/proc/<pid>/root` or from the overlay layers,
   without running anything in the container. One result per image, alert `vuln:images`. Images without a system
-  (distroless, scratch) are listed as not checked. `/patch images` pulls newer images for compose containers
-  (`docker compose pull` + `up -d` of just those services), and `/undo` goes back to the previous images. It only
-  helps when a newer image exists under the same tag; your own image has to be rebuilt. Containers without compose
-  only get a hint.
+  (distroless, scratch) are listed as not checked. `/patch images` refreshes the images of compose containers:
+  registry images are pulled under the same tag (`pull --ignore-buildable`), services with `build:` are rebuilt on the
+  current base image (`build --pull`), then `up -d` of just those services; `/undo` goes back to the previous images.
+  Containers without compose only get a hint. Plain `/patch` patches what there is: when the server packages are clean
+  it moves on to the images, and when there is nothing to install it says where the vulnerabilities are and why it
+  does not patch them.
 - **Application dependencies.** In application directories from DIRECTORY Pipe reads lockfiles: `package-lock.json`,
   `requirements*.txt` (only `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
   `Gemfile.lock`. The result is in `/audit` with the version that removes the vulnerabilities; the `vuln:apps` alert
