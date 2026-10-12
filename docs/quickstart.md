@@ -123,9 +123,7 @@ Czy chcesz wyczyscic logi? (`journalctl --vacuum-time=7d`)
 
 › zrestartuj nginx
 
-┌─  Wymaga potwierdzenia  ─────────────────────────────────────────────┐
-│                                                                      │
-│  Operacja wymaga potwierdzenia:                                      │
+╭─  Potrzebuję Twojej zgody  ──────────────────────────────────────────╮
 │                                                                      │
 │    $ systemctl restart nginx                                         │
 │                                                                      │
@@ -135,11 +133,10 @@ Czy chcesz wyczyscic logi? (`journalctl --vacuum-time=7d`)
 │   ✓  weryfikacja po                 usluga nginx aktywna             │
 │                                     strony, ktore dzialaja teraz,    │
 │                                     maja dzialac po zmianie          │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+╰──────────────────────────────────────────────────────────────────────╯
 
-Czy chcesz wykonac te operacje? [y/n] (n): y
-✓ Operacja zatwierdzona -- wykonuje...
+Wykonać? [t/n] (n): tak
+✓ Zatwierdzone — wykonuję...
 nginx zrestartowany, weryfikacja przeszla.
 
 › exit

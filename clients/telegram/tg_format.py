@@ -135,7 +135,8 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
             # [SUKCES] -- usuniety calkowicie
             text = text.replace("[SUKCES]", "")
             text = text.replace("[BLAD]", tr("<b>BLAD:</b>", "<b>ERROR:</b>"))
-            text = text.replace("[POTWIERDZ]", tr("<b>WYMAGA POTWIERDZENIA:</b>", "<b>NEEDS CONFIRMATION:</b>"))
+            if "[POTWIERDZ]" in text:
+                text = confirm_text(text)
             text = text.replace("[ODMOWA]", tr("<b>ODMOWA:</b>", "<b>REFUSED:</b>"))
             if lang() == "en":
                 text = text.replace("[OSTRZEZENIE]", "<b>WARNING:</b>")
@@ -165,6 +166,43 @@ def collect_response_text(responses: list[dict]) -> tuple[str, bool]:
         return _with_notices(parts[-1]), needs_confirm
 
     return ("\n".join(notices) if notices else ""), needs_confirm
+
+
+_CONFIRM_LEAD = re.compile(r"^(?P<subject>.*?)\s+(?:wymaga potwierdzenia|requires confirmation)\s*[:.]?\s*(?P<rest>.*)$",
+                           re.IGNORECASE)
+_FUSE_HEAD = re.compile(r"^(Bezpiecznik|Safety fuse):\s*$", re.MULTILINE)
+
+
+def confirm_text(text: str) -> str:
+    """
+    "[POTWIERDZ] Operacja wymaga potwierdzenia: `cmd`" -> "🔐 <b>Potrzebuje Twojej zgody</b>" + komenda w osobnej linii.
+    Temat ("Zapis pliku", "Nowa rutyna") zostaje, ogolnikowe "Operacja" znika — naglowek juz prosi o zgode.
+    Komenda zostaje w backtickach: to_telegram_html pokazuje ja doslownie.
+    """
+    body = text.replace("[POTWIERDZ]", "", 1).strip()
+    first, _, rest = body.partition("\n")
+    match = _CONFIRM_LEAD.match(first)
+    lines = [tr("🔐 <b>Potrzebuje Twojej zgody</b>", "🔐 <b>I need your approval</b>")]
+    if match:
+        subject, tail = match["subject"], match["rest"].lstrip("—–- ")
+        if subject.lower() not in ("operacja", "operation", "komenda", "command"):
+            lines.append(subject + (":" if tail else ""))
+        if tail:
+            lines.append(tail)
+    else:
+        lines.append(first)
+    in_fuse = False
+    for line in rest.strip("\n").split("\n") if rest.strip() else []:
+        head = _FUSE_HEAD.match(line.strip())
+        if head:
+            in_fuse = True
+            lines.append(f"\n<b>{head.group(1)}</b>")
+        elif in_fuse and line.startswith("- "):
+            lines.append("• " + line[2:])            # tylko wiersze planu — linie diffa w podgladzie zostaja nietkniete
+        else:
+            in_fuse = False
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
@@ -287,9 +325,35 @@ def parse_command(text: str) -> tuple[str, str]:
     return name, parts[1].strip() if len(parts) > 1 else ""
 
 
+# Pomoc i menu "/" w grupach wedlug zadan (polskie nazwy; angielskie przez COMMAND_ALIASES). Komenda spoza grup
+# trafia do "Inne", wiec nowa komenda nie zniknie z pomocy.
+HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("Na co dzien", "Every day", ("status", "raport", "alerty", "zmiany", "mapa", "wykres", "zdrowie")),
+    ("Bezpieczenstwo i zmiany", "Security and changes", ("audyt", "podatnosci", "zalataj", "dziennik", "cofnij", "zgody")),
+    ("Pamiec i automatyzacja", "Memory and automation",
+     ("server", "skille", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
+    ("Ustawienia", "Settings", ("nowa", "providerzy", "jezyk", "yolo", "koszt", "historia", "aktualizuj", "pomoc")),
+)
+
+
+def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
+    """[(tytul grupy, [(komenda w jezyku bota, opis)])] — kolejnosc z HELP_GROUPS, reszta w "Inne"."""
+    by_polish = {COMMAND_ALIASES.get(name, name): (name, desc) for name, desc in builtin_commands()}
+    groups, used = [], set()
+    for title_pl, title_en, names in HELP_GROUPS:
+        items = [by_polish[n] for n in names if n in by_polish]
+        used.update(n for n in names if n in by_polish)
+        if items:
+            groups.append((tr(title_pl, title_en), items))
+    rest = [item for key, item in by_polish.items() if key not in used]
+    if rest:
+        groups.append((tr("Inne", "Other"), rest))
+    return groups
+
+
 def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
-    """Menu '/' Telegrama: komendy wbudowane, potem skille, ktore maja komende."""
-    menu = list(builtin_commands())
+    """Menu '/' Telegrama: komendy wbudowane w kolejnosci grup (najczestsze na gorze), potem skille z komenda."""
+    menu = [item for _, items in _grouped_commands() for item in items]
     for skill in skills:
         if skill.get("command"):
             description = " ".join((skill.get("description") or "").split()) or "Skill"
@@ -322,16 +386,19 @@ def format_skill_list(skills: list[dict]) -> str:
 
 def format_help(skills: list[dict]) -> str:
     """Pomoc (/pomoc) jako HTML Telegrama."""
-    lines = [tr("<b>Komendy</b>", "<b>Commands</b>")]
-    lines += [f"/{command} — {html.escape(description)}" for command, description in builtin_commands()]
+    lines = [tr("Nie musisz znac komend — mozesz po prostu napisac, co mam zrobic.",
+                "You don't need the commands — you can just write what I should do.")]
+    for title, items in _grouped_commands():
+        lines.append(f"\n<b>{html.escape(title)}</b>")
+        lines += [f"/{command} — {html.escape(description)}" for command, description in items]
     with_command = [s for s in skills if s.get("command")]
     if with_command:
         lines.append(tr(f"\n<b>Skille ({len(with_command)})</b> — kazdy ma wlasna komende, pelna lista: /skille",
                         f"\n<b>Skills ({len(with_command)})</b> — each has its own command, full list: /skills"))
-    lines.append(tr("\nMozesz tez po prostu pisac, np. <i>\"ile mam wolnego miejsca?\"</i>, nagrac glosowke "
-                    "albo wyslac zrzut ekranu, log czy plik konfiguracyjny (podpis to pytanie).",
-                    "\nYou can also just write, e.g. <i>\"how much free space do I have?\"</i>, record a voice note "
-                    "or send a screenshot, a log or a config file (the caption is the question)."))
+    lines.append(tr("\nMozesz tez nagrac glosowke albo wyslac zrzut ekranu, log czy plik konfiguracyjny "
+                    "(podpis to pytanie).",
+                    "\nYou can also record a voice note or send a screenshot, a log or a config file "
+                    "(the caption is the question)."))
     return "\n".join(lines)
 
 
@@ -426,8 +493,8 @@ def response_data(responses: list[dict]) -> dict:
 
 # ─── Czuwanie, rutyny, listy ────────────────────────────────────────────────
 
-SEVERITY_LABEL = {"critical": "KRYTYCZNY", "warning": "OSTRZEZENIE"}
-SEVERITY_LABEL_EN = {"critical": "CRITICAL", "warning": "WARNING"}
+SEVERITY_LABEL = {"critical": "🔴 KRYTYCZNY", "warning": "🟠 OSTRZEZENIE", "info": "🔵 INFO"}
+SEVERITY_LABEL_EN = {"critical": "🔴 CRITICAL", "warning": "🟠 WARNING", "info": "🔵 INFO"}
 
 
 def format_alert(event: dict) -> str:
@@ -438,9 +505,10 @@ def format_alert(event: dict) -> str:
     title = html.escape(str(event.get("title", "")))
     detail = html.escape(str(event.get("detail", "")))
     if event.get("state") == "resolved":
-        return tr(f"<b>ROZWIAZANE</b> — {title}", f"<b>RESOLVED</b> — {title}")
+        return tr(f"✅ <b>ROZWIAZANE</b> — {title}", f"✅ <b>RESOLVED</b> — {title}")
     label = tr(SEVERITY_LABEL, SEVERITY_LABEL_EN).get(str(event.get("severity")), "ALERT")
-    text = f"<b>{label}</b> — {title}"
+    mark, _, word = label.rpartition(" ")
+    text = f"{mark} <b>{word}</b> — {title}".lstrip()
     if event.get("report"):
         text += "\n\n" + markdown_html(str(event["report"]))
     elif detail:
@@ -547,12 +615,19 @@ def format_directory(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def progress_text(lines: list[str], limit: int = 12) -> str:
-    """Tresc wiadomosci-statusu aktualizowanej na biezaco (workery, rutyny)."""
+def progress_text(lines: list[str], limit: int = 12, done: bool = False) -> str:
+    """
+    Tresc wiadomosci-statusu aktualizowanej na biezaco. Po zakonczeniu (`done`) ta sama wiadomosc zamienia sie
+    w jedna linie "Wykonane kroki: N" z lista w zwinietym cytacie — zamiast "W toku" wiszacego w czacie na zawsze.
+    """
+    if done:
+        steps = "\n".join("· " + html.escape(l[:160]) for l in lines[-30:])
+        return tr(f"☑️ <b>Wykonane kroki: {len(lines)}</b>", f"☑️ <b>Steps taken: {len(lines)}</b>") \
+            + f"\n<blockquote expandable>{steps}</blockquote>"
     shown = lines[-limit:]
     skipped = len(lines) - len(shown)
     head = tr(f"<i>... i {skipped} wczesniej</i>\n", f"<i>... and {skipped} earlier</i>\n") if skipped else ""
-    return tr("<b>W toku</b>\n", "<b>In progress</b>\n") + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
+    return tr("⏳ <b>W toku</b>\n", "⏳ <b>In progress</b>\n") + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
 
 
 def format_digest(event: dict) -> str:

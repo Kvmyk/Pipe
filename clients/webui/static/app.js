@@ -77,10 +77,11 @@
     box.appendChild(el("h1", "", t("welcomeTitle")));
     box.appendChild(el("p", "", t("welcomeText")));
     messages.appendChild(box);
+    document.body.classList.add("fresh");      // szybkie akcje tylko na pustym ekranie — potem nie zabieraja miejsca
   }
   function add(kind, node) {
     const first = messages.querySelector(".welcome");
-    if (first) first.remove();
+    if (first) { first.remove(); document.body.classList.remove("fresh"); }
     const follow = kind === "user" || nearBottom();
     const wrap = el("div", "msg " + kind);
     if (typeof node === "string") wrap.textContent = node; else wrap.appendChild(node);
@@ -149,6 +150,8 @@
   // Tresc potwierdzenia: komenda jako osobna linia ($ ...), plan bezpiecznika jako lista krokow.
   // Teksty przychodza z backendu (handlers/common.py, safety.Plan.describe) — tu zmienia sie tylko uklad.
   const FUSE_HEAD = /^(Bezpiecznik|Safety fuse):\s*$/;
+  const CONFIRM_LEAD = /^(.*?)\s+(?:wymaga potwierdzenia|requires confirmation)\s*[:.]?\s*(.*)$/i;
+  const GENERIC_SUBJECT = /^(operacja|operation|komenda|command)$/i;
   function confirmBody(text) {
     const lines = text.split("\n"), rows = [];
     let head = "";
@@ -159,14 +162,18 @@
       while (end < lines.length && /^- /.test(lines[end])) rows.push(lines[end++].slice(2));
       lines.splice(at, end - at);
     }
-    let command = "";
+    let command = "", subject = "";
     const first = (lines[0] || "").match(/^(.*?:)\s*(`+) ?([^`].*?) ?\2\s*$/);
     if (first) { command = first[3]; lines[0] = first[1]; }
-    const body = md(lines.join("\n"));
-    if (command) {
-      const line = el("code", "cmd-line", command), lead = body.firstChild;
-      if (lead && lead.tagName === "P") lead.after(line); else body.insertBefore(line, body.firstChild);
-    }
+    // "Zapis pliku wymaga potwierdzenia:" — tytul karty juz prosi o zgode, zostaje sam temat ("Zapis pliku")
+    const asks = (lines[0] || "").match(CONFIRM_LEAD);
+    if (asks) { subject = GENERIC_SUBJECT.test(asks[1]) ? "" : asks[1]; lines[0] = asks[2].replace(/^[—–-]\s*/, ""); }
+    const body = md(lines.join("\n").trim());
+    // na gorze: temat (np. "Zapis pliku"), pod nim dokladna komenda, dalej reszta tekstu i plan bezpiecznika
+    const top = [];
+    if (subject) { const head = md(subject); head.classList.add("subject"); top.push(head); }
+    if (command) top.push(el("code", "cmd-line", command));
+    top.reverse().forEach((node) => body.insertBefore(node, body.firstChild));
     if (rows.length) body.appendChild(fuseBlock(head, rows));
     return body;
   }
@@ -203,15 +210,25 @@
     const card = el("div", "confirm");
     const title = el("div", "title");
     title.appendChild(icon("shield", 15));
-    title.appendChild(document.createTextNode(t("confirmTitle")));
-    title.appendChild(el("span", "tag warn", t("needsConfirm")));
+    const label = el("span", "label", t("confirmTitle"));
+    title.appendChild(label);
     card.appendChild(title);
     card.appendChild(confirmBody(text));
     const actions = el("div", "actions");
     const yes = el("button", "btn yes", t("yes")), no = el("button", "btn no", t("no"));
     actions.appendChild(yes); actions.appendChild(no);
     card.appendChild(actions);
-    const settle = (label, ok) => { actions.remove(); card.classList.add("done"); card.appendChild(el("div", "verdict" + (ok ? " ok" : ""), label)); pendingCard = null; };
+    // Po decyzji karta zwija sie do jednej linii (werdykt + komenda); plan i podglad wracaja pod "Szczegoly".
+    const settle = (verdict, ok) => {
+      actions.remove(); card.classList.add("done"); if (ok) card.classList.add("ok");
+      title.firstChild.replaceWith(icon(ok ? "check" : "shield", 15));
+      label.textContent = verdict;
+      const more = el("button", "more", t("details"));
+      more.type = "button";
+      more.addEventListener("click", () => { const open = card.classList.toggle("open"); more.textContent = open ? t("hideDetails") : t("details"); });
+      title.appendChild(more);
+      pendingCard = null;
+    };
     yes.addEventListener("click", () => { settle(t("approved"), true); run({ confirm: true }); });
     no.addEventListener("click", () => { settle(t("rejected")); run({ confirm: false }); });
     card.supersede = () => settle(t("superseded"));
@@ -669,7 +686,7 @@
     const { event } = item;
     if (!item.row) {
       item.row = el("div", "act");
-      item.row.appendChild(el("span", "at", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+      item.row.appendChild(el("span", "at", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })));
       item.row.appendChild(el("span", "mark"));
       item.row.appendChild(el("span", "what"));
       item.row.appendChild(el("span", "where"));
@@ -783,17 +800,21 @@
       });
     } catch (error) { renderList(changesList, { error: error.message }, () => changesList.appendChild(el("div", "empty", error.message))); }
   }
+  function toolLabel(name) { const label = t("tool_" + name); return label === "tool_" + name ? name : label; }
   function changeCard(entry) {
     const card = el("div", "card-item");
     card.dataset.key = "change:" + entry.id;
     const head = el("div", "head");
     head.appendChild(el("b", "id", "#" + entry.id));
-    const label = t("st_" + entry.status);
-    head.appendChild(el("span", "tag " + ({ failed: "del", restored: "warn", rolled_back: "warn", aborted: "warn" }[entry.status] || "add"),
-      label === "st_" + entry.status ? entry.status : label));
+    // "wykonano" przy kazdym wpisie to szum — znacznik tylko, gdy stan jest inny niz zwykly
+    if (entry.status && entry.status !== "done") {
+      const label = t("st_" + entry.status);
+      head.appendChild(el("span", "tag " + ({ failed: "del", restored: "warn", rolled_back: "warn", aborted: "warn" }[entry.status] || "add"),
+        label === "st_" + entry.status ? entry.status : label));
+    }
     // podsumowanie z dziennika: "<data> <godzina> [stan] narzedzie: co" — stan jest juz w znaczniku
     const summary = entry.summary.replace(/^#\w+\s*/, ""), parts = summary.match(/^(\S+ \S+) \[[^\]]*\] ([\w-]+): ([\s\S]*)$/);
-    if (parts) head.appendChild(el("span", "meta when", parts[1] + " · " + parts[2]));
+    if (parts) head.appendChild(el("span", "meta when", parts[1] + " · " + toolLabel(parts[2])));
     card.appendChild(head);
     card.appendChild(el("div", "cmd", parts ? parts[3] : summary));
     const holder = el("div"); card.appendChild(holder);
@@ -887,7 +908,16 @@
     }
     if (liveEvents.length) {
       alertsList.appendChild(el("div", "section-title", t("live")));
-      liveEvents.forEach((event) => alertsList.appendChild(eventCard(event)));
+      // Rutyna, ktora codziennie konczy sie "ok", nie potrzebuje osobnej karty za kazdym razem: kolejne udane
+      // przebiegi tej samej rutyny lacza sie w jeden wpis z licznikiem (pokazany jest najnowszy raport).
+      let last = null;
+      liveEvents.forEach((event) => {
+        const quiet = event.type === "routine" && String(event.status).toLowerCase() === "ok";
+        if (quiet && last && last.name === event.name) { last.count++; last.badge.textContent = fmt("times", { n: last.count }); last.badge.hidden = false; return; }
+        const card = eventCard(event);
+        alertsList.appendChild(card);
+        last = quiet ? { name: event.name, count: 1, badge: card.querySelector(".count") } : null;
+      });
     }
   }
   function eventTitle(event) {
@@ -912,6 +942,7 @@
     card.dataset.key = "event:" + eventKey(event);
     const head = el("div", "head");
     head.appendChild(el("b", "", eventTitle(event)));
+    const count = el("span", "count"); count.hidden = true; head.appendChild(count);
     card.appendChild(head);
     card.appendChild(el("div", "meta", event.at || ""));
     if (event.type === "alert" && event.report) { card.appendChild(alertReport(event.report)); return card; }

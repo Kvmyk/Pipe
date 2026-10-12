@@ -432,4 +432,4 @@ def test_telegram_vuln_alert_reads_as_plain_text():
     assert "<i>" not in text and "openssl 3.0.11-1\n" not in text           # report zamiast detail, bez kursywy
     assert "<b>openssl</b> 3.0.11-1 → 3.0.13-1\n• <b>Krytyczna:</b> Atakujacy moze odczytac &lt;pamiec&gt;." in text
     assert "<b>Obraz nginx:1.25 (shop)</b>" in text
-    assert format_alert({"severity": "warning", "title": "Dysk", "detail": "/ 95%"}) == "<b>OSTRZEZENIE</b> — Dysk\n/ 95%"
+    assert format_alert({"severity": "warning", "title": "Dysk", "detail": "/ 95%"}) == "🟠 <b>OSTRZEZENIE</b> — Dysk\n/ 95%"

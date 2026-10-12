@@ -280,7 +280,8 @@ Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `ba
 Kazda operacja, ktora zatwierdzasz, dostaje **plan** -- widoczny w potwierdzeniu, zanim nacisniesz TAK:
 
 ```
-WYMAGA POTWIERDZENIA: `sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx`
+Potrzebuje Twojej zgody
+$ sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx
 Bezpiecznik:
 - kopia przed zmiana: /etc/nginx/sites-enabled/shop
 - sprawdzenie przed (niepowodzenie = nie wykonam): nginx -t

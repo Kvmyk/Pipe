@@ -259,10 +259,10 @@ class TestClients:
         monkeypatch.setenv("PIPE_LANG", "en")
         text, needs_confirm = tg_format.collect_response_text([
             {"response": "[POTWIERDZ] Command requires confirmation: `rm x`", "status": "confirm"}])
-        assert needs_confirm and text.startswith("<b>NEEDS CONFIRMATION:</b>")
+        assert needs_confirm and text.startswith("🔐 <b>I need your approval</b>") and "`rm x`" in text
         assert_english(tg_format.format_help([]))
         assert_english(tg_format.format_alert({"severity": "critical", "title": "Disk / at 95%", "detail": "x"}))
-        assert tg_format.format_alert({"state": "resolved", "title": "t"}).startswith("<b>RESOLVED</b>")
+        assert tg_format.format_alert({"state": "resolved", "title": "t"}).startswith("✅ <b>RESOLVED</b>")
 
     def test_telegram_memory_notice_survives(self, monkeypatch):
         monkeypatch.setenv("PIPE_LANG", "en")

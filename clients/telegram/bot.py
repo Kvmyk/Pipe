@@ -232,7 +232,7 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Tworzy klawiature inline z przyciskami TAK/NIE."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(tr("TAK", "YES"), callback_data=f"confirm:yes:{user_id}"),
+            InlineKeyboardButton(tr("✅ TAK, wykonaj", "✅ YES, run it"), callback_data=f"confirm:yes:{user_id}"),
             InlineKeyboardButton(tr("NIE", "NO"), callback_data=f"confirm:no:{user_id}"),
         ]
     ])
@@ -347,7 +347,16 @@ async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: in
             await show_progress()
         else:
             responses.append(frame)
-    await show_progress(force=True)
+    # ta sama wiadomosc zamienia sie w podsumowanie ze zwinieta lista krokow — "W toku" nie zostaje w czacie
+    if progress_lines:
+        summary = progress_text(progress_lines, done=True)
+        try:
+            if progress_message is None:
+                await bot.send_message(chat_id, summary, parse_mode=ParseMode.HTML)
+            else:
+                await progress_message.edit_text(summary, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
     text, needs_confirm = collect_response_text(responses)
     if text:
@@ -1145,12 +1154,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     confirmed = parts[1] == "yes"
+    # decyzja dopisana do tej samej wiadomosci (bez przyciskow) — prosba i odpowiedz zostaja razem w historii
+    verdict = (tr("✅ <b>Zatwierdzone</b> — wykonuje.", "✅ <b>Approved</b> — running.") if confirmed
+               else tr("✖️ <b>Odrzucone</b> — nic nie zmieniam.", "✖️ <b>Rejected</b> — nothing changes."))
     try:
-        await query.edit_message_reply_markup(reply_markup=None)
+        await query.edit_message_text(f"{query.message.text_html}\n\n{verdict}", parse_mode=ParseMode.HTML, reply_markup=None)
     except Exception:
-        pass
-    await query.message.reply_text(tr("Operacja zatwierdzona.", "Operation approved.") if confirmed
-                                   else tr("Operacja anulowana.", "Operation cancelled."))
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await query.message.reply_text(verdict, parse_mode=ParseMode.HTML)
     await _backend_call(update, context, _run_and_reply(
         context, query.message.chat_id, user.id, get_client(user.id).confirm(confirmed)))
 

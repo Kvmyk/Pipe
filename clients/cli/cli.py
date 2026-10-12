@@ -68,7 +68,7 @@ try:
     from rich.markdown import Markdown
     from rich.padding import Padding
     from rich.panel import Panel
-    from rich.prompt import Confirm, Prompt
+    from rich.prompt import Confirm as _RichConfirm, InvalidResponse, Prompt
     from rich.rule import Rule
     from rich.table import Table
     from rich.text import Text
@@ -80,6 +80,33 @@ except ImportError:
     print(tr("Błąd: zainstaluj zależności: pip install -r requirements.txt",
              "Error: install the dependencies: pip install -r requirements.txt"))
     sys.exit(1)
+
+YES_WORDS = {"t", "tak", "y", "yes", "ok"}
+NO_WORDS = {"n", "nie", "no"}
+
+
+class Confirm(_RichConfirm):
+    """
+    Pytanie tak/nie w jezyku CLI: po polsku [t/n] — i przyjmuje "tak", bo tak uczy README, web i Telegram
+    (rich przyjmowal tylko y/n i odpowiadal po angielsku "Please enter Y or N").
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.choices = [tr("t", "y"), "n"]
+        self.validate_error_message = tr("[prompt.invalid]Wpisz t (tak) albo n (nie)", "[prompt.invalid]Type y (yes) or n (no)")
+
+    def process_response(self, value: str) -> bool:
+        word = value.strip().lower()
+        if word in YES_WORDS:
+            return True
+        if word in NO_WORDS:
+            return False
+        raise InvalidResponse(self.validate_error_message)
+
+    def render_default(self, default) -> Text:
+        return Text(f"({tr('t', 'y') if default else 'n'})", "prompt.default")
+
 
 try:
     from prompt_toolkit import PromptSession
@@ -449,9 +476,9 @@ def _print_banner(host: str) -> None:
     grid = Table.grid(padding=(0, 3))
     grid.add_column(style="dim", no_wrap=True)
     grid.add_column()
-    grid.add_row(tr("serwer", "server"), f"[bold]{escape(host)}[/bold]")
-    grid.add_row(tr("komendy", "commands"), tr("/status  /raport  /zmiany  /mapa  /server  /skille  /pomoc  /exit",
-                                               "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
+    grid.add_row(tr("serwer", "server"), f"[green]●[/green] [bold]{escape(host)}[/bold]")
+    grid.add_row(tr("na start", "try"), tr("/status  /raport  /mapa  /pomoc  [dim]albo po prostu napisz, co mam zrobić[/dim]",
+                                           "/status  /report  /map  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
                   + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.35.0[/dim]",
@@ -464,6 +491,17 @@ def _print_banner(host: str) -> None:
 # Potwierdzenie: komenda z handlerow (core/handlers/common.py) i plan bezpiecznika (core/safety.py Plan.describe).
 FUSE_HEAD = re.compile(r"^(Bezpiecznik|Safety fuse):\s*$")
 _CODE_TAIL = re.compile(r"^(?P<lead>.*?:)\s*(?P<fence>`+)(?P<code>.+)(?P=fence)\s*$")
+_CONFIRM_LEAD = re.compile(r"^(?P<subject>.*?)\s+(?:wymaga potwierdzenia|requires confirmation)\s*[:.]?\s*(?P<rest>.*)$", re.IGNORECASE)
+_GENERIC_SUBJECT = re.compile(r"^(operacja|operation|komenda|command)$", re.IGNORECASE)
+
+
+def _confirm_subject(lead: str) -> tuple[str, str]:
+    """("Zapis pliku wymaga potwierdzenia: ...") -> ("Zapis pliku", reszta); temat "Operacja" nic nie mowi -> ""."""
+    match = _CONFIRM_LEAD.match(lead.strip())
+    if not match:
+        return "", lead
+    subject = "" if _GENERIC_SUBJECT.match(match["subject"]) else match["subject"]
+    return subject, match["rest"].lstrip("—–- ")
 
 
 def _code_span(raw: str) -> str:
@@ -503,11 +541,16 @@ def _confirmation(text: str) -> Panel:
     parts: list = []
     match = _CODE_TAIL.match(lines[0]) if lines else None
     if match:
-        parts.append(Text(match["lead"].strip()))
-        parts.append(Padding(Text.assemble(("$ ", "dim"), (_code_span(match["code"]), "bold")), (1, 0, 1, 2)))
+        subject, _ = _confirm_subject(match["lead"].rstrip(":"))
+        if subject:
+            parts.append(Text(subject, style="dim"))
+        parts.append(Padding(Text.assemble(("$ ", "dim"), (_code_span(match["code"]), "bold")), (0, 0, 1, 2)))
         rest = "\n".join(lines[1:]).strip()
     else:
-        rest = "\n".join(lines).strip()
+        subject, first = _confirm_subject(lines[0] if lines else "")
+        if subject:
+            parts.append(Text(subject, style="dim"))
+        rest = "\n".join([first] + lines[1:]).strip()
     if rest:
         parts.append(Markdown(rest))
     if rows:
@@ -523,8 +566,8 @@ def _confirmation(text: str) -> Panel:
             table.add_row(Text(mark, style=style), Text(key), Text(value.replace("; ", "\n")))
         parts.append(Text(head, style="bold"))
         parts.append(Padding(table, (0, 0, 0, 1)))
-    return Panel(Group(*parts), title=tr(" Wymaga potwierdzenia ", " Needs confirmation "), title_align="left",
-                 border_style="yellow", box=box.SQUARE, padding=(1, 2))
+    return Panel(Group(*parts), title=tr(" Potrzebuję Twojej zgody ", " I need your approval "), title_align="left",
+                 border_style="yellow", box=box.ROUNDED, padding=(1, 2, 0, 2))
 
 
 def _print_response(text: str, status: str) -> None:
@@ -567,7 +610,7 @@ async def _handle_responses(
         console.print()
         try:
             confirmed = Confirm.ask(
-                tr("[yellow]Czy chcesz wykonać tę operację?[/yellow]", "[yellow]Do you want to run this operation?[/yellow]"),
+                tr("[yellow]Wykonać?[/yellow]", "[yellow]Run it?[/yellow]"),
                 default=False,
             )
         except (KeyboardInterrupt, EOFError):
@@ -575,9 +618,9 @@ async def _handle_responses(
             console.print()
 
         if confirmed:
-            console.print(tr("[green]✓[/green] [dim]Operacja zatwierdzona — wykonuję...[/dim]", "[green]✓[/green] [dim]Approved — running...[/dim]"))
+            console.print(tr("[green]✓[/green] [dim]Zatwierdzone — wykonuję...[/dim]", "[green]✓[/green] [dim]Approved — running...[/dim]"))
         else:
-            console.print(tr("[dim]✕ Operacja anulowana.[/dim]", "[dim]✕ Operation cancelled.[/dim]"))
+            console.print(tr("[dim]✕ Odrzucone — nic nie zmieniam.[/dim]", "[dim]✕ Rejected — I change nothing.[/dim]"))
 
         confirm_responses = await client.send_confirm(confirmed)
         await _handle_responses(confirm_responses, client)
@@ -640,77 +683,99 @@ COMMANDS = [
     ("exit", "exit", "wyjście", "quit"),
 ]
 
-HELP_TEXT = """**Komendy**
+HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zrobić, np. „czemu sklep działa wolno?”.
+
+**Na co dzień**
 
 - `/status` — stan serwera
-- `/aktualizuj` — zaktualizuj Pipe na serwerze (po potwierdzeniu); `/aktualizuj sprawdz` — tylko sprawdź wersję
-- `/raport` — poranny raport: stan, zmiany od wczoraj, certyfikaty, backupy, aktualizacje
-- `/zmiany [24h|3d]` — co się zmieniło na serwerze (pakiety, kontenery, porty, cron, konta, konfiguracje)
-- `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii czuwania (PNG)
-- `/zdrowie` — certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów
-- `/audyt` — ocena bezpieczeństwa hosta z gotowymi poprawkami („napraw 1”)
-- `/podatnosci` — znane podatności w pakietach, obrazach kontenerów i aplikacjach, z krótkim wyjaśnieniem każdej
-- `/zalataj [pilne|obrazy]` — łatki znanych podatności w pakietach albo nowsze obrazy kontenerów: podgląd, komenda i instalacja po TAK
-- `/mapa` — diagram infrastruktury (PNG + podgląd w terminalu); `/mermaid` — kod ostatniego diagramu
-- `/server` — pokaż SERVER.md (`/server aktualizuj` — zbadaj serwer ponownie)
-- `/katalogi` — mapa repozytoriów i katalogów (DIRECTORY)
-- `/skille` — zapisane procedury; każda ma własną komendę, np. `/odnow_certyfikat`
-- `/alerty` — aktywne alerty czuwania
-- `/incydenty` — pamięć incydentów: co się działo, jaka była przyczyna i co pomogło
-- `/rutyny` — zadania wykonywane według harmonogramu
-- `/przypomnienia` — jednorazowe przypomnienia („przypomnij mi za 2 godziny…”); `/przypomnienia anuluj <id>`
-- `/cele` — zdalne serwery, kontenery i klastry
+- `/raport` — stan, zmiany od wczoraj, certyfikaty, backupy (przychodzi też sam co rano)
+- `/zmiany [24h|3d]` — co się zmieniło na serwerze
+- `/alerty` — aktywne alerty
+- `/mapa` — schemat serwera (`/mermaid` — jego kod)
+- `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii
+- `/zdrowie` — certyfikaty, strony, DNS, backupy
+
+**Bezpieczeństwo i zmiany**
+
+- `/audyt` — ocena bezpieczeństwa z gotowymi poprawkami („napraw 1”)
+- `/podatnosci` — znane podatności, każda z krótkim opisem
+- `/zalataj [pilne|obrazy]` — łatki: podgląd, potem instalacja po TAK
+- `/dziennik` — zatwierdzone zmiany; `/cofnij [id]` — cofnij ostatnią albo wybraną
+- `/zgody` — operacje innych agentów (MCP) czekające na Twoją zgodę
+
+**Pamięć i automatyzacja**
+
+- `/server` — co wiem o serwerze (`/server aktualizuj` — zbadaj go ponownie)
+- `/skille` — zapisane procedury, każda z własną komendą
+- `/rutyny`, `/przypomnienia` — zadania według harmonogramu i jednorazowe przypomnienia
+- `/incydenty` — co się działo, jaka była przyczyna i co pomogło
+- `/katalogi`, `/cele`, `/vibe` — repozytoria, zdalne serwery, Twój styl rozmowy
+
+**Ustawienia**
+
+- `/providerzy` — model AI: klucz, model, przełączenie (`/providerzy groq`, `/providerzy model`)
+- `/jezyk [pl|en]` — język Pipe
+- `/yolo [on|off]` — zmiany bez pytania o TAK w tej rozmowie (kopie i `/cofnij` działają dalej)
+- `/koszt`, `/historia`, `/aktualizuj` — koszt modelu, audit log, aktualizacja Pipe
+
+**W tej rozmowie**
+
 - `/nowa` — nowa rozmowa od czystej karty (wiedza o serwerze zostaje)
-- `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
-- `/dziennik` — zatwierdzone zmiany z kopiami; `/cofnij [id]` — cofnij ostatnią (albo wybraną) zmianę
-- `/zgody` — operacje zewnętrznych agentów (MCP) czekające na Twoją zgodę
-- `/koszt` — zużycie tokenów i koszt LLM
-- `/historia` — ostatnie wpisy audit logu
-- `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq` — potem model z listy providera, `/providerzy groq llama` — model po fragmencie nazwy, `/providerzy model` — tylko zmiana modelu); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
-- `/plik <ścieżka> [pytanie]` — wyślij agentowi plik z tego komputera: log, konfigurację, zrzut ekranu (do 10 MB); w zwykłej wiadomości wystarczy `@ścieżka`, np. „co tu jest nie tak? @nginx.conf” (Tab podpowiada ścieżki)
-- `/yolo [on|off]` — tryb YOLO: zmiany w tej rozmowie wykonują się bez pytania o TAK (kopie, dziennik i `/cofnij` działają dalej; operacje zakazane — nadal odrzucane). Domyślnie wyłączony
-- `/jezyk [pl|en]` — język Pipe: instrukcje agenta, raporty i komunikaty (wspólny dla CLI, weba i Telegrama)
-- `/pomoc` — ta lista
-- `/exit` — wyjście
+- `/plik <ścieżka> [pytanie]` albo `@ścieżka` w wiadomości — wyślij plik lub zrzut ekranu
+- `/pomoc` — ta lista, `/exit` — wyjście
 
-Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`.
-Diagramy możesz też zamawiać zwykłym tekstem: „narysuj, jak zapytanie trafia do sklepu”."""
+Tab podpowiada komendy i ścieżki. Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
 
-HELP_TEXT_EN = """**Commands**
+HELP_TEXT_EN = """You don't need to know the commands — you can just write what I should do, e.g. "why is the shop slow?".
+
+**Every day**
 
 - `/status` — server status
-- `/update` — update Pipe on the server (after confirmation); `/update check` — only check the version
-- `/report` — morning report: health, changes since yesterday, certificates, backups, updates
-- `/changes [24h|3d]` — what changed on the server (packages, containers, ports, cron, accounts, configs)
-- `/chart [load|ram|disk] [24h|7d]` — chart from the watcher's history (PNG)
-- `/health` — TLS certificates, site responses, DNS and backup freshness
-- `/audit` — host security score with ready-made fixes ("fix 1")
-- `/vulns` — known vulnerabilities in packages, container images and applications, each briefly explained
-- `/patch [urgent|images]` — patches for known package vulnerabilities or newer container images: preview, command and install after YES
-- `/map` — infrastructure diagram (PNG + terminal preview); `/mermaid` — source of the last diagram
-- `/server` — show SERVER.md (`/server update` — explore the server again)
-- `/directory` — map of repositories and directories (DIRECTORY)
-- `/skills` — saved procedures; each has its own command, e.g. `/renew_certificate`
-- `/alerts` — active watcher alerts
-- `/incidents` — incident memory: what happened, what the cause was and what helped
-- `/routines` — tasks run on a schedule
-- `/reminders` — one-off reminders ("remind me in 2 hours…"); `/reminders cancel <id>`
-- `/targets` — remote servers, containers and clusters
-- `/new` — new conversation from a clean slate (server knowledge stays)
-- `/vibe` — what the agent knows about your conversation style (`/vibe reset` — clear it)
-- `/journal` — approved changes with backups; `/undo [id]` — undo the last (or the chosen) change
-- `/approvals` — operations of external agents (MCP) waiting for your approval
-- `/cost` — token usage and LLM cost
-- `/history` — latest audit-log entries
-- `/providers` — LLM providers: add a key, change the model or switch (`/providers groq` — then a model from the provider's list, `/providers groq llama` — a model by part of its name, `/providers model` — change only the model); `/providers forget <id>` — remove a key added from the interface
-- `/file <path> [question]` — send the agent a file from this computer: a log, a config, a screenshot (up to 10 MB); in a normal message `@path` is enough, e.g. "what is wrong here? @nginx.conf" (Tab completes paths)
-- `/yolo [on|off]` — YOLO mode: changes in this conversation run without asking for YES (backups, the journal and `/undo` still work; forbidden operations are still refused). Off by default
-- `/language [pl|en]` — Pipe's language: the agent's instructions, reports and messages (shared by the CLI, web and Telegram)
-- `/help` — this list
-- `/exit` — quit
+- `/report` — health, changes since yesterday, certificates, backups (also arrives every morning)
+- `/changes [24h|3d]` — what changed on the server
+- `/alerts` — active alerts
+- `/map` — diagram of the server (`/mermaid` — its source)
+- `/chart [load|ram|disk] [24h|7d]` — chart from the history
+- `/health` — certificates, sites, DNS, backups
 
-You can add hints to a skill command: `/renew_certificate only for example.com`.
-You can also ask for diagrams in plain text: "draw how a request reaches the shop"."""
+**Security and changes**
+
+- `/audit` — security score with ready-made fixes ("fix 1")
+- `/vulns` — known vulnerabilities, each briefly explained
+- `/patch [urgent|images]` — patches: a preview, then install after YES
+- `/journal` — approved changes; `/undo [id]` — undo the last or the chosen one
+- `/approvals` — operations of other agents (MCP) waiting for your approval
+
+**Memory and automation**
+
+- `/server` — what I know about the server (`/server update` — explore it again)
+- `/skills` — saved procedures, each with its own command
+- `/routines`, `/reminders` — scheduled tasks and one-off reminders
+- `/incidents` — what happened, what the cause was and what helped
+- `/directory`, `/targets`, `/vibe` — repositories, remote servers, your conversation style
+
+**Settings**
+
+- `/providers` — the AI model: key, model, switching (`/providers groq`, `/providers model`)
+- `/language [pl|en]` — Pipe's language
+- `/yolo [on|off]` — changes without asking for YES in this conversation (backups and `/undo` still work)
+- `/cost`, `/history`, `/update` — model cost, audit log, updating Pipe
+
+**In this conversation**
+
+- `/new` — new conversation from a clean slate (server knowledge stays)
+- `/file <path> [question]` or `@path` in a message — send a file or a screenshot
+- `/help` — this list, `/exit` — quit
+
+Tab completes commands and paths. You can add hints to a skill command: `/renew_certificate only for example.com`."""
+
+
+def _severity(value) -> str:
+    """Waga alertu slowem i kolorem (backend podaje critical / warning / info)."""
+    words = {"critical": (tr("krytyczny", "critical"), "bold red"), "warning": (tr("ostrzeżenie", "warning"), "yellow"),
+             "info": (tr("informacja", "info"), "cyan")}
+    word, style = words.get(str(value), (str(value or "alert"), "dim"))
+    return f"[{style}]{escape(word)}[/{style}]"
 
 
 def _print_list(title: str, items: list[str], empty: str) -> None:
@@ -1366,14 +1431,16 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             console.print(tr("[dim]Czuwanie jest wyłączone (WATCH_ENABLED=0).[/dim]",
                              "[dim]The watcher is disabled (WATCH_ENABLED=0).[/dim]"))
         active = data.get("active", [])
-        _print_list(tr("Aktywne alerty", "Active alerts"),
-                    [f"[{a.get('severity')}] {a.get('title')}" + ("" if a.get("report") else f" — {a.get('detail')}")
-                     for a in active if not a.get("report")],
-                    tr("Brak — wszystko w normie.", "None — everything is normal.") if not active else "")
-        # alert z trescia w Markdownie (podatnosci: kazda z opisem) — w calosci, pod lista
-        for alert in (a for a in active if a.get("report")):
-            console.print(f"\n  [bold]\\[{escape(str(alert.get('severity')))}] {escape(str(alert.get('title')))}[/bold]")
-            console.print(Padding(Markdown(str(alert["report"])), (0, 0, 0, 4)))
+        console.print(tr("[bold]Aktywne alerty[/bold]", "[bold]Active alerts[/bold]"))
+        if not active:
+            console.print(tr("[dim]Brak — wszystko w normie.[/dim]", "[dim]None — everything is normal.[/dim]"))
+        for alert in active:
+            console.print(f"  {_severity(alert.get('severity'))}  [bold]{escape(str(alert.get('title')))}[/bold]")
+            # alert z trescia w Markdownie (podatnosci: kazda z opisem) — w calosci, pod tytulem
+            if alert.get("report"):
+                console.print(Padding(Markdown(str(alert["report"])), (0, 0, 1, 4)))
+            elif alert.get("detail"):
+                console.print(f"    [dim]{escape(str(alert['detail']))}[/dim]")
         return True
 
     if name == "cele":
@@ -1634,7 +1701,6 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     await _sync_language(client)
     await _sync_yolo(client)
     _print_banner(host)
-    console.print(tr(f"[dim]Połączono z agentem na {host}[/dim]", f"[dim]Connected to the agent on {host}[/dim]"))
     await _first_run_welcome(client, host)
     await _show_due_reminders(client)
     await _refresh_skills(client)

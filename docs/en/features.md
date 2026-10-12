@@ -284,7 +284,8 @@ Every request to the provider (conversation, workers, routines, VIBE) is counted
 Every operation you approve gets a **plan**, shown in the confirmation before you press YES:
 
 ```
-REQUIRES CONFIRMATION: `sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx`
+I need your approval
+$ sed -i 's/8080/8081/' /etc/nginx/sites-enabled/shop && systemctl reload nginx
 Safety fuse:
 - backup before the change: /etc/nginx/sites-enabled/shop
 - check before (failure = I won't run it): nginx -t

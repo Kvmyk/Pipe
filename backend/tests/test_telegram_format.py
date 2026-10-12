@@ -261,7 +261,9 @@ class TestBuildMenu:
 
     def test_builtins_first_then_skills_with_command(self):
         menu = build_menu(SKILLS)
-        assert menu[:len(BUILTIN_COMMANDS)] == list(BUILTIN_COMMANDS)
+        # wszystkie wbudowane (w kolejnosci grup pomocy, najczestsze na gorze), potem skille
+        assert sorted(menu[:len(BUILTIN_COMMANDS)]) == sorted(BUILTIN_COMMANDS)
+        assert menu[0] == ("status", dict(BUILTIN_COMMANDS)["status"]) and menu[1][0] == "raport"
         assert menu[len(BUILTIN_COMMANDS):] == [("odnow_certyfikat", "Odnowienie TLS dla <nginx>")]
 
     def test_limits(self):
@@ -309,3 +311,32 @@ class TestResponseData:
         with pytest.raises(RuntimeError, match="token"):
             response_data([{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": True}])
 
+
+
+class TestConfirmationLayout:
+    """Prosba o zgode: naglowek raz, ogolnikowy temat znika, plan bezpiecznika jako lista z kropkami."""
+
+    def test_generic_subject_dropped_and_fuse_rows_as_bullets(self):
+        text, needs = collect_response_text([{"response": "[POTWIERDZ] Operacja wymaga potwierdzenia: `rm x`\n"
+                                                          "Bezpiecznik:\n- kopia przed zmiana: /etc/x", "status": "confirm"}])
+        shown = rendered(to_telegram_html(text))
+        assert needs and "Operacja" not in shown and "wymaga potwierdzenia" not in shown
+        assert "rm x" in shown and "• kopia przed zmiana: /etc/x" in shown
+
+    def test_specific_subject_kept(self):
+        text, _ = collect_response_text([{"response": "[POTWIERDZ] Zapis pliku wymaga potwierdzenia: `/etc/x`", "status": "confirm"}])
+        assert "Zapis pliku:" in rendered(to_telegram_html(text))
+
+    def test_diff_lines_in_preview_untouched(self):
+        text, _ = collect_response_text([{"response": "[POTWIERDZ] Zapis pliku wymaga potwierdzenia: `/etc/x`\n"
+                                                      "```diff\n- stare\n+ nowe\n```", "status": "confirm"}])
+        assert "- stare" in rendered(to_telegram_html(text))
+
+
+class TestProgressSummary:
+
+    def test_done_collapses_steps(self):
+        from tg_format import progress_text
+        text = progress_text(["a <b>", "b"], done=True)
+        assert "Wykonane kroki: 2" in text and "<blockquote expandable>" in text and "a &lt;b&gt;" in text
+        assert_valid_telegram_html(text.replace("<blockquote expandable>", "<blockquote>"))

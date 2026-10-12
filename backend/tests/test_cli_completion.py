@@ -93,3 +93,16 @@ def test_busy_local_port_is_not_reused():
         port = taken.getsockname()[1]
         assert cli._own_local_port(port) != port
     assert cli._own_local_port(port) == port
+
+
+@pytest.mark.parametrize("answer, expected", [("tak", True), ("t", True), ("y", True), ("YES", True),
+                                              ("nie", False), ("n", False), ("no", False)])
+def test_confirm_accepts_polish_and_english_answers(answer, expected):
+    """README, web i Telegram ucza odpowiadac "tak" — CLI odrzucalo to komunikatem "Please enter Y or N"."""
+    assert cli.Confirm("?").process_response(answer) is expected
+
+
+def test_confirm_rejects_other_words_in_cli_language():
+    from rich.prompt import InvalidResponse
+    with pytest.raises(InvalidResponse):
+        cli.Confirm("?").process_response("moze")

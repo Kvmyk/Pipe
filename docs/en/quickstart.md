@@ -123,9 +123,7 @@ Do you want to clean up the logs? (`journalctl --vacuum-time=7d`)
 
 › restart nginx
 
-┌─  Requires confirmation  ────────────────────────────────────────────┐
-│                                                                      │
-│  The operation requires confirmation:                                │
+╭─  I need your approval  ─────────────────────────────────────────────╮
 │                                                                      │
 │    $ systemctl restart nginx                                         │
 │                                                                      │
@@ -135,11 +133,10 @@ Do you want to clean up the logs? (`journalctl --vacuum-time=7d`)
 │   ✓  verify after                   nginx service active             │
 │                                     sites that work now must         │
 │                                     still work after the change      │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+╰──────────────────────────────────────────────────────────────────────╯
 
-Do you want to run this operation? [y/n] (n): y
-✓ Operation approved -- running...
+Run it? [y/n] (n): y
+✓ Approved — running...
 nginx restarted, verification passed.
 
 › exit

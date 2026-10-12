@@ -9,8 +9,9 @@ A Telegram bot for managing a VPS through an AI agent.
 The Telegram bot is a client of the agent. It connects to the backend over a Unix socket and passes messages from
 Telegram to the agent. Answers are formatted as HTML and sent back to the user.
 
-It handles confirmations with inline buttons (YES / NO), sends diagrams as photos, shows worker progress in a single
-message that keeps updating and, most importantly, **writes by itself when something happens**: watcher alerts and
+It handles confirmations with inline buttons (YES / NO; the decision is added to the same message), sends diagrams
+as photos, shows progress in a single message that keeps updating (when the work is done it collapses to "Steps
+taken: N", tap to expand the list) and, most importantly, **writes by itself when something happens**: watcher alerts and
 routine reports arrive without asking, with an *Investigate* button.
 
 ## Alerts
