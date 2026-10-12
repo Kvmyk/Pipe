@@ -391,7 +391,13 @@ class TestPatchCommand:
             ran.append((cmd, timeout))
             return "Setting up openssl (3.0.13-1~deb12u1) ...\n", "", 0
 
-        monkeypatch.setattr(server, "_patch_blocker", lambda role: "")
+        async def no_blocker(role):
+            return ""
+
+        from backend.core import runtime
+
+        monkeypatch.setattr(runtime, "kind", lambda: "native")
+        monkeypatch.setattr(server, "_patch_blocker", no_blocker)
         monkeypatch.setattr(executor, "execute", fake_execute)
         [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
         token = preview["data"]["token"]
@@ -411,10 +417,34 @@ class TestPatchCommand:
 
         monkeypatch.setattr(runtime, "kind", lambda: "native")
         monkeypatch.setattr(runtime, "observe", lambda: False)
-        assert server._patch_blocker("admin") == ""
-        assert "viewer" in server._patch_blocker("viewer")
+        assert asyncio.run(server._patch_blocker("admin")) == ""
+        assert "viewer" in asyncio.run(server._patch_blocker("viewer"))
         monkeypatch.setattr(runtime, "observe", lambda: True)
-        assert "PIPE_OBSERVE" in server._patch_blocker("admin")
+        assert "PIPE_OBSERVE" in asyncio.run(server._patch_blocker("admin"))
+
+    def test_docker_mode_patches_through_the_helper_container(self, server, monkeypatch):
+        """Tryb docker: latka i wpis w dzienniku ida przez kontener pomocniczy (nsenter na hosta)."""
+        from backend.core import executor, hostexec, journal, runtime
+        from backend.tests.test_server_commands import exchange
+
+        image = "sha256:" + "a" * 64
+        monkeypatch.setattr(hostexec, "_image", image)
+        monkeypatch.setattr(runtime, "kind", lambda: "docker")
+        monkeypatch.setattr(runtime, "observe", lambda: False)
+        ran = []
+
+        async def fake_execute(cmd, cwd=None, timeout=None):
+            ran.append(cmd)
+            return "Setting up openssl ...\n", "", 0
+
+        monkeypatch.setattr(executor, "execute", fake_execute)
+        [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
+        assert preview["data"]["can_execute"] and preview["data"]["reason"] == ""
+        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": preview["data"]["token"]}])[0]
+        done = frames[-1]["data"]
+        assert done["exit_code"] == 0 and ran[0] == hostexec.wrap(preview["data"]["command"], image)
+        assert ran[0].startswith("docker run --rm --privileged --pid=host")
+        assert any("nsenter" in n for n in journal.load(done["entry_id"]).notes)
 
     def test_names_outside_the_package_pattern_never_reach_the_shell(self):
         item = vulns.PackageVulns("x", "1", ["openssl", "evil;rm -rf /", "$(id)", "libc6:i386"])
@@ -595,7 +625,10 @@ class TestStage3AlertsAndAudit:
         by_id = {f.id: f for f in audit.findings}
         assert set(by_id) == {"vuln-kev", "vuln-images", "vuln-apps"}
         assert by_id["vuln-images"].severity == "high" and "pull web" in by_id["vuln-images"].command
-        assert by_id["vuln-apps"].severity == "medium" and "lodash 4.17.20 → 4.17.21 — krytyczna: " in by_id["vuln-apps"].detail
+        assert by_id["vuln-apps"].severity == "medium" and by_id["vuln-apps"].detail == "/srv/shop (npm): lodash"
+        assert by_id["vuln-images"].patch == "images" and by_id["vuln-kev"].patch == "urgent"
+        data = audit.to_data()                                    # dla klientow /zalataj zamiast komendy
+        assert "/zalataj obrazy" in data["text"] and "pull web" not in data["text"] and "pull web" in audit.render()
         assert by_id["vuln-apps"].command == ""
 
         write(host, "/etc/os-release", 'ID=rocky\nVERSION_ID="9.4"\nPRETTY_NAME="Rocky Linux 9.4"\n')
@@ -671,7 +704,12 @@ class TestReadable:
 
     def test_item_markdown_highlights_and_explains(self, host, monkeypatch):
         result = self.scan_with(host, monkeypatch)
-        lines = vulns.item_markdown(result.items[0], {"DSA-1": "Atakujacy moze odczytac pamiec serwera."})
+        explain = {"DSA-1": "Atakujacy moze odczytac pamiec serwera."}
+        # domyslnie najpowazniejsza z opisem, reszta jako liczba przy pakiecie
+        assert vulns.item_markdown(result.items[0], explain) == [
+            "", "**openssl** 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1 · 2 podatnosci",
+            "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. (CVE-2026-0001)"]
+        lines = vulns.item_markdown(result.items[0], explain, 2)
         assert lines[0] == "" and lines[1] == "**openssl** 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1"
         # najpierw co grozi, numer na koncu; bez kodu i kursywy — czyta sie jak zwykly tekst
         assert lines[2] == "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. (CVE-2026-0001)"
@@ -696,7 +734,7 @@ class TestReadable:
         w = watch.Watcher(agent)
         assert asyncio.run(w.explain_vulns(result)) is True
         (system_prompt, items, who), = agent.calls
-        assert who == "podatnosci" and {i["id"] for i in items} == {"DSA-1", "DEBIAN-CVE-2026-0002"}
+        assert who == "podatnosci" and {i["id"] for i in items} == {"DSA-1"}       # tylko pokazywana
         assert "DSA-1 summary" in items[0]["summary"] or "summary" in items[1]["summary"]
         saved = vulns.explanations("pl")
         assert saved["DSA-1"] == "Atakujacy przez siec moze przejac openssl. Zobacz bx/b"
@@ -749,3 +787,39 @@ class TestForeignRecords:
         write(host, "/etc/os-release", 'ID=debian\nVERSION_ID="13"\nVERSION="13 (trixie)"\n')
         assert "Debian:13" in _ecosystem_warning("Ubuntu:24.04:LTS")
         assert _ecosystem_warning("Debian:13") == "" and _ecosystem_warning("npm") == ""
+
+
+class TestOneMessage:
+    """Alert, raport i podglad latki mieszcza sie w jednej wiadomosci Telegrama, nawet przy 75 pakietach."""
+
+    def big_scan(self):
+        long = "Atakujacy moze spowodowac awarie programu albo wykonac dowolny kod, jesli uzytkownik otworzy " \
+               "specjalnie przygotowany plik lub adres URL w tej bibliotece."
+        items = [vulns.PackageVulns(f"pakiet{i}", "1.0-1ubuntu0.1", [f"pakiet{i}", f"lib{i}-dev", f"lib{i}-common"],
+                                    [vulns.Vuln(f"USN-{i}-{j}", [f"CVE-2026-{i}{j}"], "high" if i < 20 else "medium",
+                                                long, "1.0-1ubuntu0.2") for j in range(6)])
+                 for i in range(75)]
+        return vulns.Scan(at=1, ecosystem="Ubuntu:22.04:LTS", system="Ubuntu 22.04", checked=900, items=items, unfixed=40)
+
+    def test_everything_fits_one_telegram_message(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "telegram"))
+        from tg_format import format_alert, markdown_html
+
+        scan = self.big_scan()
+        command = vulns.upgrade_command(scan.ecosystem, scan.items)
+        texts = {
+            "report": vulns.report_markdown(scan, {}),
+            "alert": format_alert({"severity": "warning", "title": "Pilne podatnosci w 20 pakietach serwera",
+                                   "report": vulns.system_alert(scan, {})}),
+            "preview": vulns.patch_preview(scan, scan.items, command),
+        }
+        for name, text in texts.items():
+            html_text = text if name == "alert" else markdown_html(text)
+            assert len(html_text) <= 4096, (name, len(html_text))
+        report = texts["report"]
+        assert "**pakiet0** 1.0-1ubuntu0.1 → 1.0-1ubuntu0.2 · 6 podatnosci" in report
+        assert "kolejnych pakietow" in report and "/zalataj" in report and "Bez poprawki" in report
+        assert "+" in texts["preview"] and "pakietow)" in texts["preview"]        # komenda skrocona, nie 225 nazw
+        assert vulns.short_command("apt-get install x") == "apt-get install x"

@@ -49,6 +49,8 @@ async def run_classified(
     classification: Classification | None = None,
     what: str = "",
     inner: str | None = None,
+    shown: str | None = None,
+    plan: safety.Plan | None = None,
 ) -> AsyncGenerator[Event, None]:
     """
     Wspolny przebieg dla narzedzi uruchamiajacych komende powloki:
@@ -57,6 +59,9 @@ async def run_classified(
     `command` to dokladnie to, co zostanie uruchomione (i pokazane w potwierdzeniu).
     `inner` — gdy komenda jest opakowaniem (ssh/kubectl exec), klasyfikujemy
     polecenie docelowe, a nie opakowanie.
+    `shown` — co pokazac w potwierdzeniu zamiast `command`: tylko gdy opakowanie jest stale i zbudowane przez
+    kod (hostexec: kontener pomocniczy + nsenter), a `inner` trafia do niego jako jeden argument bez zmian.
+    `plan` — gotowy plan bezpiecznika zamiast wyliczanego z komendy.
     """
     classification = classification or classify_command(inner if inner is not None else command)
 
@@ -72,9 +77,10 @@ async def run_classified(
     if classification == "confirm":
         # Plan bezpiecznika tylko dla komend wykonywanych lokalnie — na zdalnym celu
         # (ssh/kubectl exec) pliki i uslugi sa po drugiej stronie.
-        plan = await safety.plan_for_command(command, session.cwd) if inner is None or inner == command \
-            else safety.Plan(notes=[tr("zdalny cel — bez kopii i weryfikacji po stronie Pipe",
-                                       "remote target — no backup or verification on the Pipe side")])
+        if plan is None:
+            plan = await safety.plan_for_command(command, session.cwd) if inner is None or inner == command \
+                else safety.Plan(notes=[tr("zdalny cel — bez kopii i weryfikacji po stronie Pipe",
+                                           "remote target — no backup or verification on the Pipe side")])
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id,
             tool_name=tool_name,
@@ -84,8 +90,8 @@ async def run_classified(
         )
         described = plan.describe()
         what = what or tr("Operacja", "Operation")
-        yield tr(f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(command)}",
-                 f"[POTWIERDZ] {what} requires confirmation: {as_code(command)}") + (f"\n{described}" if described else "")
+        yield tr(f"[POTWIERDZ] {what} wymaga potwierdzenia: {as_code(shown or command)}",
+                 f"[POTWIERDZ] {what} requires confirmation: {as_code(shown or command)}") + (f"\n{described}" if described else "")
         return
 
     stdout, stderr, exit_code = await executor.execute(command, cwd=cwd if cwd is not None else local_cwd(session))

@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -171,7 +171,6 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
-| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
@@ -191,6 +190,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |
 | `/cele` | Zdalne serwery, kontenery i klastry |
+| `/nowa` | Nowa rozmowa od czystej karty; notatki o serwerze, katalogi, skille, styl i alerty zostaja |
 | `/vibe` | Notatka o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/historia` | Ostatnie wpisy audit logu |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazowkami |

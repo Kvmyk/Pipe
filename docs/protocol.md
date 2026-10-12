@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 ## Opis
 
@@ -65,6 +65,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `run_skill` | `name` (nazwa albo komenda skilla), opcjonalnie `args` | streaming |
 | `diagram` | opcjonalnie `args` (tytul) | mapa infrastruktury **bez LLM**: ramka z `attachment`, potem `done` z `"data": {"summary": "..."}` |
 | `directory` | -- | `"data": {"entries": [{"path", "kind", "description", "remote", "branch", ...}], "text": "..."}` |
+| `new_chat` | -- | `"data": {"cleared": true\|false}`: usuwa historie sesji z pamieci i z dysku (`/nowa`); pamiec serwera zostaje |
 | `vibe` | `args`: puste albo `reset` | `"data": {"content": "..."}` albo `{"content": "", "reset": true\|false}` (VIBE uzytkownika z `interface`) |
 | `alerts` | -- | `"data": {"active": [alert], "recent": [zdarzenie], "enabled": bool}` |
 | `targets` | -- | `"data": {"targets": ["opis celu", ...]}` |
@@ -87,7 +88,6 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
 | `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
 | `mcp` | `rpc`: jedna wiadomosc JSON-RPC MCP | `"data": {"rpc": odpowiedz \| null}` -- most MCP (CLI `--mcp`); tozsamosc i rola z tokenu |
-| `mcp_servers` | -- | `"data": {"servers": ["opis serwera MCP", ...]}` |
 | `approvals` | -- | `"data": {"pending": [zdarzenie approval]}` |
 | `approve` | `id`, `decision` (bool) | tylko admin; zatwierdzenie wykonuje operacje przez bezpiecznik, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamiec incydentow (co sie zdarzalo, ustalenia, co pomoglo) |

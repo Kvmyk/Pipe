@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -43,7 +43,8 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/voice.py` | Transkrypcja wiadomosci glosowych (endpoint Whisper zgodny z OpenAI albo model Gemini z wejsciem audio) |
 | `core/attachments.py` | Zalaczniki wiadomosci: limity, obraz / tekst / plik binarny po zawartosci, `DATA_DIR/uploads/` |
 | `tokens.py` | Tokeny klientow z rolami admin/viewer (`python3 -m backend.tokens`) |
-| `core/mcp/` | MCP: `server.py` (Pipe jako serwer, obie ery protokolu, Streamable HTTP), `client.py` (stdio/HTTP), `registry.py` (`mcp.json`, polityka) |
+| `core/mcp/` | MCP: `server.py` (Pipe jako serwer, obie ery protokolu, Streamable HTTP) |
+| `core/hostexec.py` | Tryb docker: komenda na hoscie przez kontener pomocniczy (`--privileged --pid=host`, `nsenter -t 1`), po TAK |
 | `core/approvals.py` | Zgody administratora dla operacji zewnetrznych agentow |
 | `core/auth.py` | Uwierzytelnienie tokenem (JSON lines i MCP HTTP) |
 | `core/safety.py` | Bezpiecznik: plan zmiany (kopie, sprawdzenie przed, weryfikacja po) i strzezone wykonanie |
@@ -278,7 +279,7 @@ Powinienes zobaczyc:
 
 | Narzedzie | Opis | Wymaga potwierdzenia |
 |-----------|------|----------------------|
-| `execute_command` | Komendy shell | Zalezne od klasyfikacji |
+| `execute_command` | Komendy shell; w trybie docker z `host: true` na hoscie (kontener pomocniczy) | Zalezne od klasyfikacji; `host`: zawsze |
 | `read_file` | Odczyt plikow (sekrety redagowane) | Nie |
 | `write_file` | Zapis plikow | Zawsze |
 | `change_directory` | Katalog roboczy | Nie |
@@ -295,7 +296,6 @@ Powinienes zobaczyc:
 | `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie | Zadanie: tak; wiadomosc: nie |
 | `pipe_update` | Aktualizacja samego Pipe (check / apply) | apply: tak |
 | `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
-| `mcp_manage` | Serwery MCP, z ktorych korzysta Pipe; ich narzedzia `mcp__<serwer>__<narzedzie>` | Dodanie: tak; narzedzia wg polityki |
 | `web_search` | Wyszukiwanie w internecie bez klucza (DuckDuckGo → Stack Exchange → Wikipedia) | Nie |
 | `web_fetch` | Czytanie strony; z `question` strone czyta osobny model bez narzedzi | Nie dla adresow z wynikow i od uzytkownika, inne: tak |
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | Nie |

@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -170,7 +170,6 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
-| `/mcp` | MCP servers Pipe uses and their state |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images and applications, each with a short explanation in Pipe's language |
@@ -190,6 +189,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; the CLI prints them above the prompt by itself (it checks every 10 s), including the result of `/update`; those set from the CLI also go to Telegram and `pipe web` |
 | `/targets` | Remote servers, containers and clusters |
+| `/new` | New conversation from a clean slate; the server notes, directories, skills, style and alerts stay |
 | `/vibe` | Note about your conversation style; `/vibe reset` clears it |
 | `/history` | Latest audit-log entries |
 | `/<skill>` | Runs a skill, for example `/renew_certificate` or `/renew-certificate`, optionally with hints |

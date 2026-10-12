@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 ## Model
 
@@ -146,7 +146,7 @@ odpowiada na pytania, rysuje schematy i dziala jako bramka MCP do odczytu. Zmian
 
 W aplikacji (`runtime.observe()`, takze w trybie native):
 
-- komenda zmieniajaca stan, zapis pliku, `journal undo`, `cron_manage add/remove`, `mcp_manage` i `pipe_update apply`
+- komenda zmieniajaca stan, zapis pliku, `journal undo`, `cron_manage add/remove` i `pipe_update apply`
   sa odrzucane bez pytania o TAK, rowniez w trybie YOLO; model dostaje w prompcie blok o trybie obserwacji,
 - `run_command` w bramce MCP odmawia zamiast tworzyc zgode, a juz istniejacej zgody nie da sie zatwierdzic,
 - `undo` z `execute` (przycisk w `pipe web`, `/cofnij` w CLI i Telegramie) zwraca blad,
@@ -223,13 +223,6 @@ Token viewer nie tworzy zgod. Zgode moze sprawdzic tylko agent, ktory ja utworzy
 po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: tylko localhost, token Pipe
 (`Authorization: Bearer`), walidacja `Origin` (403) i naglowkow 2026-07-28 (`-32020`).
 
-**Pipe jako klient MCP.** Serwer MCP to cudzy kod: dodanie serwera zawsze wymaga potwierdzenia (widac program albo
-URL; wartosci `env`/`headers` sa ukryte), `mcp.json` ma prawa 0600, a podproces stdio dostaje minimalne srodowisko
-(PATH, HOME, LANG... i to, co podano) -- nigdy klucza LLM ani tokenow Pipe. Kazde wywolanie narzedzia wymaga TAK
-z widocznymi argumentami, chyba ze uzytkownik oznaczyl je jako bezpieczne (`autoApprove`, `trustReadOnly`) --
-adnotacje serwera same z siebie nie wystarczaja. Wyniki narzedzi MCP sa danymi dla modelu, przechodza redakcje
-sekretow, a viewer nie zatwierdzi zadnego wywolania.
-
 ## Webhooki
 
 - Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
@@ -299,7 +292,16 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
 
 - **`docker.sock` = root na hoscie.** Kto moze wykonac `docker run -v /:/x`, ma pelny dostep do hosta --
   montowanie `/` jako read-only niewiele tu zmienia. Dlatego `docker run/exec` zawsze wymaga potwierdzenia,
-  ale ostatecznym zabezpieczeniem jest Twoje TAK. Jesli nie potrzebujesz zarzadzania kontenerami,
+  ale ostatecznym zabezpieczeniem jest Twoje TAK.
+- **Komendy na hoscie (tryb docker).** System plikow hosta jest w kontenerze tylko do odczytu, wiec zmiany na
+  serwerze (`apt-get`, `systemctl`, `sed -i` w `/etc`, `ufw`, latki z `/zalataj`) Pipe wykonuje przez krotki
+  kontener pomocniczy z wlasnego obrazu: `docker run --rm --privileged --pid=host`, a w nim `nsenter -t 1` do
+  przestrzeni nazw hosta -- komenda dziala jak w powloce roota na serwerze. To nie jest nowe uprawnienie (patrz
+  punkt wyzej), tylko jedna przewidywalna droga: model prosi o nia przez `execute_command` z `host: true`,
+  klasyfikator ocenia komende docelowa, zakazane sa odrzucane, a kazda (takze odczyt) czeka na Twoje TAK.
+  W potwierdzeniu widac komende docelowa i linie *na hoscie: kontener pomocniczy...*; opakowanie sklada kod,
+  komenda trafia do niego jako jeden argument. Tryb obserwacji i rola viewer tej drogi nie maja. Kopii plikow
+  i automatycznego przywracania tu nie ma (bezpiecznik zapisuje wpis w dzienniku i sprawdza strony). Jesli nie potrzebujesz zarzadzania kontenerami,
   zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
 - Rozmowy leza na dysku w `DATA_DIR/sessions` (prawa 0600, katalog 0700) przez `SESSION_KEEP_DAYS` dni, zeby
   przetrwaly restart. Wyniki narzedzi sa w nich zredagowane jak w zapytaniach do modelu, ale to, co sam wpiszesz,

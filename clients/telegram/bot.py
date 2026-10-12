@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -81,6 +81,7 @@ from tg_format import (
     format_alerts,
     format_approval,
     format_audit,
+    format_audit_vulns,
     format_digest,
     format_directory,
     format_help,
@@ -510,8 +511,21 @@ async def cmd_podatnosci(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/audyt -- audyt bezpieczenstwa hosta (bez LLM)."""
-    await _command_with_image(update, context, "audit", "", format_audit)
+    """/audyt -- audyt bezpieczenstwa hosta (bez LLM); podatnosci z opisami w drugiej, osobnej wiadomosci."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        data = response_data([frame async for frame in get_client(user_id).command("audit")])
+        await _send_html(context.bot, chat_id, format_audit(data))
+        vulns = format_audit_vulns(data)
+        if vulns:
+            await _send_html(context.bot, chat_id, vulns)
+
+    await _backend_call(update, context, go())
 
 
 async def cmd_raport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -867,13 +881,6 @@ async def cmd_zgody(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _backend_call(update, context, go())
 
 
-async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _show_data(update, context, "mcp_servers", lambda d: format_list(
-        tr("Serwery MCP", "MCP servers"), d.get("servers", []),
-        tr("Brak. Napisz np. <i>\"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github\"</i>.",
-           "None. Write e.g. <i>\"add the MCP server github: npx -y @modelcontextprotocol/server-github\"</i>.")))
-
-
 async def cmd_historia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/historia -- ostatnie wpisy z audit logu (bez LLM)."""
     user_id = await _guard(update)
@@ -936,6 +943,17 @@ async def cmd_przypomnienia(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             + subscription_note()
 
     await _show_data(update, context, "reminders", render, cancel=cancel)
+
+
+async def cmd_nowa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Nowa rozmowa: backend usuwa historie tej sesji, wiedza o serwerze (pamiec, alerty) zostaje w prompcie."""
+    def render(data: dict) -> str:
+        head = tr("Zaczynamy nowa rozmowe.", "Starting a new conversation.") if data.get("cleared") \
+            else tr("Rozmowa juz byla pusta.", "The conversation was already empty.")
+        return head + tr(" Pamietam to, co trwale: notatki o serwerze, katalogi, skille, Twoj styl i alerty.",
+                         " I keep what lasts: the server notes, directories, skills, your style and the alerts.")
+
+    await _show_data(update, context, "new_chat", render)
 
 
 async def cmd_vibe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1404,9 +1422,9 @@ def main() -> None:
     for polish, handler in (
         ("raport", cmd_raport), ("audyt", cmd_audyt), ("zmiany", cmd_zmiany), ("wykres", cmd_wykres),
         ("zdrowie", cmd_zdrowie), ("koszt", cmd_koszt), ("cofnij", cmd_cofnij), ("dziennik", cmd_dziennik),
-        ("zgody", cmd_zgody), ("mcp", cmd_mcp), ("mapa", cmd_mapa), ("historia", cmd_historia),
+        ("zgody", cmd_zgody), ("mapa", cmd_mapa), ("historia", cmd_historia),
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
-        ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("pomoc", cmd_pomoc),
+        ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("nowa", cmd_nowa), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
         ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj), ("podatnosci", cmd_podatnosci),
     ):

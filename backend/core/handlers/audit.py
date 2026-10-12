@@ -19,14 +19,14 @@ from backend.core.i18n import tr
 AUDIT_HINT_PL = (
     "\n\nPrzedstaw uzytkownikowi ocene i najwazniejsze punkty (numeracja jak wyzej). Gdy poprosi o poprawke "
     "('napraw 1'), wykonaj jej komende narzedziem execute_command (albo write_file) — dostanie ja do "
-    "zatwierdzenia z planem bezpiecznika. Komendy oznaczone 'w powloce hosta' podaj mu do wykonania samemu. "
+    "zatwierdzenia z planem bezpiecznika. Komendy oznaczone 'na hoscie' wykonaj execute_command z host: true (w trybie docker) — nie kaz ich wpisywac recznie. "
     "Przy SSH trzymaj sie kolejnosci ze skilla utwardz-ssh. Przy podatnosciach przy kazdej napisz zwyklymi "
     "slowami, czego dotyczy i co grozi (opisy sa w sekcji PODATNOSCI) — nigdy same numery CVE i wersje."
 )
 AUDIT_HINT_EN = (
     "\n\nPresent the score and the most important points to the user (numbering as above). When they ask for a fix "
     "('fix 1'), run its command with execute_command (or write_file) — they will get it to approve with the "
-    "safety-fuse plan. Give commands marked 'in the host shell' to the user to run themselves. "
+    "safety-fuse plan. Run commands marked 'on the host' with execute_command and host: true (docker mode) — do not ask the user to type them. "
     "For SSH follow the order from the harden-ssh skill. For vulnerabilities, say in plain words what each one is "
     "about and what it risks (the descriptions are in the VULNERABILITIES section) — never just CVE numbers and versions."
 )
@@ -50,10 +50,12 @@ async def run_audit_text(with_vulns: bool = False) -> tuple[posture.Audit, str]:
             pass                                  # bez wyjasnien audyt pokazuje opisy z OSV
     audit = await posture.audit_now(report=watcher.checks_report, cert_days=settings.WATCH_CERT_DAYS,
                                     vuln_scan=scan, vuln_note=note)
+    if scan is not None and (scan.items or any(t.items for t in scan.targets)):
+        audit.vulns = vulns.report_markdown(scan, vulns.explanations(lang()))
     text = audit.render()
-    if with_vulns and scan is not None and (scan.items or any(t.items for t in scan.targets)):
+    if with_vulns and audit.vulns:
         text += tr("\n\n--- PODATNOSCI (kazda z opisem) ---\n", "\n\n--- VULNERABILITIES (each with a description) ---\n") \
-            + vulns.report_markdown(scan, vulns.explanations(lang()))
+            + audit.vulns
     return audit, text
 
 

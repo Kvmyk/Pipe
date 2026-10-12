@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -358,9 +358,12 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
   explanations, without them it sends the OSV description. Known vulnerabilities don't come back after a Pipe
   restart. The rest is in the morning report and in `/audit`; asking the agent about vulnerabilities also gives a
   description of each one.
-- In `/audit` vulnerabilities take at most three points (KEV, critical and high, the rest), each with an
-  `apt-get install --only-upgrade ...` command that upgrades only those packages. Pipe always asks before installing.
-  In docker mode the command is *in the host shell*; Pipe can patch by itself only in native mode.
+- In `/audit` vulnerabilities take at most three short points (KEV, critical and high, the rest) with the package
+  names and a pointer to `/patch`, which upgrades only those packages. A separate message with the vulnerabilities
+  follows the audit: each package with a description of the most serious one. The alert, the report and the patch
+  preview always fit one Telegram message, the rest is counted. Pipe always asks before installing.
+  In docker mode Pipe installs the patches on the host through a helper container (see *Host commands* in
+  security); on Kubernetes you get a command to run on the node.
 - `/patch` (or the *Patch* button on the alert in Telegram and `pipe web`) works without the LLM: the package list,
   the exact command and *Install*. The server builds the command from the last scan, the install goes through the
   safety fuse (sites before and after, a journal entry), then Pipe scans the changed packages and says what is left.
@@ -613,29 +616,6 @@ agent only reads and can't ask for approvals). **On the server** -- a Streamable
 
 Supported protocol versions: 2026-07-28 (`server/discover`, the version in `_meta`, `Mcp-Method`/`Mcp-Name` headers)
 and older ones with `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
-
-### Pipe as an MCP client
-
-> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
-> If something is off, please open an issue.
-
-Tools of other MCP servers become the agent's tools (`mcp__github__create_issue`...). You add them with a sentence
-(*"add the MCP server github: npx -y @modelcontextprotocol/server-github, token in GITHUB_PERSONAL_ACCESS_TOKEN,
-get_* and list_* without asking"*) or in `backend/data/mcp.json`:
-
-```json
-{"servers": {
-  "github":  {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
-              "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "..."}, "autoApprove": ["get_*", "list_*", "search_*"]},
-  "grafana": {"url": "http://127.0.0.1:8000/mcp", "headers": {"Authorization": "Bearer ..."}, "trustReadOnly": true}
-}}
-```
-
-- Every call needs a YES with the arguments visible, unless the tool matches `autoApprove` or the server has
-  `trustReadOnly` and the tool declares `readOnlyHint`. An approved call goes into the change journal.
-- Adding a server always requires confirmation. A stdio subprocess gets neither the LLM key nor Pipe's tokens.
-- stdio and Streamable HTTP; the protocol version is detected automatically (2026-07-28 or `initialize`).
-- `/mcp` shows the servers and their state; *"reconnect the MCP servers"* -- `mcp_manage reload`.
 
 ---
 

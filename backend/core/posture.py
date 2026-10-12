@@ -58,7 +58,8 @@ class Finding:
     detail: str = ""
     fix: str = ""
     command: str = ""        # dokladna komenda poprawki (pusta = poprawka reczna)
-    host_only: bool = False  # w trybie docker do wykonania w powloce hosta
+    host_only: bool = False  # w trybie docker do wykonania na hoscie (execute_command z host: true)
+    patch: str = ""          # poprawke instaluje /zalataj z tym zakresem (all | urgent | images) — klienci pokazuja to zamiast komendy
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -69,6 +70,7 @@ class Audit:
     findings: list[Finding] = field(default_factory=list)
     passed: list[str] = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
+    vulns: str = ""          # raport podatnosci (Markdown, jedna wiadomosc) — klienci pokazuja go osobno, pod audytem
 
     @property
     def score(self) -> int:
@@ -83,7 +85,8 @@ class Audit:
         order = {"high": 0, "medium": 1, "low": 2}
         return sorted(self.findings, key=lambda f: (order[f.severity], f.id))
 
-    def render(self) -> str:
+    def render(self, for_model: bool = True) -> str:
+        """Tekst audytu. Dla uzytkownika (`for_model=False`) latki podatnosci to /zalataj, nie komenda na 200 pakietow."""
         labels = tr(SEVERITY_LABEL, SEVERITY_LABEL_EN)
         lines = [tr(f"Ocena bezpieczenstwa: {self.score}/100 ({self.grade})",
                     f"Security score: {self.score}/100 ({self.grade})")]
@@ -93,9 +96,11 @@ class Audit:
                 lines.append(f"   {finding.detail}")
             if finding.fix:
                 lines.append(tr(f"   Poprawka: {finding.fix}", f"   Fix: {finding.fix}"))
-            if finding.command:
-                where = tr(" (w powloce hosta — Pipe ma system plikow hosta tylko do odczytu)",
-                           " (in the host shell — Pipe sees the host filesystem read-only)") if finding.host_only else ""
+            if finding.patch and not for_model:
+                lines.append(tr(f"   Napraw: {patch_command(finding.patch)}", f"   Fix it: {patch_command(finding.patch)}"))
+            elif finding.command:
+                where = tr(" (na hoscie: execute_command z host: true)",
+                           " (on the host: execute_command with host: true)") if finding.host_only else ""
                 lines.append(tr(f"   Komenda{where}: {finding.command}", f"   Command{where}: {finding.command}"))
         if self.passed:
             lines.append(tr("\nW porzadku: ", "\nOK: ") + "; ".join(self.passed))
@@ -105,7 +110,14 @@ class Audit:
 
     def to_data(self) -> dict[str, Any]:
         return {"score": self.score, "grade": self.grade, "findings": [f.to_dict() for f in self.sorted()],
-                "passed": self.passed, "unknown": self.unknown, "text": self.render()}
+                "passed": self.passed, "unknown": self.unknown, "text": self.render(for_model=False),
+                "vulns": self.vulns}
+
+
+def patch_command(scope: str) -> str:
+    """Komenda klienta dla zakresu latki: /zalataj, /zalataj pilne, /zalataj obrazy."""
+    words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images")}
+    return tr("/zalataj", "/patch") + words.get(scope, "")
 
 
 def _read(path: str) -> str | None:
@@ -493,12 +505,11 @@ def cert_findings(audit: Audit, report: Any, cert_days: int) -> None:
                                                  "check automatic renewal (certbot.timer, proxy)")))
 
 
-def _explained() -> dict[str, str]:
-    """Wyjasnienia podatnosci w jezyku Pipe (bez nich opisy z OSV) — kazda pozycja audytu mowi, czego dotyczy."""
-    from backend.core import vulns
-    from backend.core.i18n import lang
-
-    return vulns.explanations(lang())
+def _names(names: list[str], limit: int = 5) -> str:
+    """'vim, curl, libpng i 70 innych' — punkt audytu jest krotki, opisy sa w osobnym raporcie podatnosci."""
+    shown = ", ".join(names[:limit])
+    more = len(names) - limit
+    return shown + (tr(f" i {more} innych", f" and {more} more") if more > 0 else "")
 
 
 def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
@@ -533,11 +544,9 @@ def _image_vuln_findings(audit: Audit, scan: Any) -> None:
         return
     kev, urgent = any(t.kev for t in vulnerable), any(t.urgent for t in vulnerable)
     patch = vulns.image_patch(scan)
-    detail = "; ".join(vulns.describe_target(t, _explained()) for t in vulnerable[:4])
-    if len(vulnerable) > 4:
-        detail += tr(f"; i {len(vulnerable) - 4} innych", f"; and {len(vulnerable) - 4} more")
+    detail = _names([t.label() for t in vulnerable])
     if patch.manual:
-        detail += "; " + "; ".join(patch.manual[:3])
+        detail += "; " + "; ".join(patch.manual[:2])
     audit.findings.append(Finding(
         "vuln-images", "high" if kev else "medium" if urgent else "low",
         tr(f"Podatnosci z poprawka w {len(vulnerable)} obrazach kontenerow",
@@ -547,7 +556,7 @@ def _image_vuln_findings(audit: Audit, scan: Any) -> None:
            "przypiety tag zmien w compose — /zalataj obrazy",
            "a newer image under the same tag (official images are rebuilt); rebuild your own image, change a pinned "
            "tag in compose — /patch images"),
-        patch.command, _host_only() and bool(patch.command)))
+        patch.command, _host_only() and bool(patch.command), "images" if patch.command else ""))
 
 
 def _app_vuln_findings(audit: Audit, scan: Any) -> None:
@@ -562,10 +571,7 @@ def _app_vuln_findings(audit: Audit, scan: Any) -> None:
         return
     kev = any(t.kev for t in apps)
     critical = any(v.severity == "critical" for t in apps for p in t.items for v in p.fixable)
-    explain = _explained()
-    detail = "; ".join(f"{t.label()}: " + "; ".join(vulns.describe_item(p, explain) for p in vulns.sort_items(t.items)[:3])
-                       + (tr(f"; i {len(t.items) - 3} innych", f"; and {len(t.items) - 3} more") if len(t.items) > 3 else "")
-                       for t in apps[:4])
+    detail = "; ".join(f"{t.label()}: " + _names([p.name for p in vulns.sort_items(t.items)], 3) for t in apps[:4])
     audit.findings.append(Finding(
         "vuln-apps", "high" if kev else "medium" if critical else "low",
         tr(f"Podatnosci z poprawka w zaleznosciach {len(apps)} aplikacji",
@@ -601,17 +607,13 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
     for finding_id, severity, items, title in groups:
         if not items:
             continue
-        shown = "; ".join(vulns.describe_item(p, _explained()) for p in items[:5])
-        more = len(items) - 5
-        if more > 0:
-            shown += tr(f"; i {more} innych pakietow", f"; and {more} more packages")
         audit.findings.append(Finding(
-            finding_id, severity, title, shown,
+            finding_id, severity, title, _names([p.name for p in vulns.sort_items(items)]),
             tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera; "
-               "pelny raport: /podatnosci",
+               "co grozi przy kazdym — /podatnosci",
                "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server "
-               "restart; full report: /vulns"),
-            vulns.upgrade_command(scan.ecosystem, items), _host_only()))
+               "restart; what each one risks — /vulns"),
+            vulns.upgrade_command(scan.ecosystem, items), _host_only(), "all" if finding_id == "vuln-other" else "urgent"))
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
     elif not scan.error:

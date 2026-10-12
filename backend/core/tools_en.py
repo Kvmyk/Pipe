@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.34.1
+Pipe v0.35.0
 """
 
 from __future__ import annotations
@@ -20,7 +20,10 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "Runs a shell command on the server in the working directory. Reads run immediately, state-changing commands "
         "wait for the user's confirmation, forbidden ones are rejected. Limit output (tail -n, head, grep). Prefer the "
         "specialised tools for known areas.",
-        {"command": "Shell command to run on the server.", "requires_confirmation": _CONFIRM}),
+        {"command": "Shell command to run on the server.", "requires_confirmation": _CONFIRM,
+         "host": "Docker mode only: true runs the command on the host (like root in the server shell, through a helper "
+                 "container), e.g. apt-get, systemctl, sed -i in /etc, ufw. Always after confirmation. Do not use it for "
+                 "reads — read from the host directory."}),
     "read_file": (
         "Reads a file on the server. Host path (e.g. /etc/nginx/nginx.conf) or relative to the working directory. "
         "Secrets in the content are hidden from you ([ZREDAGOWANO]).",
@@ -86,14 +89,6 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "finding has a fix with the exact command. Read-only. Use it when the user asks about server security or its "
         "vulnerabilities.",
         {}),
-    "mcp_manage": (
-        "External MCP servers you use (their tools are named mcp__<server>__<tool>). list: server status; add: a new "
-        "server — stdio (command, args, env) or HTTP (url, headers) — ALWAYS with confirmation; autoApprove are tool "
-        "name patterns called without asking, trustReadOnly trusts the read-only annotation; remove; reload: reconnect.",
-        {"name": "Server name: lowercase letters, digits, '-', '_'.", "command": "stdio: program, e.g. 'npx'.",
-         "args": "stdio: arguments.", "env": "stdio: environment variables for the server.",
-         "url": "HTTP: MCP endpoint address.", "headers": "HTTP: headers (e.g. Authorization).",
-         "autoApprove": "Patterns of tool names called without asking, e.g. ['get_*', 'list_*']."}),
     "journal": (
         "Log of confirmed changes: before every change Pipe backs up files, git state and crontab and records "
         "inverse commands (docker start/stop, systemctl enable/disable). list: recent entries. undo: undo an entry "

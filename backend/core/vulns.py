@@ -532,10 +532,14 @@ SEVERITY_WORD_EN = {"critical": "Critical", "high": "High", "medium": "Medium", 
 REPORT_SYSTEM = 8            # pakietow hosta w raporcie
 REPORT_TARGETS = 4           # obrazow i aplikacji
 REPORT_PER_TARGET = 4        # pakietow na obraz/aplikacje
-VULNS_PER_PACKAGE = 3
-ALERT_PACKAGES = 6           # pakietow hosta w alercie
+VULNS_PER_PACKAGE = 1        # podatnosci z opisem na pakiet (najpowazniejsza); reszta jako liczba przy pakiecie
+ALERT_PACKAGES = 12          # pakietow hosta w alercie (i tak przycina MESSAGE_BUDGET)
 ALERT_TARGETS = 4            # obrazow / aplikacji w alercie
 ALERT_PER_TARGET = 3         # pakietow na obraz / aplikacje w alercie
+# Alert, raport i podglad latki to JEDNA wiadomosc: tyle znakow Markdownu, po zamianie na HTML Telegrama
+# (<b>, encje) zostaje zapas do jego limitu 4096. Pakiety, ktore sie nie mieszcza, sa policzone, nie pokazane.
+MESSAGE_BUDGET = 3300
+SHORT_COMMAND = 400          # dluzsza komenda latki jest w podgladzie skracana (pelna trafia do dziennika)
 MAX_EXPLANATION = 280
 _URL = re.compile(r"https?://\S+|www\.\S+")
 _CVE = re.compile(r"CVE-\d{4}-\d+")
@@ -604,17 +608,64 @@ def package_label(item: PackageVulns) -> str:
 
 
 def item_markdown(item: PackageVulns, explain: dict[str, str], limit: int = VULNS_PER_PACKAGE) -> list[str]:
-    """Pakiet (nazwa pogrubiona, wersja → poprawka), pod nim jego podatnosci, kazda z opisem."""
+    """
+    Pakiet (nazwa pogrubiona, wersja → poprawka, ile podatnosci), pod nim najpowazniejsze z opisem:
+    '**vim** 8.2.1 → 8.2.4 · 11 podatnosci' / '- **Srednia:** Atakujacy moze ... (USN-8101-1)'.
+    """
+    vulns = _sorted_vulns(item)
     head = f"**{plain(item.name, 80)}** {plain(item.version, 80)}"
     if item.fixed_version:
         head += f" → {plain(item.fixed_version, 80)}"
-    vulns = _sorted_vulns(item)
-    # pusta linia przed pakietem — bez niej Markdown dokleilby naglowek do listy poprzedniego pakietu
-    lines = ["", head] + [vuln_markdown(v, explain) for v in vulns[:limit]]
     if len(vulns) > limit:
-        lines.append(tr(f"- … kolejnych podatnosci w tym pakiecie: {len(vulns) - limit}",
-                        f"- … {len(vulns) - limit} more in this package"))
-    return lines
+        head += tr(f" · {len(vulns)} podatnosci", f" · {len(vulns)} vulnerabilities")
+    # pusta linia przed pakietem — bez niej Markdown dokleilby naglowek do listy poprzedniego pakietu
+    return ["", head] + [vuln_markdown(v, explain) for v in vulns[:limit]]
+
+
+def sections_markdown(sections: list[tuple[str, list[PackageVulns], int]], explain: dict[str, str], *,
+                      prefix: list[str] | None = None, footer: list[str] | None = None,
+                      budget: int = MESSAGE_BUDGET) -> str:
+    """
+    Sekcje (naglowek albo '', pakiety, ile lacznie) jako jedna wiadomosc: pakiety po kolei, dopoki miesci sie
+    `budget` razem ze stopka; pod sekcja '… i N kolejnych pakietow'. Stopka (co dalej) zawsze zostaje.
+    """
+    lines = list(prefix or [])
+    tail = list(footer or [])
+    reserve = len("\n".join(tail)) + 60 * (len(sections) + 1)
+
+    def fits(block: list[str]) -> bool:
+        return len("\n".join(lines + block)) + reserve <= budget
+
+    dropped = 0
+    for head, items, total in sections:
+        if head and not fits(["", f"### {head}"]):
+            dropped += 1
+            continue
+        if head:
+            lines += ["", f"### {head}"]
+        shown = 0
+        for item in items:
+            block = item_markdown(item, explain)
+            if not fits(block):
+                break
+            lines += block
+            shown += 1
+        if total > shown:
+            lines += ["", tr(f"… i {total - shown} kolejnych pakietow", f"… and {total - shown} more packages")]
+    if dropped:
+        lines += ["", tr(f"… i {dropped} kolejnych obrazow lub aplikacji", f"… and {dropped} more images or applications")]
+    if tail:
+        lines += [""] + tail
+    return "\n".join(lines).strip()
+
+
+def short_command(command: str, limit: int = SHORT_COMMAND) -> str:
+    """Bardzo dluga komenda latki skrocona do podgladu: poczatek + ile argumentow pominieto."""
+    if len(command) <= limit:
+        return command
+    head = command[:limit].rsplit(" ", 1)[0]
+    rest = len(command[len(head):].split())
+    return head + tr(f" … (+{rest} pakietow)", f" … (+{rest} packages)")
 
 
 def report_sections(result: Scan) -> list[tuple[str, list[PackageVulns], int]]:
@@ -641,39 +692,34 @@ def report_sections(result: Scan) -> list[tuple[str, list[PackageVulns], int]]:
 
 
 def report_markdown(result: Scan | None, explain: dict[str, str], note: str = "") -> str:
-    """Pelny raport podatnosci dla /podatnosci: sekcje, pakiety, podatnosci z wyjasnieniami, co dalej."""
+    """Raport podatnosci dla /podatnosci (jedna wiadomosc): sekcje, pakiety z opisem najpowazniejszej, co dalej."""
     if result is None:
         return tr("Nie ma jeszcze wyniku skanu podatnosci", "There is no vulnerability scan result yet") \
             + (f" ({note})." if note else ".")
     sections = report_sections(result)
-    lines: list[str] = []
+    prefix: list[str] = []
     if result.ecosystem is None:
-        lines.append(tr(f"System serwera ({result.system}) nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
-                        f"The server system ({result.system}) is not supported — checking only images and applications."))
+        prefix.append(tr(f"System serwera ({result.system}) nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
+                         f"The server system ({result.system}) is not supported — checking only images and applications."))
     if not sections:
-        lines.append(tr("Brak znanych podatnosci z poprawka.", "No known vulnerabilities with a fix."))
-    for head, items, total in sections:
-        lines += ["", f"### {head}"]
-        for item in items:
-            lines += item_markdown(item, explain)
-        if total > len(items):
-            lines += ["", tr(f"… i {total - len(items)} kolejnych pakietow (/audyt)", f"… and {total - len(items)} more packages (/audit)")]
+        prefix.append(tr("Brak znanych podatnosci z poprawka.", "No known vulnerabilities with a fix."))
+    footer: list[str] = []
     if result.unfixed:
-        lines += ["", tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
-                         f"Without a fix (waiting for the distribution): {result.unfixed}.")]
+        footer.append(tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
+                         f"Without a fix (waiting for the distribution): {result.unfixed}."))
     actions = []
     if result.items:
         actions.append(tr("/zalataj — pakiety serwera", "/patch — server packages"))
     if any(t.items for t in result.of_kind("image")):
         actions.append(tr("/zalataj obrazy — nowsze obrazy kontenerow", "/patch images — newer container images"))
     if actions:
-        lines += ["", tr("Co dalej: ", "Next: ") + "; ".join(actions) + "."]
+        footer.append(tr("Co dalej: ", "Next: ") + "; ".join(actions) + ".")
     if result.error:
-        lines.append(tr(f"Uwaga: ostatnie zapytanie do OSV nie powiodlo sie ({result.error}).",
-                        f"Note: the last OSV query failed ({result.error})."))
+        footer.append(tr(f"Uwaga: ostatnie zapytanie do OSV nie powiodlo sie ({result.error}).",
+                         f"Note: the last OSV query failed ({result.error})."))
     if note:
-        lines.append(note)
-    return "\n".join(lines).strip()
+        footer.append(note)
+    return sections_markdown(sections, explain, prefix=prefix, footer=footer)
 
 
 # ─── Alerty: wysylane same, z opisem kazdej podatnosci ──────────────────────
@@ -700,57 +746,42 @@ def alert_items(result: Scan) -> list[PackageVulns]:
     return items
 
 
-def _more(lines: list[str], total: int, shown: int, pl: str, en: str) -> None:
-    if total > shown:
-        lines += ["", tr(f"… i {total - shown} {pl}", f"… and {total - shown} {en}")]
-
-
 def system_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:system (Markdown): pilne pakiety hosta, pod kazdym podatnosci z opisem, co dalej."""
+    """Tresc alertu vuln:system (Markdown, jedna wiadomosc): pilne pakiety hosta z opisem, co dalej."""
     urgent = sort_items(result.urgent)
-    lines: list[str] = []
-    for item in urgent[:ALERT_PACKAGES]:
-        lines += item_markdown(item, explain)
-    _more(lines, len(urgent), ALERT_PACKAGES, "kolejnych pakietow", "more packages")
-    lines += ["", tr("Poprawki zainstaluje po Twojej zgodzie: przycisk Zalataj albo /zalataj pilne.",
-                     "I will install the fixes after you approve: the Patch button or /patch urgent.")]
-    return "\n".join(lines).strip()
+    return sections_markdown([("", urgent[:ALERT_PACKAGES], len(urgent))], explain, footer=[
+        tr("Poprawki zainstaluje po Twojej zgodzie: przycisk Zalataj albo /zalataj pilne.",
+           "I will install the fixes after you approve: the Patch button or /patch urgent.")])
 
 
 def images_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:images: obraz (i jego kontenery), pilne pakiety w nim, podatnosci z opisem."""
-    images = urgent_images(result)
-    lines: list[str] = []
-    for target in images[:ALERT_TARGETS]:
+    """Tresc alertu vuln:images: obraz (i jego kontenery), pilne pakiety w nim z opisem."""
+    sections = []
+    for target in urgent_images(result)[:ALERT_TARGETS]:
         containers = ", ".join(target.meta.get("containers") or [])
-        lines += ["", "### " + tr(f"Obraz {plain(target.name, 120)}", f"Image {plain(target.name, 120)}")
-                  + (f" ({plain(containers, 200)})" if containers else "")]
         urgent = sort_items(target.urgent)
-        for item in urgent[:ALERT_PER_TARGET]:
-            lines += item_markdown(item, explain)
-        _more(lines, len(urgent), ALERT_PER_TARGET, "kolejnych pakietow w tym obrazie", "more packages in this image")
-    _more(lines, len(images), ALERT_TARGETS, "kolejnych obrazow", "more images")
-    lines += ["", tr("Nowsze obrazy pobiore i uruchomie po Twojej zgodzie: przycisk Zalataj albo /zalataj obrazy.",
-                     "I will pull and start newer images after you approve: the Patch button or /patch images.")]
-    return "\n".join(lines).strip()
+        sections.append((tr(f"Obraz {plain(target.name, 120)}", f"Image {plain(target.name, 120)}")
+                         + (f" ({plain(containers, 200)})" if containers else ""), urgent[:ALERT_PER_TARGET], len(urgent)))
+    more = len(urgent_images(result)) - len(sections)
+    footer = [tr(f"… i {more} kolejnych obrazow", f"… and {more} more images")] if more > 0 else []
+    return sections_markdown(sections, explain, footer=footer + [
+        tr("Nowsze obrazy pobiore i uruchomie po Twojej zgodzie: przycisk Zalataj albo /zalataj obrazy.",
+           "I will pull and start newer images after you approve: the Patch button or /patch images.")])
 
 
 def apps_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:apps: aplikacja, jej krytyczne zaleznosci, podatnosci z opisem."""
+    """Tresc alertu vuln:apps: aplikacja, jej krytyczne zaleznosci z opisem."""
     apps = serious_apps(result)
-    lines: list[str] = []
-    for target, items in apps[:ALERT_TARGETS]:
-        lines += ["", "### " + tr(f"Aplikacja {plain(target.name, 200)}", f"Application {plain(target.name, 200)}")
-                  + f" ({plain(target.ecosystem or '', 60)})"]
-        for item in items[:ALERT_PER_TARGET]:
-            lines += item_markdown(item, explain)
-        _more(lines, len(items), ALERT_PER_TARGET, "kolejnych zaleznosci", "more dependencies")
-    _more(lines, len(apps), ALERT_TARGETS, "kolejnych aplikacji", "more applications")
-    lines += ["", tr("To zaleznosci w kodzie aplikacji: podbij wersje w lockfile (npm audit fix, pip install -U, "
-                     "composer update ...) i wdroz aplikacje.",
-                     "These are dependencies in the application code: bump the versions in the lockfile (npm audit fix, "
-                     "pip install -U, composer update ...) and deploy the app.")]
-    return "\n".join(lines).strip()
+    sections = [(tr(f"Aplikacja {plain(target.name, 200)}", f"Application {plain(target.name, 200)}")
+                 + f" ({plain(target.ecosystem or '', 60)})", items[:ALERT_PER_TARGET], len(items))
+                for target, items in apps[:ALERT_TARGETS]]
+    more = len(apps) - len(sections)
+    footer = [tr(f"… i {more} kolejnych aplikacji", f"… and {more} more applications")] if more > 0 else []
+    return sections_markdown(sections, explain, footer=footer + [
+        tr("To zaleznosci w kodzie aplikacji: podbij wersje w lockfile (npm audit fix, pip install -U, "
+           "composer update ...) i wdroz aplikacje.",
+           "These are dependencies in the application code: bump the versions in the lockfile (npm audit fix, "
+           "pip install -U, composer update ...) and deploy the app.")])
 
 
 def explanations(lang: str) -> dict[str, str]:
@@ -881,17 +912,13 @@ def patch_token(command: str) -> str:
 
 def patch_preview(result: Scan, items: list[PackageVulns], command: str, reason: str = "",
                   explain: dict[str, str] | None = None) -> str:
-    """Podglad latki pakietow hosta (Markdown): pakiety, dokladna komenda, czego bezpiecznik nie zrobi."""
+    """Podglad latki pakietow hosta (Markdown, jedna wiadomosc): pakiety z opisem, komenda, czego bezpiecznik nie zrobi."""
     from backend.core.text import as_code
 
     urgent = sum(1 for p in items if p.urgent)
-    lines = [tr(f"Latki dla {len(items)} pakietow" + (f" ({urgent} pilnych)" if urgent else "") + ":",
-                f"Patches for {len(items)} packages" + (f" ({urgent} urgent)" if urgent else "") + ":")]
-    for item in items[:12]:
-        lines += item_markdown(item, explain or {}, 2)
-    if len(items) > 12:
-        lines += ["", tr(f"… i {len(items) - 12} kolejnych pakietow", f"… and {len(items) - 12} more packages")]
-    lines += ["", tr("Komenda: ", "Command: ") + as_code(command), "",
+    prefix = [tr(f"Latki dla {len(items)} pakietow" + (f" ({urgent} pilnych)" if urgent else "") + ":",
+                 f"Patches for {len(items)} packages" + (f" ({urgent} urgent)" if urgent else "") + ":")]
+    footer = [tr("Komenda: ", "Command: ") + as_code(short_command(command)), "",
               tr("Bezpiecznik sprawdzi strony przed i po instalacji i zapisze wpis w dzienniku. Pakietow nie cofne "
                  "automatycznie (starej wersji czesto nie ma juz w repozytorium). Biblioteki i jadro zaczna dzialac "
                  "po restarcie uslug albo serwera.",
@@ -899,39 +926,38 @@ def patch_preview(result: Scan, items: list[PackageVulns], command: str, reason:
                  "roll packages back automatically (the old version is often gone from the repository). Libraries and "
                  "the kernel apply after a service or server restart.")]
     if result.error:
-        lines.append(tr(f"Uwaga: ostatni skan OSV nie powiodl sie ({result.error}), lista moze byc nieaktualna.",
-                        f"Note: the last OSV scan failed ({result.error}), the list may be out of date."))
+        footer.append(tr(f"Uwaga: ostatni skan OSV nie powiodl sie ({result.error}), lista moze byc nieaktualna.",
+                         f"Note: the last OSV scan failed ({result.error}), the list may be out of date."))
     if reason:
-        lines += ["", reason]
-    return "\n".join(lines)
+        footer += ["", reason]
+    return sections_markdown([("", sort_items(items), len(items))], explain or {}, prefix=prefix, footer=footer)
 
 
 def image_patch_preview(patch: ImagePatch, reason: str = "", explain: dict[str, str] | None = None) -> str:
-    """Podglad nowszych obrazow: obrazy, komenda, powrot, kontenery bez compose."""
+    """Podglad nowszych obrazow (jedna wiadomosc): obrazy, pakiety z opisem, komenda, powrot, kontenery bez compose."""
     from backend.core.text import as_code
 
-    lines = [tr(f"Nowsze obrazy dla {len(patch.targets)} obrazow z podatnosciami:",
-                f"Newer images for {len(patch.targets)} images with vulnerabilities:")]
+    prefix = [tr(f"Nowsze obrazy dla {len(patch.targets)} obrazow z podatnosciami:",
+                 f"Newer images for {len(patch.targets)} images with vulnerabilities:")]
+    sections = []
     for target in patch.targets[:6]:
         containers = ", ".join(target.meta.get("containers") or [])
-        lines += ["", f"### {plain(target.name, 120)}" + (f" ({plain(containers, 200)})" if containers else "")]
-        for item in target.items[:3]:
-            lines += item_markdown(item, explain or {}, 1)
-        if len(target.items) > 3:
-            lines += ["", tr(f"… i {len(target.items) - 3} kolejnych pakietow", f"… and {len(target.items) - 3} more packages")]
+        sections.append((plain(target.name, 120) + (f" ({plain(containers, 200)})" if containers else ""),
+                         sort_items(target.items)[:3], len(target.items)))
+    footer: list[str] = []
     if patch.command:
-        lines += ["", tr("Komenda: ", "Command: ") + as_code(patch.command), "",
-                  tr("Pomoze tylko wtedy, gdy pod tym samym tagiem jest nowszy obraz (oficjalne obrazy sa regularnie "
-                     "przebudowywane). Wlasny obraz trzeba przebudowac, a przypiety tag zmienic w compose. Bezpiecznik "
-                     "sprawdzi konfiguracje compose, czy kontenery dzialaja i strony; /cofnij wraca do poprzednich obrazow.",
-                     "This only helps when a newer image exists under the same tag (official images are rebuilt "
-                     "regularly). Your own image has to be rebuilt, and a pinned tag changed in compose. The safety fuse "
-                     "checks the compose config, that the containers run and the sites; /undo goes back to the previous images.")]
+        footer += [tr("Komenda: ", "Command: ") + as_code(short_command(patch.command)), "",
+                   tr("Pomoze tylko wtedy, gdy pod tym samym tagiem jest nowszy obraz (oficjalne obrazy sa regularnie "
+                      "przebudowywane). Wlasny obraz trzeba przebudowac, a przypiety tag zmienic w compose. Bezpiecznik "
+                      "sprawdzi konfiguracje compose, czy kontenery dzialaja i strony; /cofnij wraca do poprzednich obrazow.",
+                      "This only helps when a newer image exists under the same tag (official images are rebuilt "
+                      "regularly). Your own image has to be rebuilt, and a pinned tag changed in compose. The safety fuse "
+                      "checks the compose config, that the containers run and the sites; /undo goes back to the previous images.")]
     if patch.manual:
-        lines += [""] + [f"- {m}" for m in patch.manual]
+        footer += [""] + [f"- {m}" for m in patch.manual[:4]]
     if reason:
-        lines += ["", reason]
-    return "\n".join(lines)
+        footer += ["", reason]
+    return sections_markdown(sections, explain or {}, prefix=prefix, footer=footer)
 
 
 # ─── Pamiec skanu ───────────────────────────────────────────────────────────

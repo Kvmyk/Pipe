@@ -112,7 +112,6 @@ class TestGraph:
         text = graph.describe("write_file", {"path": "/srv/shop/very/long/path/that/goes/on/and/on/config.yml", "content": "SECRET=1"})
         assert text == "zapisuje …/on/config.yml" and "SECRET" not in text
         assert graph.describe("execute_command", {"command": "docker   ps\n-a"}) == "docker ps -a"
-        assert graph.describe("mcp__github__list_issues", {}) == "MCP github: list_issues"
 
 
 class TestActivityEvents:

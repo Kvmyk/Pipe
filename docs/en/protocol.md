@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 ## Overview
 
@@ -65,6 +65,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `run_skill` | `name` (skill name or command), optionally `args` | streaming |
 | `diagram` | optionally `args` (title) | infrastructure map **without the LLM**: a frame with `attachment`, then `done` with `"data": {"summary": "..."}` |
 | `directory` | -- | `"data": {"entries": [{"path", "kind", "description", "remote", "branch", ...}], "text": "..."}` |
+| `new_chat` | -- | `"data": {"cleared": true\|false}`: removes the session history from memory and disk (`/new`); the server memory stays |
 | `vibe` | `args`: empty or `reset` | `"data": {"content": "..."}` or `{"content": "", "reset": true\|false}` (the VIBE of the user from `interface`) |
 | `alerts` | -- | `"data": {"active": [alert], "recent": [event], "enabled": bool}` |
 | `targets` | -- | `"data": {"targets": ["target description", ...]}` |
@@ -87,7 +88,6 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `health` | -- | `"data": {"text": "..."}` -- certificates, sites, DNS, backups (checks without configuration) |
 | `digest` | -- | a frame with `attachment` (24 h load chart), then `"data"` like the `digest` event (below) |
 | `mcp` | `rpc`: one MCP JSON-RPC message | `"data": {"rpc": response \| null}` -- MCP bridge (CLI `--mcp`); identity and role from the token |
-| `mcp_servers` | -- | `"data": {"servers": ["MCP server description", ...]}` |
 | `approvals` | -- | `"data": {"pending": [approval event]}` |
 | `approve` | `id`, `decision` (bool) | admin only; approving runs the operation through the safety fuse, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- incident memory (what happened, findings, what helped) |

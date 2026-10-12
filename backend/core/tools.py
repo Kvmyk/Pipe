@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -37,6 +37,10 @@ TOOLS: list[dict] = [
         {
             "command": {"type": "string", "description": "Komenda shell do wykonania na serwerze."},
             "requires_confirmation": _CONFIRM_FLAG,
+            "host": {"type": "boolean", "description": (
+                "Tylko w trybie docker: true wykonuje komende na hoscie (jak root w powloce serwera, przez kontener "
+                "pomocniczy), np. apt-get, systemctl, sed -i w /etc, ufw. Zawsze po potwierdzeniu. Odczytow tak "
+                "nie rob — czytaj z katalogu hosta.")},
         },
         ["command"],
     ),
@@ -177,27 +181,6 @@ TOOLS: list[dict] = [
         "znalezisko ma poprawke z dokladna komenda. Same odczyty. Uzyj, gdy uzytkownik pyta o bezpieczenstwo "
         "serwera albo o podatnosci na nim.",
         {},
-    ),
-    _tool(
-        "mcp_manage",
-        "Zewnetrzne serwery MCP, z ktorych korzystasz (ich narzedzia maja nazwy mcp__<serwer>__<narzedzie>). "
-        "list: stan serwerow; add: nowy serwer — stdio (command, args, env) albo HTTP (url, headers) — ZAWSZE "
-        "z potwierdzeniem; autoApprove to wzorce narzedzi bez pytania, trustReadOnly ufa adnotacji tylko-odczyt; "
-        "remove; reload: polacz ponownie.",
-        {
-            "operation": {"type": "string", "enum": ["list", "add", "remove", "reload"]},
-            "name": {"type": "string", "description": "Nazwa serwera: male litery, cyfry, '-', '_'."},
-            "command": {"type": "string", "description": "stdio: program, np. 'npx'."},
-            "args": {"type": "array", "items": {"type": "string"}, "description": "stdio: argumenty."},
-            "env": {"type": "object", "description": "stdio: zmienne srodowiskowe dla serwera."},
-            "url": {"type": "string", "description": "HTTP: adres endpointu MCP."},
-            "headers": {"type": "object", "description": "HTTP: naglowki (np. Authorization)."},
-            "autoApprove": {"type": "array", "items": {"type": "string"},
-                            "description": "Wzorce nazw narzedzi wywolywanych bez pytania, np. ['get_*', 'list_*']."},
-            "trustReadOnly": {"type": "boolean"},
-            "description": {"type": "string"},
-        },
-        ["operation"],
     ),
     _tool(
         "journal",

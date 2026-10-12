@@ -362,8 +362,6 @@ def locate(tool: str, args: dict[str, Any], cwd: str = "/") -> list[str]:
         nodes = _nodes_for_command(("git " + command) if tool == "git_command" else command, cwd, infra)
     elif tool in ("web_search", "web_fetch", "software_info"):
         nodes = ["internet"]
-    elif tool.startswith("mcp__"):
-        nodes = []
     cleaned = [n for n in nodes if n not in ("t:", "t:local")]
     return cleaned or ["host"]
 
@@ -394,16 +392,12 @@ _LABELS = {
     "software_info": ("oprogramowanie: {operation} {product}{package} {version}", "software: {operation} {product}{package} {version}"),
     "journal": ("dziennik zmian ({operation})", "change journal ({operation})"),
     "security_audit": ("audyt bezpieczenstwa", "security audit"),
-    "mcp_manage": ("serwery MCP ({operation})", "MCP servers ({operation})"),
 }
 _BLANK = re.compile(r"\s+")
 
 
 def describe(tool: str, args: dict[str, Any]) -> str:
     """Krotki opis dzialania dla osi czasu w interfejsie (bez tresci plikow)."""
-    if tool.startswith("mcp__"):
-        return tool.replace("mcp__", "MCP ").replace("__", ": ")
-
     class _Fields(dict):
         def __missing__(self, key: str) -> str:
             return ""

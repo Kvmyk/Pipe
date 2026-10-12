@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -43,7 +43,8 @@ and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
 | `core/voice.py` | Voice message transcription (an OpenAI-compatible Whisper endpoint or a Gemini model with audio input) |
 | `core/attachments.py` | Message attachments: limits, image / text / binary file by content, `DATA_DIR/uploads/` |
 | `tokens.py` | Client tokens with admin/viewer roles (`python3 -m backend.tokens`) |
-| `core/mcp/` | MCP: `server.py` (Pipe as a server, both protocol eras, Streamable HTTP), `client.py` (stdio/HTTP), `registry.py` (`mcp.json`, policy) |
+| `core/mcp/` | MCP: `server.py` (Pipe as a server, both protocol eras, Streamable HTTP) |
+| `core/hostexec.py` | Docker mode: a command on the host through a helper container (`--privileged --pid=host`, `nsenter -t 1`), after YES |
 | `core/approvals.py` | Admin approvals for operations of external agents |
 | `core/auth.py` | Token authentication (JSON lines and MCP HTTP) |
 | `core/safety.py` | Safety fuse: the change plan (backups, check before, verification after) and guarded execution |
@@ -281,7 +282,7 @@ You should see:
 
 | Tool | Description | Requires confirmation |
 |------|-------------|-----------------------|
-| `execute_command` | Shell commands | Depends on classification |
+| `execute_command` | Shell commands; in docker mode with `host: true` on the host (helper container) | Depends on classification; `host`: always |
 | `read_file` | Reading files (secrets redacted) | No |
 | `write_file` | Writing files | Always |
 | `change_directory` | Working directory | No |
@@ -298,7 +299,6 @@ You should see:
 | `reminder` | A one-off reminder or a task at a given time | Task: yes; message: no |
 | `pipe_update` | Updating Pipe itself (check / apply) | apply: yes |
 | `security_audit` | Security audit with a score and fix commands | No (fixes: yes) |
-| `mcp_manage` | MCP servers Pipe uses; their tools `mcp__<server>__<tool>` | Adding: yes; tools by policy |
 | `web_search` | Web search without a key (DuckDuckGo → Stack Exchange → Wikipedia) | No |
 | `web_fetch` | Reading a page; with `question` a separate model without tools reads it | No for addresses from results and from the user, others: yes |
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | No |

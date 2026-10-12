@@ -241,6 +241,11 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command == "directory":
             entries = memory.load_directory()
             await _send(writer, _data({"entries": [e.__dict__ for e in entries], "text": memory.render_directory(entries)}))
+        elif command == "new_chat":
+            # /nowa — rozmowa od czystej karty: historia, oczekujace potwierdzenie i workery znikaja z pamieci
+            # i z dysku. Wiedza o serwerze zostaje: prompt systemowy co zapytanie sklada sie od nowa z SERVER.md,
+            # DIRECTORY, skilli, VIBE i alertow. Tylko wlasna sesja (agent.owns() sprawdzone wyzej).
+            await _send(writer, _data({"cleared": agent.delete_session(session_id)}))
         elif command == "vibe":
             if args.lower() in ("reset", "wyczysc", "wyczyść"):
                 removed = memory.reset_vibe(user_key)
@@ -323,10 +328,6 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             # Most MCP (stdio w CLI): jedna wiadomosc JSON-RPC -> odpowiedz (None dla powiadomien).
             from backend.core.mcp.server import Caller, handle as mcp_handle
             await _send(writer, _data({"rpc": await mcp_handle(request.get("rpc"), Caller(identity, role))}))
-        elif command == "mcp_servers":
-            from backend.core.mcp.registry import get_manager, load_config
-            lines = get_manager().status() or [tr(f"{n}: (nie polaczony)", f"{n}: (not connected)") for n in load_config()]
-            await _send(writer, _data({"servers": lines}))
         elif command == "approvals":
             from backend.core.approvals import get_approvals
             await _send(writer, _data({"pending": [a.to_event() for a in get_approvals().pending()]}))
@@ -416,18 +417,22 @@ _PATCH_LOCK = asyncio.Lock()
 PATCH_OUTPUT_LINES = 25
 
 
-def _patch_blocker(role: str) -> str:
-    """Powod, dla ktorego Pipe nie zainstaluje latki sam ('' = moze)."""
+async def _patch_blocker(role: str) -> str:
+    """Powod, dla ktorego Pipe nie zainstaluje latki sam ('' = moze). Tryb docker: przez kontener pomocniczy (hostexec)."""
     if role == "viewer":
         return tr("Rola viewer: tylko odczyt — latke instaluje administrator.",
                   "Viewer role: read-only — an administrator installs the patch.")
     if runtime.observe():
         return tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe niczego nie instaluje — wykonaj komende na serwerze.",
                   "Observe mode (PIPE_OBSERVE=1): Pipe installs nothing — run the command on the server.")
+    if runtime.kind() == "docker":
+        from backend.core import hostexec
+        reason = await hostexec.blocker()
+        return reason + tr(" Wykonaj komende w powloce serwera.", " Run the command in the server shell.") if reason else ""
     if runtime.kind() != "native":
-        return tr("Pipe dziala w kontenerze i widzi system hosta tylko do odczytu — wykonaj komende w powloce serwera "
+        return tr("W Kubernetesie latki instaluje sie na wezle — wykonaj komende w powloce serwera "
                   "(potem /audyt pokaze, co zostalo).",
-                  "Pipe runs in a container and sees the host system read-only — run the command in the server shell "
+                  "On Kubernetes patches are installed on the node — run the command in the server shell "
                   "(then /audit shows what is left).")
     return ""
 
@@ -452,7 +457,7 @@ async def _patch(writer, request: dict, interface: str, role: str) -> None:
         return
     from backend.core.watch import EXPLAIN_WAIT
 
-    blocker = _patch_blocker(role)
+    blocker = await _patch_blocker(role)
     inverse: list[str] = []
     if scope == "images":
         patch = vulns.image_patch(result)
@@ -507,9 +512,15 @@ async def _patch(writer, request: dict, interface: str, role: str) -> None:
         else:
             plan.notes.append(tr("pakietow nie cofam automatycznie — co sie zmienilo, pokaze /zmiany",
                                  "packages are not rolled back automatically — /changes shows what changed"))
+        run = command
+        if runtime.kind() == "docker":
+            # system hosta jest w kontenerze tylko do odczytu: latka, sprawdzenia i powrot przez kontener pomocniczy
+            from backend.core import hostexec
+            image_ref = await hostexec.image()
+            run, plan = hostexec.wrap(command, image_ref), hostexec.host_plan(plan, image_ref)
 
         async def operation() -> tuple[str, int]:
-            out, err, code = await executor.execute(command, timeout=settings.CONFIRMED_COMMAND_TIMEOUT)
+            out, err, code = await executor.execute(run, timeout=settings.CONFIRMED_COMMAND_TIMEOUT)
             lines = (out + ("\n" + err if err else "")).strip().splitlines()
             tail = "\n".join(lines[-PATCH_OUTPUT_LINES:])
             return memory.redact_secrets(tail)[0] or executor.NO_OUTPUT[1 if i18n.is_en() else 0], code
@@ -917,10 +928,7 @@ async def main() -> None:
     from backend.core import selfupdate
     asyncio.create_task(selfupdate.resume(get_watcher()))
 
-    from backend.core.mcp.registry import get_manager, load_config
     from backend.core.mcp.server import start_http as start_mcp_http
-    if load_config():
-        asyncio.create_task(get_manager().reload())     # serwery MCP lacza sie w tle
     mcp_server = await start_mcp_http(settings.MCP_HOST, settings.MCP_PORT,
                                       {o.strip() for o in settings.MCP_ALLOWED_ORIGINS.split(",") if o.strip()})
     if mcp_server is not None:

@@ -98,6 +98,8 @@
     const t = options.t;
     let data = null, viewId = null, current = null;      // current: { view, layout, nodeEls, edgeEls }
     let cam = { x: 0, y: 0, k: 1 }, camAnim = null, selected = null, busy = false;
+    // zoom kolkiem: kamera plynnie dochodzi do skali `k`, punkt swiata (wx, wy) zostaje pod kursorem (mx, my)
+    let wheelZoom = null, lastFrame = 0;
     let states = new Map();                               // globalny id wezla -> "active" | "waiting"
     const pulses = [];
     let lastSpawn = 0, rafId = 0;
@@ -115,6 +117,7 @@
     }
     function moveCamera(target, ms, ease) {
       // Karta w tle nie dostaje klatek animacji — wtedy ustawiamy kamere od razu, zeby przejscie nie utknelo w polowie.
+      wheelZoom = null;
       if (reduced || !ms || document.hidden) {
         const pending = camAnim && camAnim.resolve;
         cam = { ...target }; camAnim = null; applyCamera();
@@ -136,8 +139,21 @@
     function frame(now) {
       rafId = 0;
       let again = false;
+      const dt = lastFrame ? Math.min(64, Math.max(0, now - lastFrame)) : 16;   // pierwsza klatka po przerwie
+      lastFrame = now;
+      if (wheelZoom) {
+        // wykladnicze dochodzenie w skali logarytmicznej: kolejne ruchy kolka nie zatrzymuja kamery, tylko przesuwaja cel
+        const z = wheelZoom, step = 1 - Math.exp(-dt / 70);
+        const lk = Math.log(cam.k) + (Math.log(z.k) - Math.log(cam.k)) * step;
+        cam.k = Math.abs(Math.log(z.k) - lk) < 0.0015 ? z.k : Math.exp(lk);
+        cam.x = z.mx - z.wx * cam.k; cam.y = z.my - z.wy * cam.k;
+        applyCamera();
+        if (cam.k === z.k) wheelZoom = null; else again = true;
+      }
       if (camAnim) {
-        const p = Math.min(1, (now - camAnim.start) / camAnim.ms), e = camAnim.ease(p);
+        // znacznik klatki bywa starszy niz start animacji (zdarzenie przyszlo w tej samej klatce) — bez dolnego
+        // ograniczenia postep wychodzi ujemny i kamera najpierw cofa sie o kawalek
+        const p = Math.max(0, Math.min(1, (now - camAnim.start) / camAnim.ms)), e = camAnim.ease(p);
         cam.x = camAnim.from.x + (camAnim.to.x - camAnim.from.x) * e;
         cam.y = camAnim.from.y + (camAnim.to.y - camAnim.from.y) * e;
         cam.k = camAnim.from.k + (camAnim.to.k - camAnim.from.k) * e;
@@ -163,7 +179,7 @@
         }
         if (live.length || pulses.length) again = true;
       }
-      if (again) loop();
+      if (again) loop(); else lastFrame = 0;
     }
 
     // --- rysowanie ---
@@ -359,7 +375,7 @@
       if (!drag) return;
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
       if (!drag.moved && Math.hypot(dx, dy) < 5) return;
-      if (!drag.moved) { drag.moved = true; root.classList.add("dragging"); camAnim = null; options.onUserMove && options.onUserMove(); }
+      if (!drag.moved) { drag.moved = true; root.classList.add("dragging"); camAnim = null; wheelZoom = null; options.onUserMove && options.onUserMove(); }
       cam.x = drag.cx + dx; cam.y = drag.cy + dy; applyCamera();
     });
     const release = (event) => {
@@ -384,12 +400,17 @@
       if (!current) return;
       const rect = root.getBoundingClientRect();
       const mx = event.clientX - rect.left, my = event.clientY - rect.top;
-      const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.012 : 0.0016));
-      const base = camAnim ? camAnim.to : cam;
-      const k = Math.min(2.4, Math.max(0.25, base.k * factor));
-      const ratio = k / base.k;
+      // deltaMode 1 = linie (Firefox z myszka), 2 = strony; reszta przegladarek podaje piksele
+      const delta = event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1);
+      const factor = Math.exp(-Math.max(-300, Math.min(300, delta)) * (event.ctrlKey ? 0.012 : 0.0016));
+      const from = wheelZoom ? wheelZoom.k : camAnim ? camAnim.to.k : cam.k;
+      const k = Math.min(2.4, Math.max(0.25, from * factor));
       options.onUserMove && options.onUserMove();
-      moveCamera({ k, x: mx - (mx - base.x) * ratio, y: my - (my - base.y) * ratio }, 140, easeOut);
+      if (camAnim) { const pending = camAnim.resolve; camAnim = null; if (pending) pending(); }
+      // punkt pod kursorem liczony z tego, co widac teraz — kamera nie skacze, gdy kursor sie przesunal
+      wheelZoom = { k, mx, my, wx: (mx - cam.x) / cam.k, wy: (my - cam.y) / cam.k };
+      if (reduced || document.hidden) { cam = { k, x: mx - wheelZoom.wx * k, y: my - wheelZoom.wy * k }; wheelZoom = null; applyCamera(); }
+      else loop();
     }, { passive: false });
     root.addEventListener("dblclick", (event) => { if (!event.target.closest(".node-pos")) fit(); });
     if (window.ResizeObserver) new ResizeObserver(() => { if (current && !drag && !busy && root.clientWidth) fit(0); }).observe(root);   // schowany panel: 0 px

@@ -125,3 +125,37 @@ class TestAgentRestart:
         monkeypatch.setattr(settings, "SESSION_KEEP_DAYS", 0)
         run(VPSAgent(client=FakeClient([completion("ok")])).chat("s1", "czesc"))
         assert not list(sessions_store.directory().glob("*.json"))
+
+
+class TestNewChat:
+    """/nowa (komenda new_chat): rozmowa znika z pamieci i z dysku, wiedza o serwerze zostaje w prompcie."""
+
+    def test_forgets_conversation_keeps_server_knowledge(self, monkeypatch):
+        import backend.server as server
+        from backend.core import memory
+        from backend.tests.test_server_events import exchange
+
+        memory.write_server_md("# Serwer\n\nSklep w /srv/shop, baza postgres 16.")
+        agent = VPSAgent(client=FakeClient([completion("Masz 3 kontenery.")]))
+        run(agent.chat("s", "ile mam kontenerow?", "telegram:7"))
+        assert list(sessions_store.directory().glob("*.json"))
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        monkeypatch.setattr(server, "get_agent", lambda: agent)
+
+        [frame] = exchange({"command": "new_chat", "interface": "telegram:7"})
+        assert frame["data"] == {"cleared": True}
+        assert "s" not in agent._sessions and not list(sessions_store.directory().glob("*.json"))
+        [frame] = exchange({"command": "new_chat", "interface": "telegram:7"})
+        assert frame["data"] == {"cleared": False}
+
+        client = FakeClient([completion("Postgres 16.")])
+        agent._client = client
+        run(agent.chat("s", "jaka baza?", "telegram:7"))
+        sent = client.calls[0]["messages"]
+        assert "ile mam kontenerow?" not in [m.get("content") for m in sent]       # stara rozmowa przepadla
+        assert "baza postgres 16" in sent[0]["content"]                             # SERVER.md dalej w prompcie
+
+    def test_session_restored_from_disk_counts_as_cleared(self):
+        run(VPSAgent(client=FakeClient([completion("ok")])).chat("s1", "czesc"))
+        restarted = VPSAgent(client=FakeClient([]))
+        assert restarted.delete_session("s1") is True and restarted.delete_session("s1") is False

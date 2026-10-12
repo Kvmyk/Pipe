@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 ## Model
 
@@ -143,7 +143,7 @@ answers questions, draws diagrams and works as a read-only MCP gateway. Changes 
 
 In the application (`runtime.observe()`, native mode included):
 
-- a state-changing command, a file write, `journal undo`, `cron_manage add/remove`, `mcp_manage` and
+- a state-changing command, a file write, `journal undo`, `cron_manage add/remove` and
   `pipe_update apply` are refused without asking for YES, in YOLO mode too; the model gets an observe-mode block
   in its prompt,
 - `run_command` in the MCP gateway refuses instead of creating an approval, and an existing approval can't be approved,
@@ -226,13 +226,6 @@ viewer token doesn't create approvals. Only the agent that created an approval c
 and expire after 30 minutes. `ask_pipe` runs the Pipe agent in the viewer role. HTTP endpoint: localhost only, a Pipe
 token (`Authorization: Bearer`), `Origin` validation (403) and 2026-07-28 header validation (`-32020`).
 
-**Pipe as an MCP client.** An MCP server is someone else's code: adding a server always requires confirmation (you see
-the program or URL; `env`/`headers` values are hidden), `mcp.json` has 0600 permissions, and a stdio subprocess gets a
-minimal environment (PATH, HOME, LANG... and what was given), never the LLM key or Pipe's tokens. Every tool call needs
-a YES with the arguments visible, unless the user marked it as safe (`autoApprove`, `trustReadOnly`); the server's
-annotations alone are not enough. MCP tool results are data for the model, they go through secret redaction, and a
-viewer can't approve any call.
-
 ## Webhooks
 
 - The webhook server is off by default; without `WEBHOOK_TOKEN` it doesn't start. It listens on `127.0.0.1` (in
@@ -302,7 +295,16 @@ instructions" framing is not a guarantee.
 
 - **`docker.sock` = root on the host.** Whoever can run `docker run -v /:/x` has full access to the host; mounting `/`
   read-only changes little here. That's why `docker run/exec` always requires confirmation, but the final safeguard is
-  your YES. If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
+  your YES.
+- **Host commands (docker mode).** The host filesystem is read-only in the container, so Pipe makes changes on the
+  server (`apt-get`, `systemctl`, `sed -i` in `/etc`, `ufw`, patches from `/patch`) through a short-lived helper
+  container from its own image: `docker run --rm --privileged --pid=host`, and in it `nsenter -t 1` into the host's
+  namespaces -- the command runs like in a root shell on the server. This is not a new permission (see the point
+  above), just one predictable path: the model asks for it through `execute_command` with `host: true`, the
+  classifier judges the target command, forbidden ones are refused, and every one (reads too) waits for your YES.
+  The confirmation shows the target command and an *on the host: a helper container...* line; the wrapper is built
+  by code and the command goes into it as one argument. Observe mode and the viewer role do not have this path.
+  There are no file backups or automatic restore here (the safety fuse writes a journal entry and checks the sites). If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
   `docker.sock` mount from `docker-compose.yml`.
 - Conversations are kept on disk in `DATA_DIR/sessions` (mode 0600, directory 0700) for `SESSION_KEEP_DAYS` days so
   they survive a restart. Tool results in them are redacted the same way as in requests to the model, but what you

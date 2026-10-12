@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -184,7 +184,6 @@ nazwy dzialaja w obu jezykach.
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
-| `/mcp` | Serwery MCP, z ktorych korzysta Pipe, i ich stan |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
@@ -202,6 +201,7 @@ nazwy dzialaja w obu jezykach.
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia -- przychodza same o czasie do osoby, ktora je ustawila |
 | `/cele` | Zdalne serwery, kontenery i klastry |
+| `/nowa` | Nowa rozmowa od czystej karty (bot ma jedna rozmowe na uzytkownika); notatki o serwerze, katalogi, skille, styl i alerty zostaja |
 | `/vibe` | Co agent wie o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |
 | `/historia` | Ostatnie wpisy z audit logu (bez LLM) |

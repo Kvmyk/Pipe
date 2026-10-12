@@ -7,7 +7,7 @@ Nowych funkcji nie dodajemy, dopoki Pipe nie ma uzytkownikow spoza autora. Prior
 1. Bledy i bezpieczenstwo (`SECURITY.md`), takze zgloszone przez uzytkownikow.
 2. Prostsza pierwsza instalacja: piaskownica (`sandbox/`), tryb bez modelu, profil obserwacji, gotowe obrazy.
 3. Dowody, ze to dziala: wyniki `python3 sandbox/run.py eval` dla popularnych modeli, nowe scenariusze awarii.
-4. Funkcje oznaczone w dokumentacji jako eksperymentalne (zdalne cele, workery, glosowki, Pipe jako klient MCP,
+4. Funkcje oznaczone w dokumentacji jako eksperymentalne (zdalne cele, workery, glosowki,
    Kubernetes) dojrzewaja albo znikaja, zaleznie od tego, czy ktos ich uzywa.
 
 Wyjatki: zmiana, o ktora prosi wiecej niz jedna osoba korzystajaca z Pipe na prawdziwym serwerze, oraz zmiany

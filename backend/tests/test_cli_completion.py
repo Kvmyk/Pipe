@@ -30,7 +30,7 @@ def test_prefix_narrows_and_exact_match_goes_first(monkeypatch):
     monkeypatch.setattr(cli, "LANG", "pl")
     assert names("/sta") == ["status"]
     assert names("/co") == ["cofnij", "koszt"]       # "cost" pasuje po angielsku, polska nazwa pierwsza
-    assert names("/mcp")[0] == "mcp"
+    assert names("/now")[0] == "nowa"
 
 
 def test_names_follow_language_but_both_match(monkeypatch):

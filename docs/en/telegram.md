@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -192,7 +192,6 @@ work in both languages.
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval; *Approve*/*Reject* buttons for admins, with the safety-fuse plan |
-| `/mcp` | MCP servers Pipe uses and their state |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then an *Undo* button. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images and applications, each with a short explanation. Viewers can use it too |
@@ -210,6 +209,7 @@ work in both languages.
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; they arrive on time to the person who set them |
 | `/targets` | Remote servers, containers and clusters |
+| `/new` | New conversation from a clean slate (the bot has one conversation per user); the server notes, directories, skills, style and alerts stay |
 | `/vibe` | What the agent knows about your conversation style; `/vibe reset` clears it |
 | `/<skill>` | Runs a skill, for example `/renew_certificate`. You can add hints: `/renew_certificate only for example.com` |
 | `/history` | Latest audit-log entries (no LLM) |

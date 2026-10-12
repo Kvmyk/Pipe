@@ -1,5 +1,45 @@
 # Historia zmian -- Pipe
 
+## v0.35.0 (2026-10-12)
+
+### Pipe sam wprowadza zmiany na hoscie, takze w trybie docker
+
+- `/zalataj` dziala w trybie docker: latki pakietow i nowsze obrazy instaluje kontener pomocniczy z obrazu Pipe
+  (`docker run --privileged --pid=host`, `nsenter` do procesu 1 hosta), jak root w powloce serwera. Tak samo ida
+  sprawdzenia bezpiecznika (`docker compose config`, stan kontenerow) i komendy odwrotne dla `/cofnij obrazy`
+- Agent robi zmiany na hoscie sam (`apt-get`, `systemctl`, `sed -i` w `/etc`, `ufw`): `execute_command` z `host: true`,
+  zamiast kazac wpisywac komende recznie. Kazda, takze odczyt, czeka na TAK; w potwierdzeniu widac sama komende
+  i linie "na hoscie: kontener pomocniczy...". Zakazane sa odrzucane, tryb obserwacji i rola viewer tej drogi nie maja
+- Nie dochodzi nowe uprawnienie (`docker.sock` i tak daje roota na hoscie), ale "host tylko do odczytu" przestaje
+  byc bariera -- zostaje Twoje TAK. Opis w `docs/security.md`, *Komendy na hoscie*
+
+### Podatnosci w jednej, czytelnej wiadomosci
+
+- Alert, `/podatnosci` i podglad `/zalataj` zawsze mieszcza sie w jednej wiadomosci Telegrama: kazdy pakiet z liczba
+  podatnosci i opisem najpowazniejszej, reszta policzona ("… i 60 kolejnych pakietow")
+- `/audyt` ma krotkie punkty o podatnosciach (nazwy pakietow, "Napraw: /zalataj pilne") zamiast akapitu opisow
+  i komendy z setka pakietow; pod audytem przychodzi osobna wiadomosc z podatnosciami i ich opisami (Telegram,
+  CLI, `pipe web`)
+- Komenda w podgladzie latki jest skracana ("… (+150 pakietow)"); pelna trafia do dziennika
+
+### Nowa rozmowa
+
+- `/nowa` (`/new`) w Telegramie, CLI i `pipe web`: rozmowa od czystej karty, historia znika z pamieci i z dysku.
+  Notatki o serwerze, katalogi, skille, styl i alerty zostaja -- sa w prompcie przy kazdym zapytaniu. Najbardziej
+  przydaje sie w Telegramie, gdzie bot mial jedna niekonczaca sie rozmowe na uzytkownika
+- Przycisk "Nowa rozmowa" w `pipe web` od razu usuwa stara rozmowe z backendu
+
+### Usuniete: Pipe jako klient MCP
+
+- Narzedzie `mcp_manage`, narzedzia `mcp__*` cudzych serwerow MCP, komenda `/mcp` i komenda protokolu `mcp_servers`.
+  Cudzy kod podpiety pod agenta z dostepem do roota to duza powierzchnia ataku przy malym zysku. `mcp.json`, jesli
+  istnieje, przestaje byc czytany. Pipe jako serwer MCP (`pipe --mcp`, endpoint HTTP, zgody) zostaje
+
+### Poprawki
+
+- `pipe web`: przyblizanie kolkiem na schemacie jest plynne -- kolejne ruchy kolka przesuwaja cel zamiast zatrzymywac
+  kamere, punkt pod kursorem zostaje na miejscu, Firefox z myszka (przewijanie liniami) przybliza jak inne przegladarki
+
 ## v0.34.1 (2026-10-12)
 
 ### Repozytorium gotowe na publiczne wydanie

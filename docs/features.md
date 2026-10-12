@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -353,9 +353,12 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   dotyczy i co grozi, a numer CVE jest na koncu w nawiasie. Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu,
   bez nich wysyla opis z OSV. Znane podatnosci nie wracaja po restarcie Pipe. Reszta jest w porannym raporcie
   i w `/audyt`; pytanie do agenta o podatnosci tez daje opis kazdej z nich.
-- W `/audyt` podatnosci sa najwyzej trzema punktami (KEV, krytyczne i wysokie, pozostale), kazdy z komenda
-  `apt-get install --only-upgrade ...` podbijajaca tylko te pakiety. Pipe zawsze pyta przed instalacja.
-  W trybie docker komenda jest *w powloce hosta*; latac sam moze tylko w trybie native.
+- W `/audyt` podatnosci sa najwyzej trzema krotkimi punktami (KEV, krytyczne i wysokie, pozostale) z nazwami
+  pakietow i odeslaniem do `/zalataj`, ktore podbija tylko te pakiety. Pod audytem przychodzi osobna wiadomosc
+  z podatnosciami: kazdy pakiet z opisem najpowazniejszej. Alert, raport i podglad latki zawsze mieszcza sie
+  w jednej wiadomosci Telegrama, a reszta jest policzona. Pipe zawsze pyta przed instalacja.
+  W trybie docker Pipe instaluje latki na hoscie przez kontener pomocniczy (patrz *Komendy na hoscie* w
+  bezpieczenstwie); w Kubernetesie dostajesz komende do wpisania na wezle.
 - `/zalataj` (albo przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) dziala bez LLM: lista pakietow,
   dokladna komenda i *Zainstaluj*. Komende sklada serwer z ostatniego skanu, instalacja idzie przez bezpiecznik
   (strony przed i po, wpis w dzienniku), potem Pipe skanuje zmienione pakiety i mowi, co zostalo.
@@ -602,29 +605,6 @@ agent tylko czyta, nie moze prosic o zgody). **Na serwerze** -- endpoint Streama
 
 Obslugiwane wersje protokolu: 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`)
 i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
-
-### Pipe jako klient MCP
-
-> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
-> Jesli cos nie gra, zglos to w issue.
-
-Narzedzia innych serwerow MCP staja sie narzedziami agenta (`mcp__github__create_issue`...). Dodasz je zdaniem --
-*"dodaj serwer MCP github: npx -y @modelcontextprotocol/server-github, token w GITHUB_PERSONAL_ACCESS_TOKEN,
-bez pytania get_* i list_*"* -- albo w `backend/data/mcp.json`:
-
-```json
-{"servers": {
-  "github":  {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
-              "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "..."}, "autoApprove": ["get_*", "list_*", "search_*"]},
-  "grafana": {"url": "http://127.0.0.1:8000/mcp", "headers": {"Authorization": "Bearer ..."}, "trustReadOnly": true}
-}}
-```
-
-- Kazde wywolanie wymaga TAK z widocznymi argumentami, chyba ze narzedzie pasuje do `autoApprove` albo serwer ma
-  `trustReadOnly`, a narzedzie deklaruje `readOnlyHint`. Zatwierdzone wywolanie trafia do dziennika zmian.
-- Dodanie serwera zawsze wymaga potwierdzenia. Podproces stdio nie dostaje klucza LLM ani tokenow Pipe.
-- stdio i Streamable HTTP; wersja protokolu wykrywana sama (2026-07-28 albo `initialize`).
-- `/mcp` pokazuje serwery i ich stan; *"polacz ponownie serwery MCP"* -- `mcp_manage reload`.
 
 ---
 

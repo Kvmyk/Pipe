@@ -171,7 +171,7 @@ class TestAuditChecks:
                                                                                             host_only=True)])
         assert audit.score == 82 and audit.grade == "B"
         text = audit.render()
-        assert text.startswith("Ocena bezpieczenstwa: 82/100 (B)") and "w powloce hosta" in text
+        assert text.startswith("Ocena bezpieczenstwa: 82/100 (B)") and "na hoscie: execute_command z host: true" in text
         assert audit.to_data()["findings"][0]["id"] == "a"
 
     def test_install_command(self, host):

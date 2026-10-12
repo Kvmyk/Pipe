@@ -457,7 +457,7 @@
   const chips = [
     ["chipStatus", () => { add("user", t("chipStatus")); run({ command: "status" }, t("working")); }],
     ["chipChanges", async () => { add("user", t("chipChanges")); await dataMessage({ command: "changes" }, (d) => listing(d.text)); }],
-    ["chipAudit", async () => { add("user", t("chipAudit")); await dataMessage({ command: "audit" }, (d) => listing(d.text)); }],
+    ["chipAudit", async () => { add("user", t("chipAudit")); await dataMessage({ command: "audit" }, auditBody); }],
     ["chipReport", async () => { add("user", t("chipReport")); await dataMessage({ command: "digest" }, digestBody); }],
   ];
   chips.forEach(([key, action]) => {
@@ -471,6 +471,12 @@
     pre.appendChild(el("code", "", text || ""));
     body.appendChild(pre);
     return body;
+  }
+  // Audyt, a pod nim raport podatnosci (Markdown) — kazdy pakiet z opisem, co grozi.
+  function auditBody(d) {
+    const box = listing(d.text);
+    if (d.vulns) { box.appendChild(el("h3", "", t("vulnsTitle"))); box.appendChild(md(String(d.vulns))); }
+    return box;
   }
   // Zestawienie od backendu (zmiany, zdrowie, koszt, audyt...) jako czytelna lista: linia zakonczona ":" to naglowek,
   // "- " to pozycja, wciecie 4+ spacji to szczegol (np. roznica) czcionka o stalej szerokosci, #ab12cd — identyfikator.
@@ -1342,8 +1348,8 @@
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
-    ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
-    ["zgody", "approvals", "c_approvals"], ["mcp", "mcp", "c_mcp"], ["koszt", "cost", "c_cost"],
+    ["nowa", "new", "c_new"], ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
+    ["zgody", "approvals", "c_approvals"], ["koszt", "cost", "c_cost"],
     ["historia", "history", "c_history"], ["providerzy", "providers", "c_provider", true], ["yolo", "yolo", "c_yolo", true], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
   const english = window.PipeI18n.lang === "en";
@@ -1403,7 +1409,7 @@
     zmiany: (args) => dataMessage({ command: "changes", args }, (d) => listing(d.text)),
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
-    audyt: () => dataMessage({ command: "audit" }, (d) => listing(d.text)),
+    audyt: () => dataMessage({ command: "audit" }, auditBody),
     podatnosci: () => dataMessage({ command: "vulns" }, (d) => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; }),
     zalataj: (args) => dataMessage({ command: "patch", scope: ({ pilne: "urgent", urgent: "urgent", obrazy: "images", images: "images" })[args.trim().toLowerCase()] || "all" }, patchBox),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
@@ -1411,12 +1417,12 @@
     katalogi: () => dataMessage({ command: "directory" }, (d) => listing(d.text, "DIRECTORY")),
     rutyny: () => dataMessage({ command: "routines" }, (d) => listing(lines(d.routines), t("c_routines"))),
     cele: () => dataMessage({ command: "targets" }, (d) => listing(lines(d.targets), t("c_targets"))),
-    mcp: () => dataMessage({ command: "mcp_servers" }, (d) => listing(lines(d.servers), t("c_mcp"))),
     historia: () => dataMessage({ command: "history" }, (d) => plain((d.entries || []).join("\n"))),
     przypomnienia: (args) => {
       const parts = args.split(/\s+/), cancel = ["anuluj", "cancel", "usun", "remove"].includes((parts[0] || "").toLowerCase()) ? (parts[1] || "").replace("#", "") : "";
       return dataMessage({ command: "reminders", cancel }, (d) => listing(d.text));
     },
+    nowa: () => newChat(),
     vibe: (args) => dataMessage({ command: "vibe", args }, (d) => ("reset" in d ? md(d.reset ? t("vibeReset") : t("vibeNone")) : md(d.content || t("vibeEmpty")))),
     server: async (args) => {
       if (SCAN_WORDS.includes(args.toLowerCase())) return run({ command: "scan_server" }, t("working"));
@@ -1645,12 +1651,16 @@
   }
   $("theme").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   $("lang").addEventListener("click", () => setLanguage(window.PipeI18n.lang === "en" ? "pl" : "en"));
-  $("new-chat").addEventListener("click", () => {
+  // Nowa rozmowa = nowa sesja (YOLO zostaje w starej); stara znika z backendu od razu, zamiast czekac
+  // SESSION_KEEP_DAYS. Wiedza o serwerze zostaje — prompt sklada sie z pamieci przy kazdym zapytaniu.
+  function newChat() {
     if (busy) return;
+    request({ command: "new_chat" }).catch(() => {});
     session = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
     messages.textContent = ""; pendingCard = null; welcome();
-    showYolo(false);                     // nowa rozmowa = nowa sesja, YOLO zostaje w starej
-  });
+    showYolo(false);
+  }
+  $("new-chat").addEventListener("click", newChat);
 
   // teksty
   $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat-label").textContent = t("newChat");

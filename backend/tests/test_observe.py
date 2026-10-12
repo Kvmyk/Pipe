@@ -91,7 +91,6 @@ class TestAgent:
         ("write_file", {"path": "/x.conf", "content": "a"}),
         ("journal", {"operation": "undo"}),
         ("cron_manage", {"operation": "add", "schedule": "* * * * *", "command": "true"}),
-        ("mcp_manage", {"operation": "add", "name": "x", "command": "x"}),
         ("pipe_update", {"operation": "apply"}),
     ])
     def test_host_writes_blocked_upfront(self, isolated, name, args):

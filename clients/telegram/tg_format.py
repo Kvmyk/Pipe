@@ -208,11 +208,11 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("rutyny", "Zadania wykonywane wedlug harmonogramu"),
     ("przypomnienia", "Jednorazowe przypomnienia (/przypomnienia anuluj <id>)"),
     ("cele", "Zdalne serwery, kontenery i klastry"),
+    ("nowa", "Nowa rozmowa od czystej karty (wiedza o serwerze zostaje)"),
     ("vibe", "Co wiem o Twoim stylu rozmowy (/vibe reset - wyczysc)"),
     ("cofnij", "Cofnij ostatnia zmiane (/cofnij <id> - wybrana)"),
     ("dziennik", "Dziennik zatwierdzonych zmian"),
     ("zgody", "Operacje agentow MCP czekajace na zgode"),
-    ("mcp", "Serwery MCP, z ktorych korzysta Pipe"),
     ("koszt", "Zuzycie tokenow i koszt LLM"),
     ("historia", "Ostatnie wpisy z audit logu"),
     ("providerzy", "Providerzy LLM i model (/providerzy groq, /providerzy model)"),
@@ -239,11 +239,11 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("routines", "Tasks run on a schedule"),
     ("reminders", "One-off reminders (/reminders cancel <id>)"),
     ("targets", "Remote servers, containers and clusters"),
+    ("new", "New conversation from a clean slate (server knowledge stays)"),
     ("vibe", "What I know about your conversation style (/vibe reset - clear)"),
     ("undo", "Undo the last change (/undo <id> - a chosen one)"),
     ("journal", "Journal of approved changes"),
     ("approvals", "MCP agent operations waiting for approval"),
-    ("mcp", "MCP servers Pipe uses"),
     ("cost", "Token usage and LLM cost"),
     ("history", "Latest audit-log entries"),
     ("providers", "LLM providers and model (/providers groq, /providers model)"),
@@ -258,6 +258,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
     "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj", "vulns": "podatnosci",
+    "new": "nowa",
 }
 
 
@@ -634,7 +635,11 @@ def format_audit(data: dict) -> str:
             lines.append(html.escape(str(finding["detail"])))
         if finding.get("fix"):
             lines.append(tr("Poprawka: ", "Fix: ") + html.escape(str(finding["fix"])))
-        if finding.get("command"):
+        if finding.get("patch"):
+            # latke podatnosci sklada i instaluje /zalataj — komenda na 200 pakietow tylko zaslaniala audyt
+            words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images")}
+            lines.append(tr("Napraw: /zalataj", "Fix it: /patch") + words.get(str(finding["patch"]), ""))
+        elif finding.get("command"):
             where = tr(" (na hoscie)", " (on the host)") if finding.get("host_only") else ""
             lines.append(f"<code>{html.escape(str(finding['command']))}</code>{where}")
     if data.get("passed"):
@@ -643,6 +648,12 @@ def format_audit(data: dict) -> str:
         lines.append(tr("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.",
                         "\nWrite <i>\"fix 1\"</i> — I will prepare the fix for your approval."))
     return "\n".join(lines)
+
+
+def format_audit_vulns(data: dict) -> str:
+    """Raport podatnosci pod audytem — osobna, jedna wiadomosc: kazdy pakiet z opisem, co grozi."""
+    report = str(data.get("vulns") or "").strip()
+    return tr("<b>Podatnosci</b>\n\n", "<b>Vulnerabilities</b>\n\n") + markdown_html(report) if report else ""
 
 
 def format_investigation(event: dict, limit: int = 3000) -> str:

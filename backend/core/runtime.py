@@ -134,9 +134,15 @@ def describe() -> str:
         f"Tryb: {runtime}. Dzialasz w {where}. System plikow hosta jest pod `{root}` (tylko do odczytu, "
         f"poza `{root}/root`), /proc hosta pod `{proc}`. `hostname`, `cat /etc/...`, `ip addr`, `ss` "
         f"i `df /` opisuja kontener, nie serwer: konfiguracje hosta czytaj z `{root}/etc`, porty hosta "
-        f"daje network_info, dysk `df -h {root}`. Uzytkownikowi zawsze podawaj sciezki hosta, bez `{root}`.",
+        f"daje network_info, dysk `df -h {root}`. Uzytkownikowi zawsze podawaj sciezki hosta, bez `{root}`."
+        + (" Zmiany na hoscie (apt-get, systemctl, sed -i w /etc, ufw) robisz sam: execute_command z `host: true` "
+           "— po TAK uzytkownika komenda dziala jak w powloce roota na serwerze. Nie kaz uzytkownikowi wpisywac jej "
+           "recznie." if runtime == "docker" else ""),
         f"Mode: {runtime}. You run in {where_en}. The host filesystem is under `{root}` (read-only, "
         f"except `{root}/root`), the host /proc under `{proc}`. `hostname`, `cat /etc/...`, `ip addr`, `ss` "
         f"and `df /` describe the container, not the server: read host configs from `{root}/etc`, host ports "
         f"come from network_info, disk from `df -h {root}`. Always give the user host paths, without `{root}`."
+        + (" You make host changes yourself (apt-get, systemctl, sed -i in /etc, ufw): execute_command with "
+           "`host: true` — after the user's YES the command runs like in a root shell on the server. Do not ask the "
+           "user to type it by hand." if runtime == "docker" else ""),
     )

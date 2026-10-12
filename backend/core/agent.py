@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.34.1
+Pipe v0.35.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -66,7 +66,6 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "routine_manage": frozenset({"add", "remove", "enable", "disable"}),
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
-    "mcp_manage": frozenset({"add", "remove", "reload"}),
     "pipe_update": frozenset({"apply"}),
 }
 OBSERVE_NOTICE = ("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
@@ -83,7 +82,6 @@ OBSERVE_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "write_file": None,
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
-    "mcp_manage": frozenset({"add", "remove", "reload"}),
     "pipe_update": frozenset({"apply"}),
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
@@ -150,10 +148,12 @@ class VPSAgent:
         session = self._sessions.get(session_id) or self._restore(session_id)
         return session is None or session.owner in ("", owner)
 
-    def delete_session(self, session_id: str) -> None:
-        """Usuwa sesje (np. po rozlaczeniu klienta)."""
+    def delete_session(self, session_id: str) -> bool:
+        """Usuwa sesje z pamieci i z dysku (np. /nowa). Zwraca, czy byla jakas rozmowa."""
+        existed = session_id in self._sessions or self._restore(session_id) is not None
         self._sessions.pop(session_id, None)
         sessions_store.remove(session_id)
+        return existed
 
     def _restore(self, session_id: str) -> Session | None:
         """Sesja zapisana przed restartem backendu (core/sessions_store.py) albo None."""
@@ -467,9 +467,6 @@ class VPSAgent:
             handler = lambda s, tc, a: dispatch(s, tc, a)  # noqa: E731
         else:
             found = getattr(handlers_module, f"handle_{tool_call.function.name}", None)
-            if found is None and tool_call.function.name.startswith("mcp__"):
-                from backend.core.handlers.mcp import handle_mcp_tool
-                found = handle_mcp_tool
             handler = (lambda s, tc, a: found(self, s, tc, a)) if found else None
 
         if handler is None:
@@ -708,16 +705,13 @@ def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = T
 
 
 def tools_for_agent() -> list[dict]:
-    """Narzedzia Pipe + narzedzia polaczonych serwerow MCP (lista zmienia sie po mcp_manage)."""
-    from backend.core.mcp.registry import get_manager
-
+    """Narzedzia Pipe w jezyku Pipe; bez narzedzi internetu, gdy WEB_SEARCH=off."""
     from backend.core.i18n import is_en
 
     base = _english_tools() if is_en() else TOOLS
     if settings.WEB_SEARCH == "off":
         base = [t for t in base if t["function"]["name"] not in ("web_search", "web_fetch", "software_info")]
-    extra = get_manager().tool_schemas()
-    return base + extra if extra else base
+    return base
 
 
 _ENGLISH_TOOLS: list[dict] | None = None

@@ -454,8 +454,8 @@ def _print_banner(host: str) -> None:
                                                "/status  /report  /changes  /map  /server  /skills  /help  /exit"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.34.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.34.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.35.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.35.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -598,6 +598,7 @@ COMMAND_ALIASES = {
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
     "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj", "vulns": "podatnosci",
+    "new": "nowa",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -620,11 +621,12 @@ COMMANDS = [
     ("rutyny", "routines", "zadania według harmonogramu", "scheduled tasks"),
     ("przypomnienia", "reminders", "przypomnienia; /przypomnienia anuluj <id>", "reminders; /reminders cancel <id>"),
     ("cele", "targets", "zdalne serwery, kontenery i klastry", "remote servers, containers and clusters"),
+    ("nowa", "new", "nowa rozmowa od czystej karty (wiedza o serwerze zostaje)",
+     "new conversation from a clean slate (server knowledge stays)"),
     ("vibe", "vibe", "styl rozmowy; /vibe reset", "conversation style; /vibe reset"),
     ("dziennik", "journal", "zatwierdzone zmiany z kopiami", "approved changes with backups"),
     ("cofnij", "undo", "cofnij ostatnią (albo wybraną) zmianę", "undo the last (or the chosen) change"),
     ("zgody", "approvals", "operacje agentów MCP czekające na zgodę", "MCP agent operations waiting for approval"),
-    ("mcp", "mcp", "serwery MCP", "MCP servers"),
     ("koszt", "cost", "zużycie tokenów i koszt LLM", "token usage and LLM cost"),
     ("historia", "history", "ostatnie wpisy audit logu", "latest audit-log entries"),
     ("aktualizuj", "update", "zaktualizuj Pipe na serwerze; /aktualizuj sprawdz", "update Pipe on the server; /update check"),
@@ -658,10 +660,10 @@ HELP_TEXT = """**Komendy**
 - `/rutyny` — zadania wykonywane według harmonogramu
 - `/przypomnienia` — jednorazowe przypomnienia („przypomnij mi za 2 godziny…”); `/przypomnienia anuluj <id>`
 - `/cele` — zdalne serwery, kontenery i klastry
+- `/nowa` — nowa rozmowa od czystej karty (wiedza o serwerze zostaje)
 - `/vibe` — co agent wie o Twoim stylu rozmowy (`/vibe reset` — wyczyść)
 - `/dziennik` — zatwierdzone zmiany z kopiami; `/cofnij [id]` — cofnij ostatnią (albo wybraną) zmianę
 - `/zgody` — operacje zewnętrznych agentów (MCP) czekające na Twoją zgodę
-- `/mcp` — serwery MCP, z których korzysta Pipe
 - `/koszt` — zużycie tokenów i koszt LLM
 - `/historia` — ostatnie wpisy audit logu
 - `/providerzy` — providerzy LLM: dodaj klucz, zmień model albo przełącz (`/providerzy groq` — potem model z listy providera, `/providerzy groq llama` — model po fragmencie nazwy, `/providerzy model` — tylko zmiana modelu); `/providerzy zapomnij <id>` — usuń klucz dodany z interfejsu
@@ -694,10 +696,10 @@ HELP_TEXT_EN = """**Commands**
 - `/routines` — tasks run on a schedule
 - `/reminders` — one-off reminders ("remind me in 2 hours…"); `/reminders cancel <id>`
 - `/targets` — remote servers, containers and clusters
+- `/new` — new conversation from a clean slate (server knowledge stays)
 - `/vibe` — what the agent knows about your conversation style (`/vibe reset` — clear it)
 - `/journal` — approved changes with backups; `/undo [id]` — undo the last (or the chosen) change
 - `/approvals` — operations of external agents (MCP) waiting for your approval
-- `/mcp` — MCP servers Pipe uses
 - `/cost` — token usage and LLM cost
 - `/history` — latest audit-log entries
 - `/providers` — LLM providers: add a key, change the model or switch (`/providers groq` — then a model from the provider's list, `/providers groq llama` — a model by part of its name, `/providers model` — change only the model); `/providers forget <id>` — remove a key added from the interface
@@ -1262,6 +1264,9 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
                          "[dim]Checking the security configuration...[/dim]"))
         data = _response_data(await client.send_command("audit"))
         console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        if data.get("vulns"):
+            console.print(Rule(tr("Podatności", "Vulnerabilities"), style="dim"))
+            console.print(Markdown(str(data["vulns"])))
         if data.get("findings"):
             console.print(tr('[dim]Napisz „napraw 1”, a przygotuję poprawkę do zatwierdzenia.[/dim]',
                              '[dim]Write "fix 1" and I will prepare the fix for your approval.[/dim]'))
@@ -1316,13 +1321,6 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
         else:
             console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
-        return True
-
-    if name == "mcp":
-        _print_list(tr("Serwery MCP", "MCP servers"),
-                    _response_data(await client.send_command("mcp_servers")).get("servers", []),
-                    tr("Brak. Napisz np.: dodaj serwer MCP github (npx -y @modelcontextprotocol/server-github)",
-                       "None. Write e.g.: add the MCP server github (npx -y @modelcontextprotocol/server-github)"))
         return True
 
     if name == "zgody":
@@ -1403,6 +1401,14 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
                          "na Telegram przychodzi samo, o czasie.[/dim]",
                          "[dim]In the CLI a reminder shows up with your next message or on connect; "
                          "on Telegram it arrives by itself, on time.[/dim]"))
+        return True
+
+    if name == "nowa":
+        data = _response_data(await client.send_command("new_chat"))
+        console.print((tr("Zaczynamy nową rozmowę.", "Starting a new conversation.") if data.get("cleared")
+                       else tr("Rozmowa już była pusta.", "The conversation was already empty."))
+                      + tr(" [dim]Pamiętam to, co trwałe: notatki o serwerze, katalogi, skille, Twój styl i alerty.[/dim]",
+                           " [dim]I keep what lasts: the server notes, directories, skills, your style and the alerts.[/dim]"))
         return True
 
     if name == "vibe":

@@ -1,22 +1,18 @@
 """
-Testy MCP (v0.14): Pipe jako serwer (dyspozytor obu er protokolu, narzedzia,
-zgody, Streamable HTTP) i jako klient (stdio/HTTP, wykrywanie ery, polityka
-potwierdzen, integracja z agentem).
+Testy MCP: Pipe jako serwer (dyspozytor obu er protokolu, narzedzia, zgody,
+Streamable HTTP). Pipe jako klient MCP zostal usuniety w v0.35.
 """
 
 import asyncio
+import base64
 import json
-import sys
-import textwrap
-from types import SimpleNamespace
 
 import pytest
 
 from backend.config import settings
 from backend.core import mcp
 from backend.core.approvals import get_approvals
-from backend.core.mcp import client as mcp_client
-from backend.core.mcp import registry, server as mcp_server
+from backend.core.mcp import server as mcp_server
 from backend.core.mcp.server import Caller
 
 ADMIN = Caller("token:laptop", "admin")
@@ -34,8 +30,6 @@ def isolated(tmp_path, monkeypatch):
     from backend.core import audit
     monkeypatch.setattr(audit, "AUDIT_LOG_PATH", str(tmp_path / "audit.log"))
     get_approvals()._items.clear()
-    registry.get_manager().servers.clear()
-    registry.get_manager().functions.clear()
     return tmp_path
 
 
@@ -46,7 +40,8 @@ def run(coro):
 def rpc(method, params=None, *, id=1, modern=False):
     params = dict(params or {})
     if modern:
-        params["_meta"] = mcp_client.modern_meta()
+        params["_meta"] = {mcp.META_VERSION: mcp.MODERN_VERSION, mcp.META_CLIENT_INFO: {"name": "test", "version": "1"},
+                           mcp.META_CLIENT_CAPABILITIES: {}}
     return {"jsonrpc": "2.0", "id": id, "method": method, "params": params}
 
 
@@ -191,7 +186,7 @@ class TestHttpTransport:
                 "mismatch": await http(port, body=rpc("tools/list", modern=True), headers={**auth, **modern_headers("tools/call")}),
                 "name": await http(port, body=call_body, headers={**auth, **modern_headers("tools/call", "inna")}),
                 "b64name": await http(port, body=call_body, headers={
-                    **auth, **modern_headers("tools/call", mcp_client.header_value("=?base64?x?="))}),
+                    **auth, **modern_headers("tools/call", "=?base64?" + base64.b64encode(b"=?base64?x?=").decode() + "?=")}),
                 "origin": await http(port, body=rpc("tools/list", modern=True),
                                      headers={**auth, **modern_headers("tools/list"), "Origin": "https://evil.example"}),
                 "get": await http(port, method="GET", headers=auth),
@@ -221,200 +216,6 @@ class TestHttpTransport:
         assert mcp_server.origin_allowed("https://app.example", {"https://app.example"})
 
 
-# ─── Klient ─────────────────────────────────────────────────────────────────
-
-FAKE_SERVER = textwrap.dedent('''
-    import json, os, sys
-    MODERN = sys.argv[1] == "modern"
-    TOOLS = [
-        {"name": "echo", "description": "Zwraca tekst", "annotations": {"readOnlyHint": True},
-         "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
-        {"name": "env", "description": "Zmienne srodowiskowe", "inputSchema": {"type": "object"}},
-        {"name": "delete_everything", "description": "Niszczy", "inputSchema": {"type": "object"}},
-    ]
-    for line in sys.stdin:
-        m = json.loads(line)
-        if "id" not in m:
-            continue
-        method, params = m["method"], m.get("params") or {}
-        if method == "server/discover" and MODERN:
-            res = {"resultType": "complete", "supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}},
-                   "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "fake-modern", "version": "2"}}}
-        elif method == "initialize" and not MODERN:
-            res = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fake-legacy", "version": "1"}}
-        elif method == "tools/list":
-            res = {"tools": TOOLS}
-        elif method == "tools/call":
-            name, args = params["name"], params.get("arguments") or {}
-            text = args.get("text", "") if name == "echo" else ",".join(sorted(os.environ)) if name == "env" else "zniszczone"
-            res = {"content": [{"type": "text", "text": text}], "isError": False}
-            if MODERN and "_meta" not in params:
-                res = None
-        else:
-            res = None
-        if res is None:
-            out = {"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32601, "message": "nieznana metoda"}}
-        else:
-            out = {"jsonrpc": "2.0", "id": m["id"], "result": res}
-        print(json.dumps(out), flush=True)
-''')
-
-
-@pytest.fixture
-def fake_server(tmp_path):
-    path = tmp_path / "fake_mcp.py"
-    path.write_text(FAKE_SERVER)
-    return path
-
-
-class TestClient:
-
-    @pytest.mark.parametrize("era", ["legacy", "modern"])
-    def test_stdio_era_detection_and_calls(self, fake_server, era, monkeypatch):
-        monkeypatch.setenv("LLM_API_KEY", "sk-tajnyklucz")
-
-        async def scenario():
-            client = mcp_client.McpClient(mcp_client.StdioTransport(sys.executable, [str(fake_server), era],
-                                                                    env={"MOJA": "1"}))
-            await client.connect()
-            try:
-                echo = await client.call_tool("echo", {"text": "czesc"})
-                env = await client.call_tool("env", {})
-                return client.era, client.server_info, [t["name"] for t in client.tools], echo, env
-            finally:
-                await client.close()
-
-        detected, info, tools, echo, env = run(scenario())
-        assert detected == era and info["name"] == f"fake-{era}"
-        assert tools == ["echo", "env", "delete_everything"]
-        assert mcp_client.result_text(echo) == ("czesc", [], False)
-        names = mcp_client.result_text(env)[0].split(",")
-        assert "MOJA" in names and "LLM_API_KEY" not in names          # sekrety Pipe nie trafiaja do serwera MCP
-
-    def test_http_client_against_pipe_server(self):
-        async def scenario():
-            server = await asyncio.start_server(mcp_server.McpHttpServer().handle, "127.0.0.1", 0)
-            port = server.sockets[0].getsockname()[1]
-            client = mcp_client.McpClient(mcp_client.HttpTransport(f"http://127.0.0.1:{port}/mcp"))
-            await client.connect()
-            try:
-                result = await client.call_tool("run_command", {"command": "echo przez-http"})
-                return client.era, len(client.tools), result
-            finally:
-                await client.close()
-                server.close()
-                await server.wait_closed()
-
-        era, count, result = run(scenario())
-        assert era == "modern" and count == len(mcp_server.TOOLS)
-        assert "przez-http" in mcp_client.result_text(result)[0]
-
-    def test_param_headers_and_encoding(self):
-        schema = {"type": "object", "properties": {
-            "region": {"type": "string", "x-mcp-header": "Region"},
-            "opts": {"type": "object", "properties": {"debug": {"type": "boolean", "x-mcp-header": "Debug"}}}}}
-        assert mcp_client.param_headers(schema, {"region": "Zażółć", "opts": {"debug": True}}) == {
-            "Mcp-Param-Region": "=?base64?WmHFvMOzxYLEhw==?=", "Mcp-Param-Debug": "true"}
-        assert mcp_client.param_headers({"properties": {"x": {"type": "number", "x-mcp-header": "X"}}}, {}) is None
-        assert mcp_client.header_value("ok-value") == "ok-value"
-        assert mcp_client.header_value(" spacja ").startswith("=?base64?")
-
-    def test_result_text_variants(self):
-        text, images, is_error = mcp_client.result_text({"content": [
-            {"type": "text", "text": "a"}, {"type": "image", "mimeType": "image/png", "data": "iVBORw=="},
-            {"type": "resource_link", "name": "log", "uri": "file:///x"}], "isError": True})
-        assert text == "a\n[zasob] log file:///x" and images[0][0] == "image/png" and is_error
-        assert "1" in mcp_client.result_text({"structuredContent": {"a": 1}})[0]
-
-
-# ─── Rejestr i agent ────────────────────────────────────────────────────────
-
-class TestRegistry:
-
-    def test_validation_and_storage(self):
-        assert registry.validate_server("gh", {"command": "npx -y @mcp/server-github"})["args"] == ["-y", "@mcp/server-github"]
-        with pytest.raises(registry.McpConfigError):
-            registry.validate_server("Zla nazwa", {"command": "x"})
-        with pytest.raises(registry.McpConfigError):
-            registry.validate_server("x", {"url": "ftp://x"})
-        with pytest.raises(registry.McpConfigError):
-            registry.validate_server("x", {})
-        assert registry.add_server("gh", {"command": "npx", "env": {"TOKEN": "tajne"}})
-        assert oct(registry.config_path().stat().st_mode & 0o777) == "0o600"
-        text = registry.describe_server("gh", registry.load_config()["gh"])
-        assert "TOKEN" in text and "tajne" not in text and "potwierdzeniem" in text
-        assert registry.remove_server("gh") and not registry.load_config()
-
-    def test_policy_and_names(self):
-        tool = {"name": "get_issue", "annotations": {"readOnlyHint": True}}
-        assert registry.needs_confirmation({}, tool)
-        assert not registry.needs_confirmation({"autoApprove": ["get_*"]}, tool)
-        assert not registry.needs_confirmation({"trustReadOnly": True}, tool)
-        assert registry.needs_confirmation({"trustReadOnly": True}, {"name": "x", "annotations": {}})
-        taken = set()
-        first = registry.tool_function_name("srv", "a.b c" + "x" * 80, taken)
-        taken.add(first)
-        second = registry.tool_function_name("srv", "a.b c" + "x" * 80, taken)
-        assert len(first) == 64 and first != second and len(second) <= 64 and " " not in first
-
-
-class TestAgentWithMcp:
-
-    def _setup(self, fake_server):
-        registry.add_server("fake", {"command": sys.executable, "args": [str(fake_server), "legacy"],
-                                     "autoApprove": ["echo"]})
-
-    def test_tools_offered_and_policy(self, fake_server, isolated):
-        from backend.core.agent import VPSAgent
-        from backend.tests.fakes import FakeClient, assert_history_valid, completion
-
-        self._setup(fake_server)
-        agent = VPSAgent(client=FakeClient([
-            completion(tool_calls=[("c1", "mcp__fake__echo", {"text": "hej"}),
-                                   ("c2", "mcp__fake__delete_everything", {})]),
-            completion("czekam"),
-            completion("gotowe"),
-        ]))
-
-        async def talk():
-            await registry.get_manager().reload()
-            try:
-                first = [e async for e in agent.chat("s", "uzyj mcp", "cli")]
-                confirmed = [e async for e in agent.confirm("s", True)]
-                return first, confirmed
-            finally:
-                await registry.get_manager().close()
-
-        first, confirmed = run(talk())
-        offered = [t["function"]["name"] for t in agent._client.calls[0]["tools"]]
-        assert {"mcp__fake__echo", "mcp__fake__env", "mcp__fake__delete_everything"} <= set(offered)
-        messages = agent._sessions["s"].messages
-        results = {m["tool_call_id"]: m["content"] for m in messages if m.get("role") == "tool"}
-        assert results["c1"] == "hej"                                        # autoApprove — bez pytania
-        assert any("[POTWIERDZ] Narzedzie MCP" in e and "fake.delete_everything" in e for e in first if isinstance(e, str))
-        assert "zniszczone" in results["c2"] and "Dziennik zmian" in results["c2"]
-        assert_history_valid(messages)
-
-    def test_mcp_manage_add_requires_confirmation(self, fake_server):
-        from backend.core.agent import VPSAgent
-        from backend.tests.fakes import FakeClient, completion
-
-        agent = VPSAgent(client=FakeClient([
-            completion(tool_calls=[("c1", "mcp_manage", {"operation": "add", "name": "fake", "command": sys.executable,
-                                                         "args": [str(fake_server), "modern"]})]),
-            completion("dodano")]))
-
-        async def talk():
-            first = [e async for e in agent.chat("s", "dodaj serwer", "cli")]
-            assert not registry.load_config()                               # nic przed TAK
-            [e async for e in agent.confirm("s", True)]
-            state = registry.get_manager().servers.get("fake")
-            await registry.get_manager().close()
-            return first, state
-
-        first, state = run(talk())
-        assert "[POTWIERDZ] Nowy serwer MCP" in first[0] and "fake_mcp.py" in first[0]
-        assert state.status == "connected" and state.client.era == "modern"
 
 
 # ─── Protokol Pipe i klienci ────────────────────────────────────────────────
@@ -459,4 +260,4 @@ def test_telegram_approval_format():
     text = format_approval({"id": "ab12cd34", "requested_by": "token:<laptop>", "target": "local",
                             "command": "rm -f /tmp/<x>", "reason": "sprzatanie", "plan": "Bezpiecznik:\n- kopia"})
     assert "token:&lt;laptop&gt;" in text and "<pre>rm -f /tmp/&lt;x&gt;</pre>" in text and "wygasa" in text
-    assert {"zgody", "mcp"} <= {c for c, _ in BUILTIN_COMMANDS}
+    assert "zgody" in {c for c, _ in BUILTIN_COMMANDS} and "mcp" not in {c for c, _ in BUILTIN_COMMANDS}
