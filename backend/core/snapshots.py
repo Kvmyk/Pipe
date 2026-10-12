@@ -189,6 +189,65 @@ def suid() -> dict[str, str]:
     return result
 
 
+PACKAGE_FILE_MAX = 64 * 1024 * 1024     # wiekszych plikow nie licze — i tak nie sa programami SUID ani konfiguracja
+_APK_SUM = re.compile(r"^Z:Q1([A-Za-z0-9+/=]+)$")
+
+
+def _path_variants(path: str) -> list[str]:
+    """/usr/bin/su i /bin/su to ten sam plik po usrmerge — baza pakietow moze znac dowolna z tych sciezek."""
+    if path.startswith("/usr/"):
+        return [path, path[4:]]
+    return [path, "/usr" + path]
+
+
+def from_package(paths: list[str]) -> set[str]:
+    """
+    Sciezki hosta, ktorych obecna tresc jest dokladnie taka, jaka dostarczyl pakiet: dpkg (`info/*.md5sums`,
+    `Conffiles` w `status`) albo apk (`Z:` w `lib/apk/db/installed`). Aktualizacja pakietu podmienia programy SUID
+    i konfiguracje legalnie — to nie jest slad wlamania; podmieniona binarka ma inna sume i dalej daje alert.
+    """
+    lookup = {variant: path for path in set(paths) if path for variant in _path_variants(path)}
+    if not lookup:
+        return set()
+    expected: dict[str, set[str]] = {}
+    for listing in _glob_host("/var/lib/dpkg/info/*.md5sums"):
+        for line in (_read_host(listing) or "").splitlines():
+            digest, _, relative = line.partition("  ")
+            host = lookup.get("/" + relative.strip().lstrip("/"))
+            if host:
+                expected.setdefault(host, set()).add("md5:" + digest.strip())
+    status = _read_host("/var/lib/dpkg/status", limit=64 * 1024 * 1024) or ""
+    for match in re.finditer(r"^ (/\S+) ([0-9a-f]{32})(?: obsolete)?$", status, re.MULTILINE):
+        host = lookup.get(match.group(1))
+        if host:
+            expected.setdefault(host, set()).add("md5:" + match.group(2))
+    directory = name = ""
+    for line in (_read_host("/lib/apk/db/installed", limit=64 * 1024 * 1024) or "").splitlines():
+        if line.startswith("F:"):
+            directory, name = line[2:], ""
+        elif line.startswith("R:"):
+            name = line[2:]
+        elif name and (found := _APK_SUM.match(line)):
+            host = lookup.get(f"/{directory}/{name}" if directory else f"/{name}")
+            if host:
+                expected.setdefault(host, set()).add("sha1:" + found.group(1))
+            name = ""
+    matching = set()
+    for host, digests in expected.items():
+        local = runtime.to_local(host)
+        try:
+            if os.path.getsize(local) > PACKAGE_FILE_MAX:
+                continue
+            with open(local, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        sha1 = base64.b64encode(hashlib.sha1(data).digest()).decode()
+        if f"md5:{hashlib.md5(data).hexdigest()}" in digests or f"sha1:{sha1}" in digests:
+            matching.add(host)
+    return matching
+
+
 def cron() -> dict[str, str]:
     result = {}
     for pattern in CRON_GLOBS:

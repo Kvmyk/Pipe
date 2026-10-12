@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.36.0
+Pipe v0.36.1
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -154,6 +154,26 @@ class VPSAgent:
         self._sessions.pop(session_id, None)
         sessions_store.remove(session_id)
         return existed
+
+    def note(self, session_id: str, text: str) -> bool:
+        """
+        Notatka backendu w rozmowie (np. wynik /zalataj, ktore dziala bez modelu) — agent zapytany pozniej wie, co
+        sie stalo, zamiast zgadywac z historii. Para user/assistant oznaczona `pipe_generated` (VIBE jej nie uczy),
+        kolejnosc rol zostaje naprzemienna. Pomijana, gdy sesji nie ma albo czeka potwierdzenie (historia musi
+        zostac poprawna). Zwraca, czy dopisano.
+        """
+        session = self._sessions.get(session_id) or self._restore(session_id)
+        if session is None or session.pending_confirmation is not None:
+            return False
+        session.messages += [
+            {"role": "user", "content": tr(f"[PIPE — informacja systemowa, nie pisal tego uzytkownik] {text}",
+                                           f"[PIPE — system information, not written by the user] {text}"),
+             "pipe_generated": True},
+            {"role": "assistant", "content": tr("Przyjalem do wiadomosci.", "Noted."), "pipe_generated": True},
+        ]
+        _trim_history(session)
+        self._persist(session_id)
+        return True
 
     def _restore(self, session_id: str) -> Session | None:
         """Sesja zapisana przed restartem backendu (core/sessions_store.py) albo None."""

@@ -252,6 +252,31 @@ class TestSentinel:
         quiet = posture.sentinel_findings(before, after, pipe_changed={"/etc/sudoers"})
         assert "security:configs:/etc/sudoers" not in {f.key for f in quiet}
 
+    def test_package_updates_are_quiet_but_swapped_binaries_alert(self, host):
+        """Latka podmienia sudo, passwd, mount... legalnie: tresc = suma z bazy pakietow, wiec bez alertu."""
+        import base64
+        import hashlib
+
+        md5 = lambda text: hashlib.md5(text.encode()).hexdigest()       # noqa: E731
+        write(host, "/usr/bin/sudo", "sudo 1.9.15")
+        write(host, "/bin/su", "su 2.39")                                 # dpkg zna /bin/su, plik lezy w /bin
+        write(host, "/usr/bin/passwd", "podmieniony passwd")
+        write(host, "/etc/pam.d/sshd", "pam z pakietu")
+        write(host, "/usr/sbin/ping", "ping z apk")
+        write(host, "/var/lib/dpkg/info/sudo.md5sums", f"{md5('sudo 1.9.15')}  usr/bin/sudo\n")
+        write(host, "/var/lib/dpkg/info/util-linux.md5sums", f"{md5('su 2.39')}  usr/bin/su\n")
+        write(host, "/var/lib/dpkg/info/passwd.md5sums", f"{md5('passwd z pakietu')}  usr/bin/passwd\n")
+        write(host, "/var/lib/dpkg/status", f"Package: openssh-server\nConffiles:\n /etc/pam.d/sshd {md5('pam z pakietu')}\n")
+        sha1 = base64.b64encode(hashlib.sha1(b"ping z apk").digest()).decode()
+        write(host, "/lib/apk/db/installed", f"P:iputils\nF:usr/sbin\nR:ping\nZ:Q1{sha1}\n")
+        before = {"suid": {p: "suid 1 B 1" for p in ("/usr/bin/sudo", "/bin/su", "/usr/bin/passwd")},
+                  "configs": {"/etc/pam.d/sshd": "a"}}
+        after = {"suid": {**{p: "suid 2 B 2" for p in ("/usr/bin/sudo", "/bin/su", "/usr/bin/passwd")},
+                          "/usr/sbin/ping": "suid 1 B 2"},
+                 "configs": {"/etc/pam.d/sshd": "b"}}
+        found = {f.key for f in posture.sentinel_findings(before, after)}
+        assert found == {"security:suid:/usr/bin/passwd"}                  # tylko ta binarka nie zgadza sie z pakietem
+
     def test_removed_keys_are_not_critical(self):
         before = {"ssh_keys": {"/root/.ssh/authorized_keys": "k1\nk2"}}
         after = {"ssh_keys": {"/root/.ssh/authorized_keys": "k1"}}

@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.36.0
+Pipe v0.36.1
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -341,7 +341,9 @@ system is read-only).
 
 **The sentinel** (every `WATCH_INTERVAL`, no LLM) compares accounts, SSH keys, SUID/SGID programs and authentication
 configs (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). A new account with uid 0, a new key, a new SUID or
-`ld.so.preload` raises a critical alert. Changes made by Pipe (they are in the journal) don't alert.
+`ld.so.preload` raises a critical alert. Changes made by Pipe (they are in the journal) don't alert. Neither do package
+updates: a SUID program or a config whose content matches the checksum in the package database (dpkg `md5sums` and
+`Conffiles`, apk) is a patch, not a swap. A binary swapped after installation still raises an alert.
 
 **SSH log** (`/var/log/auth.log` or `/var/log/secure`, read incrementally): a series of failed logins, a successful
 password login from an address that was guessing passwords before, a login from a new address.

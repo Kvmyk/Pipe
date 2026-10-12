@@ -297,7 +297,8 @@ class Watcher:
             current = await asyncio.to_thread(posture.sentinel_state)
             recent = [e for e in journal.entries(20) if time.time() - e.at < max(600, 3 * settings.WATCH_INTERVAL)]
             pipe_changed = {f.label for e in recent for f in e.files}
-            findings += posture.sentinel_findings(state.get("sentinel"), current, pipe_changed)
+            # sumy z bazy pakietow czyta z dysku — poza petla zdarzen
+            findings += await asyncio.to_thread(posture.sentinel_findings, state.get("sentinel"), current, pipe_changed)
             state["sentinel"] = current
         except Exception as exc:
             print(tr(f"[Czuwanie] Straznik bezpieczenstwa: {exc}", f"[Watcher] Security sentinel: {exc}"), flush=True)

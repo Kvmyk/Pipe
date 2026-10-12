@@ -352,7 +352,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
                 return
             await _undo(writer, request, interface)
         elif command == "patch":
-            await _patch(writer, request, interface, role)
+            await _patch(writer, request, interface, role, session_id)
         elif command == "vulns":
             await _send(writer, _data({"text": await _vulns_report()}))
         elif command == "transcribe":
@@ -437,7 +437,7 @@ async def _patch_blocker(role: str) -> str:
     return ""
 
 
-async def _patch(writer, request: dict, interface: str, role: str) -> None:
+async def _patch(writer, request: dict, interface: str, role: str, session_id: str = "") -> None:
     """
     Latki podatnosci bez LLM: najpierw podglad (co, dokladna komenda, token), potem — po TAK w kliencie —
     {"command": "patch", "scope", "token", "execute": true}. `scope`: `all` / `urgent` — pakiety hosta,
@@ -548,6 +548,16 @@ async def _patch(writer, request: dict, interface: str, role: str) -> None:
     except Exception as exc:
         after = tr(f"ponowny skan nie powiodl sie: {exc}", f"the rescan failed: {exc}")
     text = (outcome.text if outcome else "") + "\n\n" + tr(f"Po instalacji: {after}.", f"After the install: {after}.")
+    code = outcome.exit_code if outcome else 1
+    try:
+        # /zalataj dziala bez modelu — agent zapytany "jak tam latanie?" ma wiedziec, co sie stalo
+        get_agent().note(session_id, tr(
+            f"Uzytkownik zainstalowal latki przez /zalataj ({description}), kod wyjscia {code}, "
+            f"wpis dziennika {outcome.entry_id if outcome else '-'}. Po instalacji: {after}.",
+            f"The user installed patches with /patch ({description}), exit code {code}, "
+            f"journal entry {outcome.entry_id if outcome else '-'}. After the install: {after}."))
+    except Exception:
+        pass
     await _send(writer, _data({"text": text, "exit_code": outcome.exit_code if outcome else 1,
                                "entry_id": outcome.entry_id if outcome else ""}))
 

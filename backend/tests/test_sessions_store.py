@@ -159,3 +159,25 @@ class TestNewChat:
         run(VPSAgent(client=FakeClient([completion("ok")])).chat("s1", "czesc"))
         restarted = VPSAgent(client=FakeClient([]))
         assert restarted.delete_session("s1") is True and restarted.delete_session("s1") is False
+
+
+class TestBackendNote:
+    """Wynik /zalataj (bez modelu) trafia do rozmowy — agent zapytany pozniej nie zgaduje."""
+
+    def test_note_keeps_history_valid_and_survives_restart(self):
+        agent = VPSAgent(client=FakeClient([completion("Czesc.")]))
+        run(agent.chat("s", "czesc", "telegram:7"))
+        assert agent.note("s", "Uzytkownik zainstalowal latki przez /zalataj, kod wyjscia 0.")
+        messages = agent._sessions["s"].messages
+        assert [m["role"] for m in messages[-2:]] == ["user", "assistant"] and all(m["pipe_generated"] for m in messages[-2:])
+        assert_history_valid(messages)
+        client = FakeClient([completion("Latki weszly.")])
+        restarted = VPSAgent(client=client)
+        run(restarted.chat("s", "jak tam latanie?", "telegram:7"))
+        assert any("kod wyjscia 0" in str(m.get("content")) for m in client.calls[0]["messages"])
+        assert not agent.note("nie-ma-takiej", "x")
+
+    def test_no_note_while_a_confirmation_waits(self):
+        agent = VPSAgent(client=FakeClient([completion(tool_calls=[("c1", "execute_command", {"command": "mkdir -p x"})])]))
+        run(agent.chat("s", "zrob katalog"))
+        assert agent.note("s", "x") is False

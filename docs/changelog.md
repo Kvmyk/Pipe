@@ -1,5 +1,20 @@
 # Historia zmian -- Pipe
 
+## v0.36.1 (2026-10-12)
+
+### Poprawki
+
+- Po latce z `/zalataj` (i `/zalataj obrazy`) agent dostaje w rozmowie notatke z wynikiem: co instalowano, kod
+  wyjscia, wpis w dzienniku, co zostalo. Wczesniej latka szla bez modelu, wiec zapytany "jak tam latanie?" zgadywal
+  ze starej historii; bez notatki ma sprawdzic dziennik
+- Aktualizacja pakietow nie daje juz serii alertow "Zmiana bezpieczenstwa": program SUID (sudo, passwd, mount...)
+  albo konfiguracja, ktorych tresc zgadza sie z suma z bazy pakietow (dpkg `md5sums` i `Conffiles`, apk), to latka,
+  a nie podmiana. Dotyczy tez `unattended-upgrades` i recznego `apt upgrade`. Binarka podmieniona po instalacji
+  dalej daje alert
+- Agent w trybie docker wie, ze `docker compose` (build, pull, up -d) na projektach hosta robi przez `execute_command`
+  z `host: true`; wczesniej mowil, ze bez compose w kontenerze sie nie da i trzeba wejsc na serwer. Zakaz recznej
+  aktualizacji przez compose dotyczy juz tylko samego Pipe
+
 ## v0.36.0 (2026-10-12)
 
 ### Przejrzystsze web, CLI i Telegram

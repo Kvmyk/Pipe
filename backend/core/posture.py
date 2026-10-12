@@ -799,15 +799,22 @@ def _is_critical(change: Any) -> bool:
 
 def sentinel_findings(previous: dict[str, dict[str, str]] | None, current: dict[str, dict[str, str]],
                       pipe_changed: set[str] = frozenset()) -> list[Any]:
-    """Alerty ze zmian bezpieczenstwa. Pomija sciezki zmienione przez Pipe (dziennik) — uzytkownik je zatwierdzil."""
+    """
+    Alerty ze zmian bezpieczenstwa. Pomija sciezki zmienione przez Pipe (dziennik) — uzytkownik je zatwierdzil —
+    oraz programy SUID i konfiguracje, ktorych tresc zgadza sie z suma z bazy pakietow: to aktualizacja (/zalataj,
+    unattended-upgrades, apt), a nie podmiana. Bez tego kazda latka dawala alert na kazdy sudo, passwd, mount...
+    """
     from backend.core import snapshots
     from backend.core.watch import Finding as WatchFinding
 
     if previous is None:
         return []
+    changes = snapshots.diff(previous, current)
+    packaged = snapshots.from_package([c.key for c in changes if c.kind != "removed" and c.section in ("suid", "configs")
+                                       and c.key != "/etc/ld.so.preload"])
     findings = []
-    for change in snapshots.diff(previous, current):
-        if change.key in pipe_changed:
+    for change in changes:
+        if change.key in pipe_changed or (change.key in packaged and change.section in ("suid", "configs")):
             continue
         text = snapshots.describe(change).split("\n", 1)[0]
         critical = _is_critical(change)

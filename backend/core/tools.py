@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.36.0
+Pipe v0.36.1
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -39,7 +39,8 @@ TOOLS: list[dict] = [
             "requires_confirmation": _CONFIRM_FLAG,
             "host": {"type": "boolean", "description": (
                 "Tylko w trybie docker: true wykonuje komende na hoscie (jak root w powloce serwera, przez kontener "
-                "pomocniczy), np. apt-get, systemctl, sed -i w /etc, ufw. Zawsze po potwierdzeniu. Odczytow tak "
+                "pomocniczy, z narzedziami hosta), np. apt-get, systemctl, sed -i w /etc, ufw, docker compose build/pull/up -d "
+                "w katalogu projektu. Zawsze po potwierdzeniu. Odczytow tak "
                 "nie rob — czytaj z katalogu hosta.")},
         },
         ["command"],
@@ -348,8 +349,9 @@ TOOLS: list[dict] = [
         "Aktualizacja samego Pipe (Ciebie): 'zaktualizuj sie', 'pobierz nowa wersje Pipe', 'jaka masz wersje, czy jest "
         "nowsza'. check — wersja, commit i czy na zdalnym repozytorium sa nowsze zmiany (nic nie zmienia). apply — "
         "po potwierdzeniu osobny kontener pobiera zmiany (git pull --ff-only) i przebudowuje uslugi Pipe; backend "
-        "restartuje sie, rozmowa zostaje przerwana, a wynik przychodzi sam jako wiadomosc. NIGDY nie aktualizuj Pipe "
-        "recznie przez git/docker compose — z wnetrza kontenera to sie nie uda.",
+        "restartuje sie, rozmowa zostaje przerwana, a wynik przychodzi sam jako wiadomosc. NIGDY nie aktualizuj samego "
+        "Pipe recznie przez git/docker compose (takze z host: true) — przebudowa wlasnego kontenera przerwalaby ja "
+        "w polowie. Inne projekty compose na hoscie obslugujesz zwyczajnie: execute_command z host: true.",
         {"operation": {"type": "string", "enum": ["check", "apply"]}},
         ["operation"],
     ),

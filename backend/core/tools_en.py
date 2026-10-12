@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.36.0
+Pipe v0.36.1
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "specialised tools for known areas.",
         {"command": "Shell command to run on the server.", "requires_confirmation": _CONFIRM,
          "host": "Docker mode only: true runs the command on the host (like root in the server shell, through a helper "
-                 "container), e.g. apt-get, systemctl, sed -i in /etc, ufw. Always after confirmation. Do not use it for "
+                 "container, with the host's tools), e.g. apt-get, systemctl, sed -i in /etc, ufw, docker compose build/pull/up -d "
+                 "in the project directory. Always after confirmation. Do not use it for "
                  "reads — read from the host directory."}),
     "read_file": (
         "Reads a file on the server. Host path (e.g. /etc/nginx/nginx.conf) or relative to the working directory. "
@@ -201,7 +202,8 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "
         "apply — after confirmation a separate container pulls the changes (git pull --ff-only) and rebuilds the Pipe "
         "services; the backend restarts, the conversation is cut and the result arrives by itself as a message. NEVER "
-        "update Pipe by hand with git/docker compose — from inside the container that cannot work.",
+        "update Pipe itself by hand with git/docker compose (host: true included) — rebuilding its own container would cut "
+        "it off halfway. Other compose projects on the host you handle normally: execute_command with host: true.",
         {}),
 }
 
