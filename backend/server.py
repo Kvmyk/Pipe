@@ -451,7 +451,8 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
     scope = str(request.get("scope") or request.get("args") or "").strip().lower()
     scope = {"urgent": "urgent", "pilne": "urgent", "images": "images", "obrazy": "images"}.get(scope, "all")
     watcher = get_watcher()
-    result, note = await watcher.vuln_for_audit()
+    # podglad: nowy skan; instalacja: wynik, z ktorego powstal podglad (token musi sie zgadzac)
+    result, note = await watcher.vuln_for_audit(fresh=not request.get("execute"))
     if result is None:
         await _send(writer, _error(tr(f"Brak wyniku skanu podatnosci ({note}).", f"No vulnerability scan result ({note}).")
                                    if note else tr("Brak wyniku skanu podatnosci.", "No vulnerability scan result.")))

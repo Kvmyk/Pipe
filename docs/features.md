@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.36.5
+Pipe v0.36.6
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -350,7 +350,10 @@ poprawke -- podatnosci bez poprawki widac jako liczbe, bo zwykly Debian ma ich s
 nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 
 - Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)
-  i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach.
+  i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach. `/podatnosci`,
+  `/audyt` i podglad `/zalataj` skanuja od nowa przy kazdym wywolaniu (swieza lista pakietow, obrazow i zaleznosci,
+  ponowne zapytanie do OSV); szczegoly niezmienionych podatnosci sa w pamieci, wiec to zwykle kilka sekund. Gdy
+  skan trwa dluzej niz 45 s, widac ostatni wynik z dopiskiem.
 - Alert przychodzi tylko o **nowych pilnych**: aktywnie wykorzystywanych (katalog CISA KEV) albo krytycznych
   i wysokich. Alert przychodzi sam (Telegram, `pipe web`) i przy kazdej podatnosci mowi zwyklymi slowami, czego
   dotyczy i co grozi, a numer CVE jest na koncu w nawiasie. Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu,

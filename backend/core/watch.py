@@ -406,18 +406,22 @@ class Watcher:
         self.vuln_scan = result
         return result
 
-    async def vuln_for_audit(self) -> tuple[Any, str]:
-        """(wynik skanu albo None, uwaga dla audytu) — nie dluzej niz VULN_AUDIT_WAIT sekund."""
+    async def vuln_for_audit(self, fresh: bool = True) -> tuple[Any, str]:
+        """
+        (wynik skanu albo None, uwaga) — nie dluzej niz VULN_AUDIT_WAIT sekund. `fresh` (domyslnie: /podatnosci,
+        /audyt, podglad /zalataj): nowy skan przy kazdym wywolaniu — swiezy inwentarz i ponowne zapytanie do OSV;
+        szczegoly niezmienionych podatnosci i tak sa w pamieci, wiec to sekundy. Czuwanie w tle skanuje dalej co
+        VULN_INTERVAL. `fresh=False` (instalacja latki zaraz po podgladzie): wystarczy ostatni wynik.
+        """
         from backend.core import vulns
 
         if settings.VULN_INTERVAL <= 0:
             return None, tr("wylaczone: VULN_INTERVAL=0", "off: VULN_INTERVAL=0")
-        # Swiezy wynik czuwania wystarczy — zapytanie do OSV trwa okolo minuty (jadro: tysiace ID).
         last = self.vuln_scan or await asyncio.to_thread(vulns.last_scan)
-        if last is not None and last.ok and time.time() - last.at < 2 * settings.VULN_INTERVAL:
+        if not fresh and last is not None and last.ok and time.time() - last.at < 2 * settings.VULN_INTERVAL:
             return last, ""
         try:
-            return await asyncio.wait_for(self.vuln_scan_now(), VULN_AUDIT_WAIT), ""
+            return await asyncio.wait_for(self.vuln_scan_now(force=fresh), VULN_AUDIT_WAIT), ""
         except asyncio.TimeoutError:
             return last, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
 

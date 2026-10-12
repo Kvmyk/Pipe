@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.36.5
+Pipe v0.36.6
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -354,7 +354,10 @@ counts -- vulnerabilities without a fix show up as a number, because a plain Deb
 names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 
 - When: whenever the package list changes (a new application, an update -- then OSV only gets the changed packages)
-  and every `VULN_INTERVAL` (6 h) for all of them, because new vulnerabilities show up in old versions.
+  and every `VULN_INTERVAL` (6 h) for all of them, because new vulnerabilities show up in old versions. `/vulns`,
+  `/audit` and the `/patch` preview scan afresh on every call (a fresh list of packages, images and dependencies, a
+  new OSV query); details of unchanged vulnerabilities are remembered, so it usually takes a few seconds. When the
+  scan takes longer than 45 s, you see the last result with a note.
 - An alert comes only about **new urgent** ones: actively exploited (the CISA KEV catalog) or critical and high.
   The alert arrives on its own (Telegram, `pipe web`) and says in plain words what each vulnerability is about and
   what it risks, with the CVE number at the end in brackets. Pipe first waits (up to 2 minutes) for the model's

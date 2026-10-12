@@ -271,8 +271,10 @@ class TestWatcher:
         w = watch.Watcher()
         asyncio.run(w.vuln_scan_now())
         batches = len(fake.batches)
-        result, note = asyncio.run(w.vuln_for_audit())
+        result, note = asyncio.run(w.vuln_for_audit(fresh=False))          # instalacja latki: ostatni wynik
         assert result.items and note == "" and len(fake.batches) == batches
+        result, note = asyncio.run(w.vuln_for_audit())                      # /podatnosci, /audyt: nowy skan
+        assert result.items and note == "" and len(fake.batches) > batches
         monkeypatch.setattr(settings, "VULN_INTERVAL", 0)
         assert asyncio.run(w.vuln_for_audit())[0] is None
 
@@ -878,7 +880,7 @@ class TestPatchWhatIsThere:
         from backend.config import settings
         from backend.tests.test_server_commands import FakeAgent, exchange
 
-        async def last(self):
+        async def last(self, fresh=True):
             return scan, ""
 
         async def explain(self, *args, **kwargs):

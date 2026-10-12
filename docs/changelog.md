@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.36.6 (2026-10-12)
+
+### Poprawki
+
+- `/podatnosci`, `/audyt` (takze audyt wywolany przez agenta) i podglad `/zalataj` skanuja od nowa przy kazdym
+  wywolaniu: swieza lista pakietow, obrazow i zaleznosci oraz ponowne zapytanie do OSV. Wczesniej pokazywaly wynik
+  czuwania sprzed nawet 12 godzin, wiec po latce albo przebudowie obrazu widac bylo stan sprzed zmiany. Szczegoly
+  niezmienionych podatnosci sa w pamieci, wiec to zwykle kilka sekund; czuwanie w tle dalej skanuje co
+  `VULN_INTERVAL` (6 h). *Zainstaluj* korzysta z wyniku, z ktorego powstal podglad
+
 ## v0.36.5 (2026-10-12)
 
 ### Poprawki
