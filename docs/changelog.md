@@ -1,5 +1,17 @@
 # Historia zmian -- Pipe
 
+## v0.36.4 (2026-10-12)
+
+### Poprawki
+
+- Agent pamieta, co pokazaly komendy bez modelu: wynik `/podatnosci`, `/zalataj` (podglad), `/audyt`, `/zdrowie`,
+  `/zmiany`, `/alerty` i `/dziennik` trafia do rozmowy jako notatka. Wczesniej po `/zalataj obrazy` i "zrob to sam"
+  agent widzial tylko poprzednia prosbe (np. `/aktualizuj`) i powtarzal ja. Prompt mowi mu, ze "zrob to sam" dotyczy
+  tego, co uzytkownik zobaczyl, a latke z podgladu ma wykonac sam
+- Kontenery postawione starym `docker-compose` (v1, nazwy w stylu `projekt_usluga_1`) nie wypadaja juz jako "bez
+  compose": wzgledna sciezka pliku compose jest liczona od katalogu projektu, a bez etykiety plikow Pipe szuka
+  w nim `compose.yaml` / `docker-compose.yml`. `/zalataj obrazy` obejmuje je tak jak projekty compose v2
+
 ## v0.36.3 (2026-10-12)
 
 ### Poprawki

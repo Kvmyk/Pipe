@@ -159,6 +159,35 @@ class Infra:
 
 # ─── Docker ─────────────────────────────────────────────────────────────────
 
+COMPOSE_DEFAULT_FILES = ("compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml")
+
+
+def _compose_files(labels: dict[str, Any]) -> list[str]:
+    """
+    Pliki compose projektu jako sciezki hosta. Compose v2 zapisuje w etykiecie sciezki absolutne; stary
+    `docker-compose` (v1) — wzgledne albo nic, a katalog projektu tylko w `working_dir`. Wtedy sciezki liczymy od
+    `working_dir`, a bez etykiety plikow szukamy w nim standardowej nazwy — inaczej kontener wypadal jako "bez compose".
+    """
+    workdir = str(labels.get("com.docker.compose.project.working_dir", "") or "")
+    files = []
+    for name in str(labels.get("com.docker.compose.project.config_files", "") or "").split(","):
+        name = name.strip()
+        if not name:
+            continue
+        if not name.startswith("/"):
+            if not workdir.startswith("/"):
+                continue
+            name = os.path.normpath(os.path.join(workdir, name))
+        files.append(name)
+    if not files and workdir.startswith("/") and labels.get("com.docker.compose.project"):
+        for name in COMPOSE_DEFAULT_FILES:
+            path = os.path.join(workdir, name)
+            if os.path.isfile(runtime.to_local(path)):
+                files.append(path)
+                break
+    return files
+
+
 def _layers(data: dict[str, Any]) -> list[str]:
     """Warstwy overlay2 od najwyzszej: UpperDir, potem LowerDir (rozdzielone ':')."""
     upper = [str(data["UpperDir"])] if data.get("UpperDir") else []
@@ -217,7 +246,7 @@ def parse_inspect(items: list[dict[str, Any]]) -> list[Container]:
             network_mode=str((item.get("HostConfig") or {}).get("NetworkMode", "")),
             pid=int(state.get("Pid", 0) or 0),
             layers=_layers((item.get("GraphDriver") or {}).get("Data") or {}),
-            compose_files=[f for f in str(labels.get("com.docker.compose.project.config_files", "")).split(",") if f],
+            compose_files=_compose_files(labels),
         ))
     return sorted(result, key=lambda c: (c.project, c.name))
 

@@ -154,3 +154,21 @@ class TestDiagramSource:
             diagram.clean_source("  ")
         with pytest.raises(diagram.DiagramError):
             diagram.clean_source("flowchart LR\n" + "a-->b\n" * 10_000)
+
+
+class TestComposeFiles:
+    """Kontener ze starego docker-compose (v1) nie moze wypasc jako "bez compose" — /zalataj obrazy by go pominal."""
+
+    def test_v2_absolute_v1_relative_and_missing_label(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PIPE_RUNTIME", "docker")
+        monkeypatch.setenv("HOST_ROOT", str(tmp_path))
+        (tmp_path / "root" / "flowers").mkdir(parents=True)
+        (tmp_path / "root" / "flowers" / "docker-compose.yml").write_text("services: {}\n")
+        base = {"com.docker.compose.project": "flowers", "com.docker.compose.project.working_dir": "/root/flowers"}
+        assert infra._compose_files({**base, "com.docker.compose.project.config_files": "/srv/a.yml,/srv/b.yml"}) == \
+            ["/srv/a.yml", "/srv/b.yml"]
+        assert infra._compose_files({**base, "com.docker.compose.project.config_files": "docker-compose.yml"}) == \
+            ["/root/flowers/docker-compose.yml"]
+        assert infra._compose_files(base) == ["/root/flowers/docker-compose.yml"]          # v1 bez etykiety plikow
+        assert infra._compose_files({"com.docker.compose.project": "x"}) == []           # bez katalogu — nie zgaduje
+        assert infra._compose_files({}) == []

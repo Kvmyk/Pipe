@@ -181,3 +181,26 @@ class TestBackendNote:
         agent = VPSAgent(client=FakeClient([completion(tool_calls=[("c1", "execute_command", {"command": "mkdir -p x"})])]))
         run(agent.chat("s", "zrob katalog"))
         assert agent.note("s", "x") is False
+
+
+class TestSlashCommandsInConversation:
+    """Wynik /podatnosci, /zalataj, /alerty... (bez modelu) trafia do rozmowy — "zrob to sam" dotyczy tego, co widac."""
+
+    def test_command_result_becomes_a_note_and_execute_is_not_recorded(self, monkeypatch):
+        import backend.server as server
+        from backend.core import watch
+        from backend.tests.test_server_commands import exchange
+
+        agent = VPSAgent(client=FakeClient([]))
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        monkeypatch.setattr(server, "get_agent", lambda: agent)
+        monkeypatch.setattr(watch, "_watcher", watch.Watcher())
+        exchange([{"command": "alerts", "interface": "telegram:7"}])
+        session = agent._sessions["s1"]                                # rozmowa zalozona przez sama komende
+        note = session.messages[-2]["content"]
+        assert note.startswith("[PIPE") and "/alerty" in note and "Brak aktywnych alertow" in note
+        assert session.messages[-2]["pipe_generated"] and session.interface == "telegram:7"
+        assert_history_valid(session.messages)
+        before = len(session.messages)
+        exchange([{"command": "patch", "execute": True, "patch_token": "x", "interface": "telegram:7"}])
+        assert len(session.messages) == before                         # instalacje notuje sam _patch

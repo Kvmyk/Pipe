@@ -1,6 +1,6 @@
 # Deployment -- Pipe
 
-Pipe v0.36.3
+Pipe v0.36.4
 
 Pipe runs in three modes (`PIPE_RUNTIME`, auto-detected by default). The mode decides how the agent sees the managed
 machine; everything else (tools, memory, clients, protocol) is the same.

@@ -26,6 +26,7 @@ polaczenie otwarte i przesyla zdarzenia czuwania ({"event": {...}}) az do rozlac
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hmac
 import json
 import os
@@ -99,7 +100,7 @@ async def handle_client(
 
             # Komendy klientow: /server, /skille, /mapa... i skille jako komendy
             if "command" in request:
-                await _handle_command(writer, agent, request, session_id, interface, identity, role)
+                await _remembered_command(writer, agent, request, session_id, interface, identity, role)
                 continue
 
             # Obsłuż wiadomość (z zalacznikami: pliki, zdjecia, zrzuty ekranu)
@@ -855,8 +856,62 @@ async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         notifier.unsubscribe(queue)
 
 
+# Komendy bez modelu, ktorych wynik trafia do rozmowy: "zalataj to sam", "napraw to" odnosza sie do tego, co
+# uzytkownik przed chwila zobaczyl — bez tego model widzial tylko poprzednia wiadomosc (np. /aktualizuj) i ja powtarzal.
+REMEMBERED_COMMANDS = {
+    "vulns": ("/podatnosci", "/vulns"), "patch": ("/zalataj", "/patch"), "audit": ("/audyt", "/audit"),
+    "health": ("/zdrowie", "/health"), "changes": ("/zmiany", "/changes"), "alerts": ("/alerty", "/alerts"),
+    "journal": ("/dziennik", "/journal"),
+}
+REMEMBERED_TEXT = 3500
+_RECORDED: contextvars.ContextVar[list | None] = contextvars.ContextVar("pipe_recorded_frames", default=None)
+
+
+def _shown_text(data: dict) -> str:
+    """To, co klient pokazal z odpowiedzi komendy (tekst, raport podatnosci pod audytem, lista alertow)."""
+    parts = [str(data.get("text") or "").strip(), str(data.get("vulns") or "").strip()]
+    for alert in data.get("active") or []:
+        parts.append(f"[{alert.get('severity')}] {alert.get('title')} — {alert.get('detail', '')}")
+    if "active" in data and not data.get("active"):
+        parts.append(tr("Brak aktywnych alertow.", "No active alerts."))
+    return "\n\n".join(p for p in parts if p)
+
+
+async def _remembered_command(writer, agent, request: dict, session_id: str, interface: str,
+                              identity: str = "open", role: str = "admin") -> None:
+    """`_handle_command` + wynik wybranych komend jako notatka w rozmowie (agent.note), zeby model wiedzial, co widac."""
+    command = str(request.get("command", "")).strip()
+    names = REMEMBERED_COMMANDS.get(command)
+    if names is None or request.get("execute"):       # wynik instalacji latki notuje sam _patch
+        await _handle_command(writer, agent, request, session_id, interface, identity, role)
+        return
+    frames: list = []
+    token = _RECORDED.set(frames)
+    try:
+        await _handle_command(writer, agent, request, session_id, interface, identity, role)
+    finally:
+        _RECORDED.reset(token)
+    shown = "\n\n".join(_shown_text(f["data"]) for f in frames if isinstance(f.get("data"), dict)).strip()
+    if not shown:
+        return
+    args = str(request.get("scope") or request.get("args") or "").strip()
+    typed = tr(names[0], names[1]) + (f" {args}" if args else "")
+    shown = memory.redact_secrets(shown)[0]
+    if len(shown) > REMEMBERED_TEXT:
+        shown = shown[:REMEMBERED_TEXT] + tr("\n[... skrocone]", "\n[... truncated]")
+    try:
+        agent.note(session_id, tr(f"Uzytkownik uzyl komendy {typed} (bez Ciebie) i zobaczyl:\n{shown}",
+                                  f"The user ran the command {typed} (without you) and saw:\n{shown}"),
+                   interface=interface, owner=identity, role=role)
+    except Exception as exc:                             # rozmowa dziala dalej, tylko bez tej notatki
+        print(f"[VPS Agent] note: {exc}", flush=True)
+
+
 async def _send(writer: asyncio.StreamWriter, data: dict) -> None:
     """Wysyła odpowiedź JSON zakończoną newline."""
+    recorded = _RECORDED.get()
+    if recorded is not None:
+        recorded.append(data)
     line = json.dumps(data, ensure_ascii=False) + "\n"
     writer.write(line.encode("utf-8"))
     await writer.drain()
