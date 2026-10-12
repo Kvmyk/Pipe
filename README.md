@@ -17,7 +17,7 @@
 
 <p align="center">
   <b>Polski</b> · <a href="./README.en.md">English</a> ·
-  <a href="https://kvmyk.github.io/pipe/">Strona projektu</a> ·
+  <a href="https://kvmyk.github.io/Pipe/">Strona projektu</a> ·
   <a href="#instalacja">Instalacja</a> ·
   <a href="docs/">Dokumentacja</a>
 </p>
@@ -167,7 +167,7 @@ Chcesz pomóc w inny sposób? Zobacz [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Dokumentacja
 
-Ta sama dokumentacja jest na stronie projektu: [kvmyk.github.io/pipe/docs](https://kvmyk.github.io/pipe/docs/).
+Ta sama dokumentacja jest na stronie projektu: [kvmyk.github.io/Pipe/docs](https://kvmyk.github.io/Pipe/docs/).
 
 | | |
 |---|---|

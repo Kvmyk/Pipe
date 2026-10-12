@@ -1,0 +1,32 @@
+name: Wynik modelu / Model result
+description: Wyniki `sandbox/run.py eval` dla modelu, którego jeszcze nie sprawdzaliśmy. / Eval results for a model.
+labels: [eval]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `python3 sandbox/run.py eval --env-file backend/.env --repeat 3 --label <model>` — zobacz `sandbox/README.md`.
+  - type: input
+    id: model
+    attributes:
+      label: Provider i model / Provider and model
+      placeholder: "openrouter / openai/gpt-oss-120b"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Podsumowanie / Summary line
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: JSON z `sandbox/results/`
+      render: json
+  - type: textarea
+    id: notes
+    attributes:
+      label: Uwagi / Notes
+      description: Co model robił dobrze albo źle, ile kosztowało. / What it did well or badly, what it cost.

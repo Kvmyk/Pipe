@@ -47,4 +47,6 @@ model and the rules for user-visible text. The short version:
 - Don't bump the version or edit `docs/changelog.md`; that happens at release.
 - Describe what changes for the user and how you checked it (tests, sandbox, a real server).
 
+Everyone taking part in issues, pull requests and discussions follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 By contributing you agree that your contribution is licensed under the MIT license of this repository.

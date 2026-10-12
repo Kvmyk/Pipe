@@ -1,0 +1,13 @@
+# Akcje GitHuba raz w miesiacu, jednym PR. Zaleznosci Pythona maja zakresy `>=`, wiec dla nich
+# wystarczaja alerty bezpieczenstwa Dependabota (wlaczone w ustawieniach repo).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

@@ -23,9 +23,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ASSETS = ["docs/assets/logo.svg", "docs/assets/demo-pl.gif", "docs/assets/demo-en.gif"]
+ASSETS = ["docs/assets/logo.svg", "docs/assets/demo-pl.gif", "docs/assets/demo-en.gif",
+          "docs/assets/social-preview.png", "docs/assets/social-preview-en.png"]
 FONTS = ROOT / "clients" / "webui" / "static" / "fonts"
 REPO = "https://github.com/Kvmyk/pipe"
+# Adres strony: GitHub Pages rozroznia wielkosc liter, repo nazywa sie "Pipe".
+SITE = "https://kvmyk.github.io/Pipe"
 
 # Strony dokumentacji w kolejnosci menu: (plik bez .md, tytul w menu pl, en, opis pl, en).
 # Kazdy plik musi istniec w docs/ i w docs/en/ -- inaczej budowanie konczy sie bledem.
@@ -353,6 +356,12 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} · Pipe</title>
 <meta name="description" content="{html.escape(description)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pipe">
+<meta property="og:title" content="{html.escape(title)} · Pipe">
+<meta property="og:description" content="{html.escape(description)}">
+<meta property="og:image" content="{SITE}/assets/{"social-preview.png" if lang == "pl" else "social-preview-en.png"}">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="{root}assets/logo.svg" type="image/svg+xml">
 <link rel="alternate" hreflang="{other}" href="{other_href}">
 <link rel="stylesheet" href="{root}style.css">
