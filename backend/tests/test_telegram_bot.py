@@ -377,7 +377,7 @@ def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
     assert calls[-1] == ("patch", {"scope": "urgent"})
     assert [b.callback_data for b in sent[-1][2].inline_keyboard[0]] == ["patchx:yes:urgent:abc123:1", "patchx:no:urgent:abc123:1"]
     callback("patchx:yes:urgent:abc123:1", 1)
-    assert calls[-1] == ("patch", {"scope": "urgent", "token": "abc123", "execute": True})
+    assert calls[-1] == ("patch", {"scope": "urgent", "patch_token": "abc123", "execute": True})
     assert "zainstalowano" in sent[-1][1]
     callback("patchx:no:urgent:abc123:1", 1)
     assert len(calls) == 2 and "nic nie zainstalowalem" in sent[-1][1]

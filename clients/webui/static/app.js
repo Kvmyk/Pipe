@@ -865,7 +865,7 @@
       if (busy) return;
       ask.remove(); busy = true; setWorking(t("patching"));
       try {
-        const result = await command({ command: "patch", scope: preview.scope, token: preview.token, execute: true });
+        const result = await command({ command: "patch", scope: preview.scope, patch_token: preview.token, execute: true });
         box.appendChild(listing(result.text, t("patchDone")));
       } catch (error) { box.appendChild(el("div", "meta", error.message)); }
       finally { busy = false; setWorking(""); loadChanges(); }

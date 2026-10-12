@@ -378,7 +378,7 @@ class TestPatchCommand:
         assert data["packages"] == ["openssl"] and not data["can_execute"] and "powloce serwera" in data["reason"]
         assert "--only-upgrade -o Dpkg::Options::=--force-confold libssl3 openssl" in data["command"]
         assert data["token"] == vulns.patch_token(data["command"]) and "`" in data["text"]
-        [[refused]] = exchange([{"command": "patch", "execute": True, "token": data["token"]}])
+        [[refused]] = exchange([{"command": "patch", "execute": True, "patch_token": data["token"]}])
         assert refused["status"] == "error"
 
     def test_execute_needs_matching_token_and_runs_through_the_fuse(self, server, monkeypatch):
@@ -401,15 +401,45 @@ class TestPatchCommand:
         monkeypatch.setattr(executor, "execute", fake_execute)
         [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
         token = preview["data"]["token"]
-        [[stale]] = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": "nope"}])
+        [[stale]] = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": "nope"}])
         assert stale["status"] == "error" and not ran
-        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": token}])[0]
+        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": token}])[0]
         assert "data" in frames[-1], frames[-1]
         done = frames[-1]["data"]
         assert ran and ran[0][0] == preview["data"]["command"] and ran[0][1] >= 600
         assert done["exit_code"] == 0 and "Setting up openssl" in done["text"] and done["entry_id"]
         entry = journal.load(done["entry_id"])
         assert entry.tool == "patch" and any("cofam" in n or "rolled back" in n for n in entry.notes)
+
+    def test_install_works_with_agent_token_like_on_a_real_server(self, server, monkeypatch):
+        """Klienci wpisuja AGENT_TOKEN w pole `token` — token latki musi isc osobno (`patch_token`)."""
+        from backend.config import settings
+        from backend.core import executor, runtime
+        from backend.tests.test_server_commands import exchange
+
+        async def fake_execute(cmd, cwd=None, timeout=None):
+            return "ok\n", "", 0
+
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "admintok")
+        monkeypatch.setattr(runtime, "kind", lambda: "native")
+        monkeypatch.setattr(runtime, "observe", lambda: False)
+        monkeypatch.setattr(executor, "execute", fake_execute)
+        [[preview]] = exchange([{"command": "patch", "scope": "urgent", "token": "admintok"}])
+        assert preview["data"]["can_execute"]
+        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": "admintok",
+                            "patch_token": preview["data"]["token"]}])[0]
+        assert frames[-1]["data"]["exit_code"] == 0, frames[-1]
+
+    def test_web_bridge_forwards_scope_and_patch_token(self):
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from clients.webui.server import WebBridge
+
+        request = WebBridge("127.0.0.1", 1, "auth")._backend_request(
+            {"command": "patch", "scope": "images", "patch_token": "abc", "execute": True, "token": "obcy"})
+        assert request["scope"] == "images" and request["patch_token"] == "abc" and request["token"] == "auth"
 
     def test_blockers(self, monkeypatch):
         import backend.server as server
@@ -440,7 +470,7 @@ class TestPatchCommand:
         monkeypatch.setattr(executor, "execute", fake_execute)
         [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
         assert preview["data"]["can_execute"] and preview["data"]["reason"] == ""
-        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": preview["data"]["token"]}])[0]
+        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": preview["data"]["token"]}])[0]
         done = frames[-1]["data"]
         assert done["exit_code"] == 0 and ran[0] == hostexec.wrap(preview["data"]["command"], image)
         assert ran[0].startswith("docker run --rm --privileged --pid=host")

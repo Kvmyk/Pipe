@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.36.1
+Pipe v0.36.2
 
 ## Overview
 
@@ -96,7 +96,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `welcome` | -- | a frame with `attachment` (map), then `"data"` like the `welcome` event |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- change journal |
 | `vulns` | -- | `"data": {"text"}` -- the vulnerability report in Markdown (packages, images, applications) with explanations; the model writes missing ones (at most `EXPLAIN_WAIT` s), without a model the OSV description |
-| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `token` | without `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; with `execute` and the token from the preview: the install through the safety fuse (`progress` frames), `"data": {"text", "exit_code", "entry_id"}`. The server builds the command from the last scan; a different token = the list changed. Refused: viewer, observe mode, any mode other than native. **Without the LLM** |
+| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `patch_token` (the `token` value from the preview; the `token` field is authentication) | without `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; with `execute` and the token from the preview: the install through the safety fuse (`progress` frames), `"data": {"text", "exit_code", "entry_id"}`. The server builds the command from the last scan; a different token = the list changed. Refused: viewer, observe mode, any mode other than native. **Without the LLM** |
 | `undo` | optionally `id`; `execute: true` | without `execute`: `"data": {"id", "undoable", "preview"}` (the last entry to undo when there is no `id`); with `execute` and `id`: the undo, `"data": {"id", "text"}`. **Without the LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
 | `subscribe` | -- | the connection stays open; watcher events (below) until the client disconnects |

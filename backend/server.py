@@ -496,7 +496,8 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
     if blocker:
         await _send(writer, _error(blocker))
         return
-    if str(request.get("token") or "") != token:
+    # `patch_token`, nie `token` — to pole klienci wypelniaja tokenem uwierzytelnienia (AGENT_TOKEN)
+    if str(request.get("patch_token") or "") != token:
         await _send(writer, _error(tr("Lista pakietow zmienila sie od podgladu — pokaz podglad jeszcze raz.",
                                       "The package list changed since the preview — show the preview again.")))
         return

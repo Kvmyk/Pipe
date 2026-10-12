@@ -481,8 +481,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /report  /map  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.36.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.36.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.36.2[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.36.2[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -1382,7 +1382,7 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
             console.print(tr("[dim]Instaluję łatki — to może potrwać kilka minut...[/dim]",
                              "[dim]Installing patches — this can take a few minutes...[/dim]"))
             result = _response_data(await client.send_command("patch", scope=data.get("scope", scope),
-                                                              token=data["token"], execute=True))
+                                                              patch_token=data["token"], execute=True))
             console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
         else:
             console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))

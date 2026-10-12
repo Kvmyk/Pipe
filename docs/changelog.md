@@ -1,5 +1,16 @@
 # Historia zmian -- Pipe
 
+## v0.36.2 (2026-10-12)
+
+### Poprawki
+
+- *Zainstaluj* w `/zalataj` nie dzialal na zadnym serwerze z `AGENT_TOKEN` (instalator zawsze go ustawia): klienci
+  wpisuja token uwierzytelnienia w pole `token`, a latka uzywala tego samego pola na swoj token, wiec kazda instalacja
+  konczyla sie bledem "lista pakietow zmienila sie od podgladu". Token latki ma wlasne pole `patch_token` (Telegram,
+  CLI, `pipe web`, `docs/protocol.md`)
+- `/zalataj obrazy` i `/zalataj pilne` w `pipe web` gubily zakres: most przegladarki nie przepuszczal pola `scope`,
+  wiec backend zawsze sprawdzal pakiety serwera i odpowiadal "Nie ma podatnosci z poprawka", choc obrazy je mialy
+
 ## v0.36.1 (2026-10-12)
 
 ### Poprawki

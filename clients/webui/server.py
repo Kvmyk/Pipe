@@ -42,7 +42,7 @@ DEFAULT_PORT = 7400
 COOKIE = "pipe_key"
 # Pola zadania, ktore przegladarka moze ustawic — reszte (token, interface) dodaje ten proces.
 ALLOWED_FIELDS = {"message", "confirm", "command", "name", "args", "id", "execute", "decision", "cancel", "claim",
-                  "key", "model", "attachments", "audio", "filename"}
+                  "key", "model", "attachments", "audio", "filename", "scope", "patch_token"}
 SECURITY_HEADERS = (
     "X-Content-Type-Options: nosniff\r\n"
     "X-Frame-Options: DENY\r\n"

@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.36.1
+Pipe v0.36.2
 
 ## Opis
 
@@ -96,7 +96,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
 | `vulns` | -- | `"data": {"text"}` -- raport podatnosci w Markdown (pakiety, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
-| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `token` | bez `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; z `execute` i tokenem z podgladu: instalacja przez bezpiecznik (ramki `progress`), `"data": {"text", "exit_code", "entry_id"}`. Komende sklada serwer z ostatniego skanu; inny token = lista sie zmienila. Odrzucane: viewer, tryb obserwacji, tryb inny niz native. **Bez LLM** |
+| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `patch_token` (wartosc `token` z podgladu; pole `token` to uwierzytelnienie) | bez `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text"}`; z `execute` i tokenem z podgladu: instalacja przez bezpiecznik (ramki `progress`), `"data": {"text", "exit_code", "entry_id"}`. Komende sklada serwer z ostatniego skanu; inny token = lista sie zmienila. Odrzucane: viewer, tryb obserwacji, tryb inny niz native. **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
