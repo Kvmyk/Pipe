@@ -1,5 +1,27 @@
 # Historia zmian -- Pipe
 
+## v0.36.0 (2026-10-12)
+
+### Przejrzystsze web, CLI i Telegram
+
+- Prosba o zgode we wszystkich klientach ma jeden naglowek ("Potrzebuje Twojej zgody") i od razu komende; zniknelo
+  powtarzane "Operacja wymaga potwierdzenia:". Temat zostaje tylko, gdy cos mowi (np. "Zapis pliku")
+- `pipe web`: plan bezpiecznika to jeden wiersz na krok, a po decyzji karta zwija sie do werdyktu i komendy (plan pod
+  "Szczegoly"). Szybkie akcje sa tylko na pustym ekranie. Lista zmian nie pokazuje "wykonano" przy kazdym wpisie
+  i nazywa narzedzia po ludzku ("komenda", "zapis pliku"), a udane przebiegi tej samej rutyny lacza sie w jeden wpis
+- CLI pyta o zgode po polsku `[t/n]` i przyjmuje "tak" -- wczesniej odrzucalo je komunikatem "Please enter Y or N".
+  `/pomoc` jest w grupach (na co dzien, bezpieczenstwo, pamiec, ustawienia), alerty maja wage slowem i kolorem
+- Telegram: wiadomosc "W toku" po zakonczeniu zamienia sie w "Wykonane kroki: N" ze zwinieta lista (wczesniej
+  zostawala w czacie na zawsze), decyzja TAK/NIE dopisuje sie do tej samej wiadomosci, alerty maja kolorowy znacznik
+  wagi, a pomoc i menu "/" sa w grupach, najczestsze komendy na gorze
+
+### Poprawki
+
+- Zoom kolkiem na schemacie w `pipe web` jest plynny: kamera nie cofa sie przy kazdym ruchu kolka i nie staje miedzy
+  kolejnymi ruchami; w Firefoksie z myszka zoom dziala tak samo jak w Chrome
+- Na waskim telefonie pasek gorny `pipe web` miesci sie bez obcinania przycisku nowej rozmowy, a godzina w osi
+  aktywnosci nie lamie sie na dwie linie
+
 ## v0.35.0 (2026-10-12)
 
 ### Pipe sam wprowadza zmiany na hoscie, takze w trybie docker
