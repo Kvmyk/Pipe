@@ -4,9 +4,11 @@
 
 <h1 align="center">Pipe</h1>
 
+<h3 align="center">Admin, który nie śpi i niczego nie rusza bez pytania.</h3>
+
 <p align="center">
-  Agent AI, który działa na Twoim serwerze Linux. Pilnuje go, sam pisze, gdy coś się psuje,<br>
-  a każdą zmianę robi dopiero po Twoim „tak”, z kopią zapasową i możliwością cofnięcia.
+  Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie na Telegram,<br>
+  szuka przyczyny i proponuje poprawkę. Wprowadza ją dopiero po Twoim „tak”, z kopią, którą cofniesz jedną komendą.
 </p>
 
 <p align="center">

@@ -4,9 +4,11 @@
 
 <h1 align="center">Pipe</h1>
 
+<h3 align="center">A sysadmin that never sleeps and never touches anything without asking.</h3>
+
 <p align="center">
-  An AI agent that runs on your Linux server. It watches the server, messages you when something breaks,<br>
-  and makes every change only after you say yes, with a backup and a way to undo it.
+  Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on Telegram,<br>
+  finds the cause and proposes a fix. It applies the fix only after you say yes, with a backup you can undo in one command.
 </p>
 
 <p align="center">

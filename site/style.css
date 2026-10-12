@@ -74,7 +74,7 @@ img { max-width: 100%; height: auto; display: block; }
 
 /* --- naglowek strony --- */
 .intro { padding: 64px 0 40px; }
-.intro h1 { font-size: clamp(30px, 4.6vw, 46px); line-height: 1.15; letter-spacing: -.02em; font-weight: 600; margin: 0 0 20px; max-width: 18ch; }
+.intro h1 { font-size: clamp(30px, 4.6vw, 46px); line-height: 1.15; letter-spacing: -.02em; font-weight: 600; margin: 0 0 20px; max-width: 22ch; }
 .intro .lead { font-size: 19px; color: var(--ink-2); max-width: 62ch; margin: 0 0 28px; }
 .intro .meta { font-size: 14.5px; color: var(--ink-3); margin-top: 14px; }
 .intro .meta a { color: var(--ink-2); }
