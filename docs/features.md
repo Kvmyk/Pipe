@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.36.6
+Pipe v0.37.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -351,9 +351,9 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 
 - Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)
   i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach. `/podatnosci`,
-  `/audyt` i podglad `/zalataj` skanuja od nowa przy kazdym wywolaniu (swieza lista pakietow, obrazow i zaleznosci,
-  ponowne zapytanie do OSV); szczegoly niezmienionych podatnosci sa w pamieci, wiec to zwykle kilka sekund. Gdy
-  skan trwa dluzej niz 45 s, widac ostatni wynik z dopiskiem.
+  `/audyt` i podglad `/zalataj` czytaja liste pakietow, obrazow i zaleznosci od nowa przy kazdym wywolaniu: zmienione
+  ida do OSV od razu, calosc najwyzej co 10 minut, wiec to zwykle kilka sekund. Gdy skan trwa dluzej niz 45 s, widac
+  ostatni wynik z godzina, z ktorej pochodzi.
 - Alert przychodzi tylko o **nowych pilnych**: aktywnie wykorzystywanych (katalog CISA KEV) albo krytycznych
   i wysokich. Alert przychodzi sam (Telegram, `pipe web`) i przy kazdej podatnosci mowi zwyklymi slowami, czego
   dotyczy i co grozi, a numer CVE jest na koncu w nawiasie. Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu,
@@ -367,7 +367,10 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   bezpieczenstwie); w Kubernetesie dostajesz komende do wpisania na wezle.
 - `/zalataj` (albo przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) dziala bez LLM: lista pakietow,
   dokladna komenda i *Zainstaluj*. Komende sklada serwer z ostatniego skanu, instalacja idzie przez bezpiecznik
-  (strony przed i po, wpis w dzienniku), potem Pipe skanuje zmienione pakiety i mowi, co zostalo.
+  (strony przed i po, wpis w dzienniku), potem Pipe skanuje od nowa i mowi, co zalatal, co zostalo bez zmian
+  i co zostalo do zalatania. Pakietu, ktorego apt nie podbil (poprawka tylko w Ubuntu Pro/ESM albo jeszcze nie ma
+  jej w repozytorium), i obrazu, pod ktorego tagiem nie bylo nowszego, Pipe nie proponuje znowu przez dobe -- raport
+  mowi dlaczego. Kontenerow samego Pipe `/zalataj obrazy` nie odtwarza (to robi `/aktualizuj`).
 - Pakietow systemowych nie da sie wiarygodnie cofnac (starej wersji czesto nie ma juz w repozytorium), wiec
   `/cofnij` ich nie obejmuje. Biblioteki i jadro dzialaja po restarcie uslug albo serwera.
 - Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA).
@@ -388,7 +391,8 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   pod nim podatnosci z waga i krotkim wyjasnieniem w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
   Wyjasnienia pisze model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje;
   bez modelu widac oryginalny opis z OSV. Ten sam format ma podglad `/zalataj`, ktory pyta: *Zainstaluj* albo
-  *Anuluj*.
+  *Anuluj*. W `pipe web` raport jest w kartach (serwer, obrazy, aplikacje, przyciski latek), a instalacja pokazuje
+  kroki bezpiecznika na zywo i od razu stan po latce.
 
 ---
 

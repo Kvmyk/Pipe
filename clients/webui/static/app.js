@@ -492,7 +492,8 @@
   // Audyt, a pod nim raport podatnosci (Markdown) — kazdy pakiet z opisem, co grozi.
   function auditBody(d) {
     const box = listing(d.text);
-    if (d.vulns) { box.appendChild(el("h3", "", t("vulnsTitle"))); box.appendChild(md(String(d.vulns))); }
+    if (d.vulns_view && (d.vulns_view.groups || []).length) box.appendChild(vx.report(d.vulns_view));
+    else if (d.vulns) { box.appendChild(el("h3", "", t("vulnsTitle"))); box.appendChild(md(String(d.vulns))); }
     return box;
   }
   // Zestawienie od backendu (zmiany, zdrowie, koszt, audyt...) jako czytelna lista: linia zakonczona ":" to naglowek,
@@ -852,26 +853,14 @@
     return card;
   }
 
-  // Latki podatnosci (bez LLM): podglad z dokladna komenda; Zainstaluj tylko, gdy Pipe moze sam (tryb native,
-  // administrator). Serwer sklada komende sam — wysylamy tylko token z podgladu.
-  function patchBox(preview) {
-    const box = el("div", "body");
-    box.appendChild(md(preview.text || ""));
-    if (!preview.can_execute || !preview.token) return box;
-    const ask = el("div", "foot"), yes = el("button", "btn yes small", t("patchInstall")), no = el("button", "btn no small", t("cancel"));
-    ask.appendChild(yes); ask.appendChild(no); box.appendChild(ask);
-    no.addEventListener("click", () => { ask.remove(); box.appendChild(el("div", "meta", t("patchCancelled"))); });
-    yes.addEventListener("click", async () => {
-      if (busy) return;
-      ask.remove(); busy = true; setWorking(t("patching"));
-      try {
-        const result = await command({ command: "patch", scope: preview.scope, patch_token: preview.token, execute: true });
-        box.appendChild(listing(result.text, t("patchDone")));
-      } catch (error) { box.appendChild(el("div", "meta", error.message)); }
-      finally { busy = false; setWorking(""); loadChanges(); }
-    });
-    return box;
-  }
+  // Podatnosci i latki (bez LLM) — vulns.js: raport w kartach, podglad latki jak potwierdzenie, instalacja z krokami
+  // bezpiecznika na zywo, potem wynik i swiezy stan. Serwer sklada komende sam — wysylamy tylko token z podgladu.
+  const vx = window.PipeVulns.create({
+    el, icon, t, fmt, request, add, dataMessage, setWorking,
+    isBusy: () => busy, setBusy: (value) => { busy = value; },
+    onPatched: () => { loadChanges(); loadAlerts(); loadGraph(true); },
+  });
+  const patchBox = (preview) => vx.patchBox(preview);
 
   // ---------------------------------------------------------------- alerty i zdarzenia na zywo
   const alertsList = $("alerts");
@@ -1441,7 +1430,7 @@
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
     audyt: () => dataMessage({ command: "audit" }, auditBody),
-    podatnosci: () => dataMessage({ command: "vulns" }, (d) => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; }),
+    podatnosci: () => dataMessage({ command: "vulns" }, (d) => vx.vulnsMessage(d, () => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; })),
     zalataj: (args) => dataMessage({ command: "patch", scope: ({ pilne: "urgent", urgent: "urgent", obrazy: "images", images: "images" })[args.trim().toLowerCase()] || "all" }, patchBox),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
     koszt: () => dataMessage({ command: "usage" }, (d) => listing(d.text)),

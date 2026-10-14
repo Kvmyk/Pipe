@@ -50,6 +50,7 @@ VULN_IMAGES_KEY = "vuln:images"
 VULN_APPS_KEY = "vuln:apps"
 # Tyle najwyzej czeka /audyt na skan podatnosci (pierwszy skan pobiera szczegoly setek ID).
 VULN_AUDIT_WAIT = 45
+VULN_FRESH_AGE = 600         # /podatnosci, /audyt, podglad /zalataj: pelne zapytanie do OSV najwyzej co 10 min
 # Wyjasnienia podatnosci: tyle podatnosci na jedno zapytanie do modelu i tyle czeka na nie /podatnosci.
 EXPLAIN_BATCH = 30
 EXPLAIN_WAIT = 40
@@ -210,6 +211,7 @@ class Watcher:
         self.checks_report: Any = None          # ostatni checks.Report
         self.vuln_scan: Any = None              # ostatni vulns.Scan
         self._vuln_task: asyncio.Task | None = None
+        self._vuln_started = 0.0
         self._explain_lock = asyncio.Lock()
         self._site_failures: dict[str, int] = {}
         self._last_digest: str = ""
@@ -392,15 +394,24 @@ class Watcher:
                     or f.key in self.active]
         return self._publish(self.apply(findings, CHECKS_SCOPE))
 
-    async def vuln_scan_now(self, *, force: bool = False) -> Any:
-        """Skan podatnosci (core/vulns.py). Jeden naraz — audyt i czuwanie czekaja na to samo zadanie."""
+    async def vuln_scan_now(self, *, max_age: float | None = None, since: float = 0) -> Any:
+        """
+        Skan podatnosci (core/vulns.py). Jeden naraz — audyt i czuwanie czekaja na to samo zadanie. `since`: wynik
+        musi pochodzic ze skanu rozpoczetego nie wczesniej (po latce) — trwajacy starszy skan widzialby pakiety
+        i kontenery sprzed instalacji, wiec czekam na niego i skanuje jeszcze raz. `max_age`: jak dawno moze byc
+        pelne zapytanie do OSV (domyslnie VULN_INTERVAL); zmienione pakiety i obrazy sa pytane zawsze.
+        """
         from backend.core import infra, vulns
 
+        age = settings.VULN_INTERVAL if max_age is None else max_age
+        task = self._vuln_task
+        if task is not None and not task.done() and self._vuln_started < since:
+            await asyncio.shield(task)
         if self._vuln_task is None or self._vuln_task.done():
             async def run() -> Any:
                 containers = await infra.docker_containers()
-                return await asyncio.to_thread(vulns.scan, force=force, max_age=settings.VULN_INTERVAL,
-                                               containers=containers)
+                return await asyncio.to_thread(vulns.scan, max_age=age, containers=containers)
+            self._vuln_started = time.time()
             self._vuln_task = asyncio.create_task(run())
         result, _ = await asyncio.shield(self._vuln_task)
         self.vuln_scan = result
@@ -409,9 +420,10 @@ class Watcher:
     async def vuln_for_audit(self, fresh: bool = True) -> tuple[Any, str]:
         """
         (wynik skanu albo None, uwaga) — nie dluzej niz VULN_AUDIT_WAIT sekund. `fresh` (domyslnie: /podatnosci,
-        /audyt, podglad /zalataj): nowy skan przy kazdym wywolaniu — swiezy inwentarz i ponowne zapytanie do OSV;
-        szczegoly niezmienionych podatnosci i tak sa w pamieci, wiec to sekundy. Czuwanie w tle skanuje dalej co
-        VULN_INTERVAL. `fresh=False` (instalacja latki zaraz po podgladzie): wystarczy ostatni wynik.
+        /audyt, podglad /zalataj): inwentarz czytany od nowa przy kazdym wywolaniu, zmienione pakiety i obrazy
+        pytane w OSV od razu, a calosc najwyzej co VULN_FRESH_AGE — pelne zapytanie o tysiace pakietow przy kazdym
+        /podatnosci nie miescilo sie w VULN_AUDIT_WAIT i klienci dostawali stary wynik. `fresh=False` (instalacja
+        latki zaraz po podgladzie): wystarczy ostatni wynik.
         """
         from backend.core import vulns
 
@@ -421,9 +433,14 @@ class Watcher:
         if not fresh and last is not None and last.ok and time.time() - last.at < 2 * settings.VULN_INTERVAL:
             return last, ""
         try:
-            return await asyncio.wait_for(self.vuln_scan_now(force=fresh), VULN_AUDIT_WAIT), ""
+            age = min(VULN_FRESH_AGE, settings.VULN_INTERVAL) if fresh else None
+            return await asyncio.wait_for(self.vuln_scan_now(max_age=age), VULN_AUDIT_WAIT), ""
         except asyncio.TimeoutError:
-            return last, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
+            if last is None:
+                return None, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
+            when = time.strftime("%H:%M", time.localtime(last.at))
+            return last, tr(f"to wynik skanu z {when} — nowy jeszcze trwa, sprawdz za minute",
+                            f"this is the scan from {when} — a new one is still running, check again in a minute")
 
     def _vuln_alert(self, key: str, ids: set[str], finding: Finding | None) -> list[Finding]:
         """
@@ -496,10 +513,10 @@ class Watcher:
                                                     for v in p.fixable if v.kev or v.severity == "critical"}, finding)
         return findings
 
-    async def vulns_once(self) -> list[Alert]:
+    async def vulns_once(self, since: float = 0) -> list[Alert]:
         from backend.core import vulns
 
-        result = await self.vuln_scan_now()
+        result = await self.vuln_scan_now(since=since)
         if result is not None and result.ok:
             # Najpierw opisy (raz na podatnosc, potem z pamieci), dopiero potem alert — ma od razu mowic,
             # czego dotyczy kazda podatnosc. Po VULN_ALERT_EXPLAIN_WAIT alert idzie z opisami z OSV,

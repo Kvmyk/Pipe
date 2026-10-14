@@ -52,6 +52,7 @@ async def run_audit_text(with_vulns: bool = False) -> tuple[posture.Audit, str]:
                                     vuln_scan=scan, vuln_note=note)
     if scan is not None and (scan.items or any(t.items for t in scan.targets)):
         audit.vulns = vulns.report_markdown(scan, vulns.explanations(lang()))
+        audit.vulns_view = vulns.report_view(scan, vulns.explanations(lang()))
     text = audit.render()
     if with_vulns and audit.vulns:
         text += tr("\n\n--- PODATNOSCI (kazda z opisem) ---\n", "\n\n--- VULNERABILITIES (each with a description) ---\n") \

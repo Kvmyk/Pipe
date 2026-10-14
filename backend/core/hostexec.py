@@ -61,6 +61,27 @@ async def image() -> str:
     return _image or ""
 
 
+_project: str | None = None
+
+
+async def own_project() -> str:
+    """Projekt compose kontenera Pipe ('' = brak albo nie tryb docker). Jego uslug /zalataj obrazy nie odtwarza."""
+    global _project
+    if _project is not None:
+        return _project
+    if runtime.kind() != "docker":
+        return ""
+    output, code = await _run("docker", "inspect", "--format",
+                              '{{json (index .Config.Labels "com.docker.compose.project")}}', socket.gethostname())
+    try:
+        found = str(json.loads(output) or "") if code == 0 else ""
+    except (json.JSONDecodeError, TypeError):
+        found = ""
+    if code == 0:
+        _project = found
+    return found
+
+
 async def blocker() -> str:
     """Powod, dla ktorego Pipe nie wykona komendy na hoscie ('' = moze)."""
     if runtime.observe():

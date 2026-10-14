@@ -1,5 +1,33 @@
 # Historia zmian -- Pipe
 
+## v0.37.0 (2026-10-14)
+
+### Podatnosci: po latce widac stan po latce
+
+- `/podatnosci`, `/audyt` i podglad `/zalataj` przy duzej liczbie pakietow i obrazow zwykle pokazywaly stary wynik:
+  kazde wywolanie pytalo OSV od nowa o wszystkie pakiety, co nie miescilo sie w 45 s, wiec wracal poprzedni skan.
+  Teraz lista pakietow jest czytana przy kazdym wywolaniu, zmienione pakiety i obrazy ida do OSV od razu, a calosc
+  najwyzej co 10 minut. Gdy Pipe musi pokazac starszy wynik, podaje jego godzine
+- Ponowny skan po instalacji latki nie korzysta juz ze skanu, ktory ruszyl przed nia i widzial stare pakiety
+  i kontenery
+- Pakiet, ktorego apt nie podbil (poprawka tylko w Ubuntu Pro/ESM albo jeszcze nie ma jej w repozytorium), i obraz,
+  pod ktorego tagiem nie bylo nowszego, nie wracaja do `/zalataj` przez dobe. Wczesniej Pipe proponowal w kolko to
+  samo. Raport, podglad i audyt mowia, dlaczego ich nie lata, a wynik instalacji: co zalatal, a co zostalo bez zmian
+- `/zalataj obrazy` nie odtwarza juz kontenerow samego Pipe (`up -d` przerywal Pipe w trakcie latania, wynik
+  przepadal); te odswieza `/aktualizuj`
+- Wyjasnienia podatnosci i znaczniki wyslanych alertow zapisane w trakcie skanu nie znikaja juz po jego koncu
+
+### pipe web
+
+- Podatnosci w kartach zamiast sciany tekstu: liczby dla serwera, obrazow i aplikacji (kazda z liczba pilnych),
+  przyciski *Zalataj pilne*, *Wszystkie pakiety*, *Nowsze obrazy*, zwijane grupy, przy pakiecie waga, wersja ->
+  poprawka i opis najpowazniejszej podatnosci (kolejne po kliknieciu)
+- Podglad latki wyglada jak inne potwierdzenia: co zostanie zalatane, komenda, co zrobi bezpiecznik. Po
+  *Zainstaluj* widac kroki bezpiecznika na zywo, potem wynik (zalatane / bez zmian, wynik komendy) i od razu aktualny
+  stan; starsze raporty w rozmowie dostaja znacznik "Nieaktualne"
+- Komendy `vulns`, `patch` i `audit` oddaja tez dane do tego widoku (`view`, `report`, `vulns_view`); Telegram i CLI
+  dalej dostaja tekst
+
 ## v0.36.6 (2026-10-12)
 
 ### Poprawki

@@ -71,6 +71,7 @@ class Audit:
     passed: list[str] = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
     vulns: str = ""          # raport podatnosci (Markdown, jedna wiadomosc) — klienci pokazuja go osobno, pod audytem
+    vulns_view: dict[str, Any] = field(default_factory=dict)   # to samo jako dane (vulns.report_view) dla pipe web
 
     @property
     def score(self) -> int:
@@ -111,7 +112,7 @@ class Audit:
     def to_data(self) -> dict[str, Any]:
         return {"score": self.score, "grade": self.grade, "findings": [f.to_dict() for f in self.sorted()],
                 "passed": self.passed, "unknown": self.unknown, "text": self.render(for_model=False),
-                "vulns": self.vulns}
+                "vulns": self.vulns, "vulns_view": self.vulns_view}
 
 
 def patch_command(scope: str) -> str:
@@ -604,16 +605,19 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
         ("vuln-other", "medium", other, tr(f"Podatnosci z poprawka w {len(other)} pakietach",
                                            f"Vulnerabilities with a fix in {len(other)} packages")),
     )
+    held = vulns.held_packages()
     for finding_id, severity, items, title in groups:
         if not items:
             continue
+        patchable = [p for p in items if p.key not in held]     # bez tych, ktorych repozytoria nie maja poprawki
         audit.findings.append(Finding(
             finding_id, severity, title, _names([p.name for p in vulns.sort_items(items)]),
             tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera; "
                "co grozi przy kazdym — /podatnosci",
                "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server "
                "restart; what each one risks — /vulns"),
-            vulns.upgrade_command(scan.ecosystem, items), _host_only(), "all" if finding_id == "vuln-other" else "urgent"))
+            vulns.upgrade_command(scan.ecosystem, patchable), _host_only(),
+            ("all" if finding_id == "vuln-other" else "urgent") if patchable else ""))
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
     elif not scan.error:

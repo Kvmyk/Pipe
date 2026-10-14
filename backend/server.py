@@ -31,6 +31,7 @@ import hmac
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from backend.config import settings
@@ -355,7 +356,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command == "patch":
             await _patch(writer, request, interface, role, session_id)
         elif command == "vulns":
-            await _send(writer, _data({"text": await _vulns_report()}))
+            text, view = await _vulns_report()
+            await _send(writer, _data({"text": text, "view": view}))
         elif command == "transcribe":
             await _transcribe(writer, request, interface)
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
@@ -400,18 +402,24 @@ async def _undo(writer, request: dict, interface: str) -> None:
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
 
 
-async def _vulns_report() -> str:
-    """/podatnosci bez narzedzi: czytelny raport z wyjasnieniami (model pisze brakujace, najwyzej EXPLAIN_WAIT s)."""
-    from backend.core import vulns
+async def _vulns_report() -> tuple[str, dict]:
+    """
+    /podatnosci bez narzedzi: czytelny raport z wyjasnieniami (model pisze brakujace, najwyzej EXPLAIN_WAIT s) —
+    Markdown dla Telegrama i CLI, dane (vulns.report_view) dla pipe web.
+    """
+    from backend.core import infra, vulns
     from backend.core.watch import EXPLAIN_WAIT
 
     watcher = get_watcher()
     result, note = await watcher.vuln_for_audit()
+    if result is not None:
+        vulns.refresh_containers(result, await infra.docker_containers())
     explained = result is None or await watcher.explain_vulns(result, timeout=EXPLAIN_WAIT)
     if not explained and watcher.agent is not None and watcher.agent.llm_enabled():
         note = (note + " " if note else "") + tr("Czesc opisow jest jeszcze po angielsku (z OSV) — wyjasnienia sie generuja.",
                                                  "Some descriptions are still the original ones from OSV — explanations are being written.")
-    return vulns.report_markdown(result, vulns.explanations(lang()), note)
+    explain = vulns.explanations(lang())
+    return vulns.report_markdown(result, explain, note), vulns.report_view(result, explain, note)
 
 
 _PATCH_LOCK = asyncio.Lock()
@@ -441,68 +449,72 @@ async def _patch_blocker(role: str) -> str:
 async def _patch(writer, request: dict, interface: str, role: str, session_id: str = "") -> None:
     """
     Latki podatnosci bez LLM: najpierw podglad (co, dokladna komenda, token), potem — po TAK w kliencie —
-    {"command": "patch", "scope", "token", "execute": true}. `scope`: `all` / `urgent` — pakiety hosta,
+    {"command": "patch", "scope", "patch_token", "execute": true}. `scope`: `all` / `urgent` — pakiety hosta,
     `images` — nowsze obrazy kontenerow z compose (z komendami odwrotnymi dla /cofnij). Komende serwer
     sklada sam z ostatniego skanu (klient przysyla tylko token); inny token = cos sie zmienilo, nic nie robie.
-    Wykonanie przez bezpiecznik (strony przed/po, dziennik), potem skan przyrostowy i alerty od nowa.
+    Wykonanie przez bezpiecznik (strony przed/po, dziennik), potem skan rozpoczety PO instalacji, zapis tego,
+    czego latka nie zmienila (vulns.record_outcome), i alerty od nowa. `text` dla Telegrama i CLI, `view` /
+    `report` (dane) dla pipe web.
     """
-    from backend.core import checks, executor, safety, vulns
+    from backend.core import checks, executor, hostexec, infra, safety, vulns
+    from backend.core.watch import EXPLAIN_WAIT
 
     scope = str(request.get("scope") or request.get("args") or "").strip().lower()
     scope = {"urgent": "urgent", "pilne": "urgent", "images": "images", "obrazy": "images"}.get(scope, "all")
+    execute = bool(request.get("execute"))
     watcher = get_watcher()
     # podglad: nowy skan; instalacja: wynik, z ktorego powstal podglad (token musi sie zgadzac)
-    result, note = await watcher.vuln_for_audit(fresh=not request.get("execute"))
+    result, note = await watcher.vuln_for_audit(fresh=not execute)
     if result is None:
         await _send(writer, _error(tr(f"Brak wyniku skanu podatnosci ({note}).", f"No vulnerability scan result ({note}).")
                                    if note else tr("Brak wyniku skanu podatnosci.", "No vulnerability scan result.")))
         return
     # kontenery i compose z biezacego stanu Dockera — skan bywa sprzed odtworzenia kontenerow albo aktualizacji Pipe
-    from backend.core import infra
     vulns.refresh_containers(result, await infra.docker_containers())
-    if scope != "images" and not request.get("execute") and not vulns.select(result, scope) \
-            and vulns.image_patch(result).command:
+    own = {p for p in [await hostexec.own_project()] if p}
+    if scope != "images" and not execute and not vulns.select(result, scope) \
+            and vulns.image_patch(result, skip_projects=own).command:
         # serwer czysty, a obrazy da sie odswiezyc — /zalataj lata to, co jest do zalatania (klient wykona scope=images)
         scope = "images"
-    from backend.core.watch import EXPLAIN_WAIT
 
     blocker = await _patch_blocker(role)
     inverse: list[str] = []
+    before: list = []
     if scope == "images":
-        patch = vulns.image_patch(result)
-        if not request.get("execute"):
+        patch = vulns.image_patch(result, skip_projects=own)
+        if not execute:
             await watcher.explain_vulns(result, extra=[i for t in patch.targets for i in t.items[:3]], timeout=EXPLAIN_WAIT)
-        command, names = patch.command, [t.name for t in patch.targets]
-        text = vulns.image_patch_preview(patch, blocker if patch.command else "", vulns.explanations(lang()))
+        command, names, before = patch.command, [t.name for t in patch.targets], patch.targets
+        explain = vulns.explanations(lang())
+        text = vulns.image_patch_preview(patch, blocker if patch.command else "", explain)
+        view = vulns.patch_view(result, scope, patch.command, explain, patch=patch, reason=blocker if patch.command else "")
         description = tr(f"nowsze obrazy: {len(names)}", f"newer images: {len(names)}")
         inverse = patch.inverse
-        nothing = tr("Zaden obraz kontenera nie ma podatnosci z poprawka.", "No container image has fixable vulnerabilities.")
-        if names and not command:
-            await _send(writer, _data({"scope": scope, "packages": names, "command": "", "token": "",
-                                       "can_execute": False, "reason": "", "text": text}))
-            return
+        nothing = vulns.nothing_to_patch(result, own)
     else:
         if result.ecosystem is None:
             await _send(writer, _data({"scope": scope, "packages": [], "command": "", "token": "", "can_execute": False,
-                                       "text": vulns.nothing_to_patch(result)}))
+                                       "text": vulns.nothing_to_patch(result, own)}))
             return
         items = vulns.select(result, scope)
-        if not request.get("execute"):
+        if not execute:
             await watcher.explain_vulns(result, extra=items[:12], timeout=EXPLAIN_WAIT)
-        command, names = vulns.upgrade_command(result.ecosystem, items), [p.name for p in items]
-        text = vulns.patch_preview(result, items, command, blocker, vulns.explanations(lang())) if command else ""
+        command, names, before = vulns.upgrade_command(result.ecosystem, items), [p.name for p in items], items
+        explain = vulns.explanations(lang())
+        text = vulns.patch_preview(result, items, command, blocker, explain) if command else ""
+        view = vulns.patch_view(result, scope, command, explain, items=items, reason=blocker)
         description = tr(f"latki: {len(items)} pakietow", f"patches: {len(items)} packages")
-        nothing = vulns.nothing_to_patch(result) if scope == "all" else \
+        nothing = vulns.nothing_to_patch(result, own) if scope == "all" else \
             tr("Pakiety serwera nie maja pilnych podatnosci z poprawka — wszystkie z poprawka: /zalataj.",
                "The server packages have no urgent fixable vulnerabilities — all fixable ones: /patch.")
     if not command:
-        await _send(writer, _data({"scope": scope, "packages": [], "command": "", "token": "", "can_execute": False,
-                                   "text": nothing + (f" ({note})" if note else "")}))
+        await _send(writer, _data({"scope": scope, "packages": names, "command": "", "token": "", "can_execute": False,
+                                   "reason": "", "text": nothing + (f" ({note})" if note else "")}))
         return
     token = vulns.patch_token(command)
-    if not request.get("execute"):
+    if not execute:
         await _send(writer, _data({"scope": scope, "packages": names, "command": command, "token": token,
-                                   "can_execute": not blocker, "reason": blocker, "text": text}))
+                                   "can_execute": not blocker, "reason": blocker, "text": text, "view": view}))
         return
     if blocker:
         await _send(writer, _error(blocker))
@@ -527,7 +539,6 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         run = command
         if runtime.kind() == "docker":
             # system hosta jest w kontenerze tylko do odczytu: latka, sprawdzenia i powrot przez kontener pomocniczy
-            from backend.core import hostexec
             image_ref = await hostexec.image()
             run, plan = hostexec.wrap(command, image_ref), hostexec.host_plan(plan, image_ref)
 
@@ -546,34 +557,64 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
             else:
                 outcome = event
         await audit.log_confirmed(interface, f"patch: {command}", outcome.exit_code if outcome else 1)
+        finished = time.time()
+    code = outcome.exit_code if outcome else 1
+    await _send(writer, event_frame(Progress(tr("Sprawdzam, co zostalo do zalatania...", "Checking what is left to patch..."))))
+    left, changed = None, vulns.PatchOutcome()
     try:
-        await watcher.vulns_once()
+        # skan rozpoczety po instalacji — trwajacy wczesniejszy widzialby stare pakiety i kontenery
+        await watcher.vulns_once(since=finished)
         left = watcher.vuln_scan
-        if scope == "images":
-            still = [t.name for t in left.of_kind("image") if t.items] if left else []
-            after = tr(f"obrazy nadal z podatnosciami: {', '.join(still[:5])} — pod tym tagiem nie ma nowszego "
-                       f"obrazu albo trzeba go przebudowac", f"images still vulnerable: {', '.join(still[:5])} — there is "
-                       f"no newer image under that tag or it has to be rebuilt") if still else \
-                tr("zaden obraz nie ma juz podatnosci z poprawka", "no image has fixable vulnerabilities any more")
-        else:
-            after = vulns.summary_line(left) if left and left.items else tr("nie zostalo nic z poprawka", "nothing fixable is left")
+        if left is not None and left.ok and code == 0:
+            changed = await asyncio.to_thread(vulns.record_outcome, scope, before, left)
+        after = _patch_after(scope, left, changed, code)
     except Exception as exc:
         after = tr(f"ponowny skan nie powiodl sie: {exc}", f"the rescan failed: {exc}")
-    text = (outcome.text if outcome else "") + "\n\n" + tr(f"Po instalacji: {after}.", f"After the install: {after}.")
-    code = outcome.exit_code if outcome else 1
+    text = (outcome.text if outcome else "") + "\n\n" + tr(f"Po instalacji: {after}", f"After the install: {after}")
     try:
         # /zalataj dziala bez modelu — agent zapytany "jak tam latanie?" ma wiedziec, co sie stalo
         get_agent().note(session_id, tr(
             f"Uzytkownik zainstalowal latki przez /zalataj ({description}), kod wyjscia {code}, "
-            f"wpis dziennika {outcome.entry_id if outcome else '-'}. Po instalacji: {after}.",
+            f"wpis dziennika {outcome.entry_id if outcome else '-'}. Po instalacji: {after}",
             f"The user installed patches with /patch ({description}), exit code {code}, "
-            f"journal entry {outcome.entry_id if outcome else '-'}. After the install: {after}."))
+            f"journal entry {outcome.entry_id if outcome else '-'}. After the install: {after}"))
     except Exception:
         pass
-    await _send(writer, _data({"text": text, "exit_code": outcome.exit_code if outcome else 1,
-                               "entry_id": outcome.entry_id if outcome else ""}))
+    report = vulns.report_view(left, vulns.explanations(lang())) if left is not None else None
+    await _send(writer, _data({"text": text, "exit_code": code, "entry_id": outcome.entry_id if outcome else "",
+                               "scope": scope, "summary": after, "fixed": changed.fixed, "unchanged": changed.unchanged,
+                               "output": outcome.text if outcome else "", "report": report}))
 
 
+def _patch_after(scope: str, left, changed, code: int) -> str:
+    """Jedno zdanie po latce: co sie zmienilo, co nie (i dlaczego), co zostalo."""
+    from backend.core import vulns
+
+    if left is None or not left.ok:
+        return tr("nie udalo sie sprawdzic wyniku — /podatnosci pokaze stan po nastepnym skanie.",
+                  "could not check the result — /vulns shows the state after the next scan.")
+    parts = []
+    if code != 0:
+        parts.append(tr("instalacja zakonczyla sie bledem — szczegoly wyzej i w /zmiany",
+                        "the install failed — details above and in /changes"))
+    noun = (tr("obrazow", "images") if scope == "images" else tr("pakietow", "packages"))
+    if changed.fixed:
+        parts.append(tr(f"zalatane {len(changed.fixed)} {noun}: {', '.join(changed.fixed[:6])}",
+                        f"patched {len(changed.fixed)} {noun}: {', '.join(changed.fixed[:6])}"))
+    if changed.unchanged:
+        why = tr("pod tym tagiem nie ma nowszego obrazu", "there is no newer image under that tag") if scope == "images" \
+            else tr("repozytoria serwera nie maja jeszcze poprawki", "the server's repositories do not have the fix yet")
+        parts.append(tr(f"bez zmian {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — {why}; nie zaproponuje "
+                        f"ich znowu przez dobe", f"unchanged {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — "
+                        f"{why}; I will not offer them again for a day"))
+    if scope == "images":
+        still = [t.name for t in left.of_kind("image") if t.items]
+        parts.append(tr(f"obrazy z podatnosciami: {len(still)}", f"images with vulnerabilities: {len(still)}") if still
+                     else tr("zaden obraz nie ma juz podatnosci z poprawka", "no image has fixable vulnerabilities any more"))
+    else:
+        parts.append(vulns.summary_line(left) if left.items else tr("pakiety serwera nie maja juz podatnosci z poprawka",
+                                                                    "the server packages have no fixable vulnerabilities any more"))
+    return "; ".join(parts) + "."
 async def _providers(writer, command: str, request: dict, interface: str, role: str) -> None:
     """
     Wybor providera LLM w trakcie pracy (ekran wyboru i przelacznik w `pipe web`), bez LLM:

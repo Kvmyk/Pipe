@@ -273,8 +273,15 @@ class TestWatcher:
         batches = len(fake.batches)
         result, note = asyncio.run(w.vuln_for_audit(fresh=False))          # instalacja latki: ostatni wynik
         assert result.items and note == "" and len(fake.batches) == batches
-        result, note = asyncio.run(w.vuln_for_audit())                      # /podatnosci, /audyt: nowy skan
-        assert result.items and note == "" and len(fake.batches) > batches
+        # /podatnosci, /audyt: inwentarz od nowa, ale bez pelnego zapytania o wszystko przy kazdym wywolaniu
+        result, note = asyncio.run(w.vuln_for_audit())
+        assert result.items and note == "" and len(fake.batches) == batches
+        write(host, "/var/lib/dpkg/status", DPKG.replace("5.2.15-2+b2", "5.2.15-3"))
+        asyncio.run(w.vuln_for_audit())                                     # zmieniony pakiet — tylko on do OSV
+        assert fake.batches[-1] == ["bash"]
+        monkeypatch.setattr(watch, "VULN_FRESH_AGE", 0)
+        asyncio.run(w.vuln_for_audit())                                     # po VULN_FRESH_AGE — calosc
+        assert sorted(fake.batches[-1]) == ["bash", "glibc", "openssl"]
         monkeypatch.setattr(settings, "VULN_INTERVAL", 0)
         assert asyncio.run(w.vuln_for_audit())[0] is None
 
@@ -790,7 +797,8 @@ class TestReadable:
         monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
         monkeypatch.setattr(watch, "_watcher", None)
         watch.get_watcher(FakeExplainAgent())
-        text = asyncio.run(server._vulns_report())
+        text, view = asyncio.run(server._vulns_report())
+        assert view["groups"][0]["items"][0]["name"] == "openssl"
         assert "**openssl**" in text and "Atakujacy przez siec moze przejac openssl" in text
 
     def test_patch_preview_uses_markdown_and_explanations(self, host, monkeypatch):
@@ -927,3 +935,151 @@ class TestRefreshContainers:
         patch = vulns.image_patch(stale)
         assert "-p dermafoto build --pull backend" in patch.command and not patch.manual
         assert vulns.refresh_containers(stale, None) is stale                # Docker niedostepny — bez zmian
+
+
+def image_target(name="shop_web", image_id="sha256:" + "e" * 12, project="shop", vuln_id="DSA-9", containers=("shop-web",)):
+    item = vulns.PackageVulns("openssl", "3.0.11-1", ["libssl3"], [vulns.Vuln(vuln_id, [], "high", "x", "3.0.13-1")],
+                              ecosystem="Debian:12")
+    return vulns.TargetResult("image", name, "Debian:12", 10, [item], meta={
+        "image": name, "image_id": image_id, "containers": list(containers),
+        "compose": [{"container": c, "project": project, "service": "web", "files": ["/srv/shop/compose.yml"]}
+                    for c in containers]})
+
+
+class TestAfterPatch:
+    """Po latce: swiezy wynik zamiast starego, i to, czego latka nie zmienila, nie wraca do /zalataj w kolko."""
+
+    def patch_server(self, host, monkeypatch, apply):
+        """`_patch` z podrobionym executorem: `apply()` robi to, co apt na hoscie (albo nic)."""
+        import backend.server as server
+        from backend.config import settings
+        from backend.core import executor, runtime
+        from backend.tests.test_server_commands import FakeAgent
+
+        debian_host(host)
+        fake_osv(monkeypatch)
+        monkeypatch.setattr(settings, "WATCH_SITES", False)
+        monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
+        monkeypatch.setattr(server, "get_agent", lambda: FakeAgent())
+        monkeypatch.setattr(watch, "_watcher", None)
+        monkeypatch.setattr(runtime, "kind", lambda: "native")
+        monkeypatch.setattr(runtime, "observe", lambda: False)
+
+        async def fake_execute(cmd, cwd=None, timeout=None):
+            apply()
+            return "done\n", "", 0
+        monkeypatch.setattr(executor, "execute", fake_execute)
+
+        def call(request):
+            out = []
+
+            async def send(w, frame):
+                out.append(frame)
+            monkeypatch.setattr(server, "_send", send)
+            asyncio.run(server._patch(None, request, "cli:t", "admin"))
+            return out
+        return call
+
+    def test_upgraded_package_disappears_right_after_the_install(self, host, monkeypatch):
+        def apt():
+            write(host, "/var/lib/dpkg/status", DPKG.replace("3.0.11-1~deb12u1", "3.0.13-1~deb12u1"))
+            vulns.get_json.ids["openssl"] = []                         # OSV: nowa wersja juz nie jest podatna
+        call = self.patch_server(host, monkeypatch, apt)
+        preview = call({"scope": "all"})[-1]["data"]
+        assert preview["packages"] == ["openssl"] and preview["view"]["groups"][0]["items"][0]["name"] == "openssl"
+        frames = call({"scope": "all", "execute": True, "patch_token": preview["token"]})
+        done = frames[-1]["data"]
+        assert done["fixed"] == ["openssl"] and done["unchanged"] == []
+        assert "nie maja juz podatnosci" in done["summary"] and done["report"]["groups"] == []
+        assert any(f.get("event", {}).get("type") == "progress" for f in frames)
+        assert watch.get_watcher().vuln_scan.items == []                    # /podatnosci zaraz potem: stan po latce
+
+    def test_package_apt_could_not_upgrade_is_held_not_offered_again(self, host, monkeypatch):
+        call = self.patch_server(host, monkeypatch, lambda: None)            # repozytorium nie ma poprawki
+        preview = call({"scope": "all"})[-1]["data"]
+        done = call({"scope": "all", "execute": True, "patch_token": preview["token"]})[-1]["data"]
+        assert done["unchanged"] == ["openssl"] and done["fixed"] == [] and "repozytoria serwera" in done["summary"]
+        again = call({"scope": "all"})[-1]["data"]
+        assert again["command"] == "" and "Bez zmian po ostatniej instalacji" in again["text"]
+        scan = watch.get_watcher().vuln_scan
+        assert "Bez zmian po ostatniej instalacji" in vulns.report_markdown(scan, {})
+        view = vulns.report_view(scan, {})
+        assert view["groups"][0]["items"][0]["held"] and view["actions"] == []
+        assert vulns.select(scan, "all", now=scan.at + vulns.HOLD_FOR + 1)    # po dobie probuje znowu
+
+    def test_audit_does_not_offer_held_packages(self, host, monkeypatch):
+        call = self.patch_server(host, monkeypatch, lambda: None)
+        preview = call({"scope": "all"})[-1]["data"]
+        call({"scope": "all", "execute": True, "patch_token": preview["token"]})
+        audit = posture.Audit()
+        posture.vuln_findings(audit, watch.get_watcher().vuln_scan)
+        kev = next(f for f in audit.findings if f.id == "vuln-kev")
+        assert kev.command == "" and kev.patch == ""
+
+    def test_image_without_a_newer_build_waits(self):
+        before = image_target()
+        scan = vulns.Scan(at=1, ecosystem="Debian:12", targets=[image_target()])
+        outcome = vulns.record_outcome("images", [before], scan)
+        assert outcome.unchanged == ["shop_web"]
+        patch = vulns.image_patch(scan)
+        assert patch.command == "" and [t.name for t in patch.waiting] == ["shop_web"]
+        assert "Bez nowszego obrazu" in vulns.nothing_to_patch(scan)
+        newer = vulns.Scan(at=2, ecosystem="Debian:12", targets=[image_target(vuln_id="DSA-10")])
+        assert vulns.image_patch(newer).command                              # inne podatnosci — nowa proba
+
+    def test_pipe_own_project_is_never_recreated(self):
+        scan = vulns.Scan(at=1, targets=[image_target(name="ghcr.io/kvmyk/pipe:0.36.6", project="backend",
+                                                      containers=("vps-agent",)), image_target()])
+        patch = vulns.image_patch(scan, skip_projects={"backend"})
+        assert "-p shop" in patch.command and "-p backend" not in patch.command
+        assert patch.skipped == ["vps-agent"] and not patch.manual
+        assert "/aktualizuj" in vulns.waiting_note(patch)
+
+    def test_rescan_after_patch_does_not_reuse_an_older_running_scan(self, host, monkeypatch):
+        import threading
+
+        calls, release = [], threading.Event()
+
+        def fake_scan(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                release.wait(5)
+            return vulns.Scan(at=len(calls)), True
+        monkeypatch.setattr(vulns, "scan", fake_scan)
+        w = watch.Watcher()
+
+        async def run():
+            older = asyncio.create_task(w.vuln_scan_now())
+            await asyncio.sleep(0.05)
+            since = __import__("time").time()
+            newer = asyncio.create_task(w.vuln_scan_now(since=since))
+            await asyncio.sleep(0.05)
+            release.set()
+            return (await older).at, (await newer).at
+        assert asyncio.run(run()) == (1, 2) and len(calls) == 2
+
+    def test_explanations_saved_during_a_scan_survive_it(self, host, monkeypatch):
+        debian_host(host)
+        fake = fake_osv(monkeypatch)
+        original = fake.__call__
+
+        def during(url, data=None, timeout=0):
+            if url == vulns.OSV_BATCH:
+                vulns.save_explanations("pl", {"DSA-1": "Wyjasnienie zapisane w trakcie skanu."})
+            return original(url, data, timeout)
+        monkeypatch.setattr(vulns, "get_json", during)
+        vulns.scan(force=True)
+        assert vulns.explanations("pl")["DSA-1"].startswith("Wyjasnienie")
+
+    def test_report_view_shape(self, host, monkeypatch):
+        debian_host(host)
+        fake_osv(monkeypatch)
+        result, _ = vulns.scan()
+        view = vulns.report_view(result, {"DSA-1": "Atakujacy moze odczytac pamiec."})
+        [group] = view["groups"]
+        assert group["kind"] == "system" and group["count"] == 1 and group["kev"] == 1 and group["patchable"]
+        [item] = group["items"]
+        assert item["level"] == "kev" and item["fixed"] == "3.0.13-1~deb12u1"
+        assert item["vulns"][0]["text"] == "Atakujacy moze odczytac pamiec." and item["vulns"][0]["ref"] == "CVE-2026-0001"
+        assert {a["scope"] for a in view["actions"]} == {"urgent", "all"} and view["totals"]["urgent"] == 1
+        assert vulns.report_view(None, {}, "off")["notes"] == ["off"]

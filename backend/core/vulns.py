@@ -28,6 +28,7 @@ import json
 import math
 import re
 import shlex
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -404,12 +405,21 @@ class PackageVulns:
     ecosystem: str = ""
 
     @property
+    def key(self) -> str:
+        return f"{self.ecosystem}|{self.name}|{self.version}"
+
+    @property
     def urgent(self) -> bool:
         return any(v.urgent for v in self.fixable)
 
     @property
     def kev(self) -> bool:
         return any(v.kev for v in self.fixable)
+
+    @property
+    def pro_only(self) -> bool:
+        """Poprawka tylko w Ubuntu Pro (ESM): wersja '...+esm1' — bez subskrypcji apt jej nie znajdzie."""
+        return bool(self.fixable) and all(_ESM.search(v.fixed) for v in self.fixable)
 
     @property
     def worst(self) -> str:
@@ -429,6 +439,9 @@ class PackageVulns:
         if self.ecosystem and not self.ecosystem.startswith(DISTROS) and versions:
             return max(versions, key=_version_key)
         return ""
+
+
+_ESM = re.compile(r"[+~]esm\d*")
 
 
 def _version_key(version: str) -> tuple:
@@ -731,10 +744,17 @@ def report_markdown(result: Scan | None, explain: dict[str, str], note: str = ""
     if result.unfixed:
         footer.append(tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
                          f"Without a fix (waiting for the distribution): {result.unfixed}."))
+    held = held_note(held_items(result))
+    if held:
+        footer.append(held)
+    images = image_patch(result)
+    waiting = waiting_note(images)
+    if waiting:
+        footer.append(waiting)
     actions = []
-    if result.items:
+    if select(result, "all"):
         actions.append(tr("/zalataj — pakiety serwera", "/patch — server packages"))
-    if any(t.items for t in result.of_kind("image")):
+    if images.targets:
         actions.append(tr("/zalataj obrazy — nowsze obrazy kontenerow", "/patch images — newer container images"))
     if actions:
         footer.append(tr("Co dalej: ", "Next: ") + "; ".join(actions) + ".")
@@ -744,6 +764,92 @@ def report_markdown(result: Scan | None, explain: dict[str, str], note: str = ""
     if note:
         footer.append(note)
     return sections_markdown(sections, explain, prefix=prefix, footer=footer)
+
+
+# ─── Widok dla pipe web (dane, nie Markdown) ────────────────────────────────
+#
+# pipe web rysuje raport, podglad i wynik latki z tych slownikow (karty, znaczniki, przyciski), Telegram i CLI
+# dalej dostaja Markdown z `text`. Teksty przechodza przez plain() tak samo jak w Markdownie.
+
+VIEW_ITEMS = 60              # pakietow na grupe (reszta jako liczba)
+VIEW_VULNS = 3               # podatnosci z opisem na pakiet
+
+
+def item_view(item: PackageVulns, explain: dict[str, str], held: bool = False) -> dict[str, Any]:
+    vulns = _sorted_vulns(item)
+    return {"name": plain(item.name, 80), "version": plain(item.version, 80), "fixed": plain(item.fixed_version, 80),
+            "level": item.worst or "unknown", "count": len(vulns), "held": held, "pro_only": item.pro_only,
+            "vulns": [{"level": "kev" if v.kev else (v.severity or "unknown"), "word": severity_word(v),
+                       "text": description(v, explain), "ref": vuln_ref(v)} for v in vulns[:VIEW_VULNS]]}
+
+
+def group_view(kind: str, title: str, subtitle: str, items: list[PackageVulns], explain: dict[str, str], *,
+               held: set[str] | None = None, patchable: bool = False, note: str = "") -> dict[str, Any]:
+    held = held or set()
+    ordered = sort_items(items)
+    return {"kind": kind, "title": plain(title, 160), "subtitle": plain(subtitle, 240), "count": len(ordered),
+            "urgent": sum(1 for p in ordered if p.urgent), "kev": sum(1 for p in ordered if p.kev),
+            "patchable": patchable, "note": note,
+            "items": [item_view(p, explain, p.key in held) for p in ordered[:VIEW_ITEMS]]}
+
+
+def report_view(result: Scan | None, explain: dict[str, str], note: str = "") -> dict[str, Any]:
+    """Raport podatnosci jako dane: podsumowanie, grupy (serwer, obrazy, aplikacje), akcje latek, uwagi."""
+    if result is None:
+        return {"at": 0, "groups": [], "actions": [], "notes": [note] if note else [], "totals": {}, "supported": False}
+    held = {p.key for p in held_items(result)}
+    patch = image_patch(result)
+    patchable_images = {t.name for t in patch.targets}
+    groups = []
+    if result.items:
+        groups.append(group_view("system", tr("Pakiety serwera", "Server packages"), result.system, result.items, explain,
+                                 held=held, patchable=bool(select(result, "all")), note=held_note(held_items(result))))
+    images = sorted((t for t in result.of_kind("image") if t.items), key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
+    waiting = {t.name for t in patch.waiting}
+    for target in images:
+        containers = ", ".join(target.meta.get("containers") or [])
+        manual = [m for m in patch.manual if any(m.startswith(f"{c}:") for c in target.meta.get("containers") or [])]
+        note_text = tr("Pod tym tagiem nie ma nowszego obrazu od ostatniej latki — zmien tag albo przebuduj obraz.",
+                       "No newer image under this tag since the last patch — change the tag or rebuild the image.") \
+            if target.name in waiting else (manual[0] if manual else "")
+        groups.append(group_view("image", target.name, containers, target.items, explain,
+                                 patchable=target.name in patchable_images, note=note_text))
+    for target in sorted((t for t in result.of_kind("app") if t.items), key=lambda t: (not t.kev, -len(t.items))):
+        groups.append(group_view("app", target.name, target.ecosystem or "", target.items, explain, note=tr(
+            "Zaleznosc w kodzie aplikacji: podbij wersje w lockfile i wdroz aplikacje.",
+            "A dependency in the application code: bump the version in the lockfile and deploy the app.")))
+    all_items = result.items + [p for t in result.targets for p in t.items]
+    notes = []
+    if result.ecosystem is None:
+        notes.append(tr(f"System serwera ({result.system}) nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
+                        f"The server system ({result.system}) is not supported — checking only images and applications."))
+    if patch.skipped:
+        notes.append(waiting_note(ImagePatch(skipped=patch.skipped)))
+    if result.error:
+        notes.append(tr(f"Ostatnie zapytanie do OSV nie powiodlo sie ({result.error}) — to wynik poprzedniego skanu.",
+                        f"The last OSV query failed ({result.error}) — this is the previous scan's result."))
+    if result.partial:
+        notes.append(tr("Czesc szczegolow nie zostala jeszcze pobrana — nastepny skan je dokonczy.",
+                        "Some details are not fetched yet — the next scan finishes them."))
+    if note:
+        notes.append(note)
+    actions = []
+    if select(result, "urgent"):
+        actions.append({"scope": "urgent", "count": len(select(result, "urgent"))})
+    if select(result, "all"):
+        actions.append({"scope": "all", "count": len(select(result, "all"))})
+    if patch.targets:
+        actions.append({"scope": "images", "count": len(patch.targets)})
+    return {"at": result.at, "system": plain(result.system, 120), "supported": result.ecosystem is not None,
+            "checked": result.checked, "unfixed": result.unfixed, "groups": groups, "actions": actions, "notes": notes,
+            "totals": {"system": len(result.items), "images": len(images), "apps": sum(1 for g in groups if g["kind"] == "app"),
+                       "urgent": sum(1 for p in all_items if p.urgent), "kev": sum(1 for p in all_items if p.kev),
+                       "packages": len(all_items),
+                       # pilne osobno dla kazdej czesci — liczba "pilne" dla wszystkiego naraz nie zgadzala sie z
+                       # przyciskiem "Zalataj pilne", ktory lata tylko pakiety serwera
+                       "system_urgent": len(result.urgent),
+                       "images_urgent": sum(1 for t in images if t.urgent),
+                       "apps_urgent": sum(1 for g in groups if g["kind"] == "app" and g["urgent"])}}
 
 
 # ─── Alerty: wysylane same, z opisem kazdej podatnosci ──────────────────────
@@ -814,11 +920,11 @@ def explanations(lang: str) -> dict[str, str]:
 
 
 def save_explanations(lang: str, mapping: dict[str, str]) -> None:
-    state = load_state()
-    explain = state.get("explain") if isinstance(state.get("explain"), dict) else {}
-    explain.setdefault(lang, {}).update({k: plain(v) for k, v in mapping.items() if plain(v)})
-    state["explain"] = explain
-    save_state(state)
+    def change(state: dict[str, Any]) -> None:
+        explain = state.get("explain") if isinstance(state.get("explain"), dict) else {}
+        explain.setdefault(lang, {}).update({k: plain(v) for k, v in mapping.items() if plain(v)})
+        state["explain"] = explain
+    update_state(change)
 
 
 def needing_explanation(result: Scan, lang: str, extra: list[PackageVulns] | None = None,
@@ -881,26 +987,42 @@ class ImagePatch:
     inverse: list[str] = field(default_factory=list)     # powrot do poprzednich obrazow (dla /cofnij)
     manual: list[str] = field(default_factory=list)      # kontenery bez compose: tylko podpowiedz
     targets: list[TargetResult] = field(default_factory=list)
+    waiting: list[TargetResult] = field(default_factory=list)   # po ostatniej latce bez zmian — nie ma nowszego obrazu
+    skipped: list[str] = field(default_factory=list)     # kontenery samego Pipe — te odswieza /aktualizuj
 
 
-def image_patch(result: Scan, scope: str = "all") -> ImagePatch:
+def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] | set[str] = frozenset(),
+                now: float | None = None) -> ImagePatch:
     """
     Nowsze obrazy dla kontenerow z compose: `pull --ignore-buildable` (obrazy z rejestru), `build --pull` (uslugi
     z `build:` — wlasne obrazy przebudowane na aktualnym obrazie bazowym; uslugi bez `build:` compose pomija) i `up -d`.
     Komendy odwrotne oznaczaja poprzedni obraz jego starym tagiem i odtwarzaja uslugi — to prawdziwy rollback.
     Kontenery bez compose dostaja tylko podpowiedz (docker run trzeba powtorzyc z tymi samymi opcjami).
+    `skip_projects` — projekt compose samego Pipe: `up -d` zatrzymalby Pipe w trakcie latania (od tego jest
+    /aktualizuj). Obraz, ktory po ostatniej latce mial te same podatnosci (pod tagiem nie ma nowszego), czeka
+    HOLD_FOR — inaczej /zalataj proponowaloby w kolko to samo.
     """
     patch = ImagePatch()
     projects: dict[tuple[str, tuple[str, ...]], list[str]] = {}
     retag: dict[str, str] = {}
+    waiting = stale_images(now)
     for target in result.of_kind("image"):
         if not target.items or (scope == "urgent" and not target.urgent):
             continue
-        patch.targets.append(target)
         ref, image_id = str(target.meta.get("image", "")), str(target.meta.get("image_id", ""))
         compose = [c for c in target.meta.get("compose") or []
                    if _COMPOSE_NAME.match(c.get("project", "")) and _COMPOSE_NAME.match(c.get("service", ""))
                    and c.get("files") and all(_HOST_PATH.match(f) for f in c["files"])]
+        own = [c for c in compose if c["project"] in skip_projects]
+        if own:
+            patch.skipped += [str(c.get("container", "")) for c in own]
+            compose = [c for c in compose if c["project"] not in skip_projects]
+            if not compose:
+                continue
+        if (waiting.get(target.name) or {}).get("ids") == target_fingerprint(target):
+            patch.waiting.append(target)
+            continue
+        patch.targets.append(target)
         for item in compose:
             services = projects.setdefault((item["project"], tuple(item["files"])), [])
             if item["service"] not in services:
@@ -908,7 +1030,7 @@ def image_patch(result: Scan, scope: str = "all") -> ImagePatch:
         short = image_id.removeprefix("sha256:")[:12]
         if compose and _IMAGE_REF.match(ref) and re.fullmatch(r"[0-9a-f]{12}", short):
             retag[ref] = short
-        with_compose = {c.get("container") for c in compose}
+        with_compose = {c.get("container") for c in compose} | {c.get("container") for c in own}
         for container in target.meta.get("containers") or []:
             if container not in with_compose:
                 patch.manual.append(tr(f"{container}: kontener bez compose — docker pull {ref}, potem odtworz go "
@@ -925,22 +1047,62 @@ def image_patch(result: Scan, scope: str = "all") -> ImagePatch:
     return patch
 
 
-def nothing_to_patch(result: Scan) -> str:
+def held_note(items: list[PackageVulns]) -> str:
+    """Dlaczego te pakiety nie sa w latce: poprawka tylko w Ubuntu Pro albo nie ma jej jeszcze w repozytoriach."""
+    if not items:
+        return ""
+    pro = [p for p in items if p.pro_only]
+    names = ", ".join(plain(p.name, 60) for p in items[:6])
+    if len(items) > 6:
+        names += tr(f" i {len(items) - 6} innych", f" and {len(items) - 6} more")
+    text = tr(f"Bez zmian po ostatniej instalacji ({len(items)}): {names} — repozytoria serwera nie maja jeszcze "
+              f"wersji z poprawka, sprobuje znowu za dobe.",
+              f"Unchanged after the last install ({len(items)}): {names} — the server's repositories do not have "
+              f"the fixed version yet, I will try again in a day.")
+    if pro:
+        text += tr(f" Poprawki dla {len(pro)} z nich sa tylko w Ubuntu Pro (ESM): pro attach, potem /zalataj.",
+                   f" The fixes for {len(pro)} of them are only in Ubuntu Pro (ESM): pro attach, then /patch.")
+    return text
+
+
+def waiting_note(patch: ImagePatch) -> str:
+    """Obrazy pominiete w latce: bez nowszego obrazu od ostatniego razu, kontenery samego Pipe."""
+    lines = []
+    if patch.waiting:
+        lines.append(tr("Bez nowszego obrazu od ostatniej latki (sprawdze znowu za dobe): ",
+                        "No newer image since the last patch (I will check again in a day): ")
+                     + ", ".join(plain(t.label(), 120) for t in patch.waiting[:5])
+                     + tr(" — zmien tag w compose albo przebuduj obraz na nowszej bazie.",
+                          " — change the tag in compose or rebuild the image on a newer base."))
+    if patch.skipped:
+        lines.append(tr(f"Kontenery Pipe ({', '.join(patch.skipped[:3])}) odswieza /aktualizuj.",
+                        f"Pipe's own containers ({', '.join(patch.skipped[:3])}) are refreshed by /update."))
+    return "\n\n".join(lines)
+
+
+def nothing_to_patch(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -> str:
     """
     Gdy /zalataj nie ma czego zainstalowac — gdzie sa podatnosci i dlaczego Pipe ich nie lata. "Nie ma podatnosci",
     gdy /podatnosci pokazuje dziesiatki, tylko myli.
     """
-    lines = [tr("Pakiety serwera nie maja podatnosci z poprawka." if result.ecosystem else
-                f"System serwera ({result.system}) nie jest obslugiwany przez skan pakietow.",
-                "The server packages have no vulnerabilities with a fix." if result.ecosystem else
-                f"The server system ({result.system}) is not supported by the package scan.")]
+    held = held_items(result)
+    if result.ecosystem is None:
+        lines = [tr(f"System serwera ({result.system}) nie jest obslugiwany przez skan pakietow.",
+                    f"The server system ({result.system}) is not supported by the package scan.")]
+    elif held:
+        lines = [held_note(held)]
+    else:
+        lines = [tr("Pakiety serwera nie maja podatnosci z poprawka.", "The server packages have no vulnerabilities with a fix.")]
     images = [t for t in result.of_kind("image") if t.items]
     if images:
-        manual = image_patch(result).manual
-        lines.append(tr(f"Obrazy kontenerow z podatnosciami: {len(images)}, ale zaden nie jest uruchomiony z compose, wiec "
-                        "nie mam ich jak odswiezyc:", f"Container images with vulnerabilities: {len(images)}, but none runs "
-                        "from compose, so I have no way to refresh them:"))
-        lines += [f"- {m}" for m in manual[:6]]
+        patch = image_patch(result, skip_projects=skip_projects)
+        waiting = waiting_note(patch)
+        if waiting:
+            lines.append(waiting)
+        if patch.manual:
+            lines.append(tr("Kontenery bez compose — nie mam ich jak odswiezyc:",
+                            "Containers without compose — I have no way to refresh them:"))
+            lines.append("\n".join(f"- {m}" for m in patch.manual[:6]))
     apps = [t for t in result.of_kind("app") if t.items]
     if apps:
         lines.append(tr(f"Aplikacje z podatnymi zaleznosciami: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
@@ -949,7 +1111,7 @@ def nothing_to_patch(result: Scan) -> str:
                         f"Applications with vulnerable dependencies: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
                         "That is a code change: bump the versions in the lockfile (npm audit fix, pip install -U, composer "
                         "update ...) and deploy the app — you can ask me to do it in the chat."))
-    if not images and not apps:
+    if not result.items and not images and not apps:
         lines = [tr("Nie ma nic do zalatania: brak znanych podatnosci z poprawka.",
                     "Nothing to patch: no known vulnerabilities with a fix.")]
     if result.unfixed:
@@ -958,9 +1120,19 @@ def nothing_to_patch(result: Scan) -> str:
     return "\n\n".join(lines)
 
 
-def select(result: Scan, scope: str) -> list[PackageVulns]:
-    """Pakiety hosta do zalatania: 'urgent' (KEV, krytyczne, wysokie — jak w alercie) albo wszystkie z poprawka."""
-    return result.urgent if scope == "urgent" else list(result.items)
+def select(result: Scan, scope: str, now: float | None = None) -> list[PackageVulns]:
+    """
+    Pakiety hosta do zalatania: 'urgent' (KEV, krytyczne, wysokie — jak w alercie) albo wszystkie z poprawka —
+    bez tych, ktorych ostatnia instalacja nie zmienila (repozytoria nie maja poprawki, patrz held_items).
+    """
+    held = held_packages(now)
+    return [p for p in (result.urgent if scope == "urgent" else result.items) if p.key not in held]
+
+
+def held_items(result: Scan, now: float | None = None) -> list[PackageVulns]:
+    """Pakiety hosta, ktorych ostatnia instalacja nie zmienila — /zalataj ich nie proponuje przez HOLD_FOR."""
+    held = held_packages(now)
+    return [p for p in result.items if p.key in held]
 
 
 def patch_token(command: str) -> str:
@@ -1012,11 +1184,44 @@ def image_patch_preview(patch: ImagePatch, reason: str = "", explain: dict[str, 
                       "Registry images: I pull newer ones under the same tag (official images are rebuilt regularly; change "
                       "a pinned tag in compose). Services with `build:` I rebuild on the current base image. The safety fuse "
                       "checks the compose config, that the containers run and the sites; /undo goes back to the previous images.")]
+    waiting = waiting_note(patch)
+    if waiting:
+        footer += ["", waiting]
     if patch.manual:
         footer += [""] + [f"- {m}" for m in patch.manual[:4]]
     if reason:
         footer += ["", reason]
     return sections_markdown(sections, explain or {}, prefix=prefix, footer=footer)
+
+
+def patch_view(result: Scan, scope: str, command: str, explain: dict[str, str], *, items: list[PackageVulns] | None = None,
+               patch: ImagePatch | None = None, reason: str = "") -> dict[str, Any]:
+    """Podglad latki jako dane dla pipe web: co zostanie zalatane (grupy jak w raporcie), komenda, co zrobi bezpiecznik."""
+    notes: list[str] = []
+    if patch is not None:
+        groups = [group_view("image", t.name, ", ".join(t.meta.get("containers") or []), t.items, explain, patchable=True)
+                  for t in patch.targets]
+        safety = tr("Obrazy z rejestru pobiore pod tym samym tagiem, uslugi z build: przebuduje na aktualnym obrazie "
+                    "bazowym. Bezpiecznik sprawdzi konfiguracje compose, kontenery i strony; /cofnij wraca do poprzednich obrazow.",
+                    "Registry images are pulled under the same tag, services with build: are rebuilt on the current base "
+                    "image. The safety fuse checks the compose config, the containers and the sites; /undo returns to the "
+                    "previous images.")
+        extra = [waiting_note(patch)] + patch.manual[:4]
+    else:
+        groups = [group_view("system", tr("Pakiety serwera", "Server packages"), result.system, items or [], explain,
+                             patchable=True)]
+        safety = tr("Bezpiecznik sprawdzi strony przed i po instalacji i zapisze wpis w dzienniku. Pakietow nie cofne "
+                    "automatycznie. Biblioteki i jadro zaczna dzialac po restarcie uslug albo serwera.",
+                    "The safety fuse checks the sites before and after and writes a journal entry. Packages are not rolled "
+                    "back automatically. Libraries and the kernel apply after a service or server restart.")
+        extra = [held_note(held_items(result))]
+        if result.error:
+            extra.append(tr(f"Ostatni skan OSV nie powiodl sie ({result.error}), lista moze byc nieaktualna.",
+                            f"The last OSV scan failed ({result.error}), the list may be out of date."))
+    if command:
+        notes.append(safety)
+    notes += [n for n in extra if n]
+    return {"scope": scope, "groups": groups, "command": command, "notes": notes, "reason": reason, "at": result.at}
 
 
 # ─── Pamiec skanu ───────────────────────────────────────────────────────────
@@ -1035,17 +1240,110 @@ def load_state() -> dict[str, Any]:
     return state
 
 
+_STATE_LOCK = threading.RLock()
+
+
 def save_state(state: dict[str, Any]) -> None:
-    path = _store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps({**state, "format": STORE_FORMAT}, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+    with _STATE_LOCK:
+        path = _store_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({**state, "format": STORE_FORMAT}, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+
+
+def update_state(change: Callable[[dict[str, Any]], None]) -> None:
+    """
+    Odczyt, zmiana i zapis pod jedna blokada. Skan trwa minute w watku, a w tym czasie zapisuja sie wyjasnienia,
+    powiadomienia i wynik latki — gdyby skan zapisal stan wczytany na poczatku, skasowalby je.
+    """
+    with _STATE_LOCK:
+        state = load_state()
+        change(state)
+        save_state(state)
 
 
 def last_scan() -> Scan | None:
     data = load_state().get("last")
     return Scan.from_dict(data) if isinstance(data, dict) else None
+
+
+# Po latce: co sie nie zmienilo. Pakiet w tej samej wersji (apt nie znalazl poprawki — np. tylko Ubuntu Pro, mirror
+# jeszcze bez biuletynu) i obraz z tymi samymi podatnosciami (pod tagiem nie ma nowszego) nie wracaja do /zalataj
+# przez HOLD_FOR. Inna wersja pakietu albo inny zestaw podatnosci obrazu = nowy klucz, wiec blokada sama znika.
+HOLD_FOR = 24 * 3600
+
+
+def _fresh_entries(name: str, now: float | None) -> dict[str, dict[str, Any]]:
+    now = time.time() if now is None else now
+    entries = load_state().get(name)
+    if not isinstance(entries, dict):
+        return {}
+    return {k: v for k, v in entries.items() if isinstance(v, dict) and now - float(v.get("at", 0)) < HOLD_FOR}
+
+
+def held_packages(now: float | None = None) -> dict[str, dict[str, Any]]:
+    """PackageVulns.key -> {at} dla pakietow, ktorych ostatnia instalacja nie podbila."""
+    return _fresh_entries("held", now)
+
+
+def stale_images(now: float | None = None) -> dict[str, dict[str, Any]]:
+    """Obraz (tag) -> {ids, at}: po ostatniej latce te same podatnosci."""
+    return _fresh_entries("stale_images", now)
+
+
+def target_fingerprint(target: TargetResult) -> str:
+    ids = sorted(f"{p.name}|{p.version}|{v.id}" for p in target.items for v in p.fixable)
+    return hashlib.sha256("\n".join(ids).encode()).hexdigest()[:16]
+
+
+@dataclass
+class PatchOutcome:
+    """Co zmienila latka — porownanie wyniku sprzed i po ponownym skanie."""
+    fixed: list[str] = field(default_factory=list)       # pakiety / obrazy bez podatnosci z poprawka albo w nowszej wersji
+    unchanged: list[str] = field(default_factory=list)   # to samo co przed latka
+    left: int = 0                                        # pakietow (obrazow) z podatnosciami po latce
+
+
+def record_outcome(scope: str, before: list[Any], after: Scan, now: float | None = None) -> PatchOutcome:
+    """
+    Po instalacji: ktore pakiety (scope != images) albo obrazy (images) sie zmienily, a ktore nie. Niezmienione
+    trafiaja do `held` / `stale_images` — /zalataj nie zaproponuje ich znowu, a raport mowi dlaczego.
+    """
+    now = time.time() if now is None else now
+    outcome = PatchOutcome()
+    with _STATE_LOCK:
+        state = load_state()
+        _record(state, outcome, scope, before, after, now)
+        save_state(state)
+    return outcome
+
+
+def _record(state: dict[str, Any], outcome: PatchOutcome, scope: str, before: list[Any], after: Scan, now: float) -> None:
+    if scope == "images":
+        current = {t.name: t for t in after.of_kind("image")}
+        stale = state.get("stale_images") if isinstance(state.get("stale_images"), dict) else {}
+        for target in before:
+            new = current.get(target.name)
+            if new is not None and new.items and target_fingerprint(new) == target_fingerprint(target):
+                outcome.unchanged.append(target.name)
+                stale[target.name] = {"ids": target_fingerprint(new), "at": now}
+            else:
+                outcome.fixed.append(target.name)
+                stale.pop(target.name, None)
+        state["stale_images"] = stale
+        outcome.left = sum(1 for t in after.of_kind("image") if t.items)
+    else:
+        still = {p.key for p in after.items}
+        held = state.get("held") if isinstance(state.get("held"), dict) else {}
+        for item in before:
+            if item.key in still:
+                outcome.unchanged.append(item.name)
+                held[item.key] = {"at": now}
+            else:
+                outcome.fixed.append(item.name)
+        state["held"] = {k: v for k, v in held.items() if now - float(v.get("at", 0)) < HOLD_FOR}
+        outcome.left = len(after.items)
 
 
 def kev_ids(now: float | None = None) -> set[str]:
@@ -1187,8 +1485,7 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
     blank = Scan(at=now, ecosystem=system.ecosystem, system=str(system.meta.get("system", "")),
                  checked=len(system.packages))
     if not packages:
-        state["last"] = blank.to_dict()
-        save_state(state)
+        update_state(lambda current: current.update({"last": blank.to_dict()}))
         return blank, False
     try:
         if to_query:
@@ -1197,8 +1494,7 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
         result = Scan.from_dict(previous) if isinstance(previous, dict) and previous.get("ecosystem") == system.ecosystem \
             else blank
         result.error = str(exc)
-        state["last"] = result.to_dict()
-        save_state(state)
+        update_state(lambda current: current.update({"last": result.to_dict()}))
         return result, True
 
     details: dict[str, dict[str, Any]] = state.get("details") or {}
@@ -1236,11 +1532,12 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
     for target in unsupported:
         result.targets.append(TargetResult(target.kind, target.name, None, 0, [], 0, target.meta))
     result.partial = partial
-    state.update({"last": result.to_dict(), "inventory": digest, "details": details,
-                  "found": {key: found.get(key, []) for key in packages}})
+    # tylko pola skanu — wyjasnienia i powiadomienia zapisane w trakcie skanu zostaja (update_state)
+    fields = {"last": result.to_dict(), "inventory": digest, "details": details,
+              "found": {key: found.get(key, []) for key in packages}}
     if expired:
-        state["queried_at"] = now
-    save_state(state)
+        fields["queried_at"] = now
+    update_state(lambda current: current.update(fields))
     return result, True
 
 
@@ -1256,12 +1553,12 @@ def notified_ids(key: str) -> set[str]:
 
 
 def mark_notified(key: str, ids: set[str]) -> None:
-    state = load_state()
-    notified = state.get(NOTIFIED) if isinstance(state.get(NOTIFIED), dict) else {}
-    notified[key] = sorted(ids)
-    state[NOTIFIED] = notified
-    state.pop("notified", None)
-    save_state(state)
+    def change(state: dict[str, Any]) -> None:
+        notified = state.get(NOTIFIED) if isinstance(state.get(NOTIFIED), dict) else {}
+        notified[key] = sorted(ids)
+        state[NOTIFIED] = notified
+        state.pop("notified", None)
+    update_state(change)
 
 
 def summary_line(result: Scan) -> str:
