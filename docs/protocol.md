@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.37.0
+Pipe v0.37.1
 
 ## Opis
 

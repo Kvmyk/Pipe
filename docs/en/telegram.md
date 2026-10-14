@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.37.0
+Pipe v0.37.1
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -196,7 +196,7 @@ work in both languages.
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then an *Undo* button. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images and applications, each with a short explanation. Viewers can use it too |
-| `/patch [urgent\|images]` | Patches for known vulnerabilities or newer container images: the list, the exact command, *Install* and *Cancel* buttons (native mode, admin). The vulnerability alert has a *Patch* button. Works without the LLM |
+| `/patch [urgent\|images]` | Patches for known vulnerabilities or newer container images: the list, the exact command, *Install* and *Cancel* buttons (admin). During the install one message shows the safety fuse steps live, at the end a short result: what was patched, what stayed unchanged and why. The vulnerability alert has a *Patch* button. Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
 | `/language [pl\|en]` | Pipe's language: switches agent instructions, reports, bot messages and the `/` menu without a restart, shared with the CLI and `pipe web`; admin only |
 | `/providers [id [model]]` | LLM providers: buttons for providers that have a key (the active one too, to change its model), then the provider's models as paged buttons; the current one is marked, "Keep ..." keeps it. `/providers groq llama` picks a model by name fragment, `/providers model` changes the model of the current provider. The bot never takes API keys (they would stay in the chat history); add them in `pipe web` or the CLI. Admin only |

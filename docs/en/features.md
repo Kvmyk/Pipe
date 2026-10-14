@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.37.0
+Pipe v0.37.1
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -350,7 +350,9 @@ password login from an address that was guessing passwords before, a login from 
 
 **Package vulnerabilities** (Debian, Ubuntu, Alpine). Pipe reads the package list from the dpkg/apk database (it runs
 nothing) and asks [OSV.dev](https://osv.dev) about known vulnerabilities for the exact versions. Only what has a fix
-counts -- vulnerabilities without a fix show up as a number, because a plain Debian has hundreds of them. Only package
+counts -- Pipe leaves out vulnerabilities without a fix, because a plain Debian has hundreds and nothing can be done about
+them. The report starts with "What to do about it": one line for the server, the images and the applications, each with
+a concrete step. Only package
 names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 
 - When: whenever the package list changes (a new application, an update -- then OSV only gets the changed packages)

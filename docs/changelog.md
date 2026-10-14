@@ -1,5 +1,27 @@
 # Historia zmian -- Pipe
 
+## v0.37.1 (2026-10-14)
+
+### Podatnosci i latki czytelniej we wszystkich kanalach
+
+- `/podatnosci`, `/audyt` i alert zaczynaja sie od "Co z tym zrobic": jedna linia na serwer, obrazy i aplikacje,
+  kazda z konkretnym krokiem (co zainstaluje `/zalataj`, co trzeba zmienic samemu i jak). Szczegoly pakietow sa pod
+  spodem
+- `/zalataj`, gdy nie ma czego instalowac, mowi to w pierwszym zdaniu, a potem tylko to, czego `/zalataj` nie
+  naprawi. Zniknela liczba podatnosci bez poprawki ("czekaja na dystrybucje: 512") -- nic sie z nimi nie da zrobic
+- Wynik instalacji latki w Telegramie i CLI jest krotki: status, weryfikacja bezpiecznika, wpis w dzienniku i co
+  zostalo. Wczesniej przychodzilo 25 linii wyjscia `docker compose build` albo apt; teraz tylko przy bledzie i tylko
+  koncowka, a calosc jest zwinieta w `pipe web`
+- Telegram w trakcie instalacji pokazuje kroki bezpiecznika w jednej wiadomosci, aktualizowanej na zywo, zamiast
+  kilku minut ciszy
+- Obraz budowany z Dockerfile, ktorego latka nie zmienila, dostaje wlasciwy powod: obraz bazowy (`FROM`) nie ma
+  nowszej wersji, trzeba ja podbic w Dockerfile. Wczesniej Pipe pisal "pod tym tagiem nie ma nowszego obrazu"
+- Kontener bez compose nie jest juz opisywany jako "do odswiezenia przez /zalataj obrazy" -- Pipe nie ma jak go
+  odswiezyc i teraz to mowi
+- Poprawna odmiana liczebnikow ("1 pakiet", "2 pakiety", "5 pakietow"; "1 pilny", "18 pilnych"), sekcja, ktora sie
+  nie zmiescila, jest wymieniona z nazwy zamiast pustego naglowka, opisy podatnosci sa zapisane jak reszta tekstow
+  (bez "Atakujący" obok "Atakujacy"), a weryfikacja nie powtarza dwa razy "kontenery projektu dzialaja"
+
 ## v0.37.0 (2026-10-14)
 
 ### Podatnosci: po latce widac stan po latce

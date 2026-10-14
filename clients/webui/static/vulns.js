@@ -12,6 +12,11 @@
     const reports = new Set();    // raporty w rozmowie — po latce oznaczane jako nieaktualne
 
     const level = (name) => (LEVELS.includes(name) ? name : "unknown");
+    // odmiana: "1 pilny", "2 pilne", "5 pilnych" (klucze _one/_few/_many sa w obu jezykach)
+    const plural = (base, n) => {
+      const form = n === 1 ? "one" : (n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14)) ? "few" : "many";
+      return t(base + "_" + form).replace("{n}", n);
+    };
     const sevLabel = (name) => t("vxs_" + level(name));
     function pill(name, text) {
       return el("span", "vx-sev s-" + level(name), text || sevLabel(name));
@@ -78,7 +83,7 @@
       head.appendChild(title);
       const badges = el("span", "vx-badges");
       if (g.kev) badges.appendChild(pill("kev", "KEV " + g.kev));
-      if (g.urgent) badges.appendChild(el("span", "vx-n urgent", fmt("vx_urgent_n", { n: g.urgent })));
+      if (g.urgent) badges.appendChild(el("span", "vx-n urgent", plural("vx_urgent", g.urgent)));
       badges.appendChild(el("span", "vx-n", fmt("vx_packages_n", { n: g.count })));
       head.appendChild(badges);
       head.appendChild(el("span", "vx-chev"));
@@ -113,14 +118,14 @@
       return box;
     }
 
-    // kafelek czesci: ile z poprawka, pod spodem ile pilnych (albo "nic pilnego")
+    // kafelek czesci: etykieta nad liczba (zero czyta sie wtedy naturalnie), pod spodem ile pilnych
     function stat(value, label, urgent) {
       const tile = el("div", "vx-stat" + (value ? "" : " zero"));
-      const top = el("div", "vx-stat-top");
-      top.appendChild(el("b", "", String(value)));
-      top.appendChild(el("span", "", label));
-      tile.appendChild(top);
-      if (value) tile.appendChild(el("span", "vx-stat-sub" + (urgent ? " bad" : ""), urgent ? fmt("vx_urgent_n", { n: urgent }) : t("vx_none_urgent")));
+      tile.appendChild(el("span", "vx-stat-label", label));
+      const row = el("div", "vx-stat-top");
+      row.appendChild(el("b", "", String(value)));
+      if (value) row.appendChild(el("span", "vx-stat-sub" + (urgent ? " bad" : ""), urgent ? plural("vx_urgent", urgent) : t("vx_none_urgent")));
+      tile.appendChild(row);
       return tile;
     }
 
@@ -171,6 +176,13 @@
         stats.appendChild(stat(totals.images || 0, t("vx_stat_images"), totals.images_urgent));
         stats.appendChild(stat(totals.apps || 0, t("vx_stat_apps"), totals.apps_urgent));
         card.appendChild(stats);
+        // co z tym zrobic: jedna linia na serwer, obrazy i aplikacje (to samo, co Telegram i CLI maja na gorze raportu)
+        if ((view.todo || []).length) {
+          const todo = el("div", "vx-todo");
+          todo.appendChild(el("div", "vx-label", t("vx_todo")));
+          view.todo.forEach((line) => todo.appendChild(el("div", "vx-todo-line", line)));
+          card.appendChild(todo);
+        }
         const actions = view.actions || [];
         if (actions.length && options.actions !== false) {
           const row = el("div", "vx-actions");
@@ -191,7 +203,6 @@
         card.appendChild(list);
       }
       const foot = el("div", "vx-foot");
-      if (view.unfixed) foot.appendChild(el("div", "vx-foot-note plain", fmt("vx_unfixed", { n: view.unfixed })));
       notes(view.notes, foot);
       if (foot.children.length) card.appendChild(foot);
       if (options.track !== false) { reports.add(card); card._stale = stale; }

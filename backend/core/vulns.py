@@ -584,12 +584,37 @@ _CVE = re.compile(r"CVE-\d{4}-\d+")
 _GENERIC_SUMMARY = re.compile(r"(security update|vulnerabilit(y|ies)|regression|update)\s*$", re.IGNORECASE)
 
 
+# Teksty Pipe sa bez polskich znakow; wyjasnienia modelu czasem je maja ("Atakujący" obok "Atakujacy") —
+# w jednym raporcie to wyglada na blad, wiec opisy sa sprowadzane do tego samego zapisu.
+_PL_ASCII = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+
+
+def count(n: int, one: str, few: str, many: str, one_en: str = "", many_en: str = "") -> str:
+    """'1 pakiet', '2 pakiety', '5 pakietow' (po angielsku 'package' / 'packages')."""
+    if one_en:
+        return tr(f"{n} {one if n == 1 else few if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else many}",
+                  f"{n} {one_en if n == 1 else many_en}")
+    return f"{n} {one if n == 1 else few if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else many}"
+
+
+def n_packages(n: int) -> str:
+    return count(n, "pakiet", "pakiety", "pakietow", "package", "packages")
+
+
+def n_images(n: int) -> str:
+    return count(n, "obraz", "obrazy", "obrazow", "image", "images")
+
+
+def n_deps(n: int) -> str:
+    return count(n, "zaleznosc", "zaleznosci", "zaleznosci", "dependency", "dependencies")
+
+
 def plain(text: str, limit: int = MAX_EXPLANATION) -> str:
     """
     Opis z OSV albo wyjasnienie modelu jako zwykly tekst: bez znacznikow Markdowna/HTML i linkow
-    (to tresc z internetu — nie moze wstawic uzytkownikowi linku ani formatowania), jedna linia.
+    (to tresc z internetu — nie moze wstawic uzytkownikowi linku ani formatowania), jedna linia, bez polskich znakow.
     """
-    text = _URL.sub("", str(text or ""))
+    text = _URL.sub("", str(text or "")).translate(_PL_ASCII)
     text = re.sub(r"[`*<>\[\]]", "", text)
     text = " ".join(text.split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
@@ -654,7 +679,7 @@ def item_markdown(item: PackageVulns, explain: dict[str, str], limit: int = VULN
     if item.fixed_version:
         head += f" → {plain(item.fixed_version, 80)}"
     if len(vulns) > limit:
-        head += tr(f" · {len(vulns)} podatnosci", f" · {len(vulns)} vulnerabilities")
+        head += " · " + count(len(vulns), "podatnosc", "podatnosci", "podatnosci", "vulnerability", "vulnerabilities")
     # pusta linia przed pakietem — bez niej Markdown dokleilby naglowek do listy poprzedniego pakietu
     return ["", head] + [vuln_markdown(v, explain) for v in vulns[:limit]]
 
@@ -673,10 +698,12 @@ def sections_markdown(sections: list[tuple[str, list[PackageVulns], int]], expla
     def fits(block: list[str]) -> bool:
         return len("\n".join(lines + block)) + reserve <= budget
 
-    dropped = 0
+    dropped: list[str] = []
     for head, items, total in sections:
-        if head and not fits(["", f"### {head}"]):
-            dropped += 1
+        # naglowek tylko razem z pierwszym pakietem — sama "Aplikacja X: 9 zaleznosci" i "… i 9 kolejnych" nic nie mowi
+        first = item_markdown(items[0], explain) if items else []
+        if head and not fits(["", f"### {head}"] + first):
+            dropped.append(head.rsplit(": ", 1)[0])
             continue
         if head:
             lines += ["", f"### {head}"]
@@ -688,9 +715,10 @@ def sections_markdown(sections: list[tuple[str, list[PackageVulns], int]], expla
             lines += block
             shown += 1
         if total > shown:
-            lines += ["", tr(f"… i {total - shown} kolejnych pakietow", f"… and {total - shown} more packages")]
+            lines += ["", tr(f"… i {total - shown} kolejnych", f"… and {total - shown} more")]
     if dropped:
-        lines += ["", tr(f"… i {dropped} kolejnych obrazow lub aplikacji", f"… and {dropped} more images or applications")]
+        lines += ["", tr("Nie zmiescilo sie w tej wiadomosci: ", "Did not fit in this message: ") + "; ".join(dropped)
+                  + tr(" — pelna lista w pipe web albo zapytaj mnie.", " — the full list is in pipe web, or ask me.")]
     if tail:
         lines += [""] + tail
     return "\n".join(lines).strip()
@@ -710,20 +738,20 @@ def report_sections(result: Scan) -> list[tuple[str, list[PackageVulns], int]]:
     sections = []
     if result.items:
         urgent = len(result.urgent)
-        head = tr(f"Pakiety serwera ({result.system}): {len(result.items)} z poprawkami",
-                  f"Server packages ({result.system}): {len(result.items)} with fixes")
-        head += tr(f", {urgent} pilnych", f", {urgent} urgent") if urgent else ""
+        head = tr(f"Pakiety serwera ({result.system}): {n_packages(len(result.items))} z poprawka",
+                  f"Server packages ({result.system}): {n_packages(len(result.items))} with a fix")
+        head += tr(f", pilne: {urgent}", f", urgent: {urgent}") if urgent else ""
         sections.append((head, result.items[:REPORT_SYSTEM], len(result.items)))
     images = sorted((t for t in result.of_kind("image") if t.items), key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
     for target in images[:REPORT_TARGETS]:
         containers = ", ".join(target.meta.get("containers") or [])
         head = tr(f"Obraz {target.name}", f"Image {target.name}") + (f" ({containers})" if containers else "") \
-            + tr(f": {len(target.items)} pakietow z poprawkami", f": {len(target.items)} packages with fixes")
+            + tr(f": {n_packages(len(target.items))} z poprawka", f": {n_packages(len(target.items))} with a fix")
         sections.append((head, target.items[:REPORT_PER_TARGET], len(target.items)))
     apps = sorted((t for t in result.of_kind("app") if t.items), key=lambda t: (not t.kev, -len(t.items)))
     for target in apps[:REPORT_TARGETS]:
-        head = tr(f"Aplikacja {target.name} ({target.ecosystem}): {len(target.items)} zaleznosci z poprawkami",
-                  f"Application {target.name} ({target.ecosystem}): {len(target.items)} dependencies with fixes")
+        head = tr(f"Aplikacja {target.name} ({target.ecosystem}): {n_deps(len(target.items))} z poprawka",
+                  f"Application {target.name} ({target.ecosystem}): {n_deps(len(target.items))} with a fix")
         sections.append((head, target.items[:REPORT_PER_TARGET], len(target.items)))
     return sections
 
@@ -734,30 +762,14 @@ def report_markdown(result: Scan | None, explain: dict[str, str], note: str = ""
         return tr("Nie ma jeszcze wyniku skanu podatnosci", "There is no vulnerability scan result yet") \
             + (f" ({note})." if note else ".")
     sections = report_sections(result)
-    prefix: list[str] = []
-    if result.ecosystem is None:
-        prefix.append(tr(f"System serwera ({result.system}) nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
-                         f"The server system ({result.system}) is not supported — checking only images and applications."))
     if not sections:
-        prefix.append(tr("Brak znanych podatnosci z poprawka.", "No known vulnerabilities with a fix."))
+        prefix = [tr("Brak znanych podatnosci z poprawka.", "No known vulnerabilities with a fix.")]
+        if result.ecosystem is None:
+            prefix.append(todo(result)[0])
+    else:
+        # najpierw co z tym zrobic (jedna linia na serwer, obrazy, aplikacje), potem szczegoly
+        prefix = [tr("**Co z tym zrobic**", "**What to do about it**")] + [f"- {line}" for line in todo(result)]
     footer: list[str] = []
-    if result.unfixed:
-        footer.append(tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
-                         f"Without a fix (waiting for the distribution): {result.unfixed}."))
-    held = held_note(held_items(result))
-    if held:
-        footer.append(held)
-    images = image_patch(result)
-    waiting = waiting_note(images)
-    if waiting:
-        footer.append(waiting)
-    actions = []
-    if select(result, "all"):
-        actions.append(tr("/zalataj — pakiety serwera", "/patch — server packages"))
-    if images.targets:
-        actions.append(tr("/zalataj obrazy — nowsze obrazy kontenerow", "/patch images — newer container images"))
-    if actions:
-        footer.append(tr("Co dalej: ", "Next: ") + "; ".join(actions) + ".")
     if result.error:
         footer.append(tr(f"Uwaga: ostatnie zapytanie do OSV nie powiodlo sie ({result.error}).",
                          f"Note: the last OSV query failed ({result.error})."))
@@ -809,8 +821,7 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
     for target in images:
         containers = ", ".join(target.meta.get("containers") or [])
         manual = [m for m in patch.manual if any(m.startswith(f"{c}:") for c in target.meta.get("containers") or [])]
-        note_text = tr("Pod tym tagiem nie ma nowszego obrazu od ostatniej latki — zmien tag albo przebuduj obraz.",
-                       "No newer image under this tag since the last patch — change the tag or rebuild the image.") \
+        note_text = tr("Bez zmian po ostatniej latce: ", "Unchanged after the last patch: ") + _waiting_why(target) + "." \
             if target.name in waiting else (manual[0] if manual else "")
         groups.append(group_view("image", target.name, containers, target.items, explain,
                                  patchable=target.name in patchable_images, note=note_text))
@@ -841,7 +852,7 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
     if patch.targets:
         actions.append({"scope": "images", "count": len(patch.targets)})
     return {"at": result.at, "system": plain(result.system, 120), "supported": result.ecosystem is not None,
-            "checked": result.checked, "unfixed": result.unfixed, "groups": groups, "actions": actions, "notes": notes,
+            "checked": result.checked, "todo": todo(result), "groups": groups, "actions": actions, "notes": notes,
             "totals": {"system": len(result.items), "images": len(images), "apps": sum(1 for g in groups if g["kind"] == "app"),
                        "urgent": sum(1 for p in all_items if p.urgent), "kev": sum(1 for p in all_items if p.kev),
                        "packages": len(all_items),
@@ -989,6 +1000,7 @@ class ImagePatch:
     targets: list[TargetResult] = field(default_factory=list)
     waiting: list[TargetResult] = field(default_factory=list)   # po ostatniej latce bez zmian — nie ma nowszego obrazu
     skipped: list[str] = field(default_factory=list)     # kontenery samego Pipe — te odswieza /aktualizuj
+    refreshable: list[TargetResult] = field(default_factory=list)   # obrazy, ktore komenda naprawde odswiezy (z compose)
 
 
 def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] | set[str] = frozenset(),
@@ -1027,6 +1039,8 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
             services = projects.setdefault((item["project"], tuple(item["files"])), [])
             if item["service"] not in services:
                 services.append(item["service"])
+        if compose:
+            patch.refreshable.append(target)
         short = image_id.removeprefix("sha256:")[:12]
         if compose and _IMAGE_REF.match(ref) and re.fullmatch(r"[0-9a-f]{12}", short):
             retag[ref] = short
@@ -1045,6 +1059,20 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
     patch.command = " && ".join(segments)
     patch.inverse = [f"docker tag {short} {shlex.quote(ref)}" for ref, short in retag.items()] + recreate
     return patch
+
+
+def built_locally(target: TargetResult) -> bool:
+    """Obraz zbudowany przez compose z `build:` (nazwa `<projekt>-<usluga>`) — nowszy daje tylko nowszy obraz bazowy."""
+    name = str(target.name).removeprefix("docker.io/library/").split(":")[0]
+    return any(name in (f"{c.get('project')}-{c.get('service')}", f"{c.get('project')}_{c.get('service')}")
+               for c in target.meta.get("compose") or [])
+
+
+def _waiting_why(target: TargetResult) -> str:
+    return tr("obraz bazowy (FROM) nie ma nowszej wersji — podbij ja w Dockerfile",
+              "the base image (FROM) has no newer version — bump it in the Dockerfile") if built_locally(target) else \
+        tr("pod tym tagiem nie ma nowszego obrazu — zmien tag w compose",
+           "no newer image under this tag — change the tag in compose")
 
 
 def held_note(items: list[PackageVulns]) -> str:
@@ -1071,53 +1099,93 @@ def waiting_note(patch: ImagePatch) -> str:
     if patch.waiting:
         lines.append(tr("Bez nowszego obrazu od ostatniej latki (sprawdze znowu za dobe): ",
                         "No newer image since the last patch (I will check again in a day): ")
-                     + ", ".join(plain(t.label(), 120) for t in patch.waiting[:5])
-                     + tr(" — zmien tag w compose albo przebuduj obraz na nowszej bazie.",
-                          " — change the tag in compose or rebuild the image on a newer base."))
+                     + "; ".join(f"{plain(t.label(), 120)} — {_waiting_why(t)}" for t in patch.waiting[:5]) + ".")
     if patch.skipped:
         lines.append(tr(f"Kontenery Pipe ({', '.join(patch.skipped[:3])}) odswieza /aktualizuj.",
                         f"Pipe's own containers ({', '.join(patch.skipped[:3])}) are refreshed by /update."))
     return "\n\n".join(lines)
 
 
-def nothing_to_patch(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -> str:
+def todo(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -> list[str]:
     """
-    Gdy /zalataj nie ma czego zainstalowac — gdzie sa podatnosci i dlaczego Pipe ich nie lata. "Nie ma podatnosci",
-    gdy /podatnosci pokazuje dziesiatki, tylko myli.
+    Co uzytkownik moze z tym zrobic — jedna linia na serwer, obrazy i aplikacje, kazda z konkretnym krokiem.
+    Te same linie sa na gorze /podatnosci i /audyt, w /zalataj, gdy nie ma czego instalowac, i w pipe web.
+    Podatnosci bez poprawki nie ma tu wcale: nic z nimi nie da sie zrobic, a liczba "512" tylko straszy.
     """
-    held = held_items(result)
+    lines: list[str] = []
+    patchable, held = select(result, "all"), held_items(result)
     if result.ecosystem is None:
-        lines = [tr(f"System serwera ({result.system}) nie jest obslugiwany przez skan pakietow.",
-                    f"The server system ({result.system}) is not supported by the package scan.")]
-    elif held:
-        lines = [held_note(held)]
-    else:
-        lines = [tr("Pakiety serwera nie maja podatnosci z poprawka.", "The server packages have no vulnerabilities with a fix.")]
+        lines.append(tr(f"Serwer: system {result.system} nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
+                        f"Server: {result.system} is not supported — I only check images and applications."))
+    elif patchable:
+        urgent = sum(1 for p in patchable if p.urgent)
+        lines.append(tr(f"Serwer: {n_packages(len(patchable))} z poprawka" + (f" (pilne: {urgent})" if urgent else "")
+                        + " — zainstaluje je /zalataj.",
+                        f"Server: {n_packages(len(patchable))} with a fix" + (f" (urgent: {urgent})" if urgent else "")
+                        + " — /patch installs them."))
+    if held:
+        pro = any(p.pro_only for p in held)
+        lines.append(tr(f"Serwer: {n_packages(len(held))} ({', '.join(plain(p.name, 40) for p in held[:4])}) bez zmian po "
+                        "ostatniej instalacji — " + ("poprawka jest tylko w Ubuntu Pro (pro attach)" if pro else
+                                                     "repozytoria serwera nie maja jeszcze nowej wersji") + "; sprobuje znowu za dobe.",
+                        f"Server: {n_packages(len(held))} ({', '.join(plain(p.name, 40) for p in held[:4])}) unchanged after the "
+                        "last install — " + ("the fix is only in Ubuntu Pro (pro attach)" if pro else
+                                             "the server's repositories do not have the new version yet") + "; I will retry in a day."))
+    if result.ecosystem is not None and not patchable and not held:
+        lines.append(tr("Serwer: pakiety aktualne.", "Server: packages up to date."))
+
     images = [t for t in result.of_kind("image") if t.items]
     if images:
         patch = image_patch(result, skip_projects=skip_projects)
-        waiting = waiting_note(patch)
-        if waiting:
-            lines.append(waiting)
-        if patch.manual:
-            lines.append(tr("Kontenery bez compose — nie mam ich jak odswiezyc:",
-                            "Containers without compose — I have no way to refresh them:"))
-            lines.append("\n".join(f"- {m}" for m in patch.manual[:6]))
+        names = lambda targets: ", ".join(plain(t.name, 60) for t in targets[:4]) + (  # noqa: E731
+            tr(f" i {len(targets) - 4} innych", f" and {len(targets) - 4} more") if len(targets) > 4 else "")
+        if patch.refreshable:
+            lines.append(tr(f"Obrazy kontenerow: {n_images(len(patch.refreshable))} do odswiezenia ({names(patch.refreshable)}) — "
+                            "zrobi to /zalataj obrazy.",
+                            f"Container images: {n_images(len(patch.refreshable))} to refresh ({names(patch.refreshable)}) — "
+                            "/patch images does it."))
+        built = [t for t in patch.waiting if built_locally(t)]
+        pulled = [t for t in patch.waiting if not built_locally(t)]
+        if built:
+            lines.append(tr(f"Obrazy budowane z Dockerfile ({names(built)}): przebudowalem je, ale obraz bazowy (FROM) nie ma "
+                            "nowszej wersji — podbij ja w Dockerfile.",
+                            f"Images built from a Dockerfile ({names(built)}): I rebuilt them, but the base image (FROM) has no "
+                            "newer version — bump it in the Dockerfile."))
+        if pulled:
+            lines.append(tr(f"Obrazy z rejestru ({names(pulled)}): pod tym tagiem nie ma nowszego — zmien tag w compose.",
+                            f"Registry images ({names(pulled)}): no newer one under this tag — change the tag in compose."))
+        manual = [m.split(":", 1)[0] for m in patch.manual]
+        if manual:
+            lines.append(tr(f"Kontenery bez compose ({', '.join(manual[:4])}): nie mam ich jak odswiezyc — docker pull "
+                            "i uruchom je od nowa z tymi samymi opcjami.",
+                            f"Containers without compose ({', '.join(manual[:4])}): I have no way to refresh them — docker pull "
+                            "and start them again with the same options."))
+        if patch.skipped:
+            lines.append(tr("Kontenery Pipe: odswieza je /aktualizuj.", "Pipe's own containers: /update refreshes them."))
+    elif any(t.ecosystem for t in result.of_kind("image")):
+        lines.append(tr("Obrazy kontenerow: bez podatnosci z poprawka.", "Container images: no vulnerabilities with a fix."))
+
     apps = [t for t in result.of_kind("app") if t.items]
     if apps:
-        lines.append(tr(f"Aplikacje z podatnymi zaleznosciami: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
-                        "To zmiana w kodzie: podbij wersje w lockfile (npm audit fix, pip install -U, composer update ...) "
-                        "i wdroz aplikacje — mozesz poprosic mnie o to w rozmowie.",
-                        f"Applications with vulnerable dependencies: {len(apps)} ({', '.join(plain(t.name, 80) for t in apps[:3])}). "
-                        "That is a code change: bump the versions in the lockfile (npm audit fix, pip install -U, composer "
-                        "update ...) and deploy the app — you can ask me to do it in the chat."))
-    if not result.items and not images and not apps:
-        lines = [tr("Nie ma nic do zalatania: brak znanych podatnosci z poprawka.",
-                    "Nothing to patch: no known vulnerabilities with a fix.")]
-    if result.unfixed:
-        lines.append(tr(f"Bez poprawki (czekaja na dystrybucje): {result.unfixed}.",
-                        f"Without a fix (waiting for the distribution): {result.unfixed}."))
-    return "\n\n".join(lines)
+        ecos = ", ".join(sorted({e.strip() for t in apps for e in (t.ecosystem or "").split(",") if e.strip()}))
+        lines.append(tr(f"Aplikacje ({', '.join(plain(t.name, 60) for t in apps[:4])}): podatne zaleznosci {ecos} — to zmiana "
+                        "w kodzie (np. npm audit fix) i wdrozenie; moge to zrobic, jesli poprosisz w rozmowie.",
+                        f"Applications ({', '.join(plain(t.name, 60) for t in apps[:4])}): vulnerable {ecos} dependencies — a "
+                        "code change (e.g. npm audit fix) and a deploy; I can do it if you ask in the chat."))
+    return lines
+
+
+def nothing_to_patch(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -> str:
+    """
+    /zalataj bez niczego do zainstalowania: najpierw to (jednym zdaniem), potem co zostaje i co trzeba zrobic samemu.
+    """
+    rest = [line for line in todo(result, skip_projects) if not line.startswith(tr("Serwer: pakiety", "Server: packages"))]
+    if not rest:
+        return tr("Nie ma nic do zalatania: brak znanych podatnosci z poprawka.",
+                  "Nothing to patch: no known vulnerabilities with a fix.")
+    return "\n".join([tr("Nie ma nic do zainstalowania.", "There is nothing to install."), "",
+                      tr("Zostaje, ale /zalataj tego nie naprawi:", "What is left, which /patch cannot fix:")]
+                     + [f"- {line}" for line in rest])
 
 
 def select(result: Scan, scope: str, now: float | None = None) -> list[PackageVulns]:

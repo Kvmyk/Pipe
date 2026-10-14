@@ -660,10 +660,13 @@ h2.with-badge .pbadge { width: 30px; height: 30px; border-radius: 7px; font-size
 .vx-stat:last-child { border-right: 0; }
 .vx-stat-top { display: flex; align-items: baseline; gap: 7px; }
 .vx-stat b { font: 600 19px/1.15 var(--sans); font-variant-numeric: tabular-nums; }
-.vx-stat-top span { font-size: 12.5px; color: var(--ink-2); }
-.vx-stat.zero b, .vx-stat.zero .vx-stat-top span { color: var(--ink-3); }
+.vx-stat-label { font-size: 12px; color: var(--ink-3); }
+.vx-stat.zero b { color: var(--ink-3); }
 .vx-stat-sub { font-size: 12px; color: var(--ok); }
 .vx-stat-sub.bad { color: var(--bad); font-weight: 500; }
+.vx-todo { display: flex; flex-direction: column; gap: 5px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.vx-todo-line { position: relative; padding-left: 14px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.vx-todo-line::before { content: ""; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3); }
 .vx-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
 .vx-groups > .vx-group + .vx-group { border-top: 1px solid var(--line); }
 .vx-group-head { display: grid; grid-template-columns: auto 1fr auto 14px; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; text-align: left; }

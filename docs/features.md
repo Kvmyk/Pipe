@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.37.0
+Pipe v0.37.1
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -346,7 +346,8 @@ udane logowanie haslem z adresu, ktory wczesniej zgadywal hasla, logowanie z now
 
 **Podatnosci w pakietach** (Debian, Ubuntu, Alpine). Pipe czyta liste pakietow z bazy dpkg/apk (niczego nie
 uruchamia) i pyta [OSV.dev](https://osv.dev) o znane podatnosci dla dokladnych wersji. Liczy sie tylko to, co ma
-poprawke -- podatnosci bez poprawki widac jako liczbe, bo zwykly Debian ma ich setki. Do OSV trafiaja wylacznie
+poprawke -- podatnosci bez poprawki Pipe pomija, bo zwykly Debian ma ich setki i nic sie z nimi nie da zrobic.
+Raport zaczyna sie od "Co z tym zrobic": jedna linia na serwer, obrazy i aplikacje z konkretnym krokiem. Do OSV trafiaja wylacznie
 nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 
 - Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)

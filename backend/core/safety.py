@@ -651,7 +651,8 @@ async def guarded(
         verified = [c.label for c in plan.post if not any(c.label in s for s in skipped)]
         if working_before:
             verified.append(tr(f"strony dzialaja ({len(working_before)})", f"sites work ({len(working_before)})"))
-        lines.append(tr("Zweryfikowano: ", "Verified: ") + "; ".join(verified) + ".")
+        # dwa projekty compose daja dwa razy te sama etykiete ("kontenery projektu dzialaja") — raz wystarczy
+        lines.append(tr("Zweryfikowano: ", "Verified: ") + "; ".join(dict.fromkeys(verified)) + ".")
     if skipped:
         lines.append(tr("Nie sprawdzono: ", "Not checked: ") + "; ".join(skipped) + ".")
     if status != "restored":

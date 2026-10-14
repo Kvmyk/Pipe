@@ -243,7 +243,8 @@ class TestAudit:
         clean = vulns.Scan(at=1, ecosystem="Debian:12", system="Debian 12", checked=300, unfixed=40)
         audit = posture.Audit()
         posture.vuln_findings(audit, clean)
-        assert not audit.findings and "300" in audit.passed[0] and "40" in audit.passed[0]
+        # bez "40 znanych bez poprawki" — z tym nic sie nie da zrobic
+        assert not audit.findings and "300" in audit.passed[0] and "40" not in audit.passed[0]
 
         audit = posture.Audit()
         posture.vuln_findings(audit, vulns.Scan(at=1, ecosystem=None, system="Rocky Linux 9.4"))
@@ -416,7 +417,10 @@ class TestPatchCommand:
         assert "data" in frames[-1], frames[-1]
         done = frames[-1]["data"]
         assert ran and ran[0][0] == preview["data"]["command"] and ran[0][1] >= 600
-        assert done["exit_code"] == 0 and "Setting up openssl" in done["text"] and done["entry_id"]
+        assert done["exit_code"] == 0 and done["entry_id"]
+        # surowe wyjscie apt tylko w `output` (pipe web, zwiniete) — Telegram i CLI dostaja krotki wynik
+        assert "Setting up openssl" in done["output"] and "Setting up openssl" not in done["text"]
+        assert done["text"].startswith("Gotowe.") and f"#{done['entry_id']}" in done["text"] and "Po instalacji" in done["text"]
         entry = journal.load(done["entry_id"])
         assert entry.tool == "patch" and any("cofam" in n or "rolled back" in n for n in entry.notes)
 
@@ -763,8 +767,9 @@ class TestReadable:
     def test_report_sections_and_next_steps(self, host, monkeypatch):
         result = self.scan_with(host, monkeypatch)
         text = vulns.report_markdown(result, {})
-        assert "### Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 z poprawkami, 1 pilnych" in text
-        assert "Bez poprawki (czekaja na dystrybucje): 1." in text and "/zalataj — pakiety serwera" in text
+        assert "### Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 pakiet z poprawka, pilne: 1" in text
+        assert text.startswith("**Co z tym zrobic**\n- Serwer: 1 pakiet z poprawka (pilne: 1) — zainstaluje je /zalataj.")
+        assert "Bez poprawki" not in text
         assert "Nie ma jeszcze wyniku" in vulns.report_markdown(None, {}, "off")
 
     def test_explanations_written_once_cleaned_and_cached(self, host, monkeypatch):
@@ -860,7 +865,7 @@ class TestOneMessage:
             assert len(html_text) <= 4096, (name, len(html_text))
         report = texts["report"]
         assert "**pakiet0** 1.0-1ubuntu0.1 → 1.0-1ubuntu0.2 · 6 podatnosci" in report
-        assert "kolejnych pakietow" in report and "/zalataj" in report and "Bez poprawki" in report
+        assert "kolejnych" in report and "/zalataj" in report and "Bez poprawki" not in report
         assert "+" in texts["preview"] and "pakietow)" in texts["preview"]        # komenda skrocona, nie 225 nazw
         assert vulns.short_command("apt-get install x") == "apt-get install x"
 
@@ -910,9 +915,9 @@ class TestPatchWhatIsThere:
     def test_nothing_to_install_explains_where_the_vulnerabilities_are(self, monkeypatch):
         data = self.run_patch(monkeypatch, self.scan(compose=False), {})
         text = data["text"]
-        assert not data["command"] and "nie ma podatnosci z poprawka do zainstalowania" not in text.lower()
-        assert "Pakiety serwera nie maja" in text and "dermavision-backend: kontener bez compose" in text
-        assert "/root/TeamBIT/Quiz" in text and "npm audit fix" in text and "507" in text
+        assert not data["command"] and text.startswith("Nie ma nic do zainstalowania.")
+        assert "Kontenery bez compose (dermavision-backend)" in text and "do odswiezenia" not in text
+        assert "/root/TeamBIT/Quiz" in text and "npm audit fix" in text and "507" not in text
 
 
 class TestRefreshContainers:
@@ -1000,9 +1005,9 @@ class TestAfterPatch:
         done = call({"scope": "all", "execute": True, "patch_token": preview["token"]})[-1]["data"]
         assert done["unchanged"] == ["openssl"] and done["fixed"] == [] and "repozytoria serwera" in done["summary"]
         again = call({"scope": "all"})[-1]["data"]
-        assert again["command"] == "" and "Bez zmian po ostatniej instalacji" in again["text"]
+        assert again["command"] == "" and "openssl) bez zmian po ostatniej instalacji" in again["text"]
         scan = watch.get_watcher().vuln_scan
-        assert "Bez zmian po ostatniej instalacji" in vulns.report_markdown(scan, {})
+        assert "openssl) bez zmian po ostatniej instalacji" in vulns.report_markdown(scan, {})
         view = vulns.report_view(scan, {})
         assert view["groups"][0]["items"][0]["held"] and view["actions"] == []
         assert vulns.select(scan, "all", now=scan.at + vulns.HOLD_FOR + 1)    # po dobie probuje znowu
@@ -1023,9 +1028,34 @@ class TestAfterPatch:
         assert outcome.unchanged == ["shop_web"]
         patch = vulns.image_patch(scan)
         assert patch.command == "" and [t.name for t in patch.waiting] == ["shop_web"]
-        assert "Bez nowszego obrazu" in vulns.nothing_to_patch(scan)
+        assert "obraz bazowy (FROM) nie ma nowszej wersji" in vulns.nothing_to_patch(scan)
         newer = vulns.Scan(at=2, ecosystem="Debian:12", targets=[image_target(vuln_id="DSA-10")])
         assert vulns.image_patch(newer).command                              # inne podatnosci — nowa proba
+
+    def test_failed_install_shows_only_the_tail_of_the_output(self):
+        import backend.server as server
+        from backend.core.safety import Outcome
+
+        output = "\n".join(f"#{i} CACHED" for i in range(200)) + "\nE: Unable to locate package foo"
+        outcome = Outcome(output + "\nDziennik zmian: #ab12cd34 — cofniecie: /cofnij ab12cd34.", 100, "ab12cd34")
+        text = server._patch_text(outcome, output, 100, "nic.")
+        assert "kod 100" in text and "E: Unable to locate package foo" in text and "#ab12cd34" in text
+        assert "#150 CACHED" not in text and len(text.splitlines()) < 20
+        ok = server._patch_text(Outcome(output + "\nZweryfikowano: x.", 0, "ab"), output, 0, "nic.")
+        assert "CACHED" not in ok and "Zweryfikowano: x." in ok
+
+    def test_locally_built_image_gets_the_right_reason(self):
+        import backend.server as server
+
+        built = image_target(name="flowers-valentines-card", project="flowers")
+        built.meta["compose"][0]["service"] = "valentines-card"
+        pulled = image_target(name="nginx:1.25")
+        assert vulns.built_locally(built) and not vulns.built_locally(pulled)
+        left = vulns.Scan(at=2, ecosystem="Debian:12", targets=[built, pulled])
+        changed = vulns.PatchOutcome(unchanged=["flowers-valentines-card", "nginx:1.25"])
+        text = server._patch_after("images", left, changed, 0, [built, pulled])
+        assert "flowers-valentines-card) — zbudowane od nowa, ale obraz bazowy (FROM)" in text
+        assert "nginx:1.25) — pod tym tagiem nie ma nowszego obrazu" in text
 
     def test_pipe_own_project_is_never_recreated(self):
         scan = vulns.Scan(at=1, targets=[image_target(name="ghcr.io/kvmyk/pipe:0.36.6", project="backend",
@@ -1083,3 +1113,36 @@ class TestAfterPatch:
         assert item["vulns"][0]["text"] == "Atakujacy moze odczytac pamiec." and item["vulns"][0]["ref"] == "CVE-2026-0001"
         assert {a["scope"] for a in view["actions"]} == {"urgent", "all"} and view["totals"]["urgent"] == 1
         assert vulns.report_view(None, {}, "off")["notes"] == ["off"]
+
+
+class TestReadableForPeople:
+    """Raport mowi najpierw, co z tym zrobic; bez liczby podatnosci bez poprawki i bez pustych sekcji."""
+
+    def test_counts_are_declined(self):
+        assert [vulns.n_packages(n) for n in (1, 2, 5, 12, 22, 25)] == \
+            ["1 pakiet", "2 pakiety", "5 pakietow", "12 pakietow", "22 pakiety", "25 pakietow"]
+
+    def test_model_explanations_lose_polish_letters_like_the_rest(self):
+        assert vulns.plain("Atakujący może zawiesić usługę") == "Atakujacy moze zawiesic usluge"
+
+    def test_section_without_room_is_named_not_left_empty(self):
+        many = [vulns.PackageVulns(f"p{i}", "1", [f"p{i}"], [vulns.Vuln(f"V{i}", [], "high", "opis " * 40, "2")],
+                                   ecosystem="npm") for i in range(4)]
+        sections = [("Aplikacja /a (npm): 4 zaleznosci", many, 4), ("Aplikacja /b (npm): 4 zaleznosci", many, 4)]
+        text = vulns.sections_markdown(sections, {}, budget=1200)
+        assert "### Aplikacja /b" not in text and "Nie zmiescilo sie w tej wiadomosci: Aplikacja /b (npm)" in text
+
+    def test_todo_for_a_clean_server_with_old_base_images_and_apps(self):
+        built = image_target(name="flowers-valentines-card", project="flowers")
+        built.meta["compose"][0]["service"] = "valentines-card"
+        app = vulns.TargetResult("app", "/root/quiz", "npm", 10, [vulns.PackageVulns(
+            "shell-quote", "1.8.3", ["shell-quote"], [vulns.Vuln("GHSA-1", [], "critical", "x", "1.9.0")], ecosystem="npm")])
+        scan = vulns.Scan(at=1, ecosystem="Debian:12", system="Debian 12", checked=10, unfixed=512, targets=[built, app])
+        vulns.record_outcome("images", [built], scan)
+        lines = vulns.todo(scan)
+        assert lines[0] == "Serwer: pakiety aktualne."
+        assert lines[1].startswith("Obrazy budowane z Dockerfile (flowers-valentines-card)") and "podbij ja w Dockerfile" in lines[1]
+        assert lines[2].startswith("Aplikacje (/root/quiz): podatne zaleznosci npm")
+        nothing = vulns.nothing_to_patch(scan)
+        assert nothing.startswith("Nie ma nic do zainstalowania.") and "512" not in nothing and "Serwer:" not in nothing
+        assert vulns.report_view(scan, {})["todo"] == lines

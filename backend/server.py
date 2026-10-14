@@ -542,11 +542,14 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
             image_ref = await hostexec.image()
             run, plan = hostexec.wrap(command, image_ref), hostexec.host_plan(plan, image_ref)
 
+        captured = {"output": ""}
+
         async def operation() -> tuple[str, int]:
             out, err, code = await executor.execute(run, timeout=settings.CONFIRMED_COMMAND_TIMEOUT)
             lines = (out + ("\n" + err if err else "")).strip().splitlines()
             tail = "\n".join(lines[-PATCH_OUTPUT_LINES:])
-            return memory.redact_secrets(tail)[0] or executor.NO_OUTPUT[1 if i18n.is_en() else 0], code
+            captured["output"] = memory.redact_secrets(tail)[0] or executor.NO_OUTPUT[1 if i18n.is_en() else 0]
+            return captured["output"], code
 
         outcome = None
         async for event in safety.guarded(plan, operation, interface=interface, tool="patch", description=description,
@@ -567,10 +570,10 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         left = watcher.vuln_scan
         if left is not None and left.ok and code == 0:
             changed = await asyncio.to_thread(vulns.record_outcome, scope, before, left)
-        after = _patch_after(scope, left, changed, code)
+        after = _patch_after(scope, left, changed, code, before)
     except Exception as exc:
         after = tr(f"ponowny skan nie powiodl sie: {exc}", f"the rescan failed: {exc}")
-    text = (outcome.text if outcome else "") + "\n\n" + tr(f"Po instalacji: {after}", f"After the install: {after}")
+    text = _patch_text(outcome, captured["output"], code, after)
     try:
         # /zalataj dziala bez modelu — agent zapytany "jak tam latanie?" ma wiedziec, co sie stalo
         get_agent().note(session_id, tr(
@@ -583,10 +586,31 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
     report = vulns.report_view(left, vulns.explanations(lang())) if left is not None else None
     await _send(writer, _data({"text": text, "exit_code": code, "entry_id": outcome.entry_id if outcome else "",
                                "scope": scope, "summary": after, "fixed": changed.fixed, "unchanged": changed.unchanged,
-                               "output": outcome.text if outcome else "", "report": report}))
+                               "output": captured["output"], "report": report}))
 
 
-def _patch_after(scope: str, left, changed, code: int) -> str:
+PATCH_ERROR_LINES = 8
+
+
+def _patch_text(outcome, output: str, code: int, after: str) -> str:
+    """
+    Wynik latki dla Telegrama i CLI: status, linie bezpiecznika (weryfikacja, dziennik) i co zostalo. Surowe
+    wyjscie apt / docker compose build (setki linii) tylko przy bledzie i tylko koncowka — calosc ma `output`.
+    """
+    fuse = outcome.text if outcome else ""
+    if output and fuse.startswith(output):
+        fuse = fuse[len(output):]
+    lines = [tr("Gotowe.", "Done.") if code == 0 else tr(f"Instalacja zakonczyla sie bledem (kod {code}).",
+                                                       f"The install failed (exit code {code}).")]
+    lines += [line for line in fuse.strip().splitlines() if line.strip()]
+    if code != 0 and output:
+        lines += ["", tr("Ostatnie linie wyjscia:", "Last output lines:")]
+        lines += ["    " + line for line in output.strip().splitlines()[-PATCH_ERROR_LINES:]]
+    lines += ["", tr(f"Po instalacji: {after}", f"After the install: {after}")]
+    return "\n".join(lines)
+
+
+def _patch_after(scope: str, left, changed, code: int, before: list | None = None) -> str:
     """Jedno zdanie po latce: co sie zmienilo, co nie (i dlaczego), co zostalo."""
     from backend.core import vulns
 
@@ -601,12 +625,24 @@ def _patch_after(scope: str, left, changed, code: int) -> str:
     if changed.fixed:
         parts.append(tr(f"zalatane {len(changed.fixed)} {noun}: {', '.join(changed.fixed[:6])}",
                         f"patched {len(changed.fixed)} {noun}: {', '.join(changed.fixed[:6])}"))
-    if changed.unchanged:
-        why = tr("pod tym tagiem nie ma nowszego obrazu", "there is no newer image under that tag") if scope == "images" \
-            else tr("repozytoria serwera nie maja jeszcze poprawki", "the server's repositories do not have the fix yet")
-        parts.append(tr(f"bez zmian {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — {why}; nie zaproponuje "
-                        f"ich znowu przez dobe", f"unchanged {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — "
-                        f"{why}; I will not offer them again for a day"))
+    if changed.unchanged and scope == "images":
+        built = {t.name for t in before or [] if vulns.built_locally(t)}
+        groups = [([n for n in changed.unchanged if n in built],
+                   tr("zbudowane od nowa, ale obraz bazowy (FROM) nie ma nowszej wersji — podbij wersje w FROM w Dockerfile",
+                      "rebuilt, but the base image (FROM) has no newer version — bump the version in the Dockerfile's FROM")),
+                  ([n for n in changed.unchanged if n not in built],
+                   tr("pod tym tagiem nie ma nowszego obrazu — zmien tag w compose",
+                      "there is no newer image under that tag — change the tag in compose"))]
+        for names, why in groups:
+            if names:
+                parts.append(tr(f"bez zmian {len(names)} ({', '.join(names[:6])}) — {why}",
+                                f"unchanged {len(names)} ({', '.join(names[:6])}) — {why}"))
+        parts.append(tr("nie zaproponuje ich znowu przez dobe", "I will not offer them again for a day"))
+    elif changed.unchanged:
+        parts.append(tr(f"bez zmian {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — repozytoria serwera "
+                        f"nie maja jeszcze poprawki; nie zaproponuje ich znowu przez dobe",
+                        f"unchanged {len(changed.unchanged)} ({', '.join(changed.unchanged[:6])}) — the server's repositories "
+                        f"do not have the fix yet; I will not offer them again for a day"))
     if scope == "images":
         still = [t.name for t in left.of_kind("image") if t.items]
         parts.append(tr(f"obrazy z podatnosciami: {len(still)}", f"images with vulnerabilities: {len(still)}") if still

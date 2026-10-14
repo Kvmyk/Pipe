@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.37.0
+Pipe v0.37.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -316,8 +316,11 @@ async def _run_and_reply(
 _user_locks: dict[int, asyncio.Lock] = {}
 
 
-async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, frames: AsyncIterator[dict]) -> None:
-    bot = context.bot
+async def _collect(bot, chat_id: int, frames: AsyncIterator[dict]) -> list[dict]:
+    """
+    Ramki backendu: zalaczniki wysyla od razu, postep (kroki agenta, bezpiecznika) pokazuje w jednej edytowanej
+    wiadomosci, ktora na koncu zamienia sie w zwinieta liste krokow. Zwraca pozostale ramki (tekst, dane).
+    """
     responses: list[dict] = []
     progress_lines: list[str] = []
     progress_message = None
@@ -337,7 +340,6 @@ async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: in
             pass
         last_edit = time.monotonic()
 
-    await bot.send_chat_action(chat_id=chat_id, action="typing")
     async for frame in frames:
         if frame.get("attachment"):
             await bot.send_chat_action(chat_id=chat_id, action="upload_photo")
@@ -357,6 +359,13 @@ async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: in
                 await progress_message.edit_text(summary, parse_mode=ParseMode.HTML)
         except Exception:
             pass
+    return responses
+
+
+async def _consume(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, frames: AsyncIterator[dict]) -> None:
+    bot = context.bot
+    await bot.send_chat_action(chat_id=chat_id, action="typing")
+    responses = await _collect(bot, chat_id, frames)
 
     text, needs_confirm = collect_response_text(responses)
     if text:
@@ -822,9 +831,14 @@ async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     async def go() -> None:
-        result = response_data([f async for f in get_client(user.id).command(
-            "patch", scope=parts[2], patch_token=parts[3], execute=True)])
-        await _send_html(context.bot, query.message.chat_id, format_listing(tr("Latki", "Patches"), result.get("text", "")))
+        # instalacja trwa minuty: kroki bezpiecznika na zywo w jednej wiadomosci, na koniec krotki wynik
+        # (bez surowego wyjscia apt / docker build — to jest w pipe web i przy bledzie jako ostatnie linie)
+        chat_id = query.message.chat_id
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        responses = await _collect(context.bot, chat_id, get_client(user.id).command(
+            "patch", scope=parts[2], patch_token=parts[3], execute=True))
+        result = response_data(responses)
+        await _send_html(context.bot, chat_id, format_listing(tr("Latki", "Patches"), result.get("text", "")))
 
     await _backend_call(update, context, go())
 

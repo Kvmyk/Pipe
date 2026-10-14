@@ -621,10 +621,8 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
     elif not scan.error:
-        without = tr(f", {scan.unfixed} znanych jeszcze bez poprawki", f", {scan.unfixed} known without a fix yet") \
-            if scan.unfixed else ""
-        audit.passed.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow{without})",
-                               f"no vulnerabilities with a fix ({scan.checked} packages{without})"))
+        audit.passed.append(tr(f"pakiety serwera bez podatnosci z poprawka (sprawdzone: {scan.checked})",
+                               f"server packages without fixable vulnerabilities ({scan.checked} checked)"))
 
 
 def run_audit(*, containers: list[Any] | None, sockets: list[Any], report: Any = None, cert_days: int = 14,
