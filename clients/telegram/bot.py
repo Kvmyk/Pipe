@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -239,12 +239,12 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 
 # Alert o podatnosciach -> zakres latki (zaleznosci aplikacji nie maja latki — to zmiana w kodzie).
-PATCH_SCOPES = {"vuln:system": "urgent", "vuln:images": "images"}
+PATCH_SCOPES = {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers"}
 
 
 def _patch_scope(args: list[str] | None) -> str:
-    word = " ".join(args or []).strip().lower()
-    return {"pilne": "urgent", "urgent": "urgent", "obrazy": "images", "images": "images"}.get(word, "all")
+    """Slowo po /zalataj trafia do backendu bez zmian — to on wie, co znaczy (obrazy, serwer, nazwa serwera...)."""
+    return " ".join(args or []).strip().lower()
 
 
 def _alert_keyboard(event: dict, user_id: int) -> InlineKeyboardMarkup | None:
@@ -258,7 +258,17 @@ def _alert_keyboard(event: dict, user_id: int) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup([row])
 
 
+def _alert_keyboard_without_patch(query) -> InlineKeyboardMarkup | None:
+    """Przyciski alertu bez Zalataj — latanie juz idzie, drugie klikniecie niczego by nie dodalo."""
+    markup = getattr(query.message, "reply_markup", None)
+    rows = [[b for b in row if not str(getattr(b, "callback_data", "") or "").startswith("patch:")]
+            for row in (markup.inline_keyboard if markup else [])]
+    rows = [row for row in rows if row]
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
 def _patch_keyboard(scope: str, token: str, user_id: int) -> InlineKeyboardMarkup:
+    """Zainstaluj / Anuluj pod podgladem — tylko dla backendu sprzed v0.38, ktory odpowiada podgladem z tokenem."""
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(tr("Zainstaluj", "Install"), callback_data=f"patchx:yes:{scope}:{token}:{user_id}"),
         InlineKeyboardButton(tr("Anuluj", "Cancel"), callback_data=f"patchx:no:{scope}:{token}:{user_id}"),
@@ -788,16 +798,23 @@ async def cmd_cofnij(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await _backend_call(update, context, go())
 
 
-async def _patch_preview(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, scope: str) -> None:
-    data = response_data([f async for f in get_client(user_id).command("patch", scope=scope)])
-    markup = None
+async def _patch_run(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, scope: str) -> None:
+    """
+    Latanie od razu (bez LLM): backend sam wie, co zalatac. Kroki na zywo w jednej wiadomosci, na koncu krotki
+    wynik — surowe wyjscie apt / docker tylko przy bledzie (koncowka). Backend sprzed v0.38 odpowiada podgladem
+    z tokenem — wtedy jak dawniej przyciski Zainstaluj / Anuluj.
+    """
+    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+    data = response_data(await _collect(context.bot, chat_id, get_client(user_id).command("patch", scope=scope)))
     if data.get("can_execute") and data.get("token"):
-        markup = _patch_keyboard(data.get("scope", scope), data["token"], user_id)
-    await _send_html(context.bot, chat_id, markdown_html(data.get("text", "")), markup)
+        await _send_html(context.bot, chat_id, markdown_html(data.get("text", "")),
+                         _patch_keyboard(data.get("scope", scope), data["token"], user_id))
+        return
+    await _send_html(context.bot, chat_id, format_listing(tr("Latki", "Patches"), data.get("text", "")))
 
 
 async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/zalataj [pilne|obrazy] -- latki podatnosci: podglad i przyciski (bez LLM)."""
+    """/zalataj [obrazy|serwer|serwery|<cel>] -- latki podatnosci od razu, z krokami na zywo (bez LLM)."""
     user_id = await _guard(update)
     if not user_id:
         return
@@ -805,11 +822,11 @@ async def cmd_zalataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(tr("Latki instaluje tylko administrator — podatnosci pokazuje /audyt.",
                                            "Only an administrator installs patches — /audit shows the vulnerabilities."))
         return
-    await _backend_call(update, context, _patch_preview(context, update.effective_chat.id, user_id, _patch_scope(context.args)))
+    await _backend_call(update, context, _patch_run(context, update.effective_chat.id, user_id, _patch_scope(context.args)))
 
 
 async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
-    """patch:<scope>:<user> — podglad z alertu; patchx:yes|no:<scope>:<token>:<user> — instalacja."""
+    """patch:<scope>:<user> — Zalataj przy alercie (od razu); patchx:yes|no:<scope>:<token>:<user> — stary podglad."""
     query = update.callback_query
     user = update.effective_user
     parts = data.split(":")
@@ -818,8 +835,12 @@ async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer(tr("Latki instaluje tylko administrator.", "Only an administrator installs patches."), show_alert=True)
         return
     if parts[0] == "patch":
-        await query.answer()
-        await _backend_call(update, context, _patch_preview(context, query.message.chat_id, user.id, parts[1]))
+        await query.answer(tr("Latam...", "Patching..."))
+        try:
+            await query.edit_message_reply_markup(reply_markup=_alert_keyboard_without_patch(query))
+        except Exception:
+            pass
+        await _backend_call(update, context, _patch_run(context, query.message.chat_id, user.id, parts[1]))
         return
     await query.answer(tr("Instaluje...", "Installing...") if parts[1] == "yes" else tr("Anulowano", "Cancelled"))
     try:

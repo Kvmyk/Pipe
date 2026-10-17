@@ -8,9 +8,9 @@ root na hoscie — docs/security.md), wiec moze uruchomic krotki kontener pomocn
 jak w powloce roota na serwerze: system plikow, siec, uslugi i menedzer pakietow hosta.
 
 Nie dodaje to uprawnien, ktorych Pipe nie mial — `docker run` i tak bylo mozliwe po potwierdzeniu. Daje
-przewidywalna, jedna droge, ktora zawsze przechodzi przez TAK: wolajacy (handler `execute_command` z `host`,
-latki `/zalataj`) klasyfikuje i pokazuje komende docelowa, nigdy opakowanie. Tryb obserwacji i inne tryby niz
-docker nie maja tej drogi (`blocker()`).
+przewidywalna, jedna droge: handler `execute_command` z `host` klasyfikuje i pokazuje komende docelowa (nigdy
+opakowanie) i czeka na TAK; latki `/zalataj` (core/patching.py) skladaja komendy same z wyniku skanu, a zgoda to
+samo `/zalataj` administratora. Tryb obserwacji i inne tryby niz docker nie maja tej drogi (`blocker()`).
 
 Bez importu `settings` — testowalne przez podstawienie `_run`.
 """
@@ -65,7 +65,7 @@ _project: str | None = None
 
 
 async def own_project() -> str:
-    """Projekt compose kontenera Pipe ('' = brak albo nie tryb docker). Jego uslug /zalataj obrazy nie odtwarza."""
+    """Projekt compose kontenera Pipe ('' = brak albo nie tryb docker). Jego uslug /zalataj nie odtwarza."""
     global _project
     if _project is not None:
         return _project

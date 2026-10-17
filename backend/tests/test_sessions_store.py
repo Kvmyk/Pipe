@@ -186,7 +186,7 @@ class TestBackendNote:
 class TestSlashCommandsInConversation:
     """Wynik /podatnosci, /zalataj, /alerty... (bez modelu) trafia do rozmowy — "zrob to sam" dotyczy tego, co widac."""
 
-    def test_command_result_becomes_a_note_and_execute_is_not_recorded(self, monkeypatch):
+    def test_command_result_becomes_a_note_and_patch_notes_itself_once(self, monkeypatch):
         import backend.server as server
         from backend.core import watch
         from backend.tests.test_server_commands import exchange
@@ -202,5 +202,7 @@ class TestSlashCommandsInConversation:
         assert session.messages[-2]["pipe_generated"] and session.interface == "telegram:7"
         assert_history_valid(session.messages)
         before = len(session.messages)
-        exchange([{"command": "patch", "execute": True, "patch_token": "x", "interface": "telegram:7"}])
-        assert len(session.messages) == before                         # instalacje notuje sam _patch
+        exchange([{"command": "patch", "interface": "telegram:7"}])
+        # /zalataj notuje sie samo (tu: nic do zainstalowania) — jedna notatka, nie druga z rejestratora komend
+        assert len(session.messages) == before + 2 and "/zalataj" in session.messages[-2]["content"]
+        assert_history_valid(session.messages)

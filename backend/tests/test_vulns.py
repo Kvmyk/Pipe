@@ -297,7 +297,7 @@ class TestWatcher:
         assert [(e.state, e.severity) for e in events] == [("new", "critical")]
         assert events[0].detail == "openssl 3.0.11-1 → 3.0.13-1"          # jedna linia dla promptu i raportu
         assert "**openssl** 3.0.11-1 → 3.0.13-1" in events[0].report and "(CVE-2026-0001)" in events[0].report
-        assert "/zalataj pilne" in events[0].report
+        assert "/zalataj serwer" in events[0].report
         assert w.apply(w.vuln_findings(self.scan()), watch.VULN_SCOPE) == []
 
         restarted = watch.Watcher()                     # znane ID nie wracaja po restarcie
@@ -364,7 +364,45 @@ class TestAdvisories:
         assert [(v.id, v.severity, v.cves) for v in curl] == [("USN-1", "high", ["CVE-2026-1"])]
 
 
+class FakeShell:
+    """executor.execute w testach latania: zapisuje komendy, odpowiada wedlug regul (fragment komendy -> wynik)."""
+
+    def __init__(self, rules=None, apply=None):
+        self.ran: list[str] = []
+        self.rules = list(rules or [])
+        self.apply = apply
+
+    async def __call__(self, cmd, cwd=None, timeout=None):
+        self.ran.append(cmd)
+        if self.apply and "--only-upgrade" in cmd and "docker run --name" not in cmd:
+            self.apply()
+        for fragment, result in self.rules:
+            if fragment in cmd:
+                return result
+        return "ok\n", "", 0
+
+    def having(self, fragment):
+        return [c for c in self.ran if fragment in c]
+
+
+def patch_env(monkeypatch, *, kind="native", shell=None):
+    """Latanie bez prawdziwych komend: tryb, executor, bez czekania na dostarczenie wyniku."""
+    from backend.config import settings
+    from backend.core import executor, hostexec, patching, runtime
+
+    shell = shell or FakeShell()
+    monkeypatch.setattr(runtime, "kind", lambda: kind)
+    monkeypatch.setattr(runtime, "observe", lambda: False)
+    monkeypatch.setattr(executor, "execute", shell)
+    monkeypatch.setattr(patching, "DELIVER_AFTER", 0)
+    monkeypatch.setattr(hostexec, "_project", "")
+    monkeypatch.setattr(settings, "WATCH_SITES", False)
+    monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
+    return shell
+
+
 class TestPatchCommand:
+    """/zalataj lata od razu: bez podgladu, tokenu i drugiego pytania — wszystko, co jest do zalatania."""
 
     @pytest.fixture
     def server(self, host, monkeypatch):
@@ -380,67 +418,35 @@ class TestPatchCommand:
         monkeypatch.setattr(watch, "_watcher", None)
         return server
 
-    def test_preview_in_docker_gives_host_command(self, server):
+    def test_patch_runs_right_away_with_cleanup_through_the_fuse(self, server, monkeypatch):
+        from backend.core import journal
         from backend.tests.test_server_commands import exchange
 
-        [[frame]] = exchange([{"command": "patch"}])
-        data = frame["data"]
-        assert data["packages"] == ["openssl"] and not data["can_execute"] and "powloce serwera" in data["reason"]
-        assert "--only-upgrade -o Dpkg::Options::=--force-confold libssl3 openssl" in data["command"]
-        assert data["token"] == vulns.patch_token(data["command"]) and "`" in data["text"]
-        [[refused]] = exchange([{"command": "patch", "execute": True, "patch_token": data["token"]}])
-        assert refused["status"] == "error"
-
-    def test_execute_needs_matching_token_and_runs_through_the_fuse(self, server, monkeypatch):
-        from backend.core import executor, journal
-        from backend.tests.test_server_commands import exchange
-
-        ran = []
-
-        async def fake_execute(cmd, cwd=None, timeout=None):
-            ran.append((cmd, timeout))
-            return "Setting up openssl (3.0.13-1~deb12u1) ...\n", "", 0
-
-        async def no_blocker(role):
-            return ""
-
-        from backend.core import runtime
-
-        monkeypatch.setattr(runtime, "kind", lambda: "native")
-        monkeypatch.setattr(server, "_patch_blocker", no_blocker)
-        monkeypatch.setattr(executor, "execute", fake_execute)
-        [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
-        token = preview["data"]["token"]
-        [[stale]] = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": "nope"}])
-        assert stale["status"] == "error" and not ran
-        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": token}])[0]
-        assert "data" in frames[-1], frames[-1]
+        shell = patch_env(monkeypatch, shell=FakeShell([("docker info", ("", "no docker", 1))]))
+        frames = exchange([{"command": "patch"}])[0]
         done = frames[-1]["data"]
-        assert ran and ran[0][0] == preview["data"]["command"] and ran[0][1] >= 600
-        assert done["exit_code"] == 0 and done["entry_id"]
-        # surowe wyjscie apt tylko w `output` (pipe web, zwiniete) — Telegram i CLI dostaja krotki wynik
-        assert "Setting up openssl" in done["output"] and "Setting up openssl" not in done["text"]
-        assert done["text"].startswith("Gotowe.") and f"#{done['entry_id']}" in done["text"] and "Po instalacji" in done["text"]
+        assert done["exit_code"] == 0 and done["entry_id"] and done["text"].startswith("Gotowe")
+        assert any(f.get("event", {}).get("type") == "progress" for f in frames)
+        install = shell.having("--only-upgrade")
+        assert len(install) == 1 and install[0].endswith("--force-confold libssl3 openssl")
+        assert "DPkg::Lock::Timeout=300" in install[0]
+        # porzadki: przerwane dpkg, cache paczek, stare jadra — przed i po; cache npm/pip po calosci
+        assert shell.having("dpkg --force-confold --configure -a") and len(shell.having("apt-get -s autoremove")) == 2
+        assert shell.having("npm cache clean --force") and not shell.having("docker image prune")
+        assert shell.ran.index(install[0]) < shell.ran.index(shell.having("npm cache clean")[0])
         entry = journal.load(done["entry_id"])
-        assert entry.tool == "patch" and any("cofam" in n or "rolled back" in n for n in entry.notes)
+        assert entry.tool == "patch" and any("cofam" in n for n in entry.notes)
+        assert "Ten serwer:" in done["text"]
 
     def test_install_works_with_agent_token_like_on_a_real_server(self, server, monkeypatch):
-        """Klienci wpisuja AGENT_TOKEN w pole `token` — token latki musi isc osobno (`patch_token`)."""
+        """Klienci wpisuja AGENT_TOKEN w pole `token`; dawne `execute` i `patch_token` nic nie zmieniaja."""
         from backend.config import settings
-        from backend.core import executor, runtime
         from backend.tests.test_server_commands import exchange
 
-        async def fake_execute(cmd, cwd=None, timeout=None):
-            return "ok\n", "", 0
-
+        patch_env(monkeypatch)
         monkeypatch.setattr(settings, "AGENT_TOKEN", "admintok")
-        monkeypatch.setattr(runtime, "kind", lambda: "native")
-        monkeypatch.setattr(runtime, "observe", lambda: False)
-        monkeypatch.setattr(executor, "execute", fake_execute)
-        [[preview]] = exchange([{"command": "patch", "scope": "urgent", "token": "admintok"}])
-        assert preview["data"]["can_execute"]
-        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "token": "admintok",
-                            "patch_token": preview["data"]["token"]}])[0]
+        frames = exchange([{"command": "patch", "scope": "pilne", "execute": True, "patch_token": "stary",
+                            "token": "admintok"}])[0]
         assert frames[-1]["data"]["exit_code"] == 0, frames[-1]
 
     def test_web_bridge_forwards_scope_and_patch_token(self):
@@ -452,46 +458,52 @@ class TestPatchCommand:
 
         request = WebBridge("127.0.0.1", 1, "auth")._backend_request(
             {"command": "patch", "scope": "images", "patch_token": "abc", "execute": True, "token": "obcy"})
-        assert request["scope"] == "images" and request["patch_token"] == "abc" and request["token"] == "auth"
+        assert request["scope"] == "images" and request["token"] == "auth"
 
-    def test_blockers(self, monkeypatch):
-        import backend.server as server
-        from backend.core import runtime
+    def test_viewer_observe_and_unknown_scope_are_refused(self, server, monkeypatch):
+        from backend.core import patching, runtime
+        from backend.tests.test_server_commands import exchange
 
-        monkeypatch.setattr(runtime, "kind", lambda: "native")
-        monkeypatch.setattr(runtime, "observe", lambda: False)
-        assert asyncio.run(server._patch_blocker("admin")) == ""
-        assert "viewer" in asyncio.run(server._patch_blocker("viewer"))
+        shell = patch_env(monkeypatch)
+        assert asyncio.run(patching.blocker("admin")) == "" and asyncio.run(patching.local_blocker()) == ""
+        assert "viewer" in asyncio.run(patching.blocker("viewer"))
+        [[unknown]] = exchange([{"command": "patch", "scope": "obrazki"}])
+        assert unknown["status"] == "error" and "/zalataj obrazy" in unknown["response"]
         monkeypatch.setattr(runtime, "observe", lambda: True)
-        assert "PIPE_OBSERVE" in asyncio.run(server._patch_blocker("admin"))
+        assert "PIPE_OBSERVE" in asyncio.run(patching.blocker("admin"))
+        [[refused]] = exchange([{"command": "patch"}])
+        assert refused["status"] == "error" and not shell.ran
 
     def test_docker_mode_patches_through_the_helper_container(self, server, monkeypatch):
-        """Tryb docker: latka i wpis w dzienniku ida przez kontener pomocniczy (nsenter na hosta)."""
-        from backend.core import executor, hostexec, journal, runtime
+        """Tryb docker: apt i porzadki na hoscie ida przez kontener pomocniczy (nsenter), wpis w dzienniku to mowi."""
+        from backend.core import hostexec, journal, vulns as vulns_module
         from backend.tests.test_server_commands import exchange
 
         image = "sha256:" + "a" * 64
         monkeypatch.setattr(hostexec, "_image", image)
-        monkeypatch.setattr(runtime, "kind", lambda: "docker")
-        monkeypatch.setattr(runtime, "observe", lambda: False)
-        ran = []
-
-        async def fake_execute(cmd, cwd=None, timeout=None):
-            ran.append(cmd)
-            return "Setting up openssl ...\n", "", 0
-
-        monkeypatch.setattr(executor, "execute", fake_execute)
-        [[preview]] = exchange([{"command": "patch", "scope": "urgent"}])
-        assert preview["data"]["can_execute"] and preview["data"]["reason"] == ""
-        frames = exchange([{"command": "patch", "scope": "urgent", "execute": True, "patch_token": preview["data"]["token"]}])[0]
-        done = frames[-1]["data"]
-        assert done["exit_code"] == 0 and ran[0] == hostexec.wrap(preview["data"]["command"], image)
-        assert ran[0].startswith("docker run --rm --privileged --pid=host")
+        shell = patch_env(monkeypatch, kind="docker")
+        done = exchange([{"command": "patch", "scope": "serwer"}])[0][-1]["data"]
+        assert done["exit_code"] == 0
+        steps = vulns_module.host_steps("Debian:12", [vulns_module.PackageVulns("openssl", "1", ["libssl3", "openssl"])])
+        assert [hostexec.wrap(s.command, image) for s in steps] == [c for c in shell.ran if c.startswith("docker run --rm")][:4]
         assert any("nsenter" in n for n in journal.load(done["entry_id"]).notes)
+
+    def test_docker_mode_without_the_helper_says_where_to_do_it(self, server, monkeypatch):
+        from backend.core import hostexec
+        from backend.tests.test_server_commands import exchange
+
+        patch_env(monkeypatch, kind="docker")
+
+        async def no_image():
+            return ""
+        monkeypatch.setattr(hostexec, "image", no_image)
+        frame = exchange([{"command": "patch"}])[0][-1]
+        assert frame["status"] == "error" and "powloce" in frame["response"]
 
     def test_names_outside_the_package_pattern_never_reach_the_shell(self):
         item = vulns.PackageVulns("x", "1", ["openssl", "evil;rm -rf /", "$(id)", "libc6:i386"])
         assert vulns.upgrade_command("Debian:12", [item]).endswith("--force-confold libc6:i386 openssl")
+        assert all("evil" not in s.command and "$(id)" not in s.command for s in vulns.host_steps("Debian:12", [item]))
 
 
 # ─── Etap 3: obrazy kontenerow i zaleznosci aplikacji ───────────────────────
@@ -630,8 +642,9 @@ class TestStage3Scan:
         assert patch.command == f"{base} pull --ignore-buildable web && {base} build --pull web && {base} up -d web"
         assert patch.inverse == ["docker tag aaaaaaaaaaaa nginx:1.25", f"{base} up -d web"]
         assert len(patch.manual) == 1 and patch.manual[0].startswith("adhoc")
-        preview = vulns.image_patch_preview(patch)
-        assert "docker compose" in preview and "/cofnij" in preview
+        [project] = patch.projects
+        assert project.services == ["web"] and [t.name for t in project.targets] == ["nginx:1.25"]
+        assert [t.name for t in patch.refreshable] == ["nginx:1.25"]
 
     def test_image_patch_rejects_odd_names(self):
         vuln = vulns.PackageVulns("a", "1", ["a"], [vulns.Vuln("V", [], "", "", "2")])
@@ -669,9 +682,11 @@ class TestStage3AlertsAndAudit:
         assert set(by_id) == {"vuln-kev", "vuln-images", "vuln-apps"}
         assert by_id["vuln-images"].severity == "high" and "pull web" in by_id["vuln-images"].command
         assert by_id["vuln-apps"].severity == "medium" and by_id["vuln-apps"].detail == "/srv/shop (npm): lodash"
-        assert by_id["vuln-images"].patch == "images" and by_id["vuln-kev"].patch == "urgent"
+        assert by_id["vuln-images"].patch == "images" and by_id["vuln-kev"].patch == "system"
         data = audit.to_data()                                    # dla klientow /zalataj zamiast komendy
-        assert "/zalataj obrazy" in data["text"] and "pull web" not in data["text"] and "pull web" in audit.render()
+        assert "/zalataj obrazy" in data["text"] and "pull web" not in data["text"]
+        # model dostaje narzedzie z jedna zgoda na cala latke, nie komende compose do execute_command
+        assert "security_patch, scope images" in audit.render() and "pull web" not in audit.render()
         assert by_id["vuln-apps"].command == ""
 
         write(host, "/etc/os-release", 'ID=rocky\nVERSION_ID="9.4"\nPRETTY_NAME="Rocky Linux 9.4"\n')
@@ -682,27 +697,48 @@ class TestStage3AlertsAndAudit:
         assert "vuln-images" in {f.id for f in audit.findings} and "Rocky" in audit.unknown[0]
         assert any("obrazy" in line for line in digest.vuln_lines(result))
 
-    def test_patch_images_preview(self, host, tmp_path, monkeypatch):
+    def test_patch_images_keeps_rollback_then_layers_an_image_without_a_newer_version(self, host, tmp_path, monkeypatch):
+        """/zalataj obrazy: poprzedni obraz pod tagiem pipe-rollback-*, pull/build, a gdy nowszego nie ma — warstwa
+        z poprawkami przez docker run + commit (ten sam tag, USER/ENTRYPOINT/CMD obrazu), potem up -d i sprzatanie."""
+        import json as _json
+
         import backend.server as server
-        from backend.config import settings
-        from backend.core import infra
+        from backend.core import infra, journal
 
         _, containers = stage3_host(host, tmp_path, monkeypatch)
 
         async def fake_containers():
             return containers
         monkeypatch.setattr(infra, "docker_containers", fake_containers)
-        monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
         monkeypatch.setattr(watch, "_watcher", None)
+        config = {"User": "nginx", "Entrypoint": ["/docker-entrypoint.sh"], "Cmd": ["nginx", "-g", "daemon off;"]}
+        shell = patch_env(monkeypatch, shell=FakeShell([
+            ("{{.Id}}", ("sha256:" + "a" * 64 + "\n", "", 0)),           # pod tagiem ten sam obraz — nowszego nie ma
+            ("{{json .Config.Labels}}", ("null\n", "", 0)),
+            ("{{json .Config}}", (_json.dumps(config) + "\n", "", 0)),
+            ("DockerRootDir", ("/var/lib/docker\n", "", 0)),
+        ]))
         out = []
 
         async def send(w, frame):
             out.append(frame)
         monkeypatch.setattr(server, "_send", send)
         asyncio.run(server._patch(None, {"scope": "obrazy"}, "cli:t", "admin"))
-        data = out[-1]["data"]
-        assert data["scope"] == "images" and data["packages"] == ["nginx:1.25"] and "pull web" in data["command"]
-        assert not data["can_execute"] and data["token"]
+        done = out[-1]["data"]
+        base = "docker compose -f /srv/shop/compose.yml -p shop"
+        order = [shell.having(f)[0] for f in ("docker tag aaaaaaaaaaaa nginx:pipe-rollback-1.25",
+                                               f"{base} pull --ignore-buildable web", f"{base} build --pull web",
+                                               "docker run --name pipe-patch-", f"{base} up -d web", "docker image prune -f")]
+        assert [shell.ran.index(c) for c in order] == sorted(shell.ran.index(c) for c in order)
+        layer = shell.having("docker run --name pipe-patch-")[0]
+        assert "--user root --entrypoint sh nginx:1.25 -c" in layer and "--only-upgrade" in layer
+        assert "--change 'USER nginx'" in layer and "--change 'ENTRYPOINT [\"/docker-entrypoint.sh\"]'" in layer
+        assert f"LABEL pipe.patch.base=sha256:{'a' * 64}" in layer and "docker rm -f -v pipe-patch-" in layer
+        assert shell.having("docker builder prune -af --filter until=24h")
+        assert not [c for c in shell.ran if c.startswith("DEBIAN_FRONTEND")]           # pakiety hosta nie byly latane
+        entry = journal.load(done["entry_id"])
+        assert entry.inverse == ["docker tag aaaaaaaaaaaa nginx:1.25", f"{base} up -d web"]
+        assert done["scope"] == "images" and "Obrazy:" in done["text"]
 
 
 class TestAppDedup:
@@ -768,7 +804,7 @@ class TestReadable:
         result = self.scan_with(host, monkeypatch)
         text = vulns.report_markdown(result, {})
         assert "### Pakiety serwera (Debian GNU/Linux 12 (bookworm)): 1 pakiet z poprawka, pilne: 1" in text
-        assert text.startswith("**Co z tym zrobic**\n- Serwer: 1 pakiet z poprawka (pilne: 1) — zainstaluje je /zalataj.")
+        assert text.startswith("**Co z tym zrobic**\n- Serwer: 1 pakiet z poprawka (pilne: 1) — zainstaluje /zalataj.")
         assert "Bez poprawki" not in text
         assert "Nie ma jeszcze wyniku" in vulns.report_markdown(None, {}, "off")
 
@@ -806,10 +842,6 @@ class TestReadable:
         assert view["groups"][0]["items"][0]["name"] == "openssl"
         assert "**openssl**" in text and "Atakujacy przez siec moze przejac openssl" in text
 
-    def test_patch_preview_uses_markdown_and_explanations(self, host, monkeypatch):
-        result = self.scan_with(host, monkeypatch)
-        text = vulns.patch_preview(result, result.items, "apt-get x", explain={"DSA-1": "Wyjasnienie."})
-        assert "**openssl**" in text and "Wyjasnienie. (CVE-2026-0001)" in text
 
 
 class TestForeignRecords:
@@ -853,12 +885,10 @@ class TestOneMessage:
         from tg_format import format_alert, markdown_html
 
         scan = self.big_scan()
-        command = vulns.upgrade_command(scan.ecosystem, scan.items)
         texts = {
             "report": vulns.report_markdown(scan, {}),
             "alert": format_alert({"severity": "warning", "title": "Pilne podatnosci w 20 pakietach serwera",
                                    "report": vulns.system_alert(scan, {})}),
-            "preview": vulns.patch_preview(scan, scan.items, command),
         }
         for name, text in texts.items():
             html_text = text if name == "alert" else markdown_html(text)
@@ -866,7 +896,6 @@ class TestOneMessage:
         report = texts["report"]
         assert "**pakiet0** 1.0-1ubuntu0.1 → 1.0-1ubuntu0.2 · 6 podatnosci" in report
         assert "kolejnych" in report and "/zalataj" in report and "Bez poprawki" not in report
-        assert "+" in texts["preview"] and "pakietow)" in texts["preview"]        # komenda skrocona, nie 225 nazw
         assert vulns.short_command("apt-get install x") == "apt-get install x"
 
 
@@ -904,19 +933,23 @@ class TestPatchWhatIsThere:
         monkeypatch.setattr(watch, "_watcher", None)
         monkeypatch.setattr(watch.Watcher, "vuln_for_audit", last)
         monkeypatch.setattr(watch.Watcher, "explain_vulns", explain)
-        [[frame]] = exchange([{"command": "patch", **request}])
-        return frame["data"]
+        patch_env(monkeypatch)
+        return exchange([{"command": "patch", **request}])[0][-1]["data"]
 
-    def test_plain_patch_goes_to_images_when_the_server_is_clean(self, monkeypatch):
-        data = self.run_patch(monkeypatch, self.scan(), {})
-        assert data["scope"] == "images" and data["packages"] == ["dermafoto_backend"]
-        assert "build --pull backend" in data["command"] and "pull --ignore-buildable backend" in data["command"]
+    def test_plain_patch_takes_the_images_when_the_server_is_clean(self):
+        from backend.core import patching
+
+        job = patching.plan(self.scan(), "all")
+        assert [p.kind for p in job.parts] == ["images"] and [t.name for t in job.parts[0].items] == ["dermafoto_backend"]
+        command = job.parts[0].image_patch.command
+        assert "build --pull backend" in command and "pull --ignore-buildable backend" in command
+        assert job.describe() == "obrazy: 1 obraz (dermafoto_backend)"
 
     def test_nothing_to_install_explains_where_the_vulnerabilities_are(self, monkeypatch):
         data = self.run_patch(monkeypatch, self.scan(compose=False), {})
         text = data["text"]
-        assert not data["command"] and text.startswith("Nie ma nic do zainstalowania.")
-        assert "Kontenery bez compose (dermavision-backend)" in text and "do odswiezenia" not in text
+        assert data["nothing"] and not data["command"] and text.startswith("Nie ma nic do zainstalowania.")
+        assert "Kontenery bez compose (dermavision-backend)" in text and "do zalatania" not in text
         assert "/root/TeamBIT/Quiz" in text and "npm audit fix" in text and "507" not in text
 
 
@@ -957,23 +990,13 @@ class TestAfterPatch:
     def patch_server(self, host, monkeypatch, apply):
         """`_patch` z podrobionym executorem: `apply()` robi to, co apt na hoscie (albo nic)."""
         import backend.server as server
-        from backend.config import settings
-        from backend.core import executor, runtime
         from backend.tests.test_server_commands import FakeAgent
 
         debian_host(host)
         fake_osv(monkeypatch)
-        monkeypatch.setattr(settings, "WATCH_SITES", False)
-        monkeypatch.setattr(settings, "VULN_INTERVAL", 3600)
         monkeypatch.setattr(server, "get_agent", lambda: FakeAgent())
         monkeypatch.setattr(watch, "_watcher", None)
-        monkeypatch.setattr(runtime, "kind", lambda: "native")
-        monkeypatch.setattr(runtime, "observe", lambda: False)
-
-        async def fake_execute(cmd, cwd=None, timeout=None):
-            apply()
-            return "done\n", "", 0
-        monkeypatch.setattr(executor, "execute", fake_execute)
+        patch_env(monkeypatch, shell=FakeShell([("docker info", ("", "", 1))], apply=apply))
 
         def call(request):
             out = []
@@ -990,22 +1013,19 @@ class TestAfterPatch:
             write(host, "/var/lib/dpkg/status", DPKG.replace("3.0.11-1~deb12u1", "3.0.13-1~deb12u1"))
             vulns.get_json.ids["openssl"] = []                         # OSV: nowa wersja juz nie jest podatna
         call = self.patch_server(host, monkeypatch, apt)
-        preview = call({"scope": "all"})[-1]["data"]
-        assert preview["packages"] == ["openssl"] and preview["view"]["groups"][0]["items"][0]["name"] == "openssl"
-        frames = call({"scope": "all", "execute": True, "patch_token": preview["token"]})
+        frames = call({"scope": ""})
         done = frames[-1]["data"]
-        assert done["fixed"] == ["openssl"] and done["unchanged"] == []
-        assert "nie maja juz podatnosci" in done["summary"] and done["report"]["groups"] == []
+        assert done["fixed"] == ["openssl"] and done["unchanged"] == [] and done["exit_code"] == 0
+        assert "zainstalowane: 1 (openssl)" in done["text"] and done["report"]["groups"] == []
         assert any(f.get("event", {}).get("type") == "progress" for f in frames)
         assert watch.get_watcher().vuln_scan.items == []                    # /podatnosci zaraz potem: stan po latce
 
     def test_package_apt_could_not_upgrade_is_held_not_offered_again(self, host, monkeypatch):
         call = self.patch_server(host, monkeypatch, lambda: None)            # repozytorium nie ma poprawki
-        preview = call({"scope": "all"})[-1]["data"]
-        done = call({"scope": "all", "execute": True, "patch_token": preview["token"]})[-1]["data"]
-        assert done["unchanged"] == ["openssl"] and done["fixed"] == [] and "repozytoria serwera" in done["summary"]
-        again = call({"scope": "all"})[-1]["data"]
-        assert again["command"] == "" and "openssl) bez zmian po ostatniej instalacji" in again["text"]
+        done = call({"scope": ""})[-1]["data"]
+        assert done["unchanged"] == ["openssl"] and done["fixed"] == [] and "repozytoria nie maja" in done["text"]
+        again = call({"scope": ""})[-1]["data"]
+        assert again["nothing"] and "openssl) bez zmian po ostatniej instalacji" in again["text"]
         scan = watch.get_watcher().vuln_scan
         assert "openssl) bez zmian po ostatniej instalacji" in vulns.report_markdown(scan, {})
         view = vulns.report_view(scan, {})
@@ -1014,8 +1034,7 @@ class TestAfterPatch:
 
     def test_audit_does_not_offer_held_packages(self, host, monkeypatch):
         call = self.patch_server(host, monkeypatch, lambda: None)
-        preview = call({"scope": "all"})[-1]["data"]
-        call({"scope": "all", "execute": True, "patch_token": preview["token"]})
+        call({"scope": ""})
         audit = posture.Audit()
         posture.vuln_findings(audit, watch.get_watcher().vuln_scan)
         kev = next(f for f in audit.findings if f.id == "vuln-kev")
@@ -1028,34 +1047,40 @@ class TestAfterPatch:
         assert outcome.unchanged == ["shop_web"]
         patch = vulns.image_patch(scan)
         assert patch.command == "" and [t.name for t in patch.waiting] == ["shop_web"]
-        assert "obraz bazowy (FROM) nie ma nowszej wersji" in vulns.nothing_to_patch(scan)
+        assert "podbij obraz bazowy (FROM) w Dockerfile" in vulns.nothing_to_patch(scan)
         newer = vulns.Scan(at=2, ecosystem="Debian:12", targets=[image_target(vuln_id="DSA-10")])
         assert vulns.image_patch(newer).command                              # inne podatnosci — nowa proba
 
     def test_failed_install_shows_only_the_tail_of_the_output(self):
-        import backend.server as server
-        from backend.core.safety import Outcome
+        from backend.core import patching
 
+        item = vulns.PackageVulns("foo", "1", ["foo"], [vulns.Vuln("DSA-1", [], "high", "x", "2")], ecosystem="Debian:12")
+        job = patching.Job("all", [patching.Part("system", "system", [item])], vulns.Scan(at=1, ecosystem="Debian:12"))
         output = "\n".join(f"#{i} CACHED" for i in range(200)) + "\nE: Unable to locate package foo"
-        outcome = Outcome(output + "\nDziennik zmian: #ab12cd34 — cofniecie: /cofnij ab12cd34.", 100, "ab12cd34")
-        text = server._patch_text(outcome, output, 100, "nic.")
-        assert "kod 100" in text and "E: Unable to locate package foo" in text and "#ab12cd34" in text
-        assert "#150 CACHED" not in text and len(text.splitlines()) < 20
-        ok = server._patch_text(Outcome(output + "\nZweryfikowano: x.", 0, "ab"), output, 0, "nic.")
-        assert "CACHED" not in ok and "Zweryfikowano: x." in ok
+        failed = patching.PartResult(job.parts[0], exit_code=100, entry_id="ab12cd34", output=patching._tail(output),
+                                     fuse=["Dziennik zmian: #ab12cd34 — cofniecie: /cofnij ab12cd34."])
+        done = patching.summary(job, [failed], vulns.Scan(at=2, ecosystem="Debian:12"), 0, False)
+        assert done.exit_code == 100 and done.text.startswith("Nie udalo sie zalatac")
+        assert "E: Unable to locate package foo" in done.text and "#ab12cd34" in done.text
+        assert "#150 CACHED" not in done.text and len(done.text.splitlines()) < 25
+        ok = patching.PartResult(job.parts[0], output=patching._tail(output), fuse=["Zweryfikowano: x."])
+        text = patching.summary(job, [ok], vulns.Scan(at=2, ecosystem="Debian:12"), 3 * 1024 ** 3, False).text
+        assert "CACHED" not in text and "Zweryfikowano: x." in text and "zwolnione 3.0 GB" in text
 
     def test_locally_built_image_gets_the_right_reason(self):
-        import backend.server as server
+        from backend.core import patching
 
         built = image_target(name="flowers-valentines-card", project="flowers")
         built.meta["compose"][0]["service"] = "valentines-card"
         pulled = image_target(name="nginx:1.25")
         assert vulns.built_locally(built) and not vulns.built_locally(pulled)
-        left = vulns.Scan(at=2, ecosystem="Debian:12", targets=[built, pulled])
-        changed = vulns.PatchOutcome(unchanged=["flowers-valentines-card", "nginx:1.25"])
-        text = server._patch_after("images", left, changed, 0, [built, pulled])
-        assert "flowers-valentines-card) — zbudowane od nowa, ale obraz bazowy (FROM)" in text
-        assert "nginx:1.25) — pod tym tagiem nie ma nowszego obrazu" in text
+        part = patching.Part("images", "images", [built, pulled])
+        result = patching.PartResult(part, layered=["flowers-valentines-card"], refreshed=["nginx:1.25"],
+                                     outcome=vulns.PatchOutcome(unchanged=["flowers-valentines-card", "nginx:1.25"]))
+        lines = patching._fixed_lines(result)
+        assert any("flowers-valentines-card" in l and "podbij obraz bazowy (FROM)" in l for l in lines)
+        assert any("nginx:1.25" in l and "zmien tag w compose" in l for l in lines)
+        assert not any(l.startswith(("nowszy obraz", "poprawki zainstalowane")) for l in lines)
 
     def test_pipe_own_project_is_never_recreated(self):
         scan = vulns.Scan(at=1, targets=[image_target(name="ghcr.io/kvmyk/pipe:0.36.6", project="backend",
@@ -1111,7 +1136,8 @@ class TestAfterPatch:
         [item] = group["items"]
         assert item["level"] == "kev" and item["fixed"] == "3.0.13-1~deb12u1"
         assert item["vulns"][0]["text"] == "Atakujacy moze odczytac pamiec." and item["vulns"][0]["ref"] == "CVE-2026-0001"
-        assert {a["scope"] for a in view["actions"]} == {"urgent", "all"} and view["totals"]["urgent"] == 1
+        # jeden przycisk na wszystko (jak /zalataj), z tym, co zalata, w etykiecie
+        assert view["actions"] == [{"scope": "all", "count": 1, "label": "1 pakiet serwera"}] and view["totals"]["urgent"] == 1
         assert vulns.report_view(None, {}, "off")["notes"] == ["off"]
 
 
@@ -1141,8 +1167,9 @@ class TestReadableForPeople:
         vulns.record_outcome("images", [built], scan)
         lines = vulns.todo(scan)
         assert lines[0] == "Serwer: pakiety aktualne."
-        assert lines[1].startswith("Obrazy budowane z Dockerfile (flowers-valentines-card)") and "podbij ja w Dockerfile" in lines[1]
-        assert lines[2].startswith("Aplikacje (/root/quiz): podatne zaleznosci npm")
+        assert lines[1].startswith("Obrazy budowane z Dockerfile (flowers-valentines-card)")
+        assert "podbij obraz bazowy (FROM) w Dockerfile" in lines[1]
+        assert lines[2].startswith("Aplikacje (/root/quiz): podatne zaleznosci") and "(npm audit fix)" in lines[2]
         nothing = vulns.nothing_to_patch(scan)
         assert nothing.startswith("Nie ma nic do zainstalowania.") and "512" not in nothing and "Serwer:" not in nothing
         assert vulns.report_view(scan, {})["todo"] == lines

@@ -1,12 +1,16 @@
 """
 Podatnosci w tym, co dziala na serwerze — skan bez LLM i bez kluczy API.
 
-Trzy rodzaje celow (`Target.kind`):
+Cztery rodzaje celow (`Target.kind`):
   system  pakiety hosta z bazy dpkg (Debian/Ubuntu) albo apk (Alpine), pogrupowane po pakiecie
-          ZRODLOWYM — OSV dla dystrybucji szuka po nazwie i wersji zrodla
+          ZRODLOWYM — OSV dla dystrybucji szuka po nazwie i wersji zrodla. Jadro liczy sie w najnowszej
+          zainstalowanej wersji (stare zostaja do autoremove, a nowe dziala po restarcie)
   image   pakiety w obrazach dzialajacych kontenerow: ta sama baza czytana przez /proc/<pid>/root
           kontenera albo z jego warstw overlay (niczego w kontenerze nie uruchamiamy); jeden cel na obraz
-  app     zaleznosci aplikacji z lockfile'i w katalogach z DIRECTORY (core/lockfiles.py)
+  server  pakiety zdalnych serwerow (cele ssh z target_manage): ta sama baza odczytana przez ssh
+          (core/fleet.py pobiera, tu tylko parsowanie)
+  app     zaleznosci aplikacji z lockfile'i (core/lockfiles.py): katalogi z DIRECTORY, projekty compose
+          i repozytoria git na hoscie, razem z podkatalogami (backend/, frontend/...)
 
 scan() pyta OSV.dev /v1/querybatch (same ID), szczegoly /v1/vulns/<id> tylko dla nowych albo
 zmienionych ID (pamiec w DATA_DIR/vulns.json), priorytet z CISA KEV (aktywnie wykorzystywane)
@@ -23,9 +27,11 @@ wywolujacy uruchamia przez asyncio.to_thread. Bez importu `settings`.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import math
+import os
 import re
 import shlex
 import threading
@@ -51,8 +57,11 @@ MAX_DETAILS = 5000           # szczegolow na jeden skan — reszta w nastepnym
 DETAIL_WORKERS = 16
 MAX_DB_BYTES = 64 * 1024 * 1024
 MAX_IMAGES = 30
+MAX_SERVERS = 30
 DETAILS_FOR_LLM = 700        # tyle opisu z OSV dostaje model piszacy wyjasnienie
 MAX_APPS = 50
+MAX_APP_ROOTS = 100          # korzeni aplikacji przegladanych w jednym skanie (kazdy najwyzej lockfiles.MAX_DIRS katalogow)
+APP_ROOTS_TTL = 900          # repozytoria git na hoscie (przejscie po katalogach) — najwyzej co 15 minut
 URGENT = ("critical", "high")
 DISTROS = ("Debian", "Ubuntu", "Alpine")
 APP_KINDS = ("app", "compose", "repo")
@@ -61,6 +70,11 @@ APP_KINDS = ("app", "compose", "repo")
 # pobieramy tylko biuletyny.
 ADVISORY = re.compile(r"^(USN|DSA|DLA)-")
 KERNEL = re.compile(r"^linux(-|$)")
+# Pakiety jadra z wersja ABI w nazwie (linux-image-5.15.0-91-generic): nowe jadro to NOWY pakiet, wiec
+# `--only-upgrade` na nich nic nie da — jadro podbija metapakiet (linux-image-generic, linux-image-amd64...).
+KERNEL_ABI = re.compile(r"\d+\.\d+\.\d+-\d+")
+KERNEL_META = re.compile(r"^linux-(image|headers|modules|tools|generic|virtual|lowlatency|kvm|aws|azure|gcp|gke|"
+                         r"oracle|oem|hwe|cloud|ibm|raspi)[a-z0-9.+-]*$")
 LEVEL_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "": 4}
 
 _SEVERITY_WORDS = {
@@ -135,6 +149,74 @@ def system_name(release: dict[str, str] | None = None) -> str:
     return release.get("PRETTY_NAME") or release.get("ID") or tr("nieznany system", "unknown system")
 
 
+def _order(char: str) -> int:
+    if char.isdigit():
+        return 0
+    if char.isalpha():
+        return ord(char)
+    return -1 if char == "~" else ord(char) + 256
+
+
+def _verrevcmp(a: str, b: str) -> int:
+    """Porownanie czesci wersji jak w dpkg (lib/dpkg/version.c): '~' przed koncem, litery przed reszta znakow."""
+    i = j = 0
+    while i < len(a) or j < len(b):
+        while (i < len(a) and not a[i].isdigit()) or (j < len(b) and not b[j].isdigit()):
+            ac = _order(a[i]) if i < len(a) else 0
+            bc = _order(b[j]) if j < len(b) else 0
+            if ac != bc:
+                return ac - bc
+            i, j = i + 1, j + 1
+        while i < len(a) and a[i] == "0":
+            i += 1
+        while j < len(b) and b[j] == "0":
+            j += 1
+        first = 0
+        while i < len(a) and a[i].isdigit() and j < len(b) and b[j].isdigit():
+            first = first or ord(a[i]) - ord(b[j])
+            i, j = i + 1, j + 1
+        if i < len(a) and a[i].isdigit():
+            return 1
+        if j < len(b) and b[j].isdigit():
+            return -1
+        if first:
+            return first
+    return 0
+
+
+def dpkg_compare(a: str, b: str) -> int:
+    """<0, 0, >0 jak `dpkg --compare-versions` (epoka:wersja-rewizja)."""
+    def split(version: str) -> tuple[int, str, str]:
+        epoch, _, rest = version.partition(":") if ":" in version else ("0", "", version)
+        upstream, _, revision = rest.rpartition("-") if "-" in rest else (rest, "", "")
+        return (int(epoch) if epoch.isdigit() else 0), upstream, revision
+    (ea, ua, ra), (eb, ub, rb) = split(a), split(b)
+    if ea != eb:
+        return -1 if ea < eb else 1
+    return _verrevcmp(ua, ub) or _verrevcmp(ra, rb)
+
+
+def _newest_kernels(packages: list[Package]) -> list[Package]:
+    """
+    Jadro w kilku wersjach naraz (stare zostaja do autoremove, nowe czeka na restart): liczy sie najnowsze.
+    Inaczej po instalacji poprawionego jadra stare dalej wygladalo na niezalatane, a Pipe pisal, ze
+    "repozytoria nie maja poprawki".
+    """
+    newest: dict[str, Package] = {}
+    for package in packages:
+        if KERNEL.match(package.name):
+            known = newest.get(package.name)
+            if known is None or dpkg_compare(package.version, known.version) > 0:
+                newest[package.name] = package
+    return [p for p in packages if not KERNEL.match(p.name) or newest.get(p.name) is p]
+
+
+def kernel_metapackages(packages: list[Package]) -> list[str]:
+    """Zainstalowane metapakiety jadra (linux-image-generic, linux-image-amd64...) — to one podbijaja jadro."""
+    return sorted({b.split(":")[0] for p in packages for b in p.binaries
+                   if KERNEL_META.match(b.split(":")[0]) and not KERNEL_ABI.search(b)})
+
+
 def _dpkg(text: str, eco: str = "") -> list[Package]:
     grouped: dict[tuple[str, str], Package] = {}
     for block in text.split("\n\n"):
@@ -172,16 +254,23 @@ def _apk(text: str, eco: str = "") -> list[Package]:
     return sorted(grouped.values(), key=lambda p: p.name)
 
 
-def _os_packages(read: Reader) -> tuple[str | None, str, list[Package]]:
-    """(ekosystem, nazwa systemu, pakiety) dla systemu plikow czytanego przez `read`."""
+def _os_inventory(read: Reader) -> tuple[str | None, str, list[Package], list[str]]:
+    """(ekosystem, nazwa systemu, pakiety, metapakiety jadra) dla systemu plikow czytanego przez `read`."""
     release = os_release(read)
     eco = ecosystem(release)
     name = system_name(release) if release else tr("brak /etc/os-release", "no /etc/os-release")
     if eco is None:
-        return None, name, []
+        return None, name, [], []
     if eco.startswith("Alpine"):
-        return eco, name, _apk(read("/lib/apk/db/installed") or "", eco)
-    return eco, name, _dpkg(read("/var/lib/dpkg/status") or "", eco)
+        return eco, name, _apk(read("/lib/apk/db/installed") or "", eco), []
+    everything = _dpkg(read("/var/lib/dpkg/status") or "", eco)
+    return eco, name, _newest_kernels(everything), kernel_metapackages(everything)
+
+
+def _os_packages(read: Reader) -> tuple[str | None, str, list[Package]]:
+    """(ekosystem, nazwa systemu, pakiety) dla systemu plikow czytanego przez `read`."""
+    eco, name, packages, _ = _os_inventory(read)
+    return eco, name, packages
 
 
 def inventory() -> tuple[str | None, list[Package]]:
@@ -258,34 +347,125 @@ def refresh_containers(result: Scan, containers: list[Any] | None) -> Scan:
     return result
 
 
-def app_targets() -> list[Target]:
-    """Zaleznosci z lockfile'i w katalogach aplikacji z DIRECTORY."""
+@dataclass
+class ServerDump:
+    """Pliki zdalnego serwera odczytane przez ssh (core/fleet.py) — albo blad polaczenia."""
+    name: str                                   # nazwa celu z target_manage
+    address: str = ""                           # user@host do opisu
+    files: dict[str, str] = field(default_factory=dict)
+    listing: list[str] = field(default_factory=list)    # /etc/apt/sources.list.d (Ubuntu Pro: pliki *esm*)
+    error: str = ""
+
+
+def esm_enabled(names: list[str]) -> bool:
+    """Ubuntu Pro (ESM) wlaczone: w sources.list.d sa repozytoria esm — wtedy apt znajdzie wersje '+esm'."""
+    return any("esm" in name for name in names)
+
+
+def _local_listing(path: str) -> list[str]:
     try:
-        entries = [e for e in memory.load_directory() if e.kind in APP_KINDS]
+        return sorted(os.listdir(runtime.to_local(path)))
     except OSError:
         return []
+
+
+def reboot_required(read: Reader = _read_host) -> bool:
+    """Po instalacji jadra albo bibliotek system prosi o restart (/run/reboot-required)."""
+    return read("/run/reboot-required") is not None or read("/var/run/reboot-required") is not None
+
+
+def server_targets(dumps: list[ServerDump] | None) -> list[Target]:
+    """Jeden cel na zdalny serwer; brak polaczenia albo nieobslugiwany system = ekosystem None."""
     targets = []
-    for entry in entries[:MAX_APPS * 2]:
-        files = lockfiles.find(runtime.to_local(entry.path))
-        if not files:
+    for dump in (dumps or [])[:MAX_SERVERS]:
+        meta: dict[str, Any] = {"address": dump.address, "error": dump.error}
+        if dump.error:
+            targets.append(Target("server", dump.name, None, [], {**meta, "system": ""}))
             continue
-        packages: dict[str, Package] = {}
-        for local in files:
-            for eco, name, version in lockfiles.parse(local):
-                package = Package(name, version, [name], eco)
-                packages.setdefault(package.key, package)
-        if packages:
-            ecos = ", ".join(sorted({p.ecosystem for p in packages.values()}))
-            targets.append(Target("app", entry.path, ecos, sorted(packages.values(), key=lambda p: (p.ecosystem, p.name)),
-                                  {"files": [runtime.to_host(f) for f in files]}))
-        if len(targets) >= MAX_APPS:
-            break
+        read: Reader = dump.files.get
+        eco, system, packages, kernel = _os_inventory(read)
+        targets.append(Target("server", dump.name, eco, packages, {
+            **meta, "system": system, "kernel_meta": kernel, "esm": esm_enabled(dump.listing),
+            "reboot": reboot_required(read)}))
     return targets
 
 
-def all_targets(containers: list[Any] | None = None) -> list[Target]:
-    eco, system, packages = _os_packages(_read_host)
-    return [Target("system", "system", eco, packages, {"system": system})] + image_targets(containers) + app_targets()
+_repo_cache: dict[str, Any] = {"at": 0.0, "paths": []}
+
+
+def _repo_paths(now: float | None = None) -> list[str]:
+    """Repozytoria git na hoscie (infra.git_repos), zapamietane na APP_ROOTS_TTL — to przejscie po katalogach."""
+    from backend.core import infra
+
+    now = time.time() if now is None else now
+    if now - float(_repo_cache["at"]) >= APP_ROOTS_TTL:
+        try:
+            _repo_cache["paths"] = [r.path for r in infra.git_repos()]
+        except OSError:
+            _repo_cache["paths"] = []
+        _repo_cache["at"] = now
+    return list(_repo_cache["paths"])
+
+
+def app_roots(containers: list[Any] | None = None) -> list[str]:
+    """
+    Gdzie szukac aplikacji (sciezki hosta): katalogi z DIRECTORY (app, compose, repo), katalogi projektow compose
+    dzialajacych kontenerow i repozytoria git pod /root, /home, /srv, /opt, /var/www, /data. Wczesniej tylko
+    DIRECTORY — bez wczesniejszego "znajdz repozytoria" aplikacje w ogole nie byly skanowane.
+    """
+    roots: list[str] = []
+    try:
+        roots += [e.path for e in memory.load_directory() if e.kind in APP_KINDS]
+    except OSError:
+        pass
+    roots += sorted({str(c.workdir) for c in containers or [] if getattr(c, "project", "") and getattr(c, "workdir", "")})
+    roots += _repo_paths()
+    return [r for r in dict.fromkeys(roots) if _HOST_PATH.match(r)]
+
+
+def _outer_roots(roots: list[str]) -> list[str]:
+    """
+    Bez korzeni, ktore find_tree() przejdzie razem z innym: ten sam katalog albo jego bezposredni podkatalog
+    (glebsze zostaja — duzy korzen jak /root moglby wyczerpac limit katalogow, zanim do nich dojdzie).
+    """
+    kept: list[str] = []
+    for root in sorted(roots, key=lambda r: (r.count("/"), r)):
+        if not any(root == k or (root.startswith(k.rstrip("/") + "/") and root.count("/") - k.rstrip("/").count("/") <= 1)
+                   for k in kept):
+            kept.append(root)
+    return kept
+
+
+def app_targets(containers: list[Any] | None = None) -> list[Target]:
+    """Zaleznosci z lockfile'i: jeden cel na katalog z lockfile'ami (korzen aplikacji albo np. jej backend/)."""
+    targets: list[Target] = []
+    seen: set[str] = set()
+    for root in _outer_roots(app_roots(containers))[:MAX_APP_ROOTS]:
+        for local_dir, files in lockfiles.find_tree(runtime.to_local(root)).items():
+            path = runtime.to_host(local_dir)
+            if path in seen:
+                continue
+            seen.add(path)
+            packages: dict[str, Package] = {}
+            for local in files:
+                for eco, name, version in lockfiles.parse(local):
+                    package = Package(name, version, [name], eco)
+                    packages.setdefault(package.key, package)
+            if packages:
+                ecos = ", ".join(sorted({p.ecosystem for p in packages.values()}))
+                targets.append(Target("app", path, ecos, sorted(packages.values(), key=lambda p: (p.ecosystem, p.name)),
+                                      {"files": [runtime.to_host(f) for f in files]}))
+            if len(targets) >= MAX_APPS:
+                return targets
+    return targets
+
+
+def all_targets(containers: list[Any] | None = None, servers: list[ServerDump] | None = None) -> list[Target]:
+    eco, system, packages, kernel = _os_inventory(_read_host)
+    meta = {"system": system, "kernel_meta": kernel, "esm": esm_enabled(_local_listing("/etc/apt/sources.list.d")),
+            "reboot": reboot_required()}
+    return [Target("system", "system", eco, packages, meta)] + image_targets(containers) + server_targets(servers) \
+        + app_targets(containers)
 
 
 def inventory_hash(targets: list[Target]) -> str:
@@ -430,15 +610,17 @@ class PackageVulns:
     @property
     def fixed_version(self) -> str:
         """
-        Wersja usuwajaca wszystkie podatnosci: dla zaleznosci aplikacji najwyzsza z poprawek (semver),
-        dla dystrybucji tylko gdy wszystkie wskazuja te sama (wersji Debiana nie porownujemy).
+        Wersja usuwajaca wszystkie podatnosci: najwyzsza z poprawek — dla zaleznosci aplikacji jak semver, dla
+        Debiana i Ubuntu jak dpkg; dla Alpine tylko gdy wszystkie wskazuja te sama.
         """
         versions = {v.fixed for v in self.fixable}
         if len(versions) == 1:
             return versions.pop()
-        if self.ecosystem and not self.ecosystem.startswith(DISTROS) and versions:
-            return max(versions, key=_version_key)
-        return ""
+        if not versions or self.ecosystem.startswith("Alpine"):
+            return ""
+        if self.ecosystem.startswith(DISTROS):
+            return max(versions, key=functools.cmp_to_key(dpkg_compare))
+        return max(versions, key=_version_key) if self.ecosystem else ""
 
 
 _ESM = re.compile(r"[+~]esm\d*")
@@ -478,6 +660,8 @@ class TargetResult:
         if self.kind == "image":
             containers = ", ".join(self.meta.get("containers") or [])
             return f"{self.name}" + (f" ({containers})" if containers else "")
+        if self.kind == "server":
+            return f"{self.name} ({self.meta.get('system') or self.meta.get('error') or '?'})"
         return f"{self.name} ({self.ecosystem})"
 
 
@@ -491,7 +675,10 @@ class Scan:
     unfixed: int = 0                                          # podatnosci hosta bez poprawki (liczba)
     error: str = ""
     partial: bool = False                                     # nie wszystkie szczegoly pobrane
-    targets: list[TargetResult] = field(default_factory=list) # obrazy kontenerow i aplikacje
+    targets: list[TargetResult] = field(default_factory=list) # obrazy kontenerow, zdalne serwery i aplikacje
+    kernel_meta: list[str] = field(default_factory=list)      # metapakiety jadra hosta (to one podbijaja jadro)
+    esm: bool = False                                         # Ubuntu Pro wlaczone (apt znajdzie wersje +esm)
+    reboot: bool = False                                      # system czeka na restart (nowe jadro, biblioteki)
 
     @property
     def ok(self) -> bool:
@@ -525,12 +712,20 @@ class Scan:
         return cls(at=float(data.get("at", 0)), ecosystem=data.get("ecosystem"), system=str(data.get("system", "")),
                    checked=int(data.get("checked", 0)), items=_items_from(data.get("items")),
                    unfixed=int(data.get("unfixed", 0)), error=str(data.get("error", "")),
-                   partial=bool(data.get("partial", False)), targets=targets)
+                   partial=bool(data.get("partial", False)), targets=targets,
+                   kernel_meta=[str(n) for n in data.get("kernel_meta") or []], esm=bool(data.get("esm", False)),
+                   reboot=bool(data.get("reboot", False)))
 
 
 def sort_items(items: list[PackageVulns]) -> list[PackageVulns]:
     rank = {"kev": -1, **LEVEL_ORDER}
     return sorted(items, key=lambda p: (rank.get(p.worst, 4), -len(p.fixable), p.name))
+
+
+def target_rank(target: TargetResult) -> tuple:
+    """Kolejnosc obrazow, serwerow i aplikacji: najpierw najgrozniejsza podatnosc (KEV, krytyczna...), potem liczba."""
+    rank = {"kev": -1, **LEVEL_ORDER}
+    return min((rank.get(p.worst, 4) for p in target.items), default=5), -len(target.items), target.name
 
 
 def describe_item(item: PackageVulns, explain: dict[str, str] | None = None, limit: int = 1) -> str:
@@ -550,11 +745,12 @@ def describe_item(item: PackageVulns, explain: dict[str, str] | None = None, lim
 
 
 def describe_target(target: TargetResult, explain: dict[str, str] | None = None, limit: int = 1) -> str:
-    """'nginx:1.25 (shop-nginx): 12 pakietow z poprawkami, 2 pilnych — openssl ... — krytyczna: opis (...)'."""
+    """'nginx:1.25 (shop-nginx): 12 pakietow z poprawka (pilne: 2) — openssl ... — krytyczna: opis (...)'."""
     urgent = len(target.urgent)
-    head = tr(f"{target.label()}: {len(target.items)} pakietow z poprawkami", f"{target.label()}: {len(target.items)} packages with fixes")
+    head = tr(f"{target.label()}: {n_packages(len(target.items))} z poprawka",
+              f"{target.label()}: {n_packages(len(target.items))} with a fix")
     if urgent:
-        head += tr(f", {urgent} pilnych", f", {urgent} urgent")
+        head += tr(f" (pilne: {urgent})", f" (urgent: {urgent})")
     items = sort_items(target.items)[:limit]
     return head + (" — " + "; ".join(describe_item(p, explain) for p in items) if items else "")
 
@@ -663,9 +859,21 @@ def vuln_markdown(vuln: Vuln, explain: dict[str, str]) -> str:
     return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({vuln_ref(vuln)})"
 
 
+# Pakiety zrodlowe jadra dystrybucji — w raporcie "linux (jadro)", bo sama nazwa "linux" niewiele mowi
+_KERNEL_SOURCE = re.compile(r"^linux(-signed([-\w.]*)?|-meta([-\w.]*)?|-hwe[-\w.]*|-(aws|azure|gcp|gke|oracle|kvm|lowlatency|oem)[-\w.]*)?$")
+
+
+def display_name(item: PackageVulns) -> str:
+    """Nazwa pakietu do pokazania: jadro dystrybucji z dopiskiem, ze to jadro."""
+    name = plain(item.name, 80)
+    if item.ecosystem.startswith(DISTROS) and _KERNEL_SOURCE.match(item.name):
+        name += tr(" (jadro)", " (kernel)")
+    return name
+
+
 def package_label(item: PackageVulns) -> str:
     """'openssl 3.0.11-1 → 3.0.13-1' (wersja z poprawka, gdy jedna usuwa wszystko)."""
-    label = f"{plain(item.name, 80)} {plain(item.version, 80)}"
+    label = f"{display_name(item)} {plain(item.version, 80)}"
     return label + (f" → {plain(item.fixed_version, 80)}" if item.fixed_version else "")
 
 
@@ -673,13 +881,16 @@ def item_markdown(item: PackageVulns, explain: dict[str, str], limit: int = VULN
     """
     Pakiet (nazwa pogrubiona, wersja → poprawka, ile podatnosci), pod nim najpowazniejsze z opisem:
     '**vim** 8.2.1 → 8.2.4 · 11 podatnosci' / '- **Srednia:** Atakujacy moze ... (USN-8101-1)'.
+    Poprawka tylko w Ubuntu Pro jest oznaczona — /zalataj zainstaluje ja dopiero z subskrypcja.
     """
     vulns = _sorted_vulns(item)
-    head = f"**{plain(item.name, 80)}** {plain(item.version, 80)}"
+    head = f"**{display_name(item)}** {plain(item.version, 80)}"
     if item.fixed_version:
         head += f" → {plain(item.fixed_version, 80)}"
     if len(vulns) > limit:
         head += " · " + count(len(vulns), "podatnosc", "podatnosci", "podatnosci", "vulnerability", "vulnerabilities")
+    if item.pro_only:
+        head += tr(" · poprawka tylko w Ubuntu Pro", " · fix only in Ubuntu Pro")
     # pusta linia przed pakietem — bez niej Markdown dokleilby naglowek do listy poprzedniego pakietu
     return ["", head] + [vuln_markdown(v, explain) for v in vulns[:limit]]
 
@@ -734,24 +945,34 @@ def short_command(command: str, limit: int = SHORT_COMMAND) -> str:
 
 
 def report_sections(result: Scan) -> list[tuple[str, list[PackageVulns], int]]:
-    """(naglowek, pakiety do pokazania, ile pakietow lacznie) — ta sama selekcja dla raportu i wyjasnien."""
+    """
+    (naglowek, pakiety do pokazania, ile pakietow lacznie) — ta sama selekcja dla raportu i wyjasnien. Najpierw
+    pakiety tego serwera, potem zdalne serwery, obrazy i aplikacje razem, od najgrozniejszej podatnosci: gdy
+    wszystko sie nie miesci, wypada to, co mniej grozne, a nie to, co akurat bylo na koncu listy.
+    """
     sections = []
     if result.items:
         urgent = len(result.urgent)
-        head = tr(f"Pakiety serwera ({result.system}): {n_packages(len(result.items))} z poprawka",
-                  f"Server packages ({result.system}): {n_packages(len(result.items))} with a fix")
+        where = tr("Pakiety tego serwera", "This server's packages") if result.of_kind("server") \
+            else tr("Pakiety serwera", "Server packages")
+        head = tr(f"{where} ({result.system}): {n_packages(len(result.items))} z poprawka",
+                  f"{where} ({result.system}): {n_packages(len(result.items))} with a fix")
         head += tr(f", pilne: {urgent}", f", urgent: {urgent}") if urgent else ""
         sections.append((head, result.items[:REPORT_SYSTEM], len(result.items)))
-    images = sorted((t for t in result.of_kind("image") if t.items), key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
-    for target in images[:REPORT_TARGETS]:
+    others: list[tuple[TargetResult, str]] = []
+    for target in servers_with_items(result)[:REPORT_TARGETS]:
+        others.append((target, tr(f"Serwer {plain(target.name, 60)} ({plain(target.meta.get('system', ''), 80)}): "
+                                  f"{n_packages(len(target.items))} z poprawka",
+                                  f"Server {plain(target.name, 60)} ({plain(target.meta.get('system', ''), 80)}): "
+                                  f"{n_packages(len(target.items))} with a fix")))
+    for target in sorted((t for t in result.of_kind("image") if t.items), key=target_rank)[:REPORT_TARGETS]:
         containers = ", ".join(target.meta.get("containers") or [])
-        head = tr(f"Obraz {target.name}", f"Image {target.name}") + (f" ({containers})" if containers else "") \
-            + tr(f": {n_packages(len(target.items))} z poprawka", f": {n_packages(len(target.items))} with a fix")
-        sections.append((head, target.items[:REPORT_PER_TARGET], len(target.items)))
-    apps = sorted((t for t in result.of_kind("app") if t.items), key=lambda t: (not t.kev, -len(t.items)))
-    for target in apps[:REPORT_TARGETS]:
-        head = tr(f"Aplikacja {target.name} ({target.ecosystem}): {n_deps(len(target.items))} z poprawka",
-                  f"Application {target.name} ({target.ecosystem}): {n_deps(len(target.items))} with a fix")
+        others.append((target, tr(f"Obraz {target.name}", f"Image {target.name}") + (f" ({containers})" if containers else "")
+                       + tr(f": {n_packages(len(target.items))} z poprawka", f": {n_packages(len(target.items))} with a fix")))
+    for target in sorted((t for t in result.of_kind("app") if t.items), key=target_rank)[:REPORT_TARGETS]:
+        others.append((target, tr(f"Aplikacja {target.name} ({target.ecosystem}): {n_deps(len(target.items))} z poprawka",
+                                  f"Application {target.name} ({target.ecosystem}): {n_deps(len(target.items))} with a fix")))
+    for target, head in sorted(others, key=lambda pair: target_rank(pair[0])[:2]):
         sections.append((head, target.items[:REPORT_PER_TARGET], len(target.items)))
     return sections
 
@@ -809,14 +1030,19 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
     """Raport podatnosci jako dane: podsumowanie, grupy (serwer, obrazy, aplikacje), akcje latek, uwagi."""
     if result is None:
         return {"at": 0, "groups": [], "actions": [], "notes": [note] if note else [], "totals": {}, "supported": False}
-    held = {p.key for p in held_items(result)}
+    held = {p.key for p in waiting_items(result)}
     patch = image_patch(result)
     patchable_images = {t.name for t in patch.targets}
     groups = []
     if result.items:
         groups.append(group_view("system", tr("Pakiety serwera", "Server packages"), result.system, result.items, explain,
-                                 held=held, patchable=bool(select(result, "all")), note=held_note(held_items(result))))
-    images = sorted((t for t in result.of_kind("image") if t.items), key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
+                                 held=held, patchable=bool(select(result, "all")), note=held_note(waiting_items(result))))
+    for target in servers_with_items(result):
+        waiting = waiting_server_items(target)
+        groups.append(group_view("server", target.name, str(target.meta.get("system", "")), target.items, explain,
+                                 held={p.key for p in waiting}, patchable=bool(select_server(target)),
+                                 note=held_note(waiting)))
+    images = sorted((t for t in result.of_kind("image") if t.items), key=target_rank)
     waiting = {t.name for t in patch.waiting}
     for target in images:
         containers = ", ".join(target.meta.get("containers") or [])
@@ -825,7 +1051,7 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
             if target.name in waiting else (manual[0] if manual else "")
         groups.append(group_view("image", target.name, containers, target.items, explain,
                                  patchable=target.name in patchable_images, note=note_text))
-    for target in sorted((t for t in result.of_kind("app") if t.items), key=lambda t: (not t.kev, -len(t.items))):
+    for target in sorted((t for t in result.of_kind("app") if t.items), key=target_rank):
         groups.append(group_view("app", target.name, target.ecosystem or "", target.items, explain, note=tr(
             "Zaleznosc w kodzie aplikacji: podbij wersje w lockfile i wdroz aplikacje.",
             "A dependency in the application code: bump the version in the lockfile and deploy the app.")))
@@ -834,6 +1060,7 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
     if result.ecosystem is None:
         notes.append(tr(f"System serwera ({result.system}) nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
                         f"The server system ({result.system}) is not supported — checking only images and applications."))
+    notes += server_notes(result)
     if patch.skipped:
         notes.append(waiting_note(ImagePatch(skipped=patch.skipped)))
     if result.error:
@@ -844,21 +1071,23 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
                         "Some details are not fetched yet — the next scan finishes them."))
     if note:
         notes.append(note)
+    # Jeden przycisk lata wszystko (jak samo /zalataj); "tylko obrazy", gdy jest tez cos innego do zalatania
+    parts = patch_parts(result)
     actions = []
-    if select(result, "urgent"):
-        actions.append({"scope": "urgent", "count": len(select(result, "urgent"))})
-    if select(result, "all"):
-        actions.append({"scope": "all", "count": len(select(result, "all"))})
-    if patch.targets:
-        actions.append({"scope": "images", "count": len(patch.targets)})
+    if parts.total:
+        actions.append({"scope": "all", "count": parts.total, "label": parts.describe()})
+    if parts.images and parts.total > parts.images:
+        actions.append({"scope": "images", "count": parts.images, "label": n_images(parts.images)})
+    servers = servers_with_items(result)
     return {"at": result.at, "system": plain(result.system, 120), "supported": result.ecosystem is not None,
             "checked": result.checked, "todo": todo(result), "groups": groups, "actions": actions, "notes": notes,
             "totals": {"system": len(result.items), "images": len(images), "apps": sum(1 for g in groups if g["kind"] == "app"),
+                       "servers": len(servers),
                        "urgent": sum(1 for p in all_items if p.urgent), "kev": sum(1 for p in all_items if p.kev),
                        "packages": len(all_items),
-                       # pilne osobno dla kazdej czesci — liczba "pilne" dla wszystkiego naraz nie zgadzala sie z
-                       # przyciskiem "Zalataj pilne", ktory lata tylko pakiety serwera
+                       # pilne osobno dla kazdej czesci — jedna liczba dla wszystkiego naraz nie mowila, gdzie sa
                        "system_urgent": len(result.urgent),
+                       "servers_urgent": sum(1 for t in servers if t.urgent),
                        "images_urgent": sum(1 for t in images if t.urgent),
                        "apps_urgent": sum(1 for g in groups if g["kind"] == "app" and g["urgent"])}}
 
@@ -871,58 +1100,116 @@ def serious(item: PackageVulns) -> bool:
 
 
 def urgent_images(result: Scan) -> list[TargetResult]:
-    return sorted((t for t in result.of_kind("image") if t.urgent), key=lambda t: (not t.kev, -len(t.urgent)))
+    return sorted((t for t in result.of_kind("image") if t.urgent), key=target_rank)
+
+
+def servers_with_items(result: Scan) -> list[TargetResult]:
+    return sorted((t for t in result.of_kind("server") if t.items), key=target_rank)
+
+
+def urgent_servers(result: Scan) -> list[TargetResult]:
+    return sorted((t for t in result.of_kind("server") if t.urgent), key=target_rank)
 
 
 def serious_apps(result: Scan) -> list[tuple[TargetResult, list[PackageVulns]]]:
-    apps = [(t, sort_items([p for p in t.items if serious(p)])) for t in result.of_kind("app")]
+    apps = [(t, sort_items([p for p in t.items if serious(p)])) for t in sorted(result.of_kind("app"), key=target_rank)]
     return [(t, items) for t, items in apps if items]
+
+
+# Narzedzie, ktorym podbija sie zaleznosci w danym ekosystemie — w alercie i raporcie konkretnie, nie ogolnikiem
+APP_TOOLS = {"npm": "npm audit fix", "PyPI": "nowa wersja w requirements albo poetry/uv lock",
+             "Packagist": "composer update <pakiet>", "Go": "go get <modul>@<wersja>", "crates.io": "cargo update -p <pakiet>",
+             "RubyGems": "bundle update <pakiet>"}
+APP_TOOLS_EN = {"npm": "npm audit fix", "PyPI": "the new version in requirements or the poetry/uv lock",
+                "Packagist": "composer update <package>", "Go": "go get <module>@<version>",
+                "crates.io": "cargo update -p <package>", "RubyGems": "bundle update <package>"}
+
+
+def app_tools(targets: list[TargetResult]) -> str:
+    """'npm audit fix; nowa wersja w requirements ...' — tylko ekosystemy tych aplikacji, w ich kolejnosci."""
+    ecosystems = list(dict.fromkeys(e.strip() for t in targets for e in (t.ecosystem or "").split(",") if e.strip()))
+    tools = tr(APP_TOOLS, APP_TOOLS_EN)
+    return "; ".join(tools[e] for e in ecosystems if e in tools)
 
 
 def alert_items(result: Scan) -> list[PackageVulns]:
     """Pakiety, ktore pokaza alerty — ich podatnosci trzeba wyjasnic, zanim alert wyjdzie."""
     items = sort_items(result.urgent)[:ALERT_PACKAGES]
+    items += [p for t in urgent_servers(result)[:ALERT_TARGETS] for p in sort_items(t.urgent)[:ALERT_PER_TARGET]]
     items += [p for t in urgent_images(result)[:ALERT_TARGETS] for p in sort_items(t.urgent)[:ALERT_PER_TARGET]]
     items += [p for _, found in serious_apps(result)[:ALERT_TARGETS] for p in found[:ALERT_PER_TARGET]]
     return items
 
 
 def system_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:system (Markdown, jedna wiadomosc): pilne pakiety hosta z opisem, co dalej."""
+    """Tresc alertu vuln:system (Markdown, jedna wiadomosc): pilne pakiety hosta z opisem, co zrobi przycisk."""
     urgent = sort_items(result.urgent)
-    return sections_markdown([("", urgent[:ALERT_PACKAGES], len(urgent))], explain, footer=[
-        tr("Poprawki zainstaluje po Twojej zgodzie: przycisk Zalataj albo /zalataj pilne.",
-           "I will install the fixes after you approve: the Patch button or /patch urgent.")])
+    footer = [tr("Przycisk Zalataj (albo /zalataj serwer) instaluje te poprawki od razu i sprzata po sobie.",
+                 "The Patch button (or /patch server) installs these fixes right away and cleans up after itself.")]
+    if not result.esm and any(p.pro_only for p in urgent):
+        footer.append(tr("Poprawek oznaczonych „tylko w Ubuntu Pro” nie zainstaluje bez subskrypcji (pro attach).",
+                         "Fixes marked \"only in Ubuntu Pro\" will not install without the subscription (pro attach)."))
+    return sections_markdown([("", urgent[:ALERT_PACKAGES], len(urgent))], explain, footer=footer)
 
 
-def images_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:images: obraz (i jego kontenery), pilne pakiety w nim z opisem."""
+def servers_alert(result: Scan, explain: dict[str, str]) -> str:
+    """Tresc alertu vuln:servers: zdalne serwery i ich pilne pakiety z opisem."""
+    servers = urgent_servers(result)
+    sections = [(tr(f"Serwer {plain(t.name, 60)}", f"Server {plain(t.name, 60)}")
+                 + f" ({plain(t.meta.get('system', ''), 80)})", sort_items(t.urgent)[:ALERT_PER_TARGET], len(t.urgent))
+                for t in servers[:ALERT_TARGETS]]
+    more = len(servers) - len(sections)
+    footer = [tr(f"… i {more} kolejnych serwerow", f"… and {more} more servers")] if more > 0 else []
+    return sections_markdown(sections, explain, footer=footer + [
+        tr("Przycisk Zalataj (albo /zalataj serwery) instaluje te poprawki od razu, przez ssh.",
+           "The Patch button (or /patch servers) installs these fixes right away, over ssh.")])
+
+
+def images_alert(result: Scan, explain: dict[str, str], skip_projects: frozenset[str] | set[str] = frozenset()) -> str:
+    """
+    Tresc alertu vuln:images: obraz (i jego kontenery), pilne pakiety w nim z opisem. Obraz, ktorego /zalataj nie
+    odswiezy (kontener bez compose, kontener samego Pipe), ma to w naglowku — przycisk nie obiecuje wiecej, niz zrobi.
+    """
+    patch = image_patch(result, skip_projects=skip_projects)
+    refreshable = {t.name for t in patch.refreshable}
+    pipe_own = {t.name for t in result.of_kind("image")
+                if patch.skipped and set(t.meta.get("containers") or []) <= set(patch.skipped)}
     sections = []
     for target in urgent_images(result)[:ALERT_TARGETS]:
         containers = ", ".join(target.meta.get("containers") or [])
         urgent = sort_items(target.urgent)
-        sections.append((tr(f"Obraz {plain(target.name, 120)}", f"Image {plain(target.name, 120)}")
-                         + (f" ({plain(containers, 200)})" if containers else ""), urgent[:ALERT_PER_TARGET], len(urgent)))
+        head = tr(f"Obraz {plain(target.name, 120)}", f"Image {plain(target.name, 120)}") \
+            + (f" ({plain(containers, 200)})" if containers else "")
+        if target.name in pipe_own:
+            head += tr(" — kontener Pipe, odswiezy go /aktualizuj", " — Pipe's own container, /update refreshes it")
+        elif target in patch.waiting:
+            head += tr(" — bez zmian po ostatniej latce, powod w /podatnosci", " — unchanged by the last patch, the reason is in /vulns")
+        elif target.name not in refreshable:
+            head += tr(" — kontener bez compose, tego nie odswieze sam", " — a container without compose, I cannot refresh it")
+        sections.append((head, urgent[:ALERT_PER_TARGET], len(urgent)))
     more = len(urgent_images(result)) - len(sections)
     footer = [tr(f"… i {more} kolejnych obrazow", f"… and {more} more images")] if more > 0 else []
     return sections_markdown(sections, explain, footer=footer + [
-        tr("Nowsze obrazy pobiore i uruchomie po Twojej zgodzie: przycisk Zalataj albo /zalataj obrazy.",
-           "I will pull and start newer images after you approve: the Patch button or /patch images.")])
+        tr("Przycisk Zalataj (albo /zalataj obrazy) od razu pobiera nowszy obraz, a gdy go nie ma, instaluje poprawki "
+           "w obrazie; potem uruchamia kontenery od nowa i usuwa stare obrazy.",
+           "The Patch button (or /patch images) right away pulls a newer image or, where there is none, installs the "
+           "fixes inside the image; then restarts the containers and removes the old images.")])
 
 
 def apps_alert(result: Scan, explain: dict[str, str]) -> str:
-    """Tresc alertu vuln:apps: aplikacja, jej krytyczne zaleznosci z opisem."""
+    """Tresc alertu vuln:apps: aplikacja, jej krytyczne zaleznosci z opisem i narzedzie, ktorym sie je podbija."""
     apps = serious_apps(result)
     sections = [(tr(f"Aplikacja {plain(target.name, 200)}", f"Application {plain(target.name, 200)}")
                  + f" ({plain(target.ecosystem or '', 60)})", items[:ALERT_PER_TARGET], len(items))
                 for target, items in apps[:ALERT_TARGETS]]
     more = len(apps) - len(sections)
     footer = [tr(f"… i {more} kolejnych aplikacji", f"… and {more} more applications")] if more > 0 else []
+    tools = app_tools([t for t, _ in apps])
     return sections_markdown(sections, explain, footer=footer + [
-        tr("To zaleznosci w kodzie aplikacji: podbij wersje w lockfile (npm audit fix, pip install -U, "
-           "composer update ...) i wdroz aplikacje.",
-           "These are dependencies in the application code: bump the versions in the lockfile (npm audit fix, "
-           "pip install -U, composer update ...) and deploy the app.")])
+        tr(f"To zaleznosci w kodzie aplikacji, wiec /zalataj ich nie zmienia: podbij je do wersji po strzalce ({tools}) "
+           "i wdroz aplikacje. Moge to zrobic, jesli poprosisz w rozmowie.",
+           f"These are dependencies in the application code, so /patch does not change them: bump them to the version "
+           f"after the arrow ({tools}) and deploy the app. I can do it if you ask in the chat.")])
 
 
 def explanations(lang: str) -> dict[str, str]:
@@ -973,17 +1260,55 @@ def parse_explanations(answer: str, wanted: set[str]) -> dict[str, str]:
 
 
 # ─── Latki ──────────────────────────────────────────────────────────────────
+#
+# /zalataj sklada wszystko z ostatniego skanu, bez LLM, a core/patching.py wykonuje: pakiety hosta i zdalnych serwerow
+# (apt/apk razem z porzadkami: przerwane dpkg, stare jadra, pobrane paczki), obrazy kontenerow z compose (nowszy obraz,
+# a gdy go nie ma — poprawki doinstalowane w obrazie). Nazwy z baz pakietow i etykiet compose przechodza przez wzorce,
+# wiec nic innego nie trafi do powloki.
 
 _BINARY = re.compile(r"^[a-z0-9][a-z0-9+._-]{0,127}(:[a-z0-9]{1,16})?$")
+_TAG = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+_IMAGE_USER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,63})?$")
+_IMAGE_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
+APT = "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300"    # czeka na unattended-upgrades
+ROLLBACK_TAG = "pipe-rollback-"             # poprzedni obraz pod tym tagiem: nie znika przy sprzataniu, /cofnij do niego wraca
+PATCH_LABEL = "pipe.patch.base"             # obraz z poprawkami od Pipe: id obrazu, na ktorym powstal
+# Aktualizacja Dockera z repozytoriow dystrybucji nie restartuje demona (kontenery by stanely) — dziala po restarcie
+DOCKER_PACKAGES = re.compile(r"^(docker\.io|docker-ce|containerd(\.io)?|runc)$")
+# Stare jadra, ktore apt sam uznaje za zbedne (zostawia dzialajace i najnowsze) — inaczej /boot sie zapelnia
+_OLD_KERNELS = ("old=$(apt-get -s autoremove 2>/dev/null | awk '$1==\"Remv\"{print $2}' "
+                "| grep -E '^linux-.*[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+' | tr '\\n' ' '); "
+                f"[ -z \"$old\" ] || {APT} purge -y $old")
 
 
-def upgrade_command(eco: str | None, items: list[PackageVulns]) -> str:
+def n_servers(n: int) -> str:
+    return count(n, "serwer", "serwery", "serwerow", "server", "servers")
+
+
+def upgrade_binaries(items: list[PackageVulns], kernel_meta: list[str] | tuple[str, ...] = ()) -> list[str]:
     """
-    Dokladna komenda podbijajaca tylko te pakiety (bez pelnego upgrade). Nazwy z bazy pakietow hosta
-    przechodza przez wzorzec nazwy pakietu — nic innego nie trafi do powloki. Konfiguracje zostaja
-    w obecnej wersji (--force-confold), apt o nic nie pyta.
+    Pakiety binarne do podbicia. Dla jadra zamiast pakietow z wersja w nazwie (nowe jadro to nowy pakiet, wiec
+    `--only-upgrade` nic na nich nie robi) jego metapakiety — to one ciagna nowe jadro.
     """
-    binaries = sorted({b for p in items for b in p.binaries if _BINARY.match(b)})
+    names: set[str] = set()
+    kernel = False
+    for item in items:
+        if item.ecosystem.startswith(DISTROS) and KERNEL.match(item.name) and kernel_meta:
+            kernel = True
+            names |= {b for b in item.binaries if not KERNEL_ABI.search(b)}
+        else:
+            names |= set(item.binaries)
+    if kernel:
+        names |= set(kernel_meta)
+    return sorted(b for b in names if _BINARY.match(b))
+
+
+def upgrade_command(eco: str | None, items: list[PackageVulns], kernel_meta: list[str] | tuple[str, ...] = ()) -> str:
+    """
+    Komenda podbijajaca tylko te pakiety (bez pelnego upgrade) — do pokazania w audycie i dzienniku. Konfiguracje
+    zostaja w obecnej wersji (--force-confold), apt o nic nie pyta. Wykonywane sa kroki z host_steps().
+    """
+    binaries = upgrade_binaries(items, kernel_meta)
     if not binaries or not eco:
         return ""
     if eco.startswith("Alpine"):
@@ -993,29 +1318,164 @@ def upgrade_command(eco: str | None, items: list[PackageVulns]) -> str:
 
 
 @dataclass
+class Step:
+    """Jedna komenda latki. `required` — jej kod wyjscia jest wynikiem czesci; reszta to porzadki."""
+    label: str
+    command: str
+    required: bool = False
+    warn: str = ""              # nieudany krok porzadkowy z tym ostrzezeniem w wyniku
+
+
+def host_steps(eco: str | None, items: list[PackageVulns], kernel_meta: list[str] | tuple[str, ...] = ()) -> list[Step]:
+    """
+    Latka pakietow systemu (hosta albo zdalnego serwera) jako kroki z porzadkami: dokonczenie przerwanej
+    instalacji, pobrane paczki i stare jadra przed (miejsce na dysku i w /boot) i po instalacji.
+    """
+    binaries = upgrade_binaries(items, kernel_meta)
+    if not binaries or not eco:
+        return []
+    names = " ".join(binaries)
+    count_text = n_packages(len(items))
+    if eco.startswith("Alpine"):
+        return [Step(tr("pobieram listy pakietow (apk update)", "fetching the package lists (apk update)"), "apk update",
+                     warn=tr("apk update zglosil blad — czesc poprawek mogla nie zostac znaleziona",
+                             "apk update reported an error — some fixes may not have been found")),
+                Step(tr(f"instaluje poprawki: {count_text}", f"installing the fixes: {count_text}"),
+                     f"apk add --upgrade {names}", required=True),
+                Step(tr("usuwam pobrane paczki", "removing downloaded packages"), "apk cache clean 2>/dev/null; true")]
+    return [
+        Step(tr("porzadkuje apt: przerwane instalacje, pobrane paczki, stare jadra",
+                "tidying apt: interrupted installs, downloaded packages, old kernels"),
+             f"DEBIAN_FRONTEND=noninteractive dpkg --force-confold --configure -a; {APT} clean; {_OLD_KERNELS}"),
+        Step(tr("pobieram listy pakietow (apt-get update)", "fetching the package lists (apt-get update)"),
+             f"{APT} update",
+             warn=tr("apt-get update zglosil blad (np. niedzialajace repozytorium) — czesc poprawek mogla nie zostac "
+                     "znaleziona", "apt-get update reported an error (e.g. a broken repository) — some fixes may not "
+                     "have been found")),
+        Step(tr(f"instaluje poprawki: {count_text}", f"installing the fixes: {count_text}"),
+             f"{APT} install -y --only-upgrade -o Dpkg::Options::=--force-confold {names}", required=True),
+        Step(tr("usuwam stare jadra i pobrane paczki", "removing old kernels and downloaded packages"),
+             f"{_OLD_KERNELS}; {APT} clean"),
+    ]
+
+
+def docker_packages(items: list[PackageVulns]) -> list[str]:
+    """Pakiety Dockera w latce — nowa wersja demona dziala dopiero po jego restarcie (zatrzymuje kontenery)."""
+    return sorted({b.split(":")[0] for p in items for b in p.binaries if DOCKER_PACKAGES.match(b.split(":")[0])})
+
+
+def split_ref(ref: str) -> tuple[str, str]:
+    """'nginx:1.25' -> ('nginx', '1.25'); 'host:5000/app' -> ('host:5000/app', 'latest'); digest/zle -> ('', '')."""
+    if "@" in ref or not _IMAGE_REF.match(ref):
+        return "", ""
+    if ":" in ref.rsplit("/", 1)[-1]:
+        repo, _, tag = ref.rpartition(":")
+        return repo, tag
+    return ref, "latest"
+
+
+def rollback_ref(ref: str) -> str:
+    """
+    Tag, pod ktorym zostaje poprzedni obraz: 'nginx:1.25' -> 'nginx:pipe-rollback-1.25'. Obraz bez tagu sprzatanie
+    (docker image prune) by usunelo, a /cofnij do niego wraca — wiec zostaje jedna poprzednia wersja na obraz.
+    """
+    repo, tag = split_ref(ref)
+    if not repo or not _TAG.match(tag):
+        return ""
+    suffix = ROLLBACK_TAG + tag
+    if len(suffix) > 128:
+        suffix = ROLLBACK_TAG + hashlib.sha256(tag.encode()).hexdigest()[:16]
+    return f"{repo}:{suffix}"
+
+
+def layer_run(target: TargetResult) -> str:
+    """
+    Komenda dla obrazu bez nowszej wersji (przypiety tag, obraz bazowy jeszcze nieprzebudowany): poprawki z
+    repozytorium jego systemu, tylko pakiety z podatnosciami, bez Ubuntu Pro. '' = nie da sie (system bez apt/apk).
+    """
+    eco = target.ecosystem or ""
+    binaries = upgrade_binaries([p for p in target.items if not p.pro_only])
+    if not binaries or not eco.startswith(DISTROS):
+        return ""
+    names = " ".join(binaries)
+    if eco.startswith("Alpine"):
+        return f"apk upgrade --no-cache {names}"
+    return ("apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends "
+            f"-o Dpkg::Options::=--force-confold {names} && apt-get clean && rm -rf /var/lib/apt/lists/*")
+
+
+def _json_list(value: Any) -> list[str] | None:
+    if value is None:
+        return []
+    if isinstance(value, list) and all(isinstance(v, str) for v in value):
+        return value
+    return None
+
+
+def layer_commands(target: TargetResult, ref: str, base_id: str, config: dict[str, Any], name: str) -> str:
+    """
+    Warstwa z poprawkami na tym samym tagu — jak `copa patch`: kontener tymczasowy z obrazu wykonuje layer_run()
+    jako root, `docker commit` zapisuje wynik z przywroconym USER, ENTRYPOINT i CMD obrazu oraz etykieta obrazu
+    bazowego (PATCH_LABEL), kontener i jego anonimowe wolumeny znikaja. Bez `docker build` — dziala z kazdym
+    builderem i magazynem obrazow. '' = nie da sie.
+    """
+    run = layer_run(target)
+    repo, _ = split_ref(ref)
+    user = str(config.get("User") or "")
+    entry, cmd = _json_list(config.get("Entrypoint")), _json_list(config.get("Cmd"))
+    if not run or not repo or not _IMAGE_ID.match(base_id) or entry is None or cmd is None \
+            or (user and not _IMAGE_USER.match(user)) or not re.fullmatch(r"pipe-patch-[0-9a-f]{8}", name):
+        return ""
+    changes = [f"ENTRYPOINT {json.dumps(entry)}", f"CMD {json.dumps(cmd)}", f"LABEL {PATCH_LABEL}={base_id}"]
+    if user:
+        changes.append(f"USER {user}")
+    flags = " ".join(f"--change {shlex.quote(c)}" for c in changes)
+    return (f"docker run --name {name}{' --user root' if user else ''} --entrypoint sh {shlex.quote(ref)} -c "
+            f"{shlex.quote(run)} && docker commit {flags} {name} {shlex.quote(ref)}; rc=$?; "
+            f"docker rm -f -v {name} >/dev/null 2>&1; exit $rc")
+
+
+@dataclass
+class ComposeProject:
+    """Projekt compose z uslugami, ktorych obrazy lata /zalataj obrazy."""
+    project: str
+    files: list[str]
+    services: list[str] = field(default_factory=list)
+    targets: list[TargetResult] = field(default_factory=list)
+
+    @property
+    def base(self) -> str:
+        return "docker compose " + " ".join(f"-f {shlex.quote(f)}" for f in self.files) + f" -p {shlex.quote(self.project)}"
+
+    def command(self, sub: str) -> str:
+        return f"{self.base} {sub} " + " ".join(shlex.quote(s) for s in self.services)
+
+
+@dataclass
 class ImagePatch:
     command: str = ""
     inverse: list[str] = field(default_factory=list)     # powrot do poprzednich obrazow (dla /cofnij)
     manual: list[str] = field(default_factory=list)      # kontenery bez compose: tylko podpowiedz
     targets: list[TargetResult] = field(default_factory=list)
-    waiting: list[TargetResult] = field(default_factory=list)   # po ostatniej latce bez zmian — nie ma nowszego obrazu
+    waiting: list[TargetResult] = field(default_factory=list)   # po ostatniej latce bez zmian — nic wiecej nie pomoglo
     skipped: list[str] = field(default_factory=list)     # kontenery samego Pipe — te odswieza /aktualizuj
-    refreshable: list[TargetResult] = field(default_factory=list)   # obrazy, ktore komenda naprawde odswiezy (z compose)
+    refreshable: list[TargetResult] = field(default_factory=list)   # obrazy, ktore latka naprawde odswiezy (z compose)
+    projects: list[ComposeProject] = field(default_factory=list)
 
 
 def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] | set[str] = frozenset(),
                 now: float | None = None) -> ImagePatch:
     """
-    Nowsze obrazy dla kontenerow z compose: `pull --ignore-buildable` (obrazy z rejestru), `build --pull` (uslugi
-    z `build:` — wlasne obrazy przebudowane na aktualnym obrazie bazowym; uslugi bez `build:` compose pomija) i `up -d`.
-    Komendy odwrotne oznaczaja poprzedni obraz jego starym tagiem i odtwarzaja uslugi — to prawdziwy rollback.
-    Kontenery bez compose dostaja tylko podpowiedz (docker run trzeba powtorzyc z tymi samymi opcjami).
-    `skip_projects` — projekt compose samego Pipe: `up -d` zatrzymalby Pipe w trakcie latania (od tego jest
-    /aktualizuj). Obraz, ktory po ostatniej latce mial te same podatnosci (pod tagiem nie ma nowszego), czeka
-    HOLD_FOR — inaczej /zalataj proponowaloby w kolko to samo.
+    Obrazy kontenerow z compose do zalatania: `pull --ignore-buildable` (obrazy z rejestru), `build --pull` (uslugi
+    z `build:` — przebudowane na aktualnym obrazie bazowym; uslugi bez `build:` compose pomija) i `up -d`; obraz, ktorego
+    to nie zmienilo, dostaje warstwe z poprawkami (core/patching.py). Komendy odwrotne oznaczaja poprzedni obraz jego
+    starym tagiem i odtwarzaja uslugi — to prawdziwy rollback. Kontenery bez compose dostaja tylko podpowiedz
+    (docker run trzeba powtorzyc z tymi samymi opcjami). `skip_projects` — projekt compose samego Pipe: `up -d`
+    zatrzymalby Pipe w trakcie latania (od tego jest /aktualizuj). Obraz, ktory po ostatniej latce mial te same
+    podatnosci, czeka HOLD_FOR — inaczej /zalataj probowaloby w kolko to samo.
     """
     patch = ImagePatch()
-    projects: dict[tuple[str, tuple[str, ...]], list[str]] = {}
+    projects: dict[tuple[str, tuple[str, ...]], ComposeProject] = {}
     retag: dict[str, str] = {}
     waiting = stale_images(now)
     for target in result.of_kind("image"):
@@ -1036,9 +1496,12 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
             continue
         patch.targets.append(target)
         for item in compose:
-            services = projects.setdefault((item["project"], tuple(item["files"])), [])
-            if item["service"] not in services:
-                services.append(item["service"])
+            project = projects.setdefault((item["project"], tuple(item["files"])),
+                                          ComposeProject(item["project"], list(item["files"])))
+            if item["service"] not in project.services:
+                project.services.append(item["service"])
+            if target not in project.targets:
+                project.targets.append(target)
         if compose:
             patch.refreshable.append(target)
         short = image_id.removeprefix("sha256:")[:12]
@@ -1050,14 +1513,11 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
                 patch.manual.append(tr(f"{container}: kontener bez compose — docker pull {ref}, potem odtworz go "
                                        f"z tymi samymi opcjami", f"{container}: a container without compose — "
                                        f"docker pull {ref}, then recreate it with the same options"))
-    segments, recreate = [], []
-    for (project, files), services in projects.items():
-        base = "docker compose " + " ".join(f"-f {shlex.quote(f)}" for f in files) + f" -p {shlex.quote(project)}"
-        names = " ".join(shlex.quote(s) for s in services)
-        segments.append(f"{base} pull --ignore-buildable {names} && {base} build --pull {names} && {base} up -d {names}")
-        recreate.append(f"{base} up -d {names}")
-    patch.command = " && ".join(segments)
-    patch.inverse = [f"docker tag {short} {shlex.quote(ref)}" for ref, short in retag.items()] + recreate
+    patch.projects = list(projects.values())
+    patch.command = " && ".join(f"{p.command('pull --ignore-buildable')} && {p.command('build --pull')} && "
+                                f"{p.command('up -d')}" for p in patch.projects)
+    patch.inverse = [f"docker tag {short} {shlex.quote(ref)}" for ref, short in retag.items()] \
+        + [p.command("up -d") for p in patch.projects]
     return patch
 
 
@@ -1069,36 +1529,43 @@ def built_locally(target: TargetResult) -> bool:
 
 
 def _waiting_why(target: TargetResult) -> str:
-    return tr("obraz bazowy (FROM) nie ma nowszej wersji — podbij ja w Dockerfile",
-              "the base image (FROM) has no newer version — bump it in the Dockerfile") if built_locally(target) else \
-        tr("pod tym tagiem nie ma nowszego obrazu — zmien tag w compose",
-           "no newer image under this tag — change the tag in compose")
+    return tr("ani przebudowa, ani poprawki z repozytorium systemu obrazu nie usunely podatnosci — podbij obraz "
+              "bazowy (FROM) w Dockerfile",
+              "neither the rebuild nor the fixes from the image system's repository removed the vulnerabilities — "
+              "bump the base image (FROM) in the Dockerfile") if built_locally(target) else \
+        tr("ani nowszy obraz pod tym tagiem, ani poprawki z repozytorium systemu obrazu nie usunely podatnosci — "
+           "zmien tag w compose na nowsza wersje",
+           "neither a newer image under this tag nor the fixes from the image system's repository removed the "
+           "vulnerabilities — change the tag in compose to a newer version")
+
+
+def _names(items: list[PackageVulns], limit: int = 6) -> str:
+    names = ", ".join(plain(p.name, 60) for p in items[:limit])
+    return names + (tr(f" i {len(items) - limit} innych", f" and {len(items) - limit} more") if len(items) > limit else "")
 
 
 def held_note(items: list[PackageVulns]) -> str:
     """Dlaczego te pakiety nie sa w latce: poprawka tylko w Ubuntu Pro albo nie ma jej jeszcze w repozytoriach."""
-    if not items:
-        return ""
     pro = [p for p in items if p.pro_only]
-    names = ", ".join(plain(p.name, 60) for p in items[:6])
-    if len(items) > 6:
-        names += tr(f" i {len(items) - 6} innych", f" and {len(items) - 6} more")
-    text = tr(f"Bez zmian po ostatniej instalacji ({len(items)}): {names} — repozytoria serwera nie maja jeszcze "
-              f"wersji z poprawka, sprobuje znowu za dobe.",
-              f"Unchanged after the last install ({len(items)}): {names} — the server's repositories do not have "
-              f"the fixed version yet, I will try again in a day.")
+    held = [p for p in items if not p.pro_only]
+    parts = []
+    if held:
+        parts.append(tr(f"Bez zmian po ostatniej instalacji ({len(held)}): {_names(held)} — repozytoria serwera nie "
+                        f"maja jeszcze wersji z poprawka, sprobuje znowu za dobe.",
+                        f"Unchanged after the last install ({len(held)}): {_names(held)} — the server's repositories "
+                        f"do not have the fixed version yet, I will try again in a day."))
     if pro:
-        text += tr(f" Poprawki dla {len(pro)} z nich sa tylko w Ubuntu Pro (ESM): pro attach, potem /zalataj.",
-                   f" The fixes for {len(pro)} of them are only in Ubuntu Pro (ESM): pro attach, then /patch.")
-    return text
+        parts.append(tr(f"Poprawki dla {len(pro)} ({_names(pro)}) sa tylko w Ubuntu Pro (ESM): pro attach, potem /zalataj.",
+                        f"The fixes for {len(pro)} ({_names(pro)}) are only in Ubuntu Pro (ESM): pro attach, then /patch."))
+    return " ".join(parts)
 
 
 def waiting_note(patch: ImagePatch) -> str:
-    """Obrazy pominiete w latce: bez nowszego obrazu od ostatniego razu, kontenery samego Pipe."""
+    """Obrazy pominiete w latce: bez zmian od ostatniego razu, kontenery samego Pipe."""
     lines = []
     if patch.waiting:
-        lines.append(tr("Bez nowszego obrazu od ostatniej latki (sprawdze znowu za dobe): ",
-                        "No newer image since the last patch (I will check again in a day): ")
+        lines.append(tr("Bez zmian po ostatniej latce (sprawdze znowu za dobe): ",
+                        "Unchanged after the last patch (I will check again in a day): ")
                      + "; ".join(f"{plain(t.label(), 120)} — {_waiting_why(t)}" for t in patch.waiting[:5]) + ".")
     if patch.skipped:
         lines.append(tr(f"Kontenery Pipe ({', '.join(patch.skipped[:3])}) odswieza /aktualizuj.",
@@ -1106,54 +1573,100 @@ def waiting_note(patch: ImagePatch) -> str:
     return "\n\n".join(lines)
 
 
+def _waiting_lines(prefix: str, items: list[PackageVulns]) -> list[str]:
+    """'Serwer: 2 pakiety (openssl, curl) bez zmian po ostatniej instalacji — ...' i '... tylko w Ubuntu Pro'."""
+    held = [p for p in items if not p.pro_only]
+    pro = [p for p in items if p.pro_only]
+    names = lambda found: ", ".join(plain(p.name, 40) for p in found[:4])     # noqa: E731
+    lines = []
+    if held:
+        lines.append(tr(f"{prefix}: {n_packages(len(held))} ({names(held)}) bez zmian po ostatniej instalacji — "
+                        "repozytoria serwera nie maja jeszcze nowej wersji; sprobuje znowu za dobe.",
+                        f"{prefix}: {n_packages(len(held))} ({names(held)}) unchanged after the last install — the "
+                        "server's repositories do not have the new version yet; I will retry in a day."))
+    if pro:
+        lines.append(tr(f"{prefix}: {n_packages(len(pro))} ({names(pro)}) — poprawka tylko w Ubuntu Pro (pro attach).",
+                        f"{prefix}: {n_packages(len(pro))} ({names(pro)}) — the fix is only in Ubuntu Pro (pro attach)."))
+    return lines
+
+
 def todo(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -> list[str]:
     """
-    Co uzytkownik moze z tym zrobic — jedna linia na serwer, obrazy i aplikacje, kazda z konkretnym krokiem.
-    Te same linie sa na gorze /podatnosci i /audyt, w /zalataj, gdy nie ma czego instalowac, i w pipe web.
+    Co uzytkownik moze z tym zrobic — jedna linia na serwer, zdalne serwery, obrazy i aplikacje, kazda z konkretnym
+    krokiem. Te same linie sa na gorze /podatnosci i /audyt, w /zalataj, gdy nie ma czego instalowac, i w pipe web.
     Podatnosci bez poprawki nie ma tu wcale: nic z nimi nie da sie zrobic, a liczba "512" tylko straszy.
+    Gdy sa zdalne serwery, ten serwer to "Ten serwer" — samo "Serwer" obok "Serwer web2" myli.
     """
     lines: list[str] = []
-    patchable, held = select(result, "all"), held_items(result)
+    here = tr("Ten serwer", "This server") if result.of_kind("server") else tr("Serwer", "Server")
+    patchable, waiting = select(result, "all"), waiting_items(result)
     if result.ecosystem is None:
-        lines.append(tr(f"Serwer: system {result.system} nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
-                        f"Server: {result.system} is not supported — I only check images and applications."))
+        lines.append(tr(f"{here}: system {result.system} nie jest obslugiwany — sprawdzam tylko obrazy i aplikacje.",
+                        f"{here}: {result.system} is not supported — I only check images and applications."))
     elif patchable:
         urgent = sum(1 for p in patchable if p.urgent)
-        lines.append(tr(f"Serwer: {n_packages(len(patchable))} z poprawka" + (f" (pilne: {urgent})" if urgent else "")
-                        + " — zainstaluje je /zalataj.",
-                        f"Server: {n_packages(len(patchable))} with a fix" + (f" (urgent: {urgent})" if urgent else "")
-                        + " — /patch installs them."))
-    if held:
-        pro = any(p.pro_only for p in held)
-        lines.append(tr(f"Serwer: {n_packages(len(held))} ({', '.join(plain(p.name, 40) for p in held[:4])}) bez zmian po "
-                        "ostatniej instalacji — " + ("poprawka jest tylko w Ubuntu Pro (pro attach)" if pro else
-                                                     "repozytoria serwera nie maja jeszcze nowej wersji") + "; sprobuje znowu za dobe.",
-                        f"Server: {n_packages(len(held))} ({', '.join(plain(p.name, 40) for p in held[:4])}) unchanged after the "
-                        "last install — " + ("the fix is only in Ubuntu Pro (pro attach)" if pro else
-                                             "the server's repositories do not have the new version yet") + "; I will retry in a day."))
-    if result.ecosystem is not None and not patchable and not held:
-        lines.append(tr("Serwer: pakiety aktualne.", "Server: packages up to date."))
+        lines.append(tr(f"{here}: {n_packages(len(patchable))} z poprawka" + (f" (pilne: {urgent})" if urgent else "")
+                        + " — zainstaluje /zalataj.",
+                        f"{here}: {n_packages(len(patchable))} with a fix" + (f" (urgent: {urgent})" if urgent else "")
+                        + " — /patch installs the fixes."))
+    lines += _waiting_lines(here, waiting)
+    if result.ecosystem is not None and not patchable and not waiting:
+        lines.append(tr(f"{here}: pakiety aktualne.", f"{here}: packages up to date."))
+    if result.reboot:
+        lines.append(tr(f"{here}: czeka na restart — nowe jadro i biblioteki zaczna dzialac po nim (zaplanuj go).",
+                        f"{here}: waiting for a reboot — the new kernel and libraries take effect after it (schedule it)."))
+
+    clean_servers = 0
+    for target in sorted(result.of_kind("server"), key=lambda t: t.name):
+        name = plain(target.name, 60)
+        if target.meta.get("error"):
+            lines.append(tr(f"Serwer {name}: brak polaczenia ({plain(target.meta['error'], 120)}) — sprawdze przy "
+                            "nastepnym skanie.", f"Server {name}: no connection ({plain(target.meta['error'], 120)}) — "
+                            "I will check at the next scan."))
+            continue
+        if not target.ecosystem:
+            lines.append(tr(f"Serwer {name}: system {plain(target.meta.get('system', '?'), 80)} nie jest obslugiwany.",
+                            f"Server {name}: {plain(target.meta.get('system', '?'), 80)} is not supported."))
+            continue
+        chosen, held = select_server(target), waiting_server_items(target)
+        if chosen:
+            urgent = sum(1 for p in chosen if p.urgent)
+            lines.append(tr(f"Serwer {name}: {n_packages(len(chosen))} z poprawka" + (f" (pilne: {urgent})" if urgent else "")
+                            + f" — zainstaluje /zalataj (tylko ten serwer: /zalataj {name}).",
+                            f"Server {name}: {n_packages(len(chosen))} with a fix" + (f" (urgent: {urgent})" if urgent else "")
+                            + f" — /patch installs the fixes (only this server: /patch {name})."))
+        lines += _waiting_lines(tr(f"Serwer {name}", f"Server {name}"), held)
+        if target.meta.get("reboot"):
+            lines.append(tr(f"Serwer {name}: czeka na restart (nowe jadro albo biblioteki).",
+                            f"Server {name}: waiting for a reboot (new kernel or libraries)."))
+        if not chosen and not held:
+            clean_servers += 1
+    if clean_servers:
+        lines.append(tr(f"Zdalne serwery: {n_servers(clean_servers)} z aktualnymi pakietami.",
+                        f"Remote servers: {n_servers(clean_servers)} with up-to-date packages."))
 
     images = [t for t in result.of_kind("image") if t.items]
     if images:
         patch = image_patch(result, skip_projects=skip_projects)
-        names = lambda targets: ", ".join(plain(t.name, 60) for t in targets[:4]) + (  # noqa: E731
+        names = lambda targets: ", ".join(plain(t.name, 60) for t in sorted(targets, key=target_rank)[:4]) + (  # noqa: E731
             tr(f" i {len(targets) - 4} innych", f" and {len(targets) - 4} more") if len(targets) > 4 else "")
         if patch.refreshable:
-            lines.append(tr(f"Obrazy kontenerow: {n_images(len(patch.refreshable))} do odswiezenia ({names(patch.refreshable)}) — "
-                            "zrobi to /zalataj obrazy.",
-                            f"Container images: {n_images(len(patch.refreshable))} to refresh ({names(patch.refreshable)}) — "
-                            "/patch images does it."))
+            lines.append(tr(f"Obrazy kontenerow: {n_images(len(patch.refreshable))} do zalatania ({names(patch.refreshable)}) — "
+                            "zalata /zalataj (same obrazy: /zalataj obrazy).",
+                            f"Container images: {n_images(len(patch.refreshable))} to patch ({names(patch.refreshable)}) — "
+                            "/patch patches them (images only: /patch images)."))
         built = [t for t in patch.waiting if built_locally(t)]
         pulled = [t for t in patch.waiting if not built_locally(t)]
         if built:
-            lines.append(tr(f"Obrazy budowane z Dockerfile ({names(built)}): przebudowalem je, ale obraz bazowy (FROM) nie ma "
-                            "nowszej wersji — podbij ja w Dockerfile.",
-                            f"Images built from a Dockerfile ({names(built)}): I rebuilt them, but the base image (FROM) has no "
-                            "newer version — bump it in the Dockerfile."))
+            lines.append(tr(f"Obrazy budowane z Dockerfile ({names(built)}): przebudowa i poprawki z repozytorium nie "
+                            "pomogly — podbij obraz bazowy (FROM) w Dockerfile.",
+                            f"Images built from a Dockerfile ({names(built)}): the rebuild and the repository fixes did "
+                            "not help — bump the base image (FROM) in the Dockerfile."))
         if pulled:
-            lines.append(tr(f"Obrazy z rejestru ({names(pulled)}): pod tym tagiem nie ma nowszego — zmien tag w compose.",
-                            f"Registry images ({names(pulled)}): no newer one under this tag — change the tag in compose."))
+            lines.append(tr(f"Obrazy z rejestru ({names(pulled)}): ani nowszy obraz, ani poprawki z repozytorium nie "
+                            "pomogly — zmien tag w compose na nowsza wersje.",
+                            f"Registry images ({names(pulled)}): neither a newer image nor the repository fixes "
+                            "helped — change the tag in compose to a newer version."))
         manual = [m.split(":", 1)[0] for m in patch.manual]
         if manual:
             lines.append(tr(f"Kontenery bez compose ({', '.join(manual[:4])}): nie mam ich jak odswiezyc — docker pull "
@@ -1165,13 +1678,15 @@ def todo(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -
     elif any(t.ecosystem for t in result.of_kind("image")):
         lines.append(tr("Obrazy kontenerow: bez podatnosci z poprawka.", "Container images: no vulnerabilities with a fix."))
 
-    apps = [t for t in result.of_kind("app") if t.items]
+    apps = sorted((t for t in result.of_kind("app") if t.items), key=target_rank)
     if apps:
-        ecos = ", ".join(sorted({e.strip() for t in apps for e in (t.ecosystem or "").split(",") if e.strip()}))
-        lines.append(tr(f"Aplikacje ({', '.join(plain(t.name, 60) for t in apps[:4])}): podatne zaleznosci {ecos} — to zmiana "
-                        "w kodzie (np. npm audit fix) i wdrozenie; moge to zrobic, jesli poprosisz w rozmowie.",
-                        f"Applications ({', '.join(plain(t.name, 60) for t in apps[:4])}): vulnerable {ecos} dependencies — a "
-                        "code change (e.g. npm audit fix) and a deploy; I can do it if you ask in the chat."))
+        names = ", ".join(plain(t.name, 60) for t in apps[:4]) + (
+            tr(f" i {len(apps) - 4} innych", f" and {len(apps) - 4} more") if len(apps) > 4 else "")
+        lines.append(tr(f"Aplikacje ({names}): podatne zaleznosci — to zmiana w kodzie, wiec /zalataj ich nie zmienia; "
+                        f"podbij je do wersji z poprawka ({app_tools(apps)}) i wdroz aplikacje albo popros mnie o to "
+                        "w rozmowie.",
+                        f"Applications ({names}): vulnerable dependencies — a code change, so /patch does not touch them; "
+                        f"bump them to the fixed version ({app_tools(apps)}) and deploy the app, or ask me in the chat."))
     return lines
 
 
@@ -1179,7 +1694,10 @@ def nothing_to_patch(result: Scan, skip_projects: frozenset[str] | set[str] = fr
     """
     /zalataj bez niczego do zainstalowania: najpierw to (jednym zdaniem), potem co zostaje i co trzeba zrobic samemu.
     """
-    rest = [line for line in todo(result, skip_projects) if not line.startswith(tr("Serwer: pakiety", "Server: packages"))]
+    clean = (tr("Serwer: pakiety aktualne", "Server: packages up to date"),
+             tr("Ten serwer: pakiety aktualne", "This server: packages up to date"),
+             tr("Zdalne serwery:", "Remote servers:"))
+    rest = [line for line in todo(result, skip_projects) if not line.startswith(clean)]
     if not rest:
         return tr("Nie ma nic do zalatania: brak znanych podatnosci z poprawka.",
                   "Nothing to patch: no known vulnerabilities with a fix.")
@@ -1191,105 +1709,85 @@ def nothing_to_patch(result: Scan, skip_projects: frozenset[str] | set[str] = fr
 def select(result: Scan, scope: str, now: float | None = None) -> list[PackageVulns]:
     """
     Pakiety hosta do zalatania: 'urgent' (KEV, krytyczne, wysokie — jak w alercie) albo wszystkie z poprawka —
-    bez tych, ktorych ostatnia instalacja nie zmienila (repozytoria nie maja poprawki, patrz held_items).
+    bez tych, ktorych ostatnia instalacja nie zmienila (repozytoria nie maja poprawki) i bez poprawek tylko
+    z Ubuntu Pro, gdy subskrypcja nie jest wlaczona (apt i tak by ich nie znalazl).
     """
     held = held_packages(now)
-    return [p for p in (result.urgent if scope == "urgent" else result.items) if p.key not in held]
+    items = result.urgent if scope == "urgent" else result.items
+    return [p for p in items if p.key not in held and (result.esm or not p.pro_only)]
 
 
-def held_items(result: Scan, now: float | None = None) -> list[PackageVulns]:
-    """Pakiety hosta, ktorych ostatnia instalacja nie zmienila — /zalataj ich nie proponuje przez HOLD_FOR."""
+def waiting_items(result: Scan, now: float | None = None) -> list[PackageVulns]:
+    """Pakiety hosta z poprawka, ktorych /zalataj teraz nie instaluje (patrz select) — raport mowi dlaczego."""
     held = held_packages(now)
-    return [p for p in result.items if p.key in held]
+    return [p for p in result.items if p.key in held or (p.pro_only and not result.esm)]
 
 
-def patch_token(command: str) -> str:
-    """Odcisk komendy z podgladu — wykonanie przechodzi tylko, gdy lista pakietow sie nie zmienila."""
-    return hashlib.sha256(command.encode()).hexdigest()[:12]
+held_items = waiting_items
 
 
-def patch_preview(result: Scan, items: list[PackageVulns], command: str, reason: str = "",
-                  explain: dict[str, str] | None = None) -> str:
-    """Podglad latki pakietow hosta (Markdown, jedna wiadomosc): pakiety z opisem, komenda, czego bezpiecznik nie zrobi."""
-    from backend.core.text import as_code
-
-    urgent = sum(1 for p in items if p.urgent)
-    prefix = [tr(f"Latki dla {len(items)} pakietow" + (f" ({urgent} pilnych)" if urgent else "") + ":",
-                 f"Patches for {len(items)} packages" + (f" ({urgent} urgent)" if urgent else "") + ":")]
-    footer = [tr("Komenda: ", "Command: ") + as_code(short_command(command)), "",
-              tr("Bezpiecznik sprawdzi strony przed i po instalacji i zapisze wpis w dzienniku. Pakietow nie cofne "
-                 "automatycznie (starej wersji czesto nie ma juz w repozytorium). Biblioteki i jadro zaczna dzialac "
-                 "po restarcie uslug albo serwera.",
-                 "The safety fuse checks the sites before and after the install and writes a journal entry. I cannot "
-                 "roll packages back automatically (the old version is often gone from the repository). Libraries and "
-                 "the kernel apply after a service or server restart.")]
-    if result.error:
-        footer.append(tr(f"Uwaga: ostatni skan OSV nie powiodl sie ({result.error}), lista moze byc nieaktualna.",
-                         f"Note: the last OSV scan failed ({result.error}), the list may be out of date."))
-    if reason:
-        footer += ["", reason]
-    return sections_markdown([("", sort_items(items), len(items))], explain or {}, prefix=prefix, footer=footer)
+def server_key(target: TargetResult, item: PackageVulns) -> str:
+    """Klucz wstrzymania pakietu zdalnego serwera — ten sam pakiet na innym serwerze (i na hoscie) to co innego."""
+    return f"server:{target.name}|{item.key}"
 
 
-def image_patch_preview(patch: ImagePatch, reason: str = "", explain: dict[str, str] | None = None) -> str:
-    """Podglad nowszych obrazow (jedna wiadomosc): obrazy, pakiety z opisem, komenda, powrot, kontenery bez compose."""
-    from backend.core.text import as_code
-
-    prefix = [tr(f"Nowsze obrazy dla {len(patch.targets)} obrazow z podatnosciami:",
-                 f"Newer images for {len(patch.targets)} images with vulnerabilities:")]
-    sections = []
-    for target in patch.targets[:6]:
-        containers = ", ".join(target.meta.get("containers") or [])
-        sections.append((plain(target.name, 120) + (f" ({plain(containers, 200)})" if containers else ""),
-                         sort_items(target.items)[:3], len(target.items)))
-    footer: list[str] = []
-    if patch.command:
-        footer += [tr("Komenda: ", "Command: ") + as_code(short_command(patch.command)), "",
-                   tr("Obrazy z rejestru: pobiore nowsze pod tym samym tagiem (oficjalne obrazy sa regularnie "
-                      "przebudowywane; przypiety tag zmien w compose). Uslugi z `build:` przebuduje na aktualnym obrazie "
-                      "bazowym. Bezpiecznik sprawdzi konfiguracje compose, czy kontenery dzialaja i strony; /cofnij wraca "
-                      "do poprzednich obrazow.",
-                      "Registry images: I pull newer ones under the same tag (official images are rebuilt regularly; change "
-                      "a pinned tag in compose). Services with `build:` I rebuild on the current base image. The safety fuse "
-                      "checks the compose config, that the containers run and the sites; /undo goes back to the previous images.")]
-    waiting = waiting_note(patch)
-    if waiting:
-        footer += ["", waiting]
-    if patch.manual:
-        footer += [""] + [f"- {m}" for m in patch.manual[:4]]
-    if reason:
-        footer += ["", reason]
-    return sections_markdown(sections, explain or {}, prefix=prefix, footer=footer)
+def select_server(target: TargetResult, now: float | None = None) -> list[PackageVulns]:
+    """Pakiety zdalnego serwera do zalatania — te same zasady co select()."""
+    held = held_packages(now)
+    esm = bool(target.meta.get("esm"))
+    return [p for p in target.items if server_key(target, p) not in held and (esm or not p.pro_only)]
 
 
-def patch_view(result: Scan, scope: str, command: str, explain: dict[str, str], *, items: list[PackageVulns] | None = None,
-               patch: ImagePatch | None = None, reason: str = "") -> dict[str, Any]:
-    """Podglad latki jako dane dla pipe web: co zostanie zalatane (grupy jak w raporcie), komenda, co zrobi bezpiecznik."""
-    notes: list[str] = []
-    if patch is not None:
-        groups = [group_view("image", t.name, ", ".join(t.meta.get("containers") or []), t.items, explain, patchable=True)
-                  for t in patch.targets]
-        safety = tr("Obrazy z rejestru pobiore pod tym samym tagiem, uslugi z build: przebuduje na aktualnym obrazie "
-                    "bazowym. Bezpiecznik sprawdzi konfiguracje compose, kontenery i strony; /cofnij wraca do poprzednich obrazow.",
-                    "Registry images are pulled under the same tag, services with build: are rebuilt on the current base "
-                    "image. The safety fuse checks the compose config, the containers and the sites; /undo returns to the "
-                    "previous images.")
-        extra = [waiting_note(patch)] + patch.manual[:4]
-    else:
-        groups = [group_view("system", tr("Pakiety serwera", "Server packages"), result.system, items or [], explain,
-                             patchable=True)]
-        safety = tr("Bezpiecznik sprawdzi strony przed i po instalacji i zapisze wpis w dzienniku. Pakietow nie cofne "
-                    "automatycznie. Biblioteki i jadro zaczna dzialac po restarcie uslug albo serwera.",
-                    "The safety fuse checks the sites before and after and writes a journal entry. Packages are not rolled "
-                    "back automatically. Libraries and the kernel apply after a service or server restart.")
-        extra = [held_note(held_items(result))]
-        if result.error:
-            extra.append(tr(f"Ostatni skan OSV nie powiodl sie ({result.error}), lista moze byc nieaktualna.",
-                            f"The last OSV scan failed ({result.error}), the list may be out of date."))
-    if command:
-        notes.append(safety)
-    notes += [n for n in extra if n]
-    return {"scope": scope, "groups": groups, "command": command, "notes": notes, "reason": reason, "at": result.at}
+def waiting_server_items(target: TargetResult, now: float | None = None) -> list[PackageVulns]:
+    held = held_packages(now)
+    esm = bool(target.meta.get("esm"))
+    return [p for p in target.items if server_key(target, p) in held or (p.pro_only and not esm)]
+
+
+def server_notes(result: Scan) -> list[str]:
+    """Zdalne serwery, ktorych nie dalo sie sprawdzic (brak polaczenia, nieobslugiwany system)."""
+    notes = []
+    for target in result.of_kind("server"):
+        if target.meta.get("error"):
+            notes.append(tr(f"Serwer {plain(target.name, 60)}: brak polaczenia ({plain(target.meta['error'], 120)}).",
+                            f"Server {plain(target.name, 60)}: no connection ({plain(target.meta['error'], 120)})."))
+        elif not target.ecosystem:
+            notes.append(tr(f"Serwer {plain(target.name, 60)}: system {plain(target.meta.get('system', '?'), 80)} nie jest "
+                            "obslugiwany.", f"Server {plain(target.name, 60)}: "
+                            f"{plain(target.meta.get('system', '?'), 80)} is not supported."))
+    return notes
+
+
+@dataclass
+class PatchParts:
+    """Ile /zalataj zalata w kazdej czesci — przycisk w pipe web, potwierdzenie agenta, podsumowanie."""
+    system: int = 0             # pakiety hosta
+    images: int = 0             # obrazy kontenerow z compose
+    servers: int = 0            # zdalne serwery z czyms do zalatania
+    server_packages: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.system + self.images + self.server_packages
+
+    def describe(self) -> str:
+        parts = []
+        if self.system:
+            parts.append(tr(f"{n_packages(self.system)} serwera", f"{n_packages(self.system)} on this server"))
+        if self.images:
+            parts.append(n_images(self.images))
+        if self.servers:
+            parts.append(tr(f"{n_servers(self.servers)} zdalnych ({n_packages(self.server_packages)})" if self.servers > 1
+                            else f"serwer zdalny ({n_packages(self.server_packages)})",
+                            f"{n_servers(self.servers)} remote ({n_packages(self.server_packages)})"))
+        return ", ".join(parts)
+
+
+def patch_parts(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset(), now: float | None = None) -> PatchParts:
+    servers = [select_server(t, now) for t in result.of_kind("server")]
+    return PatchParts(system=len(select(result, "all", now)) if result.ecosystem else 0,
+                      images=len(image_patch(result, skip_projects=skip_projects, now=now).refreshable),
+                      servers=sum(1 for s in servers if s), server_packages=sum(len(s) for s in servers))
 
 
 # ─── Pamiec skanu ───────────────────────────────────────────────────────────
@@ -1375,8 +1873,9 @@ class PatchOutcome:
 
 def record_outcome(scope: str, before: list[Any], after: Scan, now: float | None = None) -> PatchOutcome:
     """
-    Po instalacji: ktore pakiety (scope != images) albo obrazy (images) sie zmienily, a ktore nie. Niezmienione
-    trafiaja do `held` / `stale_images` — /zalataj nie zaproponuje ich znowu, a raport mowi dlaczego.
+    Po instalacji: ktore pakiety (hosta albo zdalnego serwera `server:<nazwa>`) albo obrazy (`images`) sie zmienily,
+    a ktore nie. Niezmienione trafiaja do `held` / `stale_images` — /zalataj nie sprobuje ich znowu przez HOLD_FOR,
+    a raport mowi dlaczego.
     """
     now = time.time() if now is None else now
     outcome = PatchOutcome()
@@ -1401,17 +1900,24 @@ def _record(state: dict[str, Any], outcome: PatchOutcome, scope: str, before: li
                 stale.pop(target.name, None)
         state["stale_images"] = stale
         outcome.left = sum(1 for t in after.of_kind("image") if t.items)
-    else:
-        still = {p.key for p in after.items}
-        held = state.get("held") if isinstance(state.get("held"), dict) else {}
-        for item in before:
-            if item.key in still:
-                outcome.unchanged.append(item.name)
-                held[item.key] = {"at": now}
-            else:
-                outcome.fixed.append(item.name)
-        state["held"] = {k: v for k, v in held.items() if now - float(v.get("at", 0)) < HOLD_FOR}
-        outcome.left = len(after.items)
+        return
+    prefix, items = "", after.items
+    if scope.startswith("server:"):
+        name = scope.split(":", 1)[1]
+        current = next((t for t in after.of_kind("server") if t.name == name), None)
+        if current is None or not current.ecosystem:
+            return                                  # po latce serwer nie odpowiedzial — nic nie wiadomo
+        prefix, items = f"server:{name}|", current.items
+    still = {p.key for p in items}
+    held = state.get("held") if isinstance(state.get("held"), dict) else {}
+    for item in before:
+        if item.key in still:
+            outcome.unchanged.append(item.name)
+            held[prefix + item.key] = {"at": now}
+        else:
+            outcome.fixed.append(item.name)
+    state["held"] = {k: v for k, v in held.items() if now - float(v.get("at", 0)) < HOLD_FOR}
+    outcome.left = len(items)
 
 
 def kev_ids(now: float | None = None) -> set[str]:
@@ -1526,16 +2032,31 @@ def _package_vulns(package: Package, ids: list[str], details: dict[str, dict[str
     return item
 
 
-def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
-         containers: list[Any] | None = None) -> tuple[Scan, bool]:
+def _current_meta(result: Scan, targets: list[Target]) -> Scan:
     """
-    Skan podatnosci hosta, obrazow dzialajacych kontenerow i aplikacji z DIRECTORY. Zwraca (wynik, czy
-    odpytano OSV). Bez `force` OSV dostaje wszystko tylko co `max_age` sekund (nowe podatnosci w starych
-    wersjach); w miedzyczasie tylko pakiety, ktorych jeszcze nie pytalismy (nowa wersja, nowy obraz,
-    nowa zaleznosc) — dzieki temu /audyt zaraz po latce trwa sekundy, nie minute.
+    Stan, ktory zmienia sie bez zmiany pakietow — restart (reboot-required), Ubuntu Pro, metapakiety jadra, brak
+    polaczenia z serwerem — z biezacego odczytu, takze gdy skan wraca z pamieci.
+    """
+    system = targets[0]
+    result.kernel_meta = list(system.meta.get("kernel_meta") or [])
+    result.esm, result.reboot = bool(system.meta.get("esm")), bool(system.meta.get("reboot"))
+    current = {t.name: t for t in targets if t.kind == "server"}
+    for target in result.of_kind("server"):
+        if target.name in current:
+            target.meta.update(current[target.name].meta)
+    return result
+
+
+def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
+         containers: list[Any] | None = None, servers: list[ServerDump] | None = None) -> tuple[Scan, bool]:
+    """
+    Skan podatnosci hosta, obrazow dzialajacych kontenerow, zdalnych serwerow (`servers` — pliki odczytane przez
+    ssh, core/fleet.py) i aplikacji. Zwraca (wynik, czy odpytano OSV). Bez `force` OSV dostaje wszystko tylko co
+    `max_age` sekund (nowe podatnosci w starych wersjach); w miedzyczasie tylko pakiety, ktorych jeszcze nie
+    pytalismy (nowa wersja, nowy obraz, nowa zaleznosc) — dzieki temu /audyt zaraz po latce trwa sekundy, nie minute.
     """
     now = time.time() if now is None else now
-    targets = all_targets(containers)
+    targets = all_targets(containers, servers)
     system, others = targets[0], [t for t in targets[1:] if t.ecosystem]
     unsupported = [t for t in targets[1:] if not t.ecosystem]
     state = load_state()
@@ -1544,15 +2065,16 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
     expired = force or now - float(state.get("queried_at", 0)) >= max_age
     if not expired and state.get("inventory") == digest and isinstance(previous, dict) \
             and not previous.get("error") and not previous.get("partial"):
-        return refresh_containers(Scan.from_dict(previous), containers), False
+        return _current_meta(refresh_containers(Scan.from_dict(previous), containers), targets), False
 
     packages = {p.key: p for t in [system] + others if t.ecosystem for p in t.packages}
     cache: dict[str, Any] = {} if expired else state.get("found") or {}
     found = {key: [(str(i), str(m)) for i, m in cache[key]] for key in packages if key in cache}
     to_query = [p for key, p in packages.items() if key not in found]
-    blank = Scan(at=now, ecosystem=system.ecosystem, system=str(system.meta.get("system", "")),
-                 checked=len(system.packages))
+    blank = _current_meta(Scan(at=now, ecosystem=system.ecosystem, system=str(system.meta.get("system", "")),
+                               checked=len(system.packages)), targets)
     if not packages:
+        blank.targets = [TargetResult(t.kind, t.name, None, 0, [], 0, t.meta) for t in unsupported]
         update_state(lambda current: current.update({"last": blank.to_dict()}))
         return blank, False
     try:
@@ -1562,6 +2084,7 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
         result = Scan.from_dict(previous) if isinstance(previous, dict) and previous.get("ecosystem") == system.ecosystem \
             else blank
         result.error = str(exc)
+        _current_meta(result, targets)
         update_state(lambda current: current.update({"last": result.to_dict()}))
         return result, True
 
@@ -1587,8 +2110,8 @@ def scan(*, force: bool = False, max_age: float = 0, now: float | None = None,
                 items.append(item)
         return sort_items(items), unfixed, incomplete
 
-    result = Scan(at=now, ecosystem=system.ecosystem, system=str(system.meta.get("system", "")),
-                  checked=len(system.packages))
+    result = _current_meta(Scan(at=now, ecosystem=system.ecosystem, system=str(system.meta.get("system", "")),
+                                checked=len(system.packages)), targets)
     if system.ecosystem:
         result.items, result.unfixed, incomplete = evaluate(system)
         partial = partial or incomplete
@@ -1630,12 +2153,12 @@ def mark_notified(key: str, ids: set[str]) -> None:
 
 
 def summary_line(result: Scan) -> str:
-    urgent = result.urgent
-    kev = sum(1 for p in result.items if p.kev)
-    line = tr(f"{len(result.items)} pakietow z poprawkami podatnosci", f"{len(result.items)} packages with vulnerability fixes")
-    extra = []
-    if kev:
-        extra.append(tr(f"{kev} aktywnie wykorzystywanych (KEV)", f"{kev} actively exploited (KEV)"))
+    """'pakiety serwera: 5 z poprawka, w tym 4 pilne (1 aktywnie wykorzystywany)' — linia raportu porannego."""
+    urgent, kev = len(result.urgent), sum(1 for p in result.items if p.kev)
+    line = tr(f"pakiety serwera: {len(result.items)} z poprawka", f"server packages: {len(result.items)} with a fix")
     if urgent:
-        extra.append(tr(f"{len(urgent)} pilnych", f"{len(urgent)} urgent"))
-    return line + (f" ({', '.join(extra)})" if extra else "")
+        line += tr(f", w tym {count(urgent, 'pilny', 'pilne', 'pilnych')}", f", {urgent} of them urgent")
+    if kev:
+        line += tr(f" ({count(kev, 'aktywnie wykorzystywany', 'aktywnie wykorzystywane', 'aktywnie wykorzystywanych')})",
+                   f" ({kev} actively exploited)")
+    return line

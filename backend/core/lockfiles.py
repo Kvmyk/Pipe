@@ -1,8 +1,11 @@
 """
 Zaleznosci aplikacji z plikow blokad (lockfile) — dla skanu podatnosci (core/vulns.py).
 
-  find(dir)    lockfile'e w katalogu aplikacji (tylko ten katalog, bez node_modules i podkatalogow)
-  parse(path)  [(ekosystem OSV, nazwa, wersja)] — npm, PyPI, Go, crates.io, Packagist, RubyGems
+  find(dir)       lockfile'e w jednym katalogu
+  find_tree(dir)  katalogi z lockfile'ami: katalog aplikacji i jego podkatalogi (backend/, frontend/, api/...)
+                  do MAX_DEPTH w dol, bez node_modules, vendor, venv i katalogow budowania
+  parse(path)     [(ekosystem OSV, nazwa, wersja)] — npm (package-lock, yarn, pnpm), PyPI (requirements z ==,
+                  poetry, Pipfile, uv), Go, crates.io, Packagist, RubyGems
 
 Tylko dokladne wersje: `requirements.txt` bez `==` nic nie mowi o tym, co jest zainstalowane.
 Same odczyty plikow, bez uruchamiania menedzerow pakietow. Bez importu `settings`.
@@ -13,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import deque
 from typing import Callable
 
 try:
@@ -22,6 +26,13 @@ except ImportError:                   # pragma: no cover
 
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PACKAGES = 5000
+MAX_DEPTH = 3                       # katalog aplikacji + 3 poziomy (np. apps/shop/backend)
+MAX_DIRS = 1000                     # katalogow odwiedzonych w jednym drzewie — duzy katalog danych nie zatrzyma skanu
+# Tu nie ma lockfile'i aplikacji, tylko zainstalowane zaleznosci, kopie z budowania albo dane
+SKIP_DIRS = frozenset({
+    "node_modules", "bower_components", "vendor", "venv", "env", "site-packages", "__pycache__",
+    "dist", "build", "target", "out", "coverage", "tmp", "logs",
+})
 
 Dep = tuple[str, str, str]          # (ekosystem, nazwa, wersja)
 
@@ -116,11 +127,90 @@ def _gemfile(text: str) -> list[Dep]:
     return deps
 
 
+# Protokoly yarn (berry), ktore nie sa paczka z rejestru npm — OSV nic o nich nie wie
+_NOT_REGISTRY = ("workspace:", "patch:", "link:", "portal:", "file:", "exec:", "git", "http", "github:")
+
+
+def _yarn_name(spec: str) -> str:
+    """'@babel/core@^7.0.0' / 'lodash@npm:^4.17.21' / 'alias@npm:real@^1' -> nazwa w rejestrze; '' = nie z rejestru."""
+    at = spec.find("@", 1)
+    if at < 0:
+        return ""
+    name, rest = spec[:at], spec[at + 1:]
+    if rest.startswith("npm:"):
+        rest = rest[4:]
+        alias = rest.find("@", 1)
+        if alias > 0:                                   # alias: zainstalowany jest pakiet po "npm:"
+            name = rest[:alias]
+    elif rest.startswith(_NOT_REGISTRY):
+        return ""
+    return name
+
+
+_YARN_VERSION = re.compile(r'^\s+version:?\s+"?([0-9][^"\s]*)"?\s*$')
+
+
+def _yarn(text: str) -> list[Dep]:
+    """yarn.lock v1 (`version "1.2.3"`) i berry (`version: 1.2.3`): naglowek bloku to specyfikacje pakietu."""
+    deps, name = [], ""
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            name = ""
+            if line.rstrip().endswith(":") and not line.startswith("__metadata"):
+                name = _yarn_name(line.rstrip()[:-1].split(",")[0].strip().strip('"'))
+            continue
+        match = _YARN_VERSION.match(line) if name else None
+        if match:
+            deps.append(("npm", name, match.group(1)))
+            name = ""
+    return deps
+
+
+_PNPM_V5_KEY = re.compile(r"^(?P<name>(?:@[^/]+/)?[^/@]+)/(?P<version>\d[^_/(]*)")
+_PNPM_KEY = re.compile(r"^  (['\"]?)(?P<key>[^'\"\s][^'\"]*?)\1:\s*$")
+
+
+def _pnpm(text: str) -> list[Dep]:
+    """pnpm-lock.yaml: klucze sekcji `packages:` — v5 '/nazwa/1.0.0', v6 '/nazwa@1.0.0', v9 'nazwa@1.0.0'."""
+    head = re.search(r"^lockfileVersion:\s*['\"]?([0-9.]+)", text, re.MULTILINE)
+    v5 = bool(head and head.group(1).startswith("5"))
+    deps, in_packages = [], False
+    for line in text.splitlines():
+        if line and not line[0].isspace():
+            in_packages = line.rstrip() == "packages:"
+            continue
+        match = _PNPM_KEY.match(line) if in_packages else None
+        if not match:
+            continue
+        key = match.group("key").lstrip("/").split("(")[0]
+        if v5:
+            found = _PNPM_V5_KEY.match(key)
+            name, version = (found.group("name"), found.group("version")) if found else ("", "")
+        else:
+            at = key.rfind("@")
+            name, version = (key[:at], key[at + 1:]) if at > 0 else ("", "")
+        if name and re.match(r"\d", version):
+            deps.append(("npm", name, version))
+    return deps
+
+
+def _uv(text: str) -> list[Dep]:
+    """uv.lock: pakiety z rejestru (bez samego projektu, pakietow edytowalnych i z gita)."""
+    data = _toml(text)
+    return [("PyPI", str(p["name"]).lower(), str(p["version"])) for p in data.get("package") or []
+            if p.get("name") and p.get("version") and isinstance(p.get("source"), dict) and "registry" in p["source"]]
+
+
 PARSERS: dict[str, Callable[[str], list[Dep]]] = {
     "package-lock.json": _npm,
     "npm-shrinkwrap.json": _npm,
+    "yarn.lock": _yarn,
+    "pnpm-lock.yaml": _pnpm,
     "poetry.lock": _poetry,
     "Pipfile.lock": _pipfile,
+    "uv.lock": _uv,
     "go.mod": _gomod,
     "Cargo.lock": _cargo,
     "composer.lock": _composer,
@@ -141,6 +231,32 @@ def find(local_dir: str) -> list[str]:
         return []
     return sorted(os.path.join(local_dir, n) for n in names
                   if _parser(n) and os.path.isfile(os.path.join(local_dir, n)))
+
+
+def find_tree(local_dir: str, max_depth: int = MAX_DEPTH) -> dict[str, list[str]]:
+    """
+    Katalog -> jego lockfile'e, dla katalogu aplikacji i podkatalogow do `max_depth` w dol: projekt compose albo
+    repozytorium ma je czesto w `backend/` i `frontend/`, a nie w korzeniu. Bez dowiazan symbolicznych, katalogow
+    ukrytych i SKIP_DIRS, z limitem odwiedzonych katalogow.
+    """
+    found: dict[str, list[str]] = {}
+    queue: deque[tuple[str, int]] = deque([(local_dir, 0)])
+    visited = 0
+    # wszerz: najpierw plytkie katalogi (tam sa aplikacje), wiec limit nie zjada pozniejszych przez jeden gleboki
+    while queue and visited < MAX_DIRS:
+        current, depth = queue.popleft()
+        visited += 1
+        try:
+            entries = sorted(os.scandir(current), key=lambda e: e.name)
+        except OSError:
+            continue
+        locks = [e.path for e in entries if _parser(e.name) and e.is_file(follow_symlinks=False)]
+        if locks:
+            found[current] = locks
+        if depth < max_depth:
+            queue.extend((e.path, depth + 1) for e in entries if e.is_dir(follow_symlinks=False)
+                         and e.name not in SKIP_DIRS and not e.name.startswith("."))
+    return found
 
 
 def parse(local_path: str) -> list[Dep]:

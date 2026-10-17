@@ -1,5 +1,77 @@
 # Historia zmian -- Pipe
 
+## v0.38.0 (2026-10-17)
+
+### `/zalataj` lata od razu
+
+- `/zalataj` (i przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) instaluje poprawki od razu, bez podgladu
+  i bez pytania o kazda komende. Kolejno: pakiety tego serwera, obrazy kontenerow z compose i zdalne serwery. Kroki
+  widac na zywo w jednej wiadomosci, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca
+  zwolnione. `/zalataj obrazy`, `/zalataj serwer`, `/zalataj serwery` i `/zalataj web2` zawezaja latanie
+- Latanie dziala w tle: zamkniecie klienta go nie przerywa, a wynik przychodzi wtedy jako wiadomosc. Drugie
+  `/zalataj` w trakcie pokazuje postep tego samego latania
+- Kazda czesc idzie przez bezpiecznik (strony przed i po, wpis w dzienniku). Gdy weryfikacja po zmianie nie
+  przejdzie, kolejnych czesci Pipe nie lata
+- Agent w rozmowie ma nowe narzedzie `security_patch`: "zalataj serwer" to jedno potwierdzenie z lista tego, co
+  zostanie zalatane, zamiast pytania o kazda komende apt i docker (w YOLO bez pytania; viewer i tryb obserwacji
+  go nie maja)
+
+### Obrazy bez nowszej wersji i zdalne serwery
+
+- Obraz, ktory pod swoim tagiem nie ma nowszej wersji (przypiety tag, obraz bazowy jeszcze nieprzebudowany), dostaje
+  poprawki z repozytorium swojego systemu: kontener tymczasowy z tego obrazu instaluje je jako root, a
+  `docker commit` zapisuje wynik pod tym samym tagiem z jego uzytkownikiem, ENTRYPOINT i CMD. Poprzedni obraz
+  zostaje pod tagiem `pipe-rollback-*`, a `/cofnij` do niego wraca
+- Zdalne serwery (cele ssh) sa w skanie podatnosci: Pipe czyta ich baze pakietow jednym polaczeniem ssh, a
+  `/zalataj` instaluje na nich poprawki tymi samymi krokami co na tym serwerze, jako root albo przez `sudo -n`. Gdy
+  sudo chce hasla, wynik mowi, co dopisac w sudoers. Nowy alert `vuln:servers` z przyciskiem *Zalataj*
+
+### Latki nie zapychaja dysku
+
+- Apt najpierw konczy przerwana instalacje (`dpkg --configure -a`), czeka na blokade, gdy akurat dziala
+  unattended-upgrades, i usuwa pobrane paczki oraz stare jadra, ktore apt sam uznaje za zbedne (dzialajace
+  i najnowsze zostaja, wiec `/boot` sie nie zapelnia). Potem podbija tylko podatne pakiety i sprzata jeszcze raz
+- Po latce Pipe usuwa obrazy bez tagu, cache budowania starszy niz doba oraz cache npm, pip, yarn i composer
+- Jadro Pipe podbija przez metapakiet (`linux-image-generic`, `linux-image-amd64`...), a liczy sie tylko najnowsze
+  zainstalowane: stare, czekajace na autoremove, nie sa juz zglaszane jako podatne
+
+### Zaleznosci aplikacji
+
+- Pipe szuka lockfile'i takze w katalogach projektow compose dzialajacych kontenerow i w repozytoriach git pod
+  `/root`, `/home`, `/srv`, `/opt`, `/var/www` i `/data`, razem z podkatalogami (`backend/`, `frontend/`), bez
+  `node_modules`, `vendor` i katalogow budowania. Wczesniej tylko w katalogach z DIRECTORY i bez podkatalogow
+- Nowe formaty: `yarn.lock` (v1 i berry), `pnpm-lock.yaml` i `uv.lock`
+
+### Powiadomienia, `/podatnosci` i `/audyt` czytelniej
+
+- Alerty o podatnosciach maja tytuly bez zlej odmiany ("Pilne podatnosci w pakietach serwera: 4, w tym aktywnie
+  wykorzystywane"; jeden zdalny serwer z nazwy). Na koncu alertu jest to, co zrobi przycisk *Zalataj*, i czego nie
+  zalata: poprawek tylko z Ubuntu Pro, kontenerow bez compose, kontenerow samego Pipe i obrazow, ktorych ostatnia
+  latka nie zmienila. Alert o aplikacji podpowiada tylko narzedzia jej ekosystemu (npm nie dostaje pip i composer)
+- Najgrozniejsze ida pierwsze (aktywnie wykorzystywane, krytyczne, wysokie) w alertach, `/podatnosci`, `/audyt`
+  i porannym raporcie; wczesniej kolejnosc byla alfabetyczna. Jadro jest podpisane "linux (jadro)", a pakiet
+  z poprawka tylko w Ubuntu Pro ma to przy nazwie
+- "Co z tym zrobic" przy zdalnych serwerach mowi "Ten serwer" zamiast samego "Serwer", a kazda linia podaje komende,
+  ktora zaweza latanie (`/zalataj web2`, `/zalataj obrazy`)
+- W `/audyt` punkt o aktywnie wykorzystywanych jest pierwszy, poprawki sa krotkie, pakiet, ktorego `/zalataj` teraz
+  nie zainstaluje, ma przy nazwie powod, a punkt bez niczego do zainstalowania nie ma "Napraw". Telegram pokazuje
+  linie "Nie sprawdzono" (np. zdalny serwer bez polaczenia) -- wczesniej cisza wygladala jak "wszystko w porzadku".
+  Agent dostaje z audytu narzedzie `security_patch` zamiast komendy apt, wiec "napraw 1" to jedno potwierdzenie
+- Raport poranny pokazuje zdalne serwery z poprawkami i to, ze serwer czeka na restart, a liczby sa odmienione
+  poprawnie ("4 pilne (1 aktywnie wykorzystywany)")
+
+### Poprawki
+
+- Mapa infrastruktury, wykresy i mapa w powitaniu dzialaja dalej: `mermaidx` jest przypiety ponizej 0.10. Wydana
+  17.10 wersja 0.10.0 konczy renderowanie map i wykresow Pipe bledem `Unknown quickjs tag`, a obrazy Pipe budowane
+  od nowa pobralyby wlasnie ja
+
+### Protokol
+
+- Komenda `patch` lata od razu: ramki `progress`, potem `data` z `text`, `summary`, `fixed`, `unchanged`, `freed`,
+  `report` i `parts`. Pola `execute` i `patch_token` sa ignorowane, a klienci sprzed v0.38 dostaja wynik, z ktorym
+  dalej sie da pracowac
+
 ## v0.37.1 (2026-10-14)
 
 ### Podatnosci i latki czytelniej we wszystkich kanalach

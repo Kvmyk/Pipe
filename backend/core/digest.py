@@ -103,20 +103,28 @@ def vuln_lines(scan: Any) -> list[str]:
         explain = vulns.explanations(lang())
         lines += [vulns.describe_item(p, explain) for p in scan.items[:3]]
     elif scan.ecosystem and not scan.error:
-        lines.append(tr(f"brak podatnosci z poprawka ({scan.checked} pakietow)",
-                        f"no vulnerabilities with a fix ({scan.checked} packages)"))
-    images = [t for t in scan.of_kind("image") if t.items]
+        lines.append(tr(f"pakiety serwera bez podatnosci z poprawka (sprawdzone: {scan.checked})",
+                        f"server packages without fixable vulnerabilities ({scan.checked} checked)"))
+    if scan.reboot:
+        lines.append(tr("serwer czeka na restart — nowe jadro i biblioteki zaczna dzialac po nim",
+                        "the server is waiting for a reboot — the new kernel and libraries take effect after it"))
+    servers = vulns.servers_with_items(scan)
+    if servers:
+        lines.append(tr("zdalne serwery z poprawkami: ", "remote servers with fixes: ")
+                     + ", ".join(f"{t.name} ({vulns.n_packages(len(t.items))})" for t in servers[:4]))
+    images = sorted((t for t in scan.of_kind("image") if t.items), key=vulns.target_rank)
     if images:
         urgent = sum(1 for t in images if t.urgent)
-        lines.append(tr(f"obrazy kontenerow z poprawkami: {len(images)}" + (f" ({urgent} z pilnymi)" if urgent else ""),
-                        f"container images with fixes: {len(images)}" + (f" ({urgent} with urgent ones)" if urgent else "")))
+        lines.append(tr(f"obrazy kontenerow z poprawkami: {len(images)}" + (f" (pilne: {urgent})" if urgent else ""),
+                        f"container images with fixes: {len(images)}" + (f" (urgent: {urgent})" if urgent else "")))
         lines += [vulns.describe_target(t, vulns.explanations(lang())) for t in images[:2]]
-    apps = [t for t in scan.of_kind("app") if t.items]
+    apps = sorted((t for t in scan.of_kind("app") if t.items), key=vulns.target_rank)
     if apps:
         lines.append(tr(f"aplikacje z podatnymi zaleznosciami: ", f"applications with vulnerable dependencies: ")
                      + ", ".join(t.label() for t in apps[:3]))
-    if scan.items or images or apps:
-        lines.append(tr("pelny raport: /podatnosci, latki: /zalataj", "full report: /vulns, patches: /patch"))
+    if scan.items or servers or images or apps:
+        lines.append(tr("pelny raport: /podatnosci; latki od razu, bez dodatkowych pytan: /zalataj",
+                        "full report: /vulns; patches right away, without further questions: /patch"))
     if scan.error:
         lines.append(tr(f"ostatni skan nieudany: {scan.error}", f"last scan failed: {scan.error}"))
     return lines

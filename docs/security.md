@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 ## Model
 
@@ -303,6 +303,16 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
   komenda trafia do niego jako jeden argument. Tryb obserwacji i rola viewer tej drogi nie maja. Kopii plikow
   i automatycznego przywracania tu nie ma (bezpiecznik zapisuje wpis w dzienniku i sprawdza strony). Jesli nie potrzebujesz zarzadzania kontenerami,
   zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
+- **`/zalataj` nie pyta o kazda komende.** Wpisanie `/zalataj` (albo przycisk *Zalataj*) przez administratora jest
+  zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, odswieza obrazy kontenerow z compose,
+  lata zdalne serwery (cele ssh: jako root albo przez `sudo -n`) i sprzata po sobie (obrazy bez tagu, cache
+  budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer, stare jadra, ktore apt sam uznaje za
+  zbedne). Komendy sklada serwer z wyniku skanu, bez modelu: nazwy pakietow i projektow compose przechodza przez
+  wzorce, wiec tresc z bazy pakietow ani z etykiet kontenera nie doklei nic do powloki. Agent w rozmowie (narzedzie
+  `security_patch`) dostaje te sama latke za jednym Twoim TAK (w YOLO bez pytania). Viewer i tryb obserwacji jej
+  nie maja. Obrazu, ktory nie ma nowszej wersji, Pipe nie zostawia: instaluje w nim poprawki z repozytorium jego
+  systemu (kontener tymczasowy z tego obrazu, `docker commit` pod tym samym tagiem). Poprzedni obraz zostaje pod tagiem
+  `pipe-rollback-*`, a `/cofnij` do niego wraca.
 - Rozmowy leza na dysku w `DATA_DIR/sessions` (prawa 0600, katalog 0700) przez `SESSION_KEEP_DAYS` dni, zeby
   przetrwaly restart. Wyniki narzedzi sa w nich zredagowane jak w zapytaniach do modelu, ale to, co sam wpiszesz,
   zostaje. `SESSION_KEEP_DAYS=0` wylacza zapis i przy starcie usuwa zapisane sesje.

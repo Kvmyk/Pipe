@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -33,6 +33,10 @@ and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
 | `core/digest.py` | Morning report (no LLM) |
 | `core/usage.py` | LLM token and cost counter, daily limits |
 | `core/posture.py` | Host security audit (score, fixes), security change sentinel, SSH log |
+| `core/vulns.py` | Vulnerabilities without an LLM (OSV.dev, CISA KEV): host packages, container images, remote servers, applications; reports and patch steps |
+| `core/lockfiles.py` | Application dependencies from lockfiles (npm, yarn, pnpm, PyPI, uv, Go, crates.io, Packagist, RubyGems) |
+| `core/patching.py` | `/patch`: patching in the background without a question for every command, parts through the safety fuse, a fix layer inside the image, cleanup, result |
+| `core/fleet.py` | Remote servers in the scan and patches: the package database over ssh, commands as root or through `sudo -n` |
 | `core/welcome.py` | Welcome after installation: map, security score, what Pipe watches |
 | `skills_builtin/`, `skills_builtin_en/` | Built-in skills (Polish and English), installed into `data/skills` at startup according to `PIPE_LANG` |
 | `core/i18n.py` | Pipe's language (`PIPE_LANG=pl\|en`): `tr("polski", "english")` next to the source text, `prompt()` picks `prompts_en.py` / `tools_en.py` |
@@ -299,6 +303,7 @@ You should see:
 | `reminder` | A one-off reminder or a task at a given time | Task: yes; message: no |
 | `pipe_update` | Updating Pipe itself (check / apply) | apply: yes |
 | `security_audit` | Security audit with a score and fix commands | No (fixes: yes) |
+| `security_patch` | Vulnerability patches like `/patch`: packages, images, remote servers, cleanup | Once for the whole patch (YOLO: no) |
 | `web_search` | Web search without a key (DuckDuckGo → Stack Exchange → Wikipedia) | No |
 | `web_fetch` | Reading a page; with `question` a separate model without tools reads it | No for addresses from results and from the user, others: yes |
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | No |

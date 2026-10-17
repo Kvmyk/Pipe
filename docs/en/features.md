@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -259,6 +259,9 @@ Every day at `DIGEST_TIME` (7:00 server time; `off` turns it off) a report arriv
 - **Changes since yesterday** -- security changes first, then containers, ports, services; packages summarised
 - **Checks** -- the soonest-expiring certificates, sites, backups
 - **Updates** -- the number of packages to update and *reboot required* (Ubuntu/Debian)
+- **Vulnerabilities** -- how many server packages have a fix (how many of them urgent and actively exploited), the
+  three most dangerous with a description, whether the server waits for a reboot, remote servers, images and
+  applications with fixes; at the end `/vulns` and `/patch`
 - **Routines** -- the last status of each routine
 - **LLM** -- token usage from the previous day
 
@@ -328,7 +331,7 @@ removed containers and volumes, `git clean`, directories removed with `rm -r`, p
 | Containers | `privileged`, mounted `docker.sock`, host network |
 | Accounts | uid 0 other than root, accounts without a password (only account names are read from `/etc/shadow`) |
 | Updates | unattended-upgrades, pending security fixes, reboot required |
-| Vulnerabilities | known vulnerabilities with a fix in system packages (OSV.dev, CISA KEV) -- see below |
+| Vulnerabilities | known vulnerabilities with a fix in system packages, container images, remote servers and applications (OSV.dev, CISA KEV) -- see below |
 | Protection | fail2ban / CrowdSec (more important when SSH accepts passwords) |
 | Secrets | world-readable `.env` files in application directories from DIRECTORY |
 | Hygiene | time sync, swap on a small machine, certificates |
@@ -357,50 +360,79 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 
 - When: whenever the package list changes (a new application, an update -- then OSV only gets the changed packages)
   and every `VULN_INTERVAL` (6 h) for all of them, because new vulnerabilities show up in old versions. `/vulns`,
-  `/audit` and the `/patch` preview read the list of packages, images and dependencies afresh on every call: changed
+  `/audit` and `/patch` read the list of packages, images and dependencies afresh on every call: changed
   ones go to OSV right away, everything at most every 10 minutes, so it usually takes a few seconds. When the scan
   takes longer than 45 s, you see the last result with the time it comes from.
 - An alert comes only about **new urgent** ones: actively exploited (the CISA KEV catalog) or critical and high.
   The alert arrives on its own (Telegram, `pipe web`) and says in plain words what each vulnerability is about and
   what it risks, with the CVE number at the end in brackets. Pipe first waits (up to 2 minutes) for the model's
   explanations, without them it sends the OSV description. Known vulnerabilities don't come back after a Pipe
-  restart. The rest is in the morning report and in `/audit`; asking the agent about vulnerabilities also gives a
-  description of each one.
+  restart. The alert ends with what the *Patch* button will do and what it will not patch: fixes only in Ubuntu Pro,
+  containers without compose and Pipe's own containers (`/update` refreshes those). The rest is in the morning report
+  and in `/audit`; asking the agent about vulnerabilities also gives a description of each one.
 - In `/audit` vulnerabilities take at most three short points (KEV, critical and high, the rest) with the package
-  names and a pointer to `/patch`, which upgrades only those packages. A separate message with the vulnerabilities
-  follows the audit: each package with a description of the most serious one. The alert, the report and the patch
-  preview always fit one Telegram message, the rest is counted. Pipe always asks before installing.
-  In docker mode Pipe installs the patches on the host through a helper container (see *Host commands* in
-  security); on Kubernetes you get a command to run on the node.
-- `/patch` (or the *Patch* button on the alert in Telegram and `pipe web`) works without the LLM: the package list,
-  the exact command and *Install*. The server builds the command from the last scan, the install goes through the
-  safety fuse (sites before and after, a journal entry), then Pipe scans again and says what it patched, what stayed
-  unchanged and what is left. A package apt did not upgrade (the fix is only in Ubuntu Pro/ESM or not in the
-  repository yet) and an image with no newer build under its tag are not offered again for a day -- the report says
-  why. `/patch images` does not recreate Pipe's own containers (that is `/update`).
+  names and a pointer to `/patch`, which upgrades only those packages. The point about actively exploited ones comes
+  first, and a package `/patch` will not install now has the reason next to its name (*Ubuntu Pro only*, *unchanged
+  by the last patch*). What could not be checked (for example a remote server without a connection) is in the *Not
+  checked* line. A separate message with the vulnerabilities follows the audit: each package with a description of
+  the most serious one. The alert and the report always fit one Telegram message, the rest is counted. In docker
+  mode Pipe installs the patches on the host through a helper container (see *Host commands* in security); on
+  Kubernetes you install the node's patches in its shell.
+- **`/patch` patches right away.** Plain `/patch` (or the *Patch* button on the alert in Telegram and `pipe web`)
+  approves the whole patch: Pipe does not show commands or ask about each one. It installs this server's package
+  fixes, refreshes the container images from compose and patches the remote servers, in that order, with live steps.
+  `/patch images` does only the images, `/patch server` only this server's packages, `/patch servers` only the remote
+  servers, `/patch web2` one of them. The server builds the commands from the current scan, without the LLM. Each part
+  goes through the safety fuse (sites before and after, a journal entry); when the verification after a change fails,
+  Pipe does not patch the remaining parts. Then it scans again and says what it patched, what stayed unchanged and
+  why, and what is left to do by hand. Patching runs in the background: closing the client does not stop it, and the
+  result then arrives as a message.
+- apt gets the full tidy-up: first finishing an interrupted install (`dpkg --configure -a`), waiting for the lock
+  instead of failing while unattended-upgrades runs, and removing downloaded packages and old kernels that apt itself
+  considers unneeded (the running and the newest stay, so `/boot` does not fill up). Then `--only-upgrade` of just the
+  vulnerable packages and the same cleanup once more. Pipe upgrades the kernel through its metapackage
+  (`linux-image-generic`, `linux-image-amd64`...), because a new kernel is a new package. After the patch it also
+  removes untagged images, build cache older than a day and the npm, pip, yarn and composer caches, and the result
+  says how much space it freed.
+- A package apt did not upgrade and an image nothing changed are not tried again for a day; the report says why.
+  Fixes that exist only in Ubuntu Pro (ESM) are not tried at all until the subscription is on (`pro attach`). `/patch`
+  does not recreate Pipe's own containers (that is `/update`).
 - System packages can't be reliably rolled back (the old version is often gone from the repository), so `/undo`
-  doesn't cover them. Libraries and the kernel apply after a service or server restart.
-- The kernel has thousands of CVE records, so for it Pipe only takes distribution advisories (USN, DSA, DLA).
-  The first scan takes about a minute, later ones reuse the saved details.
+  doesn't cover them. Libraries and the kernel apply after a service or server restart: when the system is waiting
+  for a reboot, the report says so.
+- The kernel has thousands of CVE records, so for it Pipe only takes distribution advisories (USN, DSA, DLA). The
+  newest installed kernel counts: old ones stay until autoremove and are no longer reported. The first scan takes
+  about a minute, later ones reuse the saved details.
+- The agent in a conversation patches with the same tool (`security_patch`): "patch the server" gets you one
+  confirmation with a list of what will be patched instead of a question for every apt and docker command.
 - **Container images.** The same scan covers the packages in the images of running containers (Debian, Ubuntu,
   Alpine): Pipe reads their package database through the container's `/proc/<pid>/root` or from the overlay layers,
   without running anything in the container. One result per image, alert `vuln:images`. Images without a system
-  (distroless, scratch) are listed as not checked. `/patch images` refreshes the images of compose containers:
-  registry images are pulled under the same tag (`pull --ignore-buildable`), services with `build:` are rebuilt on the
-  current base image (`build --pull`), then `up -d` of just those services; `/undo` goes back to the previous images.
-  Containers without compose only get a hint. Plain `/patch` patches what there is: when the server packages are clean
-  it moves on to the images, and when there is nothing to install it says where the vulnerabilities are and why it
-  does not patch them.
-- **Application dependencies.** In application directories from DIRECTORY Pipe reads lockfiles: `package-lock.json`,
-  `requirements*.txt` (only `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
-  `Gemfile.lock`. The result is in `/audit` with the version that removes the vulnerabilities; the `vuln:apps` alert
-  only for actively exploited and critical ones. There is no patch here: changing a version is a change in the app's code.
+  (distroless, scratch) are listed as not checked. `/patch images` first keeps the previous image under a
+  `pipe-rollback-*` tag (cleanup does not remove it and `/undo` goes back to it), then pulls newer registry images
+  under the same tag (`pull --ignore-buildable`) and rebuilds services with `build:` on the current base image
+  (`build --pull`). An image that has no newer version (a pinned tag, a base image not rebuilt yet) gets the fixes
+  from its system's repository: a temporary container from that image installs them as root and `docker commit`
+  saves the result under the same tag with its user, ENTRYPOINT and CMD (like `copa patch`). Then `up -d` of just
+  those services and a check of the project's containers. Containers without compose only get a hint.
+- **Remote servers.** ssh targets from `target_manage` are in the same scan: Pipe reads their package database over
+  one ssh connection (os-release, dpkg/apk, reboot-required), and `/patch` installs the fixes on them with the same apt
+  steps, as root or through `sudo -n` (sudo with a password will not work, the result says what to add to sudoers).
+  A server without a connection is listed in the report; the `vuln:servers` alert comes about new urgent ones.
+- **Application dependencies.** Pipe looks for lockfiles in DIRECTORY directories, in the project directories of
+  running compose containers and in git repositories under `/root`, `/home`, `/srv`, `/opt`, `/var/www` and `/data`,
+  subdirectories included (e.g. `backend/`, `frontend/`), without `node_modules`, `vendor` and build directories. It
+  reads `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements*.txt` (only `==`), `poetry.lock`,
+  `Pipfile.lock`, `uv.lock`, `go.mod`, `Cargo.lock`, `composer.lock`, `Gemfile.lock`. The result is in `/audit` with the
+  version that removes the vulnerabilities; the `vuln:apps` alert only for actively exploited and critical ones.
+  `/patch` does not change them: changing a version is a change in the app's code (the report says how; the agent
+  does it when you ask in a conversation).
 - **`/vulns`** shows everything in one place: the package in bold, the version and the fixed version, below
   it the vulnerabilities with their severity and a short explanation in Pipe's language -- what an attacker can do
   and when it is a risk. The model (`WORKER_MODEL`) writes the explanations from the OSV description, once per
-  vulnerability, and Pipe remembers them; without a model you see the original OSV description. The `/patch` preview
-  uses the same format and asks: *Install* or *Cancel*. In `pipe web` the report is in cards (server, images,
-  applications, patch buttons), and the install shows the safety fuse steps live and then the state after the patch.
+  vulnerability, and Pipe remembers them; without a model you see the original OSV description. In `pipe web` the
+  report is in cards (server, remote servers, images, applications) with one *Patch* button, and patching shows the
+  steps live and then the state after the patch.
 
 ---
 

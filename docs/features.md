@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -256,6 +256,9 @@ Codziennie o `DIGEST_TIME` (7:00, czas serwera; `off` wylacza) na Telegram przyc
 - **Zmiany od wczoraj** -- najpierw zmiany bezpieczenstwa, potem kontenery, porty, uslugi; pakiety zbiorczo
 - **Zdrowie** -- najblizej wygasajace certyfikaty, strony, backupy
 - **Aktualizacje** -- liczba pakietow do aktualizacji i *wymagany restart* (Ubuntu/Debian)
+- **Podatnosci** -- ile pakietow serwera ma poprawke (w tym pilnych i aktywnie wykorzystywanych), trzy najgrozniejsze
+  z opisem, czy serwer czeka na restart, zdalne serwery, obrazy i aplikacje z poprawkami; na koncu `/podatnosci`
+  i `/zalataj`
 - **Rutyny** -- ostatni status kazdej rutyny
 - **LLM** -- zuzycie tokenow z poprzedniego dnia
 
@@ -324,7 +327,7 @@ usunietych kontenerow i wolumenow, `git clean`, katalogow usuwanych `rm -r`, pop
 | Kontenery | `privileged`, zamontowany `docker.sock`, siec hosta |
 | Konta | uid 0 poza rootem, konta bez hasla (z `/etc/shadow` odczytywane sa tylko nazwy kont) |
 | Aktualizacje | unattended-upgrades, oczekujace poprawki bezpieczenstwa, wymagany restart |
-| Podatnosci | znane podatnosci z poprawka w pakietach systemu (OSV.dev, CISA KEV) -- ponizej |
+| Podatnosci | znane podatnosci z poprawka w pakietach systemu, obrazach kontenerow, zdalnych serwerach i aplikacjach (OSV.dev, CISA KEV) -- ponizej |
 | Ochrona | fail2ban / CrowdSec (wazniejsze, gdy SSH przyjmuje hasla) |
 | Sekrety | pliki `.env` czytelne dla wszystkich w katalogach aplikacji z DIRECTORY |
 | Higiena | synchronizacja czasu, swap na malej maszynie, certyfikaty |
@@ -352,48 +355,75 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 
 - Kiedy: gdy zmieni sie lista pakietow (nowa aplikacja, aktualizacja -- wtedy OSV dostaje tylko zmienione pakiety)
   i co `VULN_INTERVAL` (6 h) dla wszystkich, bo nowe podatnosci pojawiaja sie w starych wersjach. `/podatnosci`,
-  `/audyt` i podglad `/zalataj` czytaja liste pakietow, obrazow i zaleznosci od nowa przy kazdym wywolaniu: zmienione
+  `/audyt` i `/zalataj` czytaja liste pakietow, obrazow i zaleznosci od nowa przy kazdym wywolaniu: zmienione
   ida do OSV od razu, calosc najwyzej co 10 minut, wiec to zwykle kilka sekund. Gdy skan trwa dluzej niz 45 s, widac
   ostatni wynik z godzina, z ktorej pochodzi.
 - Alert przychodzi tylko o **nowych pilnych**: aktywnie wykorzystywanych (katalog CISA KEV) albo krytycznych
   i wysokich. Alert przychodzi sam (Telegram, `pipe web`) i przy kazdej podatnosci mowi zwyklymi slowami, czego
   dotyczy i co grozi, a numer CVE jest na koncu w nawiasie. Pipe najpierw czeka (do 2 minut) na wyjasnienia modelu,
-  bez nich wysyla opis z OSV. Znane podatnosci nie wracaja po restarcie Pipe. Reszta jest w porannym raporcie
-  i w `/audyt`; pytanie do agenta o podatnosci tez daje opis kazdej z nich.
+  bez nich wysyla opis z OSV. Znane podatnosci nie wracaja po restarcie Pipe. Na koncu alertu jest to, co zrobi
+  przycisk *Zalataj*, i czego nie zalata: poprawek tylko z Ubuntu Pro, kontenerow bez compose i kontenerow samego
+  Pipe (te odswieza `/aktualizuj`). Reszta jest w porannym raporcie i w `/audyt`; pytanie do agenta o podatnosci tez
+  daje opis kazdej z nich.
 - W `/audyt` podatnosci sa najwyzej trzema krotkimi punktami (KEV, krytyczne i wysokie, pozostale) z nazwami
-  pakietow i odeslaniem do `/zalataj`, ktore podbija tylko te pakiety. Pod audytem przychodzi osobna wiadomosc
-  z podatnosciami: kazdy pakiet z opisem najpowazniejszej. Alert, raport i podglad latki zawsze mieszcza sie
-  w jednej wiadomosci Telegrama, a reszta jest policzona. Pipe zawsze pyta przed instalacja.
-  W trybie docker Pipe instaluje latki na hoscie przez kontener pomocniczy (patrz *Komendy na hoscie* w
-  bezpieczenstwie); w Kubernetesie dostajesz komende do wpisania na wezle.
-- `/zalataj` (albo przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) dziala bez LLM: lista pakietow,
-  dokladna komenda i *Zainstaluj*. Komende sklada serwer z ostatniego skanu, instalacja idzie przez bezpiecznik
-  (strony przed i po, wpis w dzienniku), potem Pipe skanuje od nowa i mowi, co zalatal, co zostalo bez zmian
-  i co zostalo do zalatania. Pakietu, ktorego apt nie podbil (poprawka tylko w Ubuntu Pro/ESM albo jeszcze nie ma
-  jej w repozytorium), i obrazu, pod ktorego tagiem nie bylo nowszego, Pipe nie proponuje znowu przez dobe -- raport
-  mowi dlaczego. Kontenerow samego Pipe `/zalataj obrazy` nie odtwarza (to robi `/aktualizuj`).
+  pakietow i odeslaniem do `/zalataj`, ktore podbija tylko te pakiety. Punkt o aktywnie wykorzystywanych jest
+  pierwszy, a pakiet, ktorego `/zalataj` teraz nie zainstaluje, ma przy nazwie powod (*tylko Ubuntu Pro*, *bez zmian
+  po ostatniej latce*). Czego nie dalo sie sprawdzic (np. zdalny serwer bez polaczenia), jest w linii *Nie
+  sprawdzono*. Pod audytem przychodzi osobna wiadomosc z podatnosciami: kazdy pakiet z opisem najpowazniejszej.
+  Alert i raport zawsze mieszcza sie w jednej wiadomosci Telegrama, a reszta jest policzona. W trybie docker Pipe
+  instaluje latki na hoscie przez kontener pomocniczy (patrz *Komendy na hoscie* w bezpieczenstwie); w Kubernetesie
+  latki wezla instalujesz w jego powloce.
+- **`/zalataj` lata od razu.** Samo `/zalataj` (albo przycisk *Zalataj* przy alercie w Telegramie i `pipe web`) to
+  zgoda na cala latke: Pipe nie pokazuje komend i nie pyta o kazda z osobna. Kolejno instaluje poprawki pakietow tego
+  serwera, odswieza obrazy kontenerow z compose i lata zdalne serwery, z krokami na zywo. `/zalataj obrazy` robi tylko
+  obrazy, `/zalataj serwer` tylko pakiety tego serwera, `/zalataj serwery` tylko zdalne serwery, `/zalataj web2` jeden
+  z nich. Komendy sklada serwer z biezacego skanu, bez LLM. Kazda czesc idzie przez bezpiecznik (strony przed i po,
+  wpis w dzienniku); gdy weryfikacja po zmianie nie przejdzie, kolejnych czesci Pipe nie lata. Potem skanuje od nowa
+  i mowi, co zalatal, co zostalo bez zmian i dlaczego, oraz co zostaje do zrobienia recznie. Latanie dziala w tle:
+  zamkniecie klienta go nie przerywa, a wynik przychodzi wtedy jako wiadomosc.
+- Apt dostaje komplet porzadkow: najpierw dokonczenie przerwanej instalacji (`dpkg --configure -a`), czekanie na
+  blokade zamiast bledu, gdy akurat dziala unattended-upgrades, i usuniecie pobranych paczek oraz starych jader, ktore
+  apt sam uznaje za zbedne (zostaja dzialajace i najnowsze, wiec `/boot` sie nie zapelnia). Potem `--only-upgrade`
+  tylko podatnych pakietow i to samo sprzatanie jeszcze raz. Jadro Pipe podbija przez metapakiet (`linux-image-generic`,
+  `linux-image-amd64`...), bo nowe jadro to nowy pakiet. Po latce sprzata tez obrazy bez tagu, cache budowania starszy
+  niz doba oraz cache npm, pip, yarn i composer, a wynik podaje, ile miejsca zwolnil.
+- Pakietu, ktorego apt nie podbil, i obrazu, ktorego nic nie zmienilo, Pipe nie probuje znowu przez dobe; raport mowi
+  dlaczego. Poprawek tylko z Ubuntu Pro (ESM) nie probuje wcale, dopoki subskrypcja nie jest wlaczona (`pro attach`).
+  Kontenerow samego Pipe `/zalataj` nie odtwarza (to robi `/aktualizuj`).
 - Pakietow systemowych nie da sie wiarygodnie cofnac (starej wersji czesto nie ma juz w repozytorium), wiec
-  `/cofnij` ich nie obejmuje. Biblioteki i jadro dzialaja po restarcie uslug albo serwera.
-- Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA).
-  Pierwszy skan trwa okolo minuty, kolejne korzystaja z zapisanych szczegolow.
+  `/cofnij` ich nie obejmuje. Biblioteki i jadro dzialaja po restarcie uslug albo serwera: gdy system czeka na
+  restart, raport to mowi.
+- Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA). Liczy sie
+  najnowsze zainstalowane jadro: stare zostaja do autoremove i nie sa juz zglaszane. Pierwszy skan trwa okolo
+  minuty, kolejne korzystaja z zapisanych szczegolow.
+- Agent w rozmowie lata tym samym narzedziem (`security_patch`): na "zalataj serwer" dostajesz jedno potwierdzenie
+  z lista tego, co zostanie zalatane, zamiast pytania o kazda komende apt i docker.
 - **Obrazy kontenerow.** Ten sam skan obejmuje pakiety w obrazach dzialajacych kontenerow (Debian, Ubuntu, Alpine):
   Pipe czyta ich baze pakietow przez `/proc/<pid>/root` kontenera albo z warstw overlay, niczego w kontenerze nie
   uruchamiajac. Jeden wynik na obraz, alert `vuln:images`. Obrazy bez systemu (distroless, scratch) sa wymienione
-  jako niesprawdzone. `/zalataj obrazy` odswieza obrazy kontenerow z compose: obrazy z rejestru pobiera pod tym
-  samym tagiem (`pull --ignore-buildable`), uslugi z `build:` przebudowuje na aktualnym obrazie bazowym
-  (`build --pull`), potem `up -d` tylko tych uslug; `/cofnij` wraca do poprzednich obrazow. Kontenery bez compose
-  dostaja tylko podpowiedz. Samo `/zalataj` lata to, co jest: gdy pakiety serwera sa czyste, przechodzi do obrazow,
-  a gdy nie ma nic do zainstalowania, mowi, gdzie sa podatnosci i dlaczego ich nie lata.
-- **Zaleznosci aplikacji.** W katalogach aplikacji z DIRECTORY Pipe czyta lockfile'e: `package-lock.json`,
-  `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`, `go.mod`, `Cargo.lock`, `composer.lock`,
-  `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa podatnosci; alert `vuln:apps` tylko dla aktywnie
-  wykorzystywanych i krytycznych. Latki tu nie ma: zmiana wersji to zmiana w kodzie aplikacji.
+  jako niesprawdzone. `/zalataj obrazy` najpierw zostawia poprzedni obraz pod tagiem `pipe-rollback-*` (sprzatanie go
+  nie usunie, a `/cofnij` do niego wraca), potem pobiera nowsze obrazy z rejestru pod tym samym tagiem
+  (`pull --ignore-buildable`) i przebudowuje uslugi z `build:` na aktualnym obrazie bazowym (`build --pull`). Obraz,
+  ktory nie ma nowszej wersji (przypiety tag, obraz bazowy jeszcze nieprzebudowany), dostaje poprawki z repozytorium
+  swojego systemu: kontener tymczasowy z tego obrazu instaluje je jako root, a `docker commit` zapisuje wynik pod tym
+  samym tagiem z jego uzytkownikiem, ENTRYPOINT i CMD (jak `copa patch`). Potem `up -d` tylko tych uslug i weryfikacja
+  kontenerow projektu. Kontenery bez compose dostaja tylko podpowiedz.
+- **Zdalne serwery.** Cele ssh z `target_manage` sa w tym samym skanie: Pipe czyta ich baze pakietow jednym
+  polaczeniem ssh (os-release, dpkg/apk, reboot-required), a `/zalataj` instaluje na nich poprawki tymi samymi
+  krokami apt, jako root albo przez `sudo -n` (sudo z haslem nie zadziala, wynik mowi, co dodac w sudoers). Serwer bez
+  polaczenia jest wymieniony w raporcie, alert `vuln:servers` przychodzi o nowych pilnych.
+- **Zaleznosci aplikacji.** Pipe szuka lockfile'i w katalogach z DIRECTORY, w katalogach projektow compose
+  dzialajacych kontenerow i w repozytoriach git pod `/root`, `/home`, `/srv`, `/opt`, `/var/www` i `/data`, razem
+  z podkatalogami (np. `backend/`, `frontend/`), bez `node_modules`, `vendor` i katalogow budowania. Czyta
+  `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`,
+  `uv.lock`, `go.mod`, `Cargo.lock`, `composer.lock`, `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa
+  podatnosci; alert `vuln:apps` tylko dla aktywnie wykorzystywanych i krytycznych. `/zalataj` tego nie zmienia:
+  zmiana wersji to zmiana w kodzie aplikacji (raport mowi, jak; agent zrobi to na prosbe w rozmowie).
 - **`/podatnosci`** pokazuje wszystko w jednym miejscu: pakiet pogrubiony, wersja i wersja z poprawka,
   pod nim podatnosci z waga i krotkim wyjasnieniem w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
   Wyjasnienia pisze model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje;
-  bez modelu widac oryginalny opis z OSV. Ten sam format ma podglad `/zalataj`, ktory pyta: *Zainstaluj* albo
-  *Anuluj*. W `pipe web` raport jest w kartach (serwer, obrazy, aplikacje, przyciski latek), a instalacja pokazuje
-  kroki bezpiecznika na zywo i od razu stan po latce.
+  bez modelu widac oryginalny opis z OSV. W `pipe web` raport jest w kartach (serwer, zdalne serwery, obrazy,
+  aplikacje) z jednym przyciskiem *Zalataj*, a latanie pokazuje kroki na zywo i od razu stan po latce.
 
 ---
 

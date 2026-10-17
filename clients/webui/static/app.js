@@ -853,14 +853,13 @@
     return card;
   }
 
-  // Podatnosci i latki (bez LLM) — vulns.js: raport w kartach, podglad latki jak potwierdzenie, instalacja z krokami
-  // bezpiecznika na zywo, potem wynik i swiezy stan. Serwer sklada komende sam — wysylamy tylko token z podgladu.
+  // Podatnosci i latki (bez LLM) — vulns.js: raport w kartach, latanie od razu z krokami bezpiecznika na zywo, potem
+  // wynik i swiezy stan. Serwer sam wie, co zalatac — wysylamy tylko zakres.
   const vx = window.PipeVulns.create({
     el, icon, t, fmt, request, add, dataMessage, setWorking,
     isBusy: () => busy, setBusy: (value) => { busy = value; },
     onPatched: () => { loadChanges(); loadAlerts(); loadGraph(true); },
   });
-  const patchBox = (preview) => vx.patchBox(preview);
 
   // ---------------------------------------------------------------- alerty i zdarzenia na zywo
   const alertsList = $("alerts");
@@ -885,10 +884,10 @@
         const foot = el("div", "foot"), look = el("button", "btn no small", t("investigate"));
         look.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("investigate") + ": " + alert.title); run({ command: "investigate", id: alert.id }, t("working")); });
         foot.appendChild(look);
-        const patchScope = ({ "vuln:system": "urgent", "vuln:images": "images" })[alert.key];
+        const patchScope = ({ "vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers" })[alert.key];
         if (patchScope) {
           const patch = el("button", "btn no small", t("patch"));
-          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); dataMessage({ command: "patch", scope: patchScope }, patchBox); });
+          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); vx.patchRun(patchScope); });
           foot.appendChild(patch);
         }
         card.appendChild(foot);
@@ -1431,7 +1430,7 @@
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
     audyt: () => dataMessage({ command: "audit" }, auditBody),
     podatnosci: () => dataMessage({ command: "vulns" }, (d) => vx.vulnsMessage(d, () => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; })),
-    zalataj: (args) => dataMessage({ command: "patch", scope: ({ pilne: "urgent", urgent: "urgent", obrazy: "images", images: "images" })[args.trim().toLowerCase()] || "all" }, patchBox),
+    zalataj: (args) => vx.patchRun(args.trim()),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),
     koszt: () => dataMessage({ command: "usage" }, (d) => listing(d.text)),
     katalogi: () => dataMessage({ command: "directory" }, (d) => listing(d.text, "DIRECTORY")),

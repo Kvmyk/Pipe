@@ -15,13 +15,17 @@ z punktu 1 -- dlatego ponizsze lacenie podatnosci wchodzi mimo zamrozenia.
 
 ## Dalej: podatnosci i latki
 
-Wykrywanie podatnosci w pakietach hosta, obrazach kontenerow i zaleznosciach aplikacji oraz latki na potwierdzenie
-(`/zalataj`, `/zalataj obrazy`) weszly w v0.32 i v0.33 -- opis w `docs/features.md` (Audyt bezpieczenstwa).
+Wykrywanie podatnosci w pakietach hosta, obrazach kontenerow i zaleznosciach aplikacji oraz latki (`/zalataj`,
+`/zalataj obrazy`) weszly w v0.32 i v0.33. Od v0.38 `/zalataj` lata od razu, bez pytania o kazda komende, takze
+zdalne serwery i obrazy bez nowszej wersji (poprawki zainstalowane w obrazie), i sprzata po sobie -- opis
+w `docs/features.md` (Audyt bezpieczenstwa).
 
 Zostalo, tylko jesli ktos o to poprosi:
 
-- **`PATCH_AUTO=off|security|all`** (domyslnie `off`) z oknem `PATCH_WINDOW` -- latki bez pytania, ta sama sciezka
-  co YOLO (`_execute_tool_confirmed`, ten sam plan i dziennik), raport po fakcie. Rozsadne glownie dla obrazow
-  kontenerow, bo tylko tam jest prawdziwy powrot.
+- **`PATCH_AUTO=off|security|all`** (domyslnie `off`) z oknem `PATCH_WINDOW` -- `/zalataj` samo, bez polecenia,
+  z raportem po fakcie (`core/patching.py` juz dziala w tle i dostarcza wynik jako wiadomosc). Rozsadne glownie dla
+  obrazow kontenerow, bo tylko tam jest prawdziwy powrot.
 - Nowsze obrazy dla kontenerow bez compose (dzis tylko podpowiedz: `docker run` trzeba powtorzyc z tymi samymi
-  opcjami) i latki zaleznosci aplikacji (dzis tylko raport -- zmiana wersji to zmiana w kodzie aplikacji).
+  opcjami -- odtworzenie przez API Dockera musi zachowac anonimowe wolumeny i nadpisane w `docker run` ustawienia
+  obrazu) i latki zaleznosci aplikacji (dzis tylko raport -- zmiana wersji to zmiana w kodzie aplikacji).
+- Obrazy kontenerow na zdalnych serwerach (dzis tylko ich pakiety systemu).

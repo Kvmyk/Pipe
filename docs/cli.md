@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -173,8 +173,8 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
-| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
-| `/zalataj [pilne\|obrazy]` | Latki znanych podatnosci w pakietach albo nowsze obrazy kontenerow z compose: lista, dokladna komenda, wybor *zainstaluj* / *anuluj*, instalacja przez bezpiecznik (tryb native; w dockerze komenda do wykonania na hoscie). Dziala bez LLM |
+| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
+| `/zalataj [obrazy\|serwer\|serwery\|<cel>]` | Lata od razu, bez dodatkowego pytania: pakiety tego serwera, obrazy kontenerow z compose (nowszy obraz albo poprawki zainstalowane w obrazie) i zdalne serwery, potem sprzata stare obrazy i cache. Kroki widac na zywo, na koncu co zalatane, co bez zmian i dlaczego. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |

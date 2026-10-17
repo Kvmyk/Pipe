@@ -481,8 +481,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /report  /map  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.37.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.37.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.38.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.38.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -652,8 +652,10 @@ COMMANDS = [
     ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
     ("zdrowie", "health", "certyfikaty, strony, DNS, backupy", "certificates, sites, DNS, backups"),
     ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
-    ("podatnosci", "vulns", "znane podatności z opisami: pakiety, obrazy, aplikacje", "known vulnerabilities with descriptions: packages, images, apps"),
-    ("zalataj", "patch", "łatki podatności; /zalataj pilne, /zalataj obrazy", "vulnerability patches; /patch urgent, /patch images"),
+    ("podatnosci", "vulns", "znane podatności z opisami: pakiety, obrazy, serwery, aplikacje",
+     "known vulnerabilities with descriptions: packages, images, servers, apps"),
+    ("zalataj", "patch", "załataj od razu wszystko; /zalataj obrazy, /zalataj serwer, /zalataj serwery",
+     "patch everything right away; /patch images, /patch server, /patch servers"),
     ("mapa", "map", "diagram infrastruktury", "infrastructure diagram"),
     ("mermaid", "mermaid", "kod ostatniego diagramu", "source of the last diagram"),
     ("server", "server", "notatki o serwerze (SERVER.md); /server aktualizuj", "server notes (SERVER.md); /server update"),
@@ -699,7 +701,7 @@ HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zr
 
 - `/audyt` — ocena bezpieczeństwa z gotowymi poprawkami („napraw 1”)
 - `/podatnosci` — znane podatności, każda z krótkim opisem
-- `/zalataj [pilne|obrazy]` — łatki: podgląd, potem instalacja po TAK
+- `/zalataj [obrazy|serwer|serwery]` — łata od razu: pakiety, obrazy kontenerów, zdalne serwery; sprząta po sobie
 - `/dziennik` — zatwierdzone zmiany; `/cofnij [id]` — cofnij ostatnią albo wybraną
 - `/zgody` — operacje innych agentów (MCP) czekające na Twoją zgodę
 
@@ -742,7 +744,7 @@ HELP_TEXT_EN = """You don't need to know the commands — you can just write wha
 
 - `/audit` — security score with ready-made fixes ("fix 1")
 - `/vulns` — known vulnerabilities, each briefly explained
-- `/patch [urgent|images]` — patches: a preview, then install after YES
+- `/patch [images|server|servers]` — patches right away: packages, container images, remote servers; cleans up after itself
 - `/journal` — approved changes; `/undo [id]` — undo the last or the chosen one
 - `/approvals` — operations of other agents (MCP) waiting for your approval
 
@@ -1366,11 +1368,15 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         return True
 
     if name == "zalataj":
-        scope = {"pilne": "urgent", "urgent": "urgent", "obrazy": "images", "images": "images"}.get(args.strip().lower(), "all")
-        data = _response_data(await client.send_command("patch", scope=scope))
+        # backend lata od razu i sam rozumie zakres (obrazy, serwer, serwery, nazwa serwera, pilne); kroki idą na żywo
+        console.print(tr("[dim]Łatanie: kroki poniżej, całość może potrwać kilka minut.[/dim]",
+                         "[dim]Patching: the steps follow, the whole thing can take a few minutes.[/dim]"))
+        data = _response_data(await client.send_command("patch", scope=args.strip()))
         console.print(Markdown(data.get("text", "")))
         if not data.get("can_execute") or not data.get("token"):
             return True
+        # backend sprzed v0.38 odpowiada podglądem z tokenem — wtedy jak dawniej: zainstaluj / anuluj
+        scope = data.get("scope", "all")
         install, cancel = tr("zainstaluj", "install"), tr("anuluj", "cancel")
         try:
             choice = Prompt.ask(tr("[yellow]Co robimy?[/yellow]", "[yellow]What now?[/yellow]"),

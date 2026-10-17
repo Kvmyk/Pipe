@@ -1,5 +1,5 @@
-// Podatnosci w pipe web: raport (/podatnosci, audyt, stan po latce), podglad latki z instalacja na zywo i wynik.
-// Dane przychodza gotowe z backendu (vulns.report_view / patch_view) — tu tylko rysowanie, bez innerHTML.
+// Podatnosci w pipe web: raport (/podatnosci, audyt, stan po latce), latanie od razu z krokami na zywo i wynik.
+// Dane przychodza gotowe z backendu (vulns.report_view, wynik core/patching.py) — tu tylko rysowanie, bez innerHTML.
 // Telegram i CLI dostaja z tych samych komend Markdown (`text`); ten plik czyta `view` / `report`.
 (function () {
   "use strict";
@@ -173,6 +173,7 @@
       } else {
         const stats = el("div", "vx-stats");
         if (view.supported) stats.appendChild(stat(totals.system || 0, t("vx_stat_system"), totals.system_urgent));
+        if (totals.servers) stats.appendChild(stat(totals.servers, t("vx_stat_servers"), totals.servers_urgent));
         stats.appendChild(stat(totals.images || 0, t("vx_stat_images"), totals.images_urgent));
         stats.appendChild(stat(totals.apps || 0, t("vx_stat_apps"), totals.apps_urgent));
         card.appendChild(stats);
@@ -183,16 +184,19 @@
           view.todo.forEach((line) => todo.appendChild(el("div", "vx-todo-line", line)));
           card.appendChild(todo);
         }
+        // jeden przycisk lata wszystko (jak /zalataj), drugi tylko obrazy — od razu, bez podgladu
         const actions = view.actions || [];
         if (actions.length && options.actions !== false) {
           const row = el("div", "vx-actions");
           actions.forEach((action, index) => {
-            const button = el("button", "btn small " + (index === 0 ? "yes" : "no"), fmt("vx_act_" + action.scope, { n: action.count }));
+            const label = action.label ? fmt("vx_do_" + (action.scope === "images" ? "images" : "all"), { what: action.label })
+              : fmt("vx_act_" + action.scope, { n: action.count });
+            const button = el("button", "btn small " + (index === 0 ? "yes" : "no"), label);
             button.type = "button";
             button.addEventListener("click", () => {
               if (isBusy()) return;
               add("user", button.textContent);
-              dataMessage({ command: "patch", scope: action.scope }, patchBox);
+              patchRun(action.scope);
             });
             row.appendChild(button);
           });
@@ -220,7 +224,77 @@
       return fallback(data);
     }
 
-    // ---- podglad latki i instalacja
+    // ---- latanie od razu: karta z krokami na zywo, potem wynik i stan po latce
+    async function patchRun(scope) {
+      if (isBusy()) return;
+      setBusy(true); setWorking(t("patching"));
+      const card = el("div", "confirm vx-patch");
+      const title = el("div", "title");
+      title.appendChild(icon("shield", 15));
+      const label = el("span", "label", t("vx_patching"));
+      title.appendChild(label);
+      card.appendChild(title);
+      const steps = el("div", "vx-steps");
+      card.appendChild(steps);
+      add("agent", card);
+      let current = null;
+      const step = (text) => {
+        if (current) current.classList.add("done");
+        current = el("div", "vx-step");
+        current.appendChild(el("span", "dot"));
+        current.appendChild(el("span", "", text));
+        steps.appendChild(current);
+      };
+      let data = null, error = "";
+      try {
+        await request({ command: "patch", scope: scope || "" }, (frame) => {
+          if (frame.event && frame.event.type === "progress" && frame.event.text) step(frame.event.text);
+          if (frame.data !== undefined) data = frame.data;
+          if (frame.status === "error" && frame.response) error = frame.response;
+        });
+      } catch (e) { error = e.message; }
+      if (current) current.classList.add("done");
+      setBusy(false); setWorking("");
+      steps.remove();
+      if (data && data.token && data.can_execute) {         // backend sprzed v0.38: podglad z Zainstaluj / Anuluj
+        card.replaceWith(patchBox(data));
+        return;
+      }
+      // wynik w .body — "Szczegoly" zwija go jak w kartach potwierdzen
+      const body = el("div", "body");
+      card.appendChild(body);
+      card.classList.add("open");
+      if (!data || data.nothing) {
+        const ok = Boolean(data);
+        finish(card, label, ok, ok ? t("vx_nothing") : t("vx_done_fail"));
+        const why = el("div", ok ? "vx-result" : "vx-blocked");
+        if (!ok) why.appendChild(icon("info", 14));
+        why.appendChild(ok ? textBlock(data.text) : el("span", "", String(error || t("errorPrefix")).replace(/\[(BLAD|ODMOWA)\]\s*/g, "")));
+        body.appendChild(why);
+        return;
+      }
+      done(card, label, data, body);
+    }
+
+    function textBlock(text) {
+      const lines = el("div", "vx-text");
+      String(text || "").split(/\n{2,}/).filter((p) => p.trim()).forEach((p, i) => lines.appendChild(el(i ? "span" : "b", "", p.replace(/^- /gm, "• "))));
+      return lines;
+    }
+
+    // wynik latania (nowy przebieg albo instalacja ze starego podgladu); `into` — gdzie go wstawic (domyslnie karta)
+    function done(card, label, data, into) {
+      const ok = data.exit_code === 0;
+      const fixed = data.fixed || [], unchanged = data.unchanged || [];
+      finish(card, label, ok && !unchanged.length, ok ? (fixed.length || unchanged.length
+        ? fmt("vx_done_counts", { fixed: fixed.length, same: unchanged.length }) : t("vx_done_ok")) : t("vx_done_fail"));
+      (into || card).appendChild(resultBody(data));
+      markStale();
+      if (data.report) add("agent", report(data.report, { title: t("vx_after") }));
+      if (onPatched) onPatched(data);
+    }
+
+    // ---- podglad latki (backend sprzed v0.38) i instalacja
     function patchBox(preview) {
       const view = preview.view;
       if (!view || !preview.command) {
@@ -323,14 +397,7 @@
         card.classList.add("open");
         return;
       }
-      const ok = data.exit_code === 0;
-      const fixed = data.fixed || [], unchanged = data.unchanged || [];
-      finish(card, label, ok && !unchanged.length, ok ? (fixed.length || unchanged.length
-        ? fmt("vx_done_counts", { fixed: fixed.length, same: unchanged.length }) : t("vx_done_ok")) : t("vx_done_fail"));
-      card.appendChild(resultBody(data));
-      markStale();
-      if (data.report) add("agent", report(data.report, { title: t("vx_after") }));
-      if (onPatched) onPatched(data);
+      done(card, label, data);
     }
 
     function resultBody(data) {
@@ -346,6 +413,7 @@
       chips(t("vx_fixed"), data.fixed || [], "add");
       chips(t("vx_unchanged"), data.unchanged || [], "warn");
       if (data.summary) box.appendChild(el("div", "vx-summary", data.summary));
+      if (data.text && data.parts) box.appendChild(textBlock(data.text));
       if (data.output) {
         const details = el("details", "vx-output");
         const summary = el("summary", "", t("vx_output") + (data.entry_id ? " · #" + data.entry_id : ""));
@@ -358,7 +426,7 @@
       return box;
     }
 
-    return { report, patchBox, vulnsMessage, markStale };
+    return { report, patchBox, patchRun, vulnsMessage, markStale };
   }
 
   window.PipeVulns = { create };

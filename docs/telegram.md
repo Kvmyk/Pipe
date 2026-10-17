@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -23,11 +23,16 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
 - **ROZWIAZANE** -- problem minal.
 - **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
 - **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
-  aktualizacje i wykres obciazenia. Skladany bez LLM.
+  aktualizacje, podatnosci i wykres obciazenia. Skladany bez LLM.
 - **Zmiana bezpieczenstwa** -- nowe konto (uid 0 = krytyczny), nowy klucz w `authorized_keys`, nowy program SUID,
   zmiana sudoers/sshd/PAM/`ld.so.preload`, ktorej nie zrobil Pipe. Sprawdzane co 2 minuty.
 - **Logowania SSH** -- seria nieudanych logowan (`WATCH_SSH_FAILURES` w 10 min), udane logowanie haslem z adresu,
   ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
+- **Podatnosci** -- nowe pilne podatnosci z poprawka (aktywnie wykorzystywane, krytyczne, wysokie) w pakietach
+  serwera, obrazach kontenerow i na zdalnych serwerach; w zaleznosciach aplikacji tylko krytyczne i aktywnie
+  wykorzystywane. Przy kazdej krotko, co grozi. Przycisk **Zalataj** (tylko administratorzy) od razu instaluje
+  poprawki tego, czego dotyczy alert, a alert mowi, czego nie zalata (poprawki tylko z Ubuntu Pro, kontenery bez
+  compose, kontenery samego Pipe). Znana podatnosc nie wraca, takze po restarcie Pipe.
 - **Zbadalem alert** -- raport workera dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba (webhooki).
 - Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
 - **ZGODA** -- zewnetrzny agent (np. Claude Code przez MCP) chce wykonac zmiane: komenda doslownie, plan
@@ -187,8 +192,8 @@ nazwy dzialaja w obu jezykach.
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
-| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow i aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
-| `/zalataj [pilne\|obrazy]` | Latki znanych podatnosci albo nowsze obrazy kontenerow: lista, dokladna komenda, przyciski *Zainstaluj* i *Anuluj* (administrator). W trakcie instalacji jedna wiadomosc z krokami bezpiecznika na zywo, na koncu krotki wynik: co zalatane, co zostalo bez zmian i dlaczego. Alert o podatnosciach ma przycisk *Zalataj*. Dziala bez LLM |
+| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
+| `/zalataj [obrazy\|serwer\|serwery\|<cel>]` | Lata od razu, bez przyciskow i pytan (administrator): pakiety tego serwera, obrazy kontenerow i zdalne serwery, potem sprzata stare obrazy i cache. Jedna wiadomosc z krokami na zywo, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca zwolnione. Przycisk *Zalataj* przy alercie o podatnosciach lata to, czego alert dotyczy. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |

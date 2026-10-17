@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -182,6 +182,20 @@ TOOLS: list[dict] = [
         "znalezisko ma poprawke z dokladna komenda. Same odczyty. Uzyj, gdy uzytkownik pyta o bezpieczenstwo "
         "serwera albo o podatnosci na nim.",
         {},
+    ),
+    _tool(
+        "security_patch",
+        "Lata znane podatnosci z poprawka tak samo jak komenda /zalataj: pakiety tego serwera (apt/apk z porzadkami: "
+        "stare jadra, pobrane paczki), obrazy kontenerow z compose (nowszy obraz, a gdy go nie ma — poprawki "
+        "zainstalowane w obrazie; poprzedni obraz zostaje dla /cofnij) i zdalne serwery (cele ssh), potem sprzata "
+        "stare obrazy i cache i skanuje od nowa. Uzytkownik zatwierdza RAZ cala latke, nie kazda komende — nie sklada "
+        "jej z execute_command. Zaleznosci aplikacji to zmiana w kodzie, tego narzedzie nie robi.",
+        {
+            "scope": {"type": "string", "description": (
+                "'' albo 'all' — wszystko; 'images' — tylko obrazy kontenerow; 'system' — tylko pakiety tego serwera; "
+                "'servers' — tylko zdalne serwery; nazwa zdalnego serwera — tylko on; 'urgent' — pilne pakiety tego "
+                "serwera.")},
+        },
     ),
     _tool(
         "journal",

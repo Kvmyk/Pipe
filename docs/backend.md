@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -33,6 +33,10 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/digest.py` | Poranny raport (bez LLM) |
 | `core/usage.py` | Licznik tokenow i kosztow LLM, dzienne limity |
 | `core/posture.py` | Audyt bezpieczenstwa hosta (ocena, poprawki), straznik zmian bezpieczenstwa, log SSH |
+| `core/vulns.py` | Podatnosci bez LLM (OSV.dev, CISA KEV): pakiety hosta, obrazy kontenerow, zdalne serwery, aplikacje; raporty i kroki latek |
+| `core/lockfiles.py` | Zaleznosci aplikacji z lockfile'i (npm, yarn, pnpm, PyPI, uv, Go, crates.io, Packagist, RubyGems) |
+| `core/patching.py` | `/zalataj`: latanie w tle bez pytan o kazda komende, czesci przez bezpiecznik, warstwa z poprawkami w obrazie, sprzatanie, wynik |
+| `core/fleet.py` | Zdalne serwery w skanie i latkach: baza pakietow przez ssh, komendy jako root albo `sudo -n` |
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
 | `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
 | `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
@@ -296,6 +300,7 @@ Powinienes zobaczyc:
 | `reminder` | Jednorazowe przypomnienie albo zadanie o okreslonym czasie | Zadanie: tak; wiadomosc: nie |
 | `pipe_update` | Aktualizacja samego Pipe (check / apply) | apply: tak |
 | `security_audit` | Audyt bezpieczenstwa z ocena i komendami poprawek | Nie (poprawki: tak) |
+| `security_patch` | Latki podatnosci jak `/zalataj`: pakiety, obrazy, zdalne serwery, sprzatanie | Raz na cala latke (YOLO: nie) |
 | `web_search` | Wyszukiwanie w internecie bez klucza (DuckDuckGo → Stack Exchange → Wikipedia) | Nie |
 | `web_fetch` | Czytanie strony; z `question` strone czyta osobny model bez narzedzi | Nie dla adresow z wynikow i od uzytkownika, inne: tak |
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | Nie |

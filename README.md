@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.37.1-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.38.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -55,8 +55,8 @@ Tak wyglądają typowe prośby:
 | *strona padła w nocy, co się zmieniło?* | przegląda historię zmian (pakiety, obrazy kontenerów, porty, konfiguracje) i wskazuje, co zmieniło się tuż przed awarią |
 | *pokaż architekturę serwera* | rysuje diagram: domeny, reverse proxy, kontenery, bazy, porty wystawione na świat |
 | *jak bezpieczny jest ten serwer?* | ocenia go w skali 0–100 i do każdej uwagi daje gotową poprawkę; *„napraw 1”* wykonuje ją z kopią |
-| */podatnosci* | pokazuje znane podatności w pakietach, obrazach kontenerów i aplikacjach, każdą z krótkim wyjaśnieniem po polsku |
-| */zalataj* | pokazuje komendę, która podbija tylko podatne pakiety (albo obrazy: */zalataj obrazy*); instaluje po Twoim TAK |
+| */podatnosci* | pokazuje znane podatności w pakietach, obrazach kontenerów, na zdalnych serwerach i w aplikacjach, każdą z krótkim wyjaśnieniem po polsku |
+| */zalataj* | od razu instaluje poprawki w pakietach serwera, obrazach kontenerów i na zdalnych serwerach, potem usuwa stare obrazy i cache; nie pyta o każdą komendę (same obrazy: */zalataj obrazy*) |
 | *codziennie o 7 sprawdzaj backupy i certyfikaty* | zakłada rutynę i pisze na Telegram tylko wtedy, gdy coś jest nie tak |
 | *sprawdź dyski na wszystkich serwerach* | wysyła równoległych pomocników (workerów) na zdalne maszyny przez SSH |
 | *czy nasz PostgreSQL jest jeszcze wspierany?* | sprawdza wersję na serwerze i porównuje z endoflife.date |

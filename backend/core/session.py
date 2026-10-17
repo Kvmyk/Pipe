@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal
 
 
 @dataclass
@@ -26,6 +26,9 @@ class ConfirmationRequest:
     # Plan bezpiecznika (core/safety.py) pokazany w potwierdzeniu: kopie, sprawdzenia,
     # weryfikacja. Wykonywany jest dokladnie ten plan, ktory widzial uzytkownik.
     plan: Any = None
+    # Dluga operacja z wlasnym bezpiecznikiem (latki: core/patching.py) — po TAK zamiast `action`: zdarzenia
+    # postepu na biezaco, na koncu safety.Outcome z wynikiem dla modelu.
+    stream: Callable[[], AsyncIterator[Any]] | None = None
     # Dzialanie na schemacie (events.Activity w fazie "wait") — po TAK interfejs webowy dostaje jego ciag dalszy.
     activity: Any = None
 

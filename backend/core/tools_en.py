@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.37.1
+Pipe v0.38.0
 """
 
 from __future__ import annotations
@@ -90,6 +90,16 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "finding has a fix with the exact command. Read-only. Use it when the user asks about server security or its "
         "vulnerabilities.",
         {}),
+    "security_patch": (
+        "Patches known vulnerabilities that have a fix, exactly like the /patch command: this server's packages "
+        "(apt/apk with cleanup: old kernels, downloaded packages), container images from compose (a newer image and, "
+        "where there is none, the fixes installed inside the image; the previous image stays for /undo) and remote "
+        "servers (ssh targets), then removes old images and caches and rescans. The user approves the whole patch ONCE, "
+        "not every command — do not assemble it from execute_command. Application dependencies are a code change; this "
+        "tool does not do that.",
+        {"scope": "'' or 'all' — everything; 'images' — container images only; 'system' — this server's packages only; "
+                  "'servers' — remote servers only; a remote server name — only that one; 'urgent' — this server's "
+                  "urgent packages."}),
     "journal": (
         "Log of confirmed changes: before every change Pipe backs up files, git state and crontab and records "
         "inverse commands (docker start/stop, systemctl enable/disable). list: recent entries. undo: undo an entry "

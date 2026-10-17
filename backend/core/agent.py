@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -67,6 +67,7 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
     "pipe_update": frozenset({"apply"}),
+    "security_patch": None,
 }
 OBSERVE_NOTICE = ("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
                   "Zmiany wymagaja wylaczenia trybu obserwacji.")
@@ -83,6 +84,7 @@ OBSERVE_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "journal": frozenset({"undo"}),
     "cron_manage": frozenset({"add", "remove"}),
     "pipe_update": frozenset({"apply"}),
+    "security_patch": None,
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 INTERRUPTED_TOOL_EN = "INTERRUPTED: the client disconnected before the tool finished. Result unknown."
@@ -648,7 +650,19 @@ class VPSAgent:
             return format_result(stdout, stderr, exit_code), exit_code
 
         exit_code, entry_id = 0, ""
-        if pending.action is not None and pending.plan is None:
+        if pending.stream is not None:
+            # operacja z wlasnym bezpiecznikiem (latki) — postep na biezaco, wynik w safety.Outcome
+            result, exit_code = "", 1
+            try:
+                async for item in pending.stream():
+                    if isinstance(item, safety.Outcome):
+                        result, exit_code, entry_id = item.text, item.exit_code, item.entry_id
+                    else:
+                        yield item
+            except Exception as exc:
+                result = tr(f"Blad: {exc}", f"Error: {exc}")
+            await audit.log_confirmed(who, pending.command, exit_code)
+        elif pending.action is not None and pending.plan is None:
             result, exit_code = await run_action()
         else:
             if pending.action is not None:

@@ -5,7 +5,7 @@ Moduł zawiera osobne implementacje dla każdego dostępnego narzędzia.
 Dispatch w agent.py szuka tu funkcji `handle_<nazwa_narzedzia>`.
 """
 
-from .audit import handle_security_audit
+from .audit import handle_security_audit, handle_security_patch
 from .command import handle_execute_command
 from .file_ops import handle_read_file, handle_write_file
 from .git import handle_git_command
@@ -50,6 +50,7 @@ __all__ = [
     "handle_server_history",
     "handle_journal",
     "handle_security_audit",
+    "handle_security_patch",
     "handle_web_search",
     "handle_web_fetch",
     "handle_software_info",

@@ -329,10 +329,12 @@ def test_photo_and_album_go_to_the_agent_as_attachments(monkeypatch):
     assert len(sent) == 2 and "za duzy" in replies[0]
 
 
-def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
+def test_vuln_alert_patch_button_patches_right_away(monkeypatch):
+    """Zalataj przy alercie lata od razu (bez podgladu); stary backend z podgladem dalej dostaje Zainstaluj/Anuluj."""
     from types import SimpleNamespace
 
     sent, calls = [], []
+    preview = {"on": False}
 
     async def fake_send(bot_, chat_id, text, reply_markup=None):
         sent.append((chat_id, text, reply_markup))
@@ -340,8 +342,10 @@ def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
     class Client:
         def command(self, name, **fields):
             calls.append((name, fields))
-            data = {"scope": "urgent", "token": "abc123", "can_execute": True, "text": "Latki dla 1 pakietow"} \
-                if not fields.get("execute") else {"text": "zainstalowano"}
+            if preview["on"] and not fields.get("execute"):
+                data = {"scope": "urgent", "token": "abc123", "can_execute": True, "text": "Latki dla 1 pakietow"}
+            else:
+                data = {"text": "Gotowe — zalatane: ten serwer: 1 pakiet (openssl).\n\nTen serwer:\n- zainstalowane: 1 (openssl)"}
             return frames({"response": "", "status": "ok", "done": True, "data": data})
 
     monkeypatch.setattr(bot, "_send_html", fake_send)
@@ -352,7 +356,7 @@ def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
     asyncio.run(bot._broadcast(app, {"type": "alert", "id": "v1", "key": "vuln:system", "severity": "critical",
                                      "state": "new", "title": "Pilne podatnosci", "detail": "openssl"}))
     keyboards = {chat: [b.callback_data for b in markup.inline_keyboard[0]] for chat, _, markup in sent}
-    assert keyboards == {1: ["investigate:v1", "patch:urgent:1"], 7: ["investigate:v1"]}   # viewer bez Zalataj
+    assert keyboards == {1: ["investigate:v1", "patch:system:1"], 7: ["investigate:v1"]}   # viewer bez Zalataj
 
     def callback(data, user_id):
         answers = []
@@ -372,15 +376,25 @@ def test_vuln_alert_patch_button_preview_and_install(monkeypatch):
         return answers
 
     sent.clear()
-    assert callback("patch:urgent:7", 7)[0].get("show_alert")                       # nie admin
-    callback("patch:urgent:1", 1)
-    assert calls[-1] == ("patch", {"scope": "urgent"})
+    assert callback("patch:system:7", 7)[0].get("show_alert")                       # nie admin
+    callback("patch:system:1", 1)
+    assert calls == [("patch", {"scope": "system"})]                               # od razu, bez podgladu
+    assert "zainstalowane: 1 (openssl)" in sent[-1][1] and sent[-1][2] is None
+
+    # backend sprzed v0.38 odpowiada podgladem z tokenem — wtedy jak dawniej
+    preview["on"] = True
+    callback("patch:system:1", 1)
     assert [b.callback_data for b in sent[-1][2].inline_keyboard[0]] == ["patchx:yes:urgent:abc123:1", "patchx:no:urgent:abc123:1"]
     callback("patchx:yes:urgent:abc123:1", 1)
     assert calls[-1] == ("patch", {"scope": "urgent", "patch_token": "abc123", "execute": True})
-    assert "zainstalowano" in sent[-1][1]
+    assert "zainstalowane" in sent[-1][1]
     callback("patchx:no:urgent:abc123:1", 1)
-    assert len(calls) == 2 and "nic nie zainstalowalem" in sent[-1][1]
+    assert len(calls) == 3 and "nic nie zainstalowalem" in sent[-1][1]
+
+
+def test_zalataj_passes_the_word_to_the_backend(monkeypatch):
+    assert bot._patch_scope(["Obrazy"]) == "obrazy" and bot._patch_scope([]) == "" and bot._patch_scope(["web2"]) == "web2"
+    assert bot.PATCH_SCOPES == {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers"}
 
 
 def test_vulns_report_is_rendered_without_html_from_the_internet(monkeypatch):

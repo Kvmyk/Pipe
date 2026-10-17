@@ -37,6 +37,8 @@ from backend.core import hostinfo, memory, runtime
 from backend.core.i18n import tr
 
 WEIGHTS = {"high": 15, "medium": 7, "low": 3}
+# W tej samej wadze najpierw to, co juz jest atakowane (CISA KEV) — inaczej alfabet stawial je za innymi
+FIRST = {"vuln-kev": 0}
 SEVERITY_LABEL = {"high": "WYSOKIE", "medium": "SREDNIE", "low": "NISKIE"}
 SEVERITY_LABEL_EN = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"}
 PUBLIC_RISKY_PORTS = {
@@ -59,7 +61,7 @@ class Finding:
     fix: str = ""
     command: str = ""        # dokladna komenda poprawki (pusta = poprawka reczna)
     host_only: bool = False  # w trybie docker do wykonania na hoscie (execute_command z host: true)
-    patch: str = ""          # poprawke instaluje /zalataj z tym zakresem (all | urgent | images) — klienci pokazuja to zamiast komendy
+    patch: str = ""          # poprawke instaluje /zalataj z tym zakresem (system | images | servers) — klienci pokazuja to zamiast komendy
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -84,7 +86,7 @@ class Audit:
 
     def sorted(self) -> list[Finding]:
         order = {"high": 0, "medium": 1, "low": 2}
-        return sorted(self.findings, key=lambda f: (order[f.severity], f.id))
+        return sorted(self.findings, key=lambda f: (order[f.severity], FIRST.get(f.id, 50), f.id))
 
     def render(self, for_model: bool = True) -> str:
         """Tekst audytu. Dla uzytkownika (`for_model=False`) latki podatnosci to /zalataj, nie komenda na 200 pakietow."""
@@ -99,6 +101,10 @@ class Audit:
                 lines.append(tr(f"   Poprawka: {finding.fix}", f"   Fix: {finding.fix}"))
             if finding.patch and not for_model:
                 lines.append(tr(f"   Napraw: {patch_command(finding.patch)}", f"   Fix it: {patch_command(finding.patch)}"))
+            elif finding.patch:
+                # latka jedna zgoda na calosc (narzedzie security_patch), nie komenda apt/compose do execute_command
+                lines.append(tr(f"   Napraw: narzedzie security_patch, scope {finding.patch}",
+                                f"   Fix it: the security_patch tool, scope {finding.patch}"))
             elif finding.command:
                 where = tr(" (na hoscie: execute_command z host: true)",
                            " (on the host: execute_command with host: true)") if finding.host_only else ""
@@ -106,7 +112,7 @@ class Audit:
         if self.passed:
             lines.append(tr("\nW porzadku: ", "\nOK: ") + "; ".join(self.passed))
         if self.unknown:
-            lines.append(tr("Nie sprawdzono: ", "Not checked: ") + "; ".join(self.unknown))
+            lines.append(("" if self.passed else "\n") + tr("Nie sprawdzono: ", "Not checked: ") + "; ".join(self.unknown))
         return "\n".join(lines)
 
     def to_data(self) -> dict[str, Any]:
@@ -116,8 +122,9 @@ class Audit:
 
 
 def patch_command(scope: str) -> str:
-    """Komenda klienta dla zakresu latki: /zalataj, /zalataj pilne, /zalataj obrazy."""
-    words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images")}
+    """Komenda klienta dla zakresu latki: /zalataj, /zalataj serwer, /zalataj obrazy, /zalataj serwery."""
+    words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images"), "system": tr(" serwer", " server"),
+             "servers": tr(" serwery", " servers")}
     return tr("/zalataj", "/patch") + words.get(scope, "")
 
 
@@ -513,7 +520,7 @@ def _names(names: list[str], limit: int = 5) -> str:
     return shown + (tr(f" i {more} innych", f" and {more} more") if more > 0 else "")
 
 
-def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
+def vuln_findings(audit: Audit, scan: Any, note: str = "", skip_projects: frozenset[str] | set[str] = frozenset()) -> None:
     """Podatnosci (core/vulns.py): pakiety hosta, obrazy kontenerow, zaleznosci aplikacji."""
     label = tr("podatnosci pakietow", "package vulnerabilities")
     if scan is None:
@@ -524,11 +531,12 @@ def vuln_findings(audit: Audit, scan: Any, note: str = "") -> None:
                                 f"{label} ({scan.system} is not supported)"))
     else:
         _system_vuln_findings(audit, scan, label)
-    _image_vuln_findings(audit, scan)
+    _server_vuln_findings(audit, scan)
+    _image_vuln_findings(audit, scan, skip_projects)
     _app_vuln_findings(audit, scan)
 
 
-def _image_vuln_findings(audit: Audit, scan: Any) -> None:
+def _image_vuln_findings(audit: Audit, scan: Any, skip_projects: frozenset[str] | set[str] = frozenset()) -> None:
     """Obrazy kontenerow: jedna pozycja na wszystkie obrazy z podatnosciami, z komenda nowszych obrazow."""
     from backend.core import vulns
 
@@ -537,27 +545,54 @@ def _image_vuln_findings(audit: Audit, scan: Any) -> None:
     if unsupported:
         audit.unknown.append(tr("obrazy bez obslugiwanego systemu (np. distroless): ",
                                 "images without a supported system (e.g. distroless): ") + ", ".join(unsupported[:5]))
-    vulnerable = sorted([t for t in images if t.items], key=lambda t: (not t.kev, not t.urgent, -len(t.items)))
+    vulnerable = sorted([t for t in images if t.items], key=vulns.target_rank)
     if not vulnerable:
         if any(t.ecosystem for t in images) and not scan.error:
             audit.passed.append(tr(f"obrazy kontenerow bez podatnosci z poprawka ({sum(1 for t in images if t.ecosystem)})",
                                    f"container images without fixable vulnerabilities ({sum(1 for t in images if t.ecosystem)})"))
         return
     kev, urgent = any(t.kev for t in vulnerable), any(t.urgent for t in vulnerable)
-    patch = vulns.image_patch(scan)
+    patch = vulns.image_patch(scan, skip_projects=skip_projects)       # jak /zalataj obrazy: bez kontenerow Pipe
     detail = _names([t.label() for t in vulnerable])
     if patch.manual:
         detail += "; " + "; ".join(patch.manual[:2])
+    fix = [tr("nowszy obraz albo poprawki zainstalowane w obrazie, potem kontenery od nowa.",
+              "a newer image or the fixes installed inside the image, then the containers restart.")] if patch.command else []
+    fix.append(vulns.waiting_note(patch).replace("\n\n", " "))          # bez zmian po latce, kontenery Pipe
+    if not patch.command and patch.manual:
+        fix.append(tr("Te kontenery nie maja compose, wiec Pipe ich nie odswiezy — kroki wyzej.",
+                      "These containers have no compose, so Pipe cannot refresh them — steps above."))
     audit.findings.append(Finding(
         "vuln-images", "high" if kev else "medium" if urgent else "low",
-        tr(f"Podatnosci z poprawka w {len(vulnerable)} obrazach kontenerow",
-           f"Fixable vulnerabilities in {len(vulnerable)} container images"),
-        detail,
-        tr("nowszy obraz pod tym samym tagiem (oficjalne obrazy sa przebudowywane); wlasny obraz przebuduj, "
-           "przypiety tag zmien w compose — /zalataj obrazy",
-           "a newer image under the same tag (official images are rebuilt); rebuild your own image, change a pinned "
-           "tag in compose — /patch images"),
+        tr(f"Podatnosci z poprawka w obrazach kontenerow: {len(vulnerable)}",
+           f"Fixable vulnerabilities in container images: {len(vulnerable)}"),
+        detail, " ".join(f for f in fix if f).rstrip("."),
         patch.command, _host_only() and bool(patch.command), "images" if patch.command else ""))
+
+
+def _server_vuln_findings(audit: Audit, scan: Any) -> None:
+    """Zdalne serwery (cele ssh): jedna pozycja na wszystkie z podatnosciami z poprawka."""
+    from backend.core import vulns
+
+    servers = vulns.servers_with_items(scan)
+    for note in vulns.server_notes(scan):
+        audit.unknown.append(note)
+    if not servers:
+        if any(t.ecosystem for t in scan.of_kind("server")) and not scan.error:
+            audit.passed.append(tr(f"zdalne serwery bez podatnosci z poprawka ({sum(1 for t in scan.of_kind('server') if t.ecosystem)})",
+                                   f"remote servers without fixable vulnerabilities ({sum(1 for t in scan.of_kind('server') if t.ecosystem)})"))
+        return
+    kev, urgent = any(t.kev for t in servers), any(t.urgent for t in servers)
+    patchable = any(vulns.select_server(t) for t in servers)
+    audit.findings.append(Finding(
+        "vuln-servers", "high" if kev else "medium" if urgent else "low",
+        tr(f"Podatnosci z poprawka na zdalnych serwerach: {len(servers)}", f"Fixable vulnerabilities on remote servers: {len(servers)}"),
+        "; ".join(f"{t.name}: " + _names([vulns.display_name(p) for p in vulns.sort_items(t.items)], 3) for t in servers[:4]),
+        tr("nowe wersje tylko tych pakietow, przez ssh (root albo sudo bez hasla)",
+           "new versions of only these packages, over ssh (root or passwordless sudo)") if patchable else
+        tr("ostatnia latka ich nie zmienila albo poprawki sa tylko w Ubuntu Pro — powod w raporcie ponizej",
+           "the last patch did not change them or the fixes are only in Ubuntu Pro — the reason is in the report below"),
+        "", False, "servers" if patchable else ""))
 
 
 def _app_vuln_findings(audit: Audit, scan: Any) -> None:
@@ -575,11 +610,11 @@ def _app_vuln_findings(audit: Audit, scan: Any) -> None:
     detail = "; ".join(f"{t.label()}: " + _names([p.name for p in vulns.sort_items(t.items)], 3) for t in apps[:4])
     audit.findings.append(Finding(
         "vuln-apps", "high" if kev else "medium" if critical else "low",
-        tr(f"Podatnosci z poprawka w zaleznosciach {len(apps)} aplikacji",
-           f"Fixable vulnerabilities in the dependencies of {len(apps)} applications"),
+        tr(f"Podatnosci z poprawka w zaleznosciach aplikacji: {len(apps)}",
+           f"Fixable vulnerabilities in application dependencies: {len(apps)}"),
         detail,
-        tr("podbij te zaleznosci w lockfile (npm audit fix, pip install -U, composer update ...) i wdroz aplikacje",
-           "bump these dependencies in the lockfile (npm audit fix, pip install -U, composer update ...) and deploy the app")))
+        tr(f"zmiana w kodzie: podbij je do wersji z poprawka ({vulns.app_tools(apps)}) i wdroz aplikacje",
+           f"a code change: bump them to the fixed version ({vulns.app_tools(apps)}) and deploy the app")))
 
 
 def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
@@ -598,26 +633,40 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
     urgent = [p for p in scan.items if p.urgent and not p.kev]
     other = [p for p in scan.items if not p.urgent]
     groups = (
-        ("vuln-kev", "high", kev, tr(f"Aktywnie wykorzystywane podatnosci (CISA KEV) w {len(kev)} pakietach",
-                                     f"Actively exploited vulnerabilities (CISA KEV) in {len(kev)} packages")),
-        ("vuln-high", "high", urgent, tr(f"Krytyczne i wysokie podatnosci z poprawka w {len(urgent)} pakietach",
-                                         f"Critical and high vulnerabilities with a fix in {len(urgent)} packages")),
-        ("vuln-other", "medium", other, tr(f"Podatnosci z poprawka w {len(other)} pakietach",
-                                           f"Vulnerabilities with a fix in {len(other)} packages")),
+        ("vuln-kev", "high", kev, tr(f"Aktywnie wykorzystywane podatnosci (CISA KEV) w pakietach serwera: {len(kev)}",
+                                     f"Actively exploited vulnerabilities (CISA KEV) in server packages: {len(kev)}")),
+        ("vuln-high", "high", urgent, tr(f"Krytyczne i wysokie podatnosci z poprawka w pakietach serwera: {len(urgent)}",
+                                         f"Critical and high vulnerabilities with a fix in server packages: {len(urgent)}")),
+        ("vuln-other", "medium", other, tr(f"Pozostale podatnosci z poprawka w pakietach serwera: {len(other)}",
+                                           f"Other vulnerabilities with a fix in server packages: {len(other)}")),
     )
-    held = vulns.held_packages()
+    chosen = {p.key for p in vulns.select(scan, "all")}       # bez wstrzymanych i tych tylko z Ubuntu Pro
     for finding_id, severity, items, title in groups:
         if not items:
             continue
-        patchable = [p for p in items if p.key not in held]     # bez tych, ktorych repozytoria nie maja poprawki
+        patchable = [p for p in items if p.key in chosen]
+        # przy pakiecie, ktorego /zalataj teraz nie zainstaluje, od razu dlaczego — inaczej "Napraw" obiecuje za duzo
+        names = [vulns.display_name(p) + ("" if p.key in chosen else tr(" (tylko Ubuntu Pro)", " (Ubuntu Pro only)")
+                                          if p.pro_only else tr(" (bez zmian po ostatniej latce)",
+                                                                " (unchanged by the last patch)"))
+                 for p in vulns.sort_items(items)]
+        waiting = [p for p in items if p.key not in chosen]
+        if not patchable:
+            fix = "; ".join(filter(None, [
+                tr("poprawki tylko w Ubuntu Pro: pro attach, potem /zalataj",
+                   "the fixes are only in Ubuntu Pro: pro attach, then /patch") if any(p.pro_only for p in waiting) else "",
+                tr("repozytoria serwera nie maja jeszcze nowych wersji, sprobuje znowu za dobe",
+                   "the server's repositories do not have the new versions yet, I will retry in a day")
+                if any(not p.pro_only for p in waiting) else ""]))
+        elif finding_id == "vuln-kev":
+            fix = tr("nowe wersje tych pakietow, jak najszybciej — te luki sa juz atakowane",
+                     "new versions of these packages, as soon as possible — these flaws are already being attacked")
+        else:
+            fix = tr("nowe wersje tylko tych pakietow, bez pelnego upgrade", "new versions of only these packages, not a full upgrade")
         audit.findings.append(Finding(
-            finding_id, severity, title, _names([p.name for p in vulns.sort_items(items)]),
-            tr("podbij tylko te pakiety (bez pelnego upgrade); biblioteki i jadro dzialaja po restarcie uslug lub serwera; "
-               "co grozi przy kazdym — /podatnosci",
-               "upgrade only these packages (not a full upgrade); libraries and the kernel apply after a service or server "
-               "restart; what each one risks — /vulns"),
-            vulns.upgrade_command(scan.ecosystem, patchable), _host_only(),
-            ("all" if finding_id == "vuln-other" else "urgent") if patchable else ""))
+            finding_id, severity, title, _names(names), fix,
+            vulns.upgrade_command(scan.ecosystem, patchable, scan.kernel_meta), _host_only(),
+            "system" if patchable else ""))
     if scan.items:
         audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
     elif not scan.error:
@@ -626,7 +675,8 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
 
 
 def run_audit(*, containers: list[Any] | None, sockets: list[Any], report: Any = None, cert_days: int = 14,
-              proc: str | None = None, vuln_scan: Any = None, vuln_note: str = "") -> Audit:
+              proc: str | None = None, vuln_scan: Any = None, vuln_note: str = "",
+              skip_projects: frozenset[str] | set[str] = frozenset()) -> Audit:
     """Pelny audyt (synchronicznie — same odczyty plikow)."""
     from backend.core import snapshots
 
@@ -645,7 +695,7 @@ def run_audit(*, containers: list[Any] | None, sockets: list[Any], report: Any =
     secret_file_findings(audit)
     hygiene_findings(audit, units, proc)
     cert_findings(audit, report, cert_days)
-    vuln_findings(audit, vuln_scan, vuln_note)
+    vuln_findings(audit, vuln_scan, vuln_note, skip_projects)
     return audit
 
 
@@ -654,10 +704,15 @@ async def audit_now(report: Any = None, cert_days: int = 14, vuln_scan: Any = No
 
     from backend.core import infra
 
+    from backend.core import hostexec
+
     containers = await infra.docker_containers()
     sockets = await asyncio.to_thread(hostinfo.sockets)
+    # kontenery Pipe odswieza /aktualizuj, nie /zalataj obrazy — audyt mowi to samo co latka
+    own = await hostexec.own_project() if vuln_scan is not None and vuln_scan.of_kind("image") else ""
     return await asyncio.to_thread(run_audit, containers=containers, sockets=sockets, report=report,
-                                   cert_days=cert_days, vuln_scan=vuln_scan, vuln_note=vuln_note)
+                                   cert_days=cert_days, vuln_scan=vuln_scan, vuln_note=vuln_note,
+                                   skip_projects=frozenset({own} - {""}))
 
 
 # ─── Log SSH: wlamania i nowe logowania ─────────────────────────────────────

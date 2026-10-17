@@ -15,7 +15,8 @@ Co minute wykonywane sa tez rutyny (core/routines.py) — przez workerow.
 Przy kazdym sprawdzeniu zapisywana jest probka do historii (core/metrics.py,
 wykresy). Rzadziej, we wlasnych petlach:
   - migawka stanu hosta co SNAPSHOT_INTERVAL (core/snapshots.py, "co sie zmienilo"),
-  - podatnosci w pakietach (core/vulns.py, OSV.dev) przy zmianie pakietow i co VULN_INTERVAL,
+  - podatnosci w pakietach hosta, obrazow, zdalnych serwerow i aplikacji (core/vulns.py, OSV.dev) przy zmianie
+    pakietow i co VULN_INTERVAL,
   - sprawdzenia bez konfiguracji co CHECKS_INTERVAL (core/checks.py): certyfikaty,
     strony i DNS domen z konfiguracji proxy, swiezosc backupow z DIRECTORY,
   - poranny raport o DIGEST_TIME (core/digest.py).
@@ -47,10 +48,11 @@ CHECKS_SCOPE = frozenset({"cert", "site", "dns", "backup"})
 VULN_SCOPE = frozenset({"vuln"})
 VULN_KEY = "vuln:system"
 VULN_IMAGES_KEY = "vuln:images"
+VULN_SERVERS_KEY = "vuln:servers"
 VULN_APPS_KEY = "vuln:apps"
 # Tyle najwyzej czeka /audyt na skan podatnosci (pierwszy skan pobiera szczegoly setek ID).
 VULN_AUDIT_WAIT = 45
-VULN_FRESH_AGE = 600         # /podatnosci, /audyt, podglad /zalataj: pelne zapytanie do OSV najwyzej co 10 min
+VULN_FRESH_AGE = 600         # /podatnosci, /audyt, /zalataj: pelne zapytanie do OSV najwyzej co 10 min
 # Wyjasnienia podatnosci: tyle podatnosci na jedno zapytanie do modelu i tyle czeka na nie /podatnosci.
 EXPLAIN_BATCH = 30
 EXPLAIN_WAIT = 40
@@ -401,7 +403,7 @@ class Watcher:
         i kontenery sprzed instalacji, wiec czekam na niego i skanuje jeszcze raz. `max_age`: jak dawno moze byc
         pelne zapytanie do OSV (domyslnie VULN_INTERVAL); zmienione pakiety i obrazy sa pytane zawsze.
         """
-        from backend.core import infra, vulns
+        from backend.core import fleet, infra, vulns
 
         age = settings.VULN_INTERVAL if max_age is None else max_age
         task = self._vuln_task
@@ -409,8 +411,9 @@ class Watcher:
             await asyncio.shield(task)
         if self._vuln_task is None or self._vuln_task.done():
             async def run() -> Any:
-                containers = await infra.docker_containers()
-                return await asyncio.to_thread(vulns.scan, max_age=age, containers=containers)
+                # kontenery tego hosta i bazy pakietow zdalnych serwerow (cele ssh) naraz
+                containers, servers = await asyncio.gather(infra.docker_containers(), fleet.dumps())
+                return await asyncio.to_thread(vulns.scan, max_age=age, containers=containers, servers=servers)
             self._vuln_started = time.time()
             self._vuln_task = asyncio.create_task(run())
         result, _ = await asyncio.shield(self._vuln_task)
@@ -420,10 +423,10 @@ class Watcher:
     async def vuln_for_audit(self, fresh: bool = True) -> tuple[Any, str]:
         """
         (wynik skanu albo None, uwaga) — nie dluzej niz VULN_AUDIT_WAIT sekund. `fresh` (domyslnie: /podatnosci,
-        /audyt, podglad /zalataj): inwentarz czytany od nowa przy kazdym wywolaniu, zmienione pakiety i obrazy
+        /audyt, /zalataj): inwentarz czytany od nowa przy kazdym wywolaniu, zmienione pakiety i obrazy
         pytane w OSV od razu, a calosc najwyzej co VULN_FRESH_AGE — pelne zapytanie o tysiace pakietow przy kazdym
-        /podatnosci nie miescilo sie w VULN_AUDIT_WAIT i klienci dostawali stary wynik. `fresh=False` (instalacja
-        latki zaraz po podgladzie): wystarczy ostatni wynik.
+        /podatnosci nie miescilo sie w VULN_AUDIT_WAIT i klienci dostawali stary wynik. `fresh=False`: wystarczy
+        ostatni wynik, jesli jest swiezy.
         """
         from backend.core import vulns
 
@@ -461,13 +464,15 @@ class Watcher:
             self.active[key] = self._alert(finding, "new")        # juz zgloszone przed restartem — po cichu
         return [finding]
 
-    def vuln_findings(self, result: Any) -> list[Finding] | None:
+    def vuln_findings(self, result: Any, skip_projects: frozenset[str] | set[str] = frozenset()) -> list[Finding] | None:
         """
         Alerty o pilnych podatnosciach z poprawka: `vuln:system` (pakiety hosta: KEV, krytyczne, wysokie),
-        `vuln:images` (obrazy kontenerow: to samo), `vuln:apps` (zaleznosci aplikacji: tylko KEV i krytyczne —
-        drzewa npm maja mnostwo "wysokich" w narzedziach deweloperskich). None = skan sie nie udal.
+        `vuln:images` (obrazy kontenerow: to samo), `vuln:servers` (zdalne serwery: to samo), `vuln:apps`
+        (zaleznosci aplikacji: tylko KEV i krytyczne — drzewa npm maja mnostwo "wysokich" w narzedziach
+        deweloperskich). None = skan sie nie udal.
         `report` alertu opisuje kazda podatnosc (wyjasnienie modelu albo opis z OSV) — uzytkownik nie musi
-        o nic prosic; `detail` to jedna linia dla promptu, raportu porannego i powiadomien.
+        o nic prosic; `detail` to jedna linia dla promptu, raportu porannego i powiadomien. Tytul to "co: ile"
+        (bez odmiany liczebnikow), bo czyta sie go tez jako "ROZWIAZANE — <tytul>".
         """
         from backend.core import vulns
         from backend.core.i18n import lang
@@ -485,9 +490,9 @@ class Watcher:
         finding = None
         if urgent:
             kev = [p for p in urgent if p.kev]
-            title = tr(f"Pilne podatnosci w {len(urgent)} pakietach serwera", f"Urgent vulnerabilities in {len(urgent)} server packages")
+            title = tr(f"Pilne podatnosci w pakietach serwera: {len(urgent)}", f"Urgent vulnerabilities in server packages: {len(urgent)}")
             if kev:
-                title += tr(f" ({len(kev)} aktywnie wykorzystywanych)", f" ({len(kev)} actively exploited)")
+                title += tr(", w tym aktywnie wykorzystywane", ", including actively exploited ones")
             finding = Finding(VULN_KEY, "critical" if kev else "warning", title, names(urgent),
                               report=vulns.system_alert(result, explain))
         findings += self._vuln_alert(VULN_KEY, result.urgent_ids, finding)
@@ -495,17 +500,31 @@ class Watcher:
         images = vulns.urgent_images(result)
         finding = None
         if images:
-            title = tr(f"Pilne podatnosci w {len(images)} obrazach kontenerow", f"Urgent vulnerabilities in {len(images)} container images")
+            title = tr(f"Pilne podatnosci w obrazach kontenerow: {len(images)}", f"Urgent vulnerabilities in container images: {len(images)}")
             finding = Finding(VULN_IMAGES_KEY, "critical" if any(t.kev for t in images) else "warning", title,
-                              ", ".join(t.label() for t in images[:4]), report=vulns.images_alert(result, explain))
+                              ", ".join(t.label() for t in images[:4]),
+                              report=vulns.images_alert(result, explain, skip_projects=skip_projects))
         findings += self._vuln_alert(VULN_IMAGES_KEY, {f"{t.name}|{v.id}" for t in images for p in t.urgent
                                                       for v in p.fixable if v.urgent}, finding)
+
+        servers = vulns.urgent_servers(result)
+        finding = None
+        if servers:
+            title = tr(f"Pilne podatnosci na zdalnych serwerach: {len(servers)}" if len(servers) > 1 else
+                       f"Pilne podatnosci na serwerze {servers[0].name}",
+                       f"Urgent vulnerabilities on remote servers: {len(servers)}" if len(servers) > 1 else
+                       f"Urgent vulnerabilities on server {servers[0].name}")
+            finding = Finding(VULN_SERVERS_KEY, "critical" if any(t.kev for t in servers) else "warning", title,
+                              "; ".join(f"{t.name}: {names(vulns.sort_items(t.urgent), 3)}" for t in servers[:4]),
+                              report=vulns.servers_alert(result, explain))
+        findings += self._vuln_alert(VULN_SERVERS_KEY, {f"{t.name}|{v.id}" for t in servers for p in t.urgent
+                                                       for v in p.fixable if v.urgent}, finding)
 
         apps = vulns.serious_apps(result)
         finding = None
         if apps:
-            title = tr(f"Krytyczne podatnosci w zaleznosciach {len(apps)} aplikacji",
-                       f"Critical vulnerabilities in the dependencies of {len(apps)} applications")
+            title = tr(f"Krytyczne podatnosci w zaleznosciach aplikacji: {len(apps)}",
+                       f"Critical vulnerabilities in application dependencies: {len(apps)}")
             finding = Finding(VULN_APPS_KEY, "critical" if any(p.kev for _, items in apps for p in items) else "warning",
                               title, "; ".join(f"{t.label()}: {names(items, 3)}" for t, items in apps[:4]),
                               report=vulns.apps_alert(result, explain))
@@ -514,9 +533,10 @@ class Watcher:
         return findings
 
     async def vulns_once(self, since: float = 0) -> list[Alert]:
-        from backend.core import vulns
+        from backend.core import hostexec, vulns
 
         result = await self.vuln_scan_now(since=since)
+        own = {p for p in [await hostexec.own_project()] if p}      # obraz Pipe: alert nie obiecuje, ze /zalataj go odswiezy
         if result is not None and result.ok:
             # Najpierw opisy (raz na podatnosc, potem z pamieci), dopiero potem alert — ma od razu mowic,
             # czego dotyczy kazda podatnosc. Po VULN_ALERT_EXPLAIN_WAIT alert idzie z opisami z OSV,
@@ -526,7 +546,7 @@ class Watcher:
             except Exception as exc:                  # bez opisow modelu alert i tak musi wyjsc
                 print(tr(f"[Czuwanie] Wyjasnienia podatnosci: {exc}", f"[Watcher] Vulnerability explanations: {exc}"),
                       flush=True)
-        findings = self.vuln_findings(result)
+        findings = self.vuln_findings(result, skip_projects=own)
         if findings is None:
             return []
         return self._publish(self.apply(findings, VULN_SCOPE))

@@ -236,7 +236,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
     ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
     ("podatnosci", "Znane podatnosci z opisami"),
-    ("zalataj", "Latki podatnosci (/zalataj pilne, /zalataj obrazy)"),
+    ("zalataj", "Zalataj od razu (/zalataj obrazy, /zalataj serwer, /zalataj serwery)"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
@@ -267,7 +267,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("health", "Certificates, sites, DNS and backups"),
     ("audit", "Security audit with a score and fixes"),
     ("vulns", "Known vulnerabilities with descriptions"),
-    ("patch", "Vulnerability patches (/patch urgent, /patch images)"),
+    ("patch", "Patch right away (/patch images, /patch server, /patch servers)"),
     ("map", "Server infrastructure diagram (image)"),
     ("server", "Show SERVER.md (/server update - explore the server again)"),
     ("directory", "Map of repositories and directories (DIRECTORY)"),
@@ -712,13 +712,17 @@ def format_audit(data: dict) -> str:
             lines.append(tr("Poprawka: ", "Fix: ") + html.escape(str(finding["fix"])))
         if finding.get("patch"):
             # latke podatnosci sklada i instaluje /zalataj — komenda na 200 pakietow tylko zaslaniala audyt
-            words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images")}
+            words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images"),
+                     "system": tr(" serwer", " server"), "servers": tr(" serwery", " servers")}
             lines.append(tr("Napraw: /zalataj", "Fix it: /patch") + words.get(str(finding["patch"]), ""))
         elif finding.get("command"):
             where = tr(" (na hoscie)", " (on the host)") if finding.get("host_only") else ""
             lines.append(f"<code>{html.escape(str(finding['command']))}</code>{where}")
     if data.get("passed"):
         lines.append(tr("\n<b>W porzadku:</b> ", "\n<b>OK:</b> ") + html.escape("; ".join(data["passed"])))
+    if data.get("unknown"):
+        # np. zdalny serwer bez polaczenia, nieobslugiwany system — bez tego cisza wygladala jak "wszystko dobrze"
+        lines.append(tr("\n<b>Nie sprawdzono:</b> ", "\n<b>Not checked:</b> ") + html.escape("; ".join(data["unknown"])))
     if data.get("findings"):
         lines.append(tr("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.",
                         "\nWrite <i>\"fix 1\"</i> — I will prepare the fix for your approval."))

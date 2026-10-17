@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 ## Opis
 
@@ -95,8 +95,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
-| `vulns` | -- | `"data": {"text", "view"}` -- raport podatnosci w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
-| `patch` | `scope` (`urgent`\|`all`\|`images`); `execute: true` + `patch_token` (wartosc `token` z podgladu; pole `token` to uwierzytelnienie) | bez `execute`: `"data": {"scope", "packages", "command", "token", "can_execute", "reason", "text", "view"}`; z `execute` i tokenem z podgladu: instalacja przez bezpiecznik (ramki `progress`), potem nowy skan i `"data": {"text", "exit_code", "entry_id", "summary", "fixed", "unchanged", "output", "report"}` (`unchanged` -- bez zmian po instalacji, nie wraca do podgladu przez dobe; `report` -- stan po latce jak `view` z `vulns`). Komende sklada serwer z ostatniego skanu; inny token = lista sie zmienila. Odrzucane: viewer, tryb obserwacji, tryb inny niz native. **Bez LLM** |
+| `vulns` | -- | `"data": {"text", "view"}` -- raport podatnosci w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, zdalne serwery, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
+| `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | lata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobe; `freed` -- bajty zwolnione przy sprzataniu; `report` -- stan po latce jak `view` z `vulns`). Nic do zalatania: `"data": {"nothing": true, "text", ...}`. Komendy sklada serwer z biezacego skanu. Latanie dziala w tle: drugie `patch` w trakcie dostaje ten sam postep i wynik, a po rozlaczeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podglad sprzed v0.38) sa ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
@@ -200,7 +200,8 @@ podlaczy sie pierwszy subskrybent.
 Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
 oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
 `vuln:system` -- pilne podatnosci z poprawka w pakietach systemu, `vuln:images` -- w obrazach kontenerow,
-`vuln:apps` -- krytyczne w zaleznosciach aplikacji (trwale; wysylane ponownie, gdy dojdzie nowa).
+`vuln:servers` -- na zdalnych serwerach (cele ssh), `vuln:apps` -- krytyczne w zaleznosciach aplikacji (trwale;
+wysylane ponownie, gdy dojdzie nowa).
 `hook:<zrodlo>:<nazwa>` -- alerty z webhookow (trwale do komunikatu `resolved`). `auth:ssh` (seria nieudanych
 logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
 to zdarzenia jednorazowe.

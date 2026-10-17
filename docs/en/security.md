@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.37.1
+Pipe v0.38.0
 
 ## Model
 
@@ -306,6 +306,17 @@ instructions" framing is not a guarantee.
   by code and the command goes into it as one argument. Observe mode and the viewer role do not have this path.
   There are no file backups or automatic restore here (the safety fuse writes a journal entry and checks the sites). If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
   `docker.sock` mount from `docker-compose.yml`.
+- **`/patch` does not ask about every command.** An administrator typing `/patch` (or pressing *Patch*) approves the
+  whole patch: Pipe installs this server's package fixes right away, refreshes the container images from compose,
+  patches the remote servers (ssh targets: as root or through `sudo -n`) and cleans up after itself (untagged images,
+  build cache older than a day, downloaded packages, npm/pip/yarn/composer caches, old kernels that apt itself
+  considers unneeded). The server builds the commands from the scan result, without the model: package and compose
+  project names go through patterns, so content from the package database or from container labels cannot add
+  anything to the shell. The agent in a conversation (the `security_patch` tool) gets the same patch for one YES of
+  yours (no question in YOLO). The viewer role and observe mode do not have it. Pipe does not leave an image that has
+  no newer version: it installs the fixes from its system's repository inside it (a temporary container from that
+  image, `docker commit` under the same tag). The previous image stays under a `pipe-rollback-*` tag and `/undo` goes
+  back to it.
 - Conversations are kept on disk in `DATA_DIR/sessions` (mode 0600, directory 0700) for `SESSION_KEEP_DAYS` days so
   they survive a restart. Tool results in them are redacted the same way as in requests to the model, but what you
   type yourself stays. `SESSION_KEEP_DAYS=0` turns saving off and removes saved sessions at startup.
