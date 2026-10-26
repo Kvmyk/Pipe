@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -72,7 +72,7 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "write_file": None,
     "server_md": frozenset({"update_section", "write"}),
     "directory": frozenset({"upsert", "remove", "scan"}),
-    "skill_manage": frozenset({"save", "delete"}),
+    "skill_manage": frozenset({"save", "delete", "install"}),
     "target_manage": frozenset({"add", "remove"}),
     "routine_manage": frozenset({"add", "remove", "enable", "disable"}),
     "journal": frozenset({"undo"}),
@@ -80,6 +80,7 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "pipe_update": frozenset({"apply"}),
     "security_patch": None,
     "project": frozenset({"create", "clone", "run", "exec", "stop", "start", "pull", "remove"}),
+    "mcp_manage": frozenset({"add", "remove", "reload"}),
 }
 OBSERVE_NOTICE =("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
                   "Zmiany wymagaja wylaczenia trybu obserwacji.")
@@ -98,6 +99,7 @@ OBSERVE_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "pipe_update": frozenset({"apply"}),
     "security_patch": None,
     "project": frozenset({"create", "clone", "run", "exec", "stop", "start", "pull", "remove"}),
+    "mcp_manage": frozenset({"add"}),          # nowy serwer = nowy kontener; usuwanie i odswiezenie zostaja
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 INTERRUPTED_TOOL_EN = "INTERRUPTED: the client disconnected before the tool finished. Result unknown."
@@ -190,7 +192,7 @@ class VPSAgent:
              "pipe_generated": True},
             {"role": "assistant", "content": tr("Przyjalem do wiadomosci.", "Noted."), "pipe_generated": True},
         ]
-        toolsets.observe(session, text)          # po /audyt "zrob to sam" ma od razu narzedzia latania
+        toolsets.observe(session, text, _mcp_names())   # po /audyt "zrob to sam" ma od razu narzedzia latania
         _trim_history(session)
         self._persist(session_id)
         return True
@@ -277,7 +279,7 @@ class VPSAgent:
         if generated:
             message["pipe_generated"] = True
         session.messages.append(message)
-        toolsets.observe(session, user_message)
+        toolsets.observe(session, user_message, _mcp_names())
         _trim_history(session)
         self.vibe.observe(session)
 
@@ -521,6 +523,9 @@ class VPSAgent:
             handler = lambda s, tc, a: dispatch(s, tc, a)  # noqa: E731
         else:
             found = getattr(handlers_module, f"handle_{tool_call.function.name}", None)
+            if found is None and tool_call.function.name.startswith("mcp__"):
+                from backend.core.handlers.mcp import handle_mcp_tool
+                found = handle_mcp_tool if get_mcp_manager().resolve(tool_call.function.name) else None
             handler = (lambda s, tc, a: found(self, s, tc, a)) if found else None
 
         if handler is None:
@@ -787,7 +792,17 @@ def tools_for_agent(session: Session | None = None) -> list[dict]:
     base = _english_tools() if is_en() else TOOLS
     if settings.WEB_SEARCH == "off":
         base = [t for t in base if t["function"]["name"] not in ("web_search", "web_fetch", "software_info")]
+    base = base + get_mcp_manager().tool_schemas()          # narzedzia podlaczonych serwerow MCP (grupy mcp:<serwer>)
     return toolsets.select(base, session, lazy=settings.TOOLS_MODE == "lazy")
+
+
+def get_mcp_manager():
+    from backend.core.mcp.registry import get_manager
+    return get_manager()
+
+
+def _mcp_names() -> list[str]:
+    return [name for name, state in get_mcp_manager().servers.items() if state.status == "connected"]
 
 
 def mask_old_results(messages: list[dict[str, Any]], keep_turns: int) -> tuple[list[dict[str, Any]], int]:

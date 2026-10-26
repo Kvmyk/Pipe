@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 ## Model
 
@@ -226,6 +226,18 @@ viewer token doesn't create approvals. Only the agent that created an approval c
 and expire after 30 minutes. `ask_pipe` runs the Pipe agent in the viewer role. HTTP endpoint: localhost only, a Pipe
 token (`Authorization: Bearer`), `Origin` validation (403) and 2026-07-28 header validation (`-32020`).
 
+**Pipe as an MCP client.** In v0.35 the client was removed: another party's server ran as a Pipe process, with its
+access to `docker.sock` and files. Since v0.42 it is back with a different boundary: a stdio server (`npx`, `uvx`, a
+Docker image) runs in a one-off container without mounts, `docker.sock` or privileges (`--cap-drop ALL`,
+`no-new-privileges`, user `nobody`, limits), so at most it can use the network and change its own service (e.g. a
+GitHub repository) -- not the server. Programs other than `npx`/`uvx`/an image and `docker run` options such as `-v`,
+`--network host`, `--privileged` are refused. Secrets only as `${MCP_*}` from `backend/.env` (the model cannot point
+at `${LLM_API_KEY}` or a Pipe token); text that looks like a secret in the configuration -- refused. Adding a server:
+one YES with a preview (or an admin's `/mcp add`). A tool without `readOnlyHint` -- a YES on every call; annotations are
+the server's own declaration, so reads without asking are only as safe as your trust in that server (`askAlways: true`
+in the configuration turns this off for it). The result is treated like internet content (YOLO off until the next
+message), an argument with a secret does not go out. Observe mode and viewer: reads only. Every call is in the audit log.
+
 ## Webhooks
 
 - The webhook server is off by default; without `WEBHOOK_TOKEN` it doesn't start. It listens on `127.0.0.1` (in
@@ -313,6 +325,12 @@ Memory goes into the prompt of EVERY future conversation (SERVER.md, DIRECTORY, 
 - obvious secrets are refused, and credentials are stripped from repository remote URLs,
 - in the prompt the content is marked as **data, not instructions**; it doesn't change classification or
   confirmations, and VIBE is only style guidance.
+
+Skills from other repositories (`/download`, `skill_manage install`) are the same vector: before installing you see a
+preview (names, descriptions, source, what is skipped) and have to click *Install* or give a YES; only the `SKILL.md`
+text goes into memory, with its source added, not scripts or plugin files (hooks, commands, agents and programs --
+never). The repository is cloned like in the workshop (no hooks, submodules, LFS, a size limit) and removed after
+reading; its content is data -- YOLO is off until the next message. Install only from sources you trust.
 
 Still, review `backend/data/` from time to time (`/server`, `/directory`, `/vibe`, `/skills`); the "data, not
 instructions" framing is not a guarantee.

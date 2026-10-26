@@ -233,6 +233,8 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("projekty", "Projekty w warsztacie: stan, logi, zatrzymanie"),
     ("sprzataj", "Zwolnij miejsce na dysku (bez AI)"),
     ("powiadomienia", "Kiedy Pipe ma powiadamiac (poziom, cisza nocna)"),
+    ("pobierz", "Skille i pluginy z repozytorium (/pobierz skill wlasciciel/repo)"),
+    ("mcp", "Serwery MCP, z ktorych korzysta Pipe (/mcp dodaj, /mcp usun)"),
     ("aktualizuj", "Zaktualizuj Pipe (/aktualizuj sprawdz - tylko wersja)"),
     ("raport", "Poranny raport: stan, zmiany, certyfikaty, backupy"),
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
@@ -268,6 +270,8 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("projects", "Workshop projects: state, logs, stopping"),
     ("cleanup", "Free up disk space (no AI)"),
     ("notifications", "When Pipe should notify you (level, quiet hours)"),
+    ("download", "Skills and plugins from a repository (/download skill owner/repo)"),
+    ("mcp", "MCP servers Pipe uses (/mcp add, /mcp remove)"),
     ("update", "Update Pipe (/update check - version only)"),
     ("report", "Morning report: health, changes, certificates, backups"),
     ("changes", "What changed on the server (/changes 3d)"),
@@ -305,7 +309,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
     "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj", "vulns": "podatnosci",
     "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
-    "cleanup": "sprzataj",
+    "cleanup": "sprzataj", "download": "pobierz",
 }
 
 
@@ -341,8 +345,8 @@ HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("Bezpieczenstwo i zmiany", "Security and changes",
      ("audyt", "podatnosci", "zalataj", "sprzataj", "dziennik", "cofnij", "zgody")),
     ("Pamiec i automatyzacja", "Memory and automation",
-     ("server", "skille", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
-    ("Ustawienia", "Settings", ("powiadomienia", "nowa", "providerzy", "jezyk", "yolo", "koszt", "aktualizuj",
+     ("server", "skille", "pobierz", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
+    ("Ustawienia", "Settings", ("powiadomienia", "mcp", "nowa", "providerzy", "jezyk", "yolo", "koszt", "aktualizuj",
                                 "pomoc")),
 )
 # Dzialaja, ale nie ma ich w /pomoc ani w menu — to samo daja /status i /nowosci (alerty, strony, certyfikaty)

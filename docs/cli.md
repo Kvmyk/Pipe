@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -101,7 +101,22 @@ i model), a przelacznik nad polem rozmowy pozwala skakac miedzy providerami, do 
 
 `pipe --mcp --host root@serwer` zamienia CLI w serwer MCP (stdio) dla Claude Code, Cursora i innych agentow:
 narzedzia Pipe przez ten sam tunel SSH i token. Na stdout idzie tylko protokol MCP; tunel ma wlasny wolny port
-i nie pyta o haslo (`BatchMode` -- potrzebny klucz SSH). Konfiguracja np. w Claude Code:
+i nie pyta o haslo (`BatchMode` -- potrzebny klucz SSH).
+
+Gotowa konfiguracja dla konkretnej aplikacji -- do wklejenia, z instrukcja, gdzie:
+
+```bash
+pipe connect claude --host root@serwer          # polecenie claude mcp add
+pipe connect claude-desktop --host root@serwer  # claude_desktop_config.json
+pipe connect cursor --host root@serwer          # ~/.cursor/mcp.json
+pipe connect codex --host root@serwer           # ~/.codex/config.toml
+pipe connect hermes --host root@serwer          # mcp_servers w config.yaml Hermes Agent
+pipe connect openclaw --host root@serwer        # openclaw mcp add
+```
+
+Te same opcje co zwykle CLI (`--ssh-port`, `--key`, `--kube`). Token trafia zawsze do zmiennej `AGENT_TOKEN`,
+nigdy do argumentow procesu; bez `--token` w miejscu tokenu jest `<TOKEN>` i podpowiedz, jak utworzyc osobny token
+dla tej aplikacji (`python3 -m backend.tokens add hermes --role admin`). Recznie, np. w Claude Code:
 
 ```json
 {"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
@@ -181,6 +196,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
+| `/mcp [dodaj <nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Serwery MCP, z ktorych korzysta Pipe (w izolowanym kontenerze); sekrety jako `${MCP_...}` z `backend/.env`. Zmiany tylko administrator |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
@@ -196,6 +212,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
 | `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
+| `/pobierz skill\|plugin <wlasciciel/repo\|URL> [filtr]` | Skille i pluginy z repozytorium git: podglad, potem pytanie TAK/NIE (`/download`); tylko administrator |
 | `/alerty` | Aktywne alerty czuwania (bez podpowiedzi i bez `/pomoc` -- nowe pokazuja sie same nad promptem i w `/nowosci`) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |

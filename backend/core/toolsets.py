@@ -33,7 +33,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "web": ("web_search", "web_fetch", "software_info"),
     "diagram": ("diagram",),
     "update": ("pipe_update",),
+    "mcp": ("mcp_manage",),
 }
+MCP_PREFIX = "mcp:"         # grupa narzedzi jednego zewnetrznego serwera MCP: mcp:<serwer> (dochodzi w locie)
 TOOL_GROUP = {tool: group for group, tools in GROUPS.items() for tool in tools}
 
 # Fragmenty wyrazen (male litery, bez polskich znakow) — wiadomosc pasujaca do grupy wlacza ja od razu.
@@ -61,6 +63,7 @@ TRIGGERS: dict[str, tuple[str, ...]] = {
     "diagram": (r"diagram", r"schemat", r"\bmap(a|e|y|ie|ka)\b", r"architektur", r"narysuj", r"rysun",
                 r"pokaz (jak|co|mi jak)", r"infrastruktur", r"\bdraw", r"architecture", r"\bmap\b", r"flowchart",
                 r"mermaid", r"wizualiz", r"visuali"),
+    "mcp": (r"\bmcp\b", r"model context protocol"),
     "update": (r"zaktualizuj (sie|pipe)", r"aktualizacj\w* pipe", r"wersj\w* pipe", r"nowsz\w* (wersj\w* )?pipe",
                r"update (yourself|pipe)", r"upgrade pipe", r"pipe version", r"\bpipe_update\b"),
 }
@@ -75,11 +78,22 @@ def normalize(text: str) -> str:
     return "".join(ch for ch in unicodedata.normalize("NFKD", lowered) if not unicodedata.combining(ch))
 
 
-def groups_for_text(text: str) -> set[str]:
-    """Grupy, ktorych potrzebuje wiadomosc (slowa kluczowe i nazwy narzedzi wprost)."""
+def _mcp_server(tool: str) -> str:
+    """'mcp__github__list_issues' -> 'github'."""
+    parts = tool.split("__")
+    return parts[1] if len(parts) >= 3 and parts[0] == "mcp" else ""
+
+
+def groups_for_text(text: str, mcp_servers: Iterable[str] = ()) -> set[str]:
+    """
+    Grupy, ktorych potrzebuje wiadomosc (slowa kluczowe i nazwy narzedzi wprost). `mcp_servers` — nazwy
+    podlaczonych serwerow MCP: wiadomosc z nazwa serwera ("na githubie...") wlacza jego narzedzia.
+    """
     plain = normalize(text)[:8000]
     found = {group for group, pattern in _COMPILED.items() if pattern.search(plain)}
     found |= {TOOL_GROUP[name] for name in _TOOL_NAMES.findall(plain)}
+    found |= {MCP_PREFIX + name for name in mcp_servers
+              if re.search(r"(?<![a-z0-9])" + re.escape(normalize(name)) + r"(?![a-z0-9])", plain)}
     found.discard(CORE)
     return found
 
@@ -87,20 +101,20 @@ def groups_for_text(text: str) -> set[str]:
 def activate(session: Any, groups: Iterable[str]) -> list[str]:
     """Wlacza grupy w sesji. Zwraca nowo wlaczone."""
     current = set(getattr(session, "tool_groups", None) or {CORE})
-    added = [g for g in groups if g in GROUPS and g not in current]
+    added = [g for g in groups if (g in GROUPS or g.startswith(MCP_PREFIX)) and g not in current]
     if added:
         session.tool_groups = current | set(added)
     return added
 
 
-def observe(session: Any, text: str) -> list[str]:
+def observe(session: Any, text: str, mcp_servers: Iterable[str] = ()) -> list[str]:
     """Nowa wiadomosc w sesji: wlacza pasujace grupy."""
-    return activate(session, groups_for_text(text))
+    return activate(session, groups_for_text(text, mcp_servers))
 
 
 def activate_for_tool(session: Any, tool: str) -> list[str]:
     """Model wywolal narzedzie spoza listy — jego grupa zostaje wlaczona na reszte rozmowy."""
-    group = TOOL_GROUP.get(tool)
+    group = TOOL_GROUP.get(tool) or (MCP_PREFIX + _mcp_server(tool) if _mcp_server(tool) else "")
     return activate(session, [group]) if group else []
 
 
@@ -119,7 +133,9 @@ def select(tools: list[dict], session: Any | None, *, lazy: bool) -> list[dict]:
     if session is None or not lazy:
         return [t for t in tools if t["function"]["name"] != "load_tools"]
     names = allowed(session)
-    return [t for t in tools if t["function"]["name"] in names]
+    groups = set(getattr(session, "tool_groups", None) or {CORE})
+    return [t for t in tools if t["function"]["name"] in names
+            or MCP_PREFIX + _mcp_server(t["function"]["name"]) in groups]
 
 
 def size(tools: list[dict]) -> int:

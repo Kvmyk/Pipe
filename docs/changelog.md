@@ -1,5 +1,44 @@
 # Historia zmian -- Pipe
 
+## v0.42.0 (2026-10-26)
+
+### Pipe dla innych agentow: `pipe connect`
+
+- `pipe connect claude|claude-desktop|cursor|codex|hermes|openclaw --host root@serwer` wypisuje gotowa konfiguracje
+  Pipe jako serwera MCP do wklejenia (Claude Code, Claude Desktop, Cursor, Codex, Hermes Agent, OpenClaw). Token
+  idzie zawsze przez zmienna `AGENT_TOKEN`, nigdy w argumentach; bez `--token` podpowiedz, jak utworzyc osobny token
+  dla tej aplikacji
+
+### Pipe znow laczy sie z innymi serwerami MCP -- w izolacji
+
+- `/mcp dodaj <nazwa> <npx ...|uvx ...|docker run ...|URL> [ZMIENNA=${MCP_X}]`, `/mcp`, `/mcp usun`, `/mcp odswiez`
+  w CLI, Telegramie i `pipe web`; w rozmowie *"podlacz serwer MCP GitHuba"* -- jedno TAK z podgladem
+- W v0.35 klient MCP zostal usuniety, bo cudzy serwer dzialal jako proces Pipe. Teraz serwer stdio (`npx`, `uvx`,
+  obraz Dockera) dziala w jednorazowym kontenerze bez montowan, `docker.sock` i uprawnien, jako `nobody`, z limitami;
+  inne programy i opcje `docker run` typu `-v`, `--network host`, `--privileged` sa odrzucane
+- Sekrety tylko jako `${MCP_NAZWA}` z `backend/.env` (nie w czacie); tekst wygladajacy na sekret w konfiguracji --
+  odmowa. Odczyty (`readOnlyHint`) dzialaja bez pytania, reszta po TAK z argumentami; wynik wylacza YOLO do nastepnej
+  wiadomosci, argument z sekretem nie wychodzi; tryb obserwacji i viewer -- tylko odczyty
+- Narzedzia serwera sa grupa `mcp:<nazwa>` ladowana na zadanie: zwykla rozmowa ich nie wysyla, wiadomosc z nazwa
+  serwera je wlacza. Obraz serwera Pipe pobiera przed startem, a na start `npx`/`uvx` czeka do 3 minut
+
+### `/pobierz`: skille i pluginy z innych ekosystemow
+
+- `/pobierz skill <wlasciciel/repo|URL> [filtr]` i `/pobierz plugin <...>` (`/download`) biora skille w formacie
+  `SKILL.md` i pluginy w ukladzie Claude Code (`skills/`, `.mcp.json`, marketplace) z repozytorium git
+- Najpierw podglad: ktore skille trafia do pamieci (sam tekst ze zrodlem, skrypty pomijane), ktore serwery MCP dojda
+  (przez izolacje wyzej, z lista zmiennych `MCP_...` do dopisania) i co zostanie pominiete z powodem; instalacja po
+  *Zainstaluj*. Haki, komendy, agenty i programy z pluginow nie sa instalowane nigdy
+- Repozytorium klonowane jak w warsztacie (bez hookow, submodulow, LFS, limit rozmiaru) i usuwane po odczycie;
+  `SKILL.md` bedacy dowiazaniem do pliku spoza repozytorium jest pomijany. Powtarzajace sie nazwy skilli z kilku
+  pluginow dostaja przedrostek pluginu
+- Agent w rozmowie: `skill_manage install` (*"pobierz skille z anthropics/skills"*) -- ten sam podglad i jedno TAK
+
+### Roadmapa
+
+- Zdalne cele, workery, glosowki i Kubernetes zostaja w Pipe (etykieta "eksperymentalne" zniknie po uzyciu na
+  prawdziwym serwerze)
+
 ## v0.41.2 (2026-10-26)
 
 ### Poprawki

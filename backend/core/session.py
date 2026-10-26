@@ -103,9 +103,19 @@ class Session:
             + tr("\n\n--- SRODOWISKO ---\n", "\n\n--- ENVIRONMENT ---\n") + runtime.describe()
             + prompt("workspace_block")(settings.WORKSPACE_DIR, settings.WORKSPACE_AUTONOMY)
             + prompt_context(self.user_key)
+            + _mcp_block()
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
             + (prompt("OBSERVE_BLOCK") if runtime.observe() else "")
             + (prompt("YOLO_BLOCK") if self.yolo_now else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )
+
+
+def _mcp_block() -> str:
+    """Lista podlaczonych serwerow MCP (krotka; pelne opisy narzedzi dopiero po load_tools mcp:<serwer>)."""
+    try:
+        from backend.core.mcp.registry import get_manager
+        return get_manager().prompt_block()
+    except Exception:
+        return ""

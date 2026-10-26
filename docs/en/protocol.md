@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 ## Overview
 
@@ -66,6 +66,8 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `feed` | `args`: empty or `seen` (mark as read); optionally `since` (a timestamp) | `"data": {"items": [{"id", "ts", "at", "type", "severity", "title", "text", "key", "kind", "actions": [{"index", "label", "kind", "command"?, "args"?, "admin"?, "primary"?}], "push", "held", "done", "unread"}], "unread", "seen", "text", "prefs"}` -- the inbox: what Pipe sent on its own |
 | `feed_act` | the message's `id`, `action` (index) | runs a button: `snooze` / `mute` / `dismiss` -> `"data": {"id", "done", "text"?, "muted"?}`; `message` -> a streamed conversation with the agent; `command` -> like that command (`cleanup`, `patch`, `investigate`...). An action with `admin` -- administrator only; an action already done (`done`) a second time -> `error` |
 | `prefs` | optionally `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` or `off`), `per_day` (0-50), `args: unmute <kind>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- notification settings; changes by the administrator only |
+| `install` | `args`: `skill\|plugin <source> [filter]`; then `token` + `execute: true` | `/download` without the LLM: a preview `"data": {"token", "text", "skills", "servers", "empty"}` (the repository is cloned and removed), after YES `"data": {"text"}`; the token is valid 15 min, single-use. Admin only; no MCP servers in observe mode |
+| `mcp_servers` | `args`: empty (list), `add <name> <npx ...\|uvx ...\|docker run ...\|URL> [VAR=${MCP_X}]`, `remove <name>`, `reload` (also `dodaj`/`usun`/`odswiez`) | MCP servers Pipe uses: `"data": {"text", "servers": [{"name", "status"}]}`. Changes: admin only, adding not in observe mode |
 | `cleanup` | -- | free up space **without the LLM**: `progress` frames, then `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Refused: viewer, observe mode |
 | `projects` | `args`: empty or `logs` / `stop` / `start` / `remove` (with `execute: true`, otherwise a preview), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; with `args` -- `"data": {"name", "text"}`. Changes: administrator, not in observe mode |
 | `run_skill` | `name` (skill name or command), optionally `args` | streaming |

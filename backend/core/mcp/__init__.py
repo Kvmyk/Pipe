@@ -1,11 +1,15 @@
 """
-MCP (Model Context Protocol) w Pipe — Pipe jako serwer MCP.
+MCP (Model Context Protocol) w Pipe — w obie strony.
 
-  server.py    inni agenci (Claude Code, Cursor...) pracuja na serwerze przez
-               klasyfikator, dziennik i zgody Pipe
+  server.py    Pipe jako serwer MCP: inni agenci (Claude Code, Cursor, Hermes, OpenClaw...) pracuja
+               na serwerze przez klasyfikator, dziennik i zgody Pipe
+  client.py    Pipe jako klient: protokol i transporty (stdio, Streamable HTTP)
+  registry.py  serwery, z ktorych korzysta Pipe (DATA_DIR/mcp_servers.json): izolowany kontener dla stdio,
+               sekrety tylko jako ${MCP_*}, polityka zgod, grupy narzedzi ladowane na zadanie
 
-Pipe jako klient MCP (cudze narzedzia w agencie z dostepem do roota) zostal usuniety w v0.35:
-duza powierzchnia ataku przy malym zysku.
+W v0.35 klient zostal usuniety (cudzy kod jako proces Pipe z dostepem do roota). Od v0.42 wraca inaczej:
+serwer stdio dziala w kontenerze bez docker.sock, uprawnien i montowan, a wynik jest traktowany jak tresc
+z internetu (bez YOLO w tej turze).
 
 Obslugiwane wersje protokolu: 2026-07-28 (bezstanowa, _meta w kazdym zadaniu,
 server/discover) oraz starsze z inicjalizacja (2025-11-25, 2025-06-18, 2025-03-26).

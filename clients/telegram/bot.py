@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -518,6 +518,75 @@ async def cmd_sprzataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         data = response_data(await _collect(context.bot, chat_id, get_client(user_id).command("cleanup")))
         await _send_html(context.bot, chat_id, format_listing(tr("Sprzatanie", "Cleanup"), data.get("text", "")))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_pobierz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pobierz skill|plugin <zrodlo> [filtr] -- podglad i przyciski Zainstaluj / Anuluj (bez LLM)."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    if not _is_admin(user_id):
+        await update.message.reply_text(tr("Skille i pluginy instaluje tylko administrator.",
+                                           "Only an administrator installs skills and plugins."))
+        return
+    args = " ".join(context.args or [])
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        frames = await _collect(context.bot, chat_id, get_client(user_id).command("install", args=args))
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        if error:
+            await _send_html(context.bot, chat_id, format_listing(tr("Pobieranie", "Download"), error))
+            return
+        data = response_data(frames)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(tr("Zainstaluj", "Install"), callback_data=f"inst:yes:{data['token']}:{user_id}"),
+            InlineKeyboardButton(tr("Anuluj", "Cancel"), callback_data=f"inst:no:{data['token']}:{user_id}"),
+        ]]) if data.get("token") else None
+        await _send_html(context.bot, chat_id, markdown_html(data.get("text", "")), keyboard)
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_install_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    if len(parts) != 4 or not user or not _is_admin(user.id) or str(user.id) != parts[3]:
+        await query.answer(tr("To nie Twoj podglad.", "This is not your preview."), show_alert=True)
+        return
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if parts[1] != "yes":
+        await query.message.reply_text(tr("Anulowano — nic nie zainstalowalem.", "Cancelled — I installed nothing."))
+        return
+
+    async def go() -> None:
+        result = response_data([f async for f in get_client(user.id).command("install", token=parts[2], execute=True)])
+        await _send_html(context.bot, query.message.chat_id, format_listing(tr("Zainstalowano", "Installed"),
+                                                                          result.get("text", "")))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/mcp [dodaj <nazwa> <npx ...|url> | usun <nazwa> | odswiez] -- serwery MCP, z ktorych korzysta Pipe."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = " ".join(context.args or [])
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        frames = await _collect(context.bot, chat_id, get_client(user_id).command("mcp_servers", args=args))
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        text = error or response_data(frames).get("text", "")
+        await _send_html(context.bot, chat_id, format_listing("MCP", text))
 
     await _backend_call(update, context, go())
 
@@ -1329,6 +1398,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _handle_project_callback(update, context, data)
         return
 
+    if data.startswith("inst:"):
+        await _handle_install_callback(update, context, data)
+        return
+
     if data.startswith("pf:"):
         await _handle_prefs_callback(update, context, data)
         return
@@ -1650,7 +1723,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     for polish, handler in (("nowosci", cmd_nowosci), ("projekty", cmd_projekty), ("powiadomienia", cmd_powiadomienia),
-                            ("sprzataj", cmd_sprzataj)):
+                            ("sprzataj", cmd_sprzataj), ("mcp", cmd_mcp), ("pobierz", cmd_pobierz)):
         app.add_handler(CommandHandler(command_names(polish), handler))
     # Polskie nazwy i ich angielskie aliasy (/raport i /report) dzialaja w obu jezykach.
     for polish, handler in (

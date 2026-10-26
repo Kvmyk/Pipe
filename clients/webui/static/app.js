@@ -334,6 +334,22 @@
     return box;
   }
   function statusMessage() { return dataMessage({ command: "overview" }, overviewBody); }
+  // /pobierz: podglad z repozytorium, instalacja dopiero po kliknieciu (skill trafia do kazdej przyszlej rozmowy)
+  function installBody(d) {
+    const box = el("div", "body");
+    box.appendChild(md(d.text || ""));
+    if (!d.token) return box;
+    const ask = el("div", "foot"), yes = el("button", "btn yes small", t("install")), no = el("button", "btn no small", t("no"));
+    ask.appendChild(yes); ask.appendChild(no); box.appendChild(ask);
+    no.addEventListener("click", () => ask.remove());
+    yes.addEventListener("click", async () => {
+      ask.remove();
+      try { const result = await command({ command: "install", token: d.token, execute: true }); box.appendChild(md(result.text || "")); loadSkills(); }
+      catch (error) { box.appendChild(el("div", "meta", error.message)); }
+    });
+    return box;
+  }
+
   function cleanupRun() { return run({ command: "cleanup" }, t("working"), showData); }
 
   async function send(text) {
@@ -1411,7 +1427,7 @@
     ["status", "status", "c_status"], ["nowosci", "news", "c_news"], ["projekty", "projects", "c_projects"],
     ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
     ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
-    ["sprzataj", "cleanup", "c_cleanup"], ["powiadomienia", "notifications", "c_notify"],
+    ["sprzataj", "cleanup", "c_cleanup"], ["powiadomienia", "notifications", "c_notify"], ["mcp", "mcp", "c_mcp", true], ["pobierz", "download", "c_download", true],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
@@ -1477,6 +1493,8 @@
     nowosci: () => openInbox(),
     projekty: () => dataMessage({ command: "projects" }, (d) => listing(d.text)),
     sprzataj: () => cleanupRun(),
+    mcp: (args) => dataMessage({ command: "mcp_servers", args }, (d) => listing(d.text)),
+    pobierz: (args) => dataMessage({ command: "install", args }, (d) => installBody(d)),
     powiadomienia: () => home.openSettings(),
     aktualizuj: (args) => run({ command: "update", args }, t("working")),
     raport: () => dataMessage({ command: "digest" }, digestBody),

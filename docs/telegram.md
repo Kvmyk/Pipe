@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -214,6 +214,7 @@ nazwy dzialaja w obu jezykach.
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
+| `/mcp [dodaj <nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Serwery MCP, z ktorych korzysta Pipe (w izolowanym kontenerze). Tokenow nie wpisuj w czat -- `${MCP_...}` z `backend/.env`. Zmiany tylko administrator |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
@@ -227,6 +228,7 @@ nazwy dzialaja w obu jezykach.
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
 | `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
+| `/pobierz skill\|plugin <wlasciciel/repo\|URL> [filtr]` | Skille i pluginy z repozytorium git: podglad z przyciskami *Zainstaluj* / *Anuluj* (`/download`); tylko administrator |
 | `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia (nie ma jej w menu ani w `/pomoc` -- wiadomosci sa w `/nowosci`) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia -- przychodza same o czasie do osoby, ktora je ustawila |

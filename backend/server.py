@@ -235,6 +235,10 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _prefs(writer, request, interface, role)
         elif command == "cleanup":
             await _cleanup(writer, agent, session_id, interface, role)
+        elif command == "mcp_servers":
+            await _mcp_servers(writer, request, role)
+        elif command == "install":
+            await _install(writer, request, interface, role)
         elif command == "projects":
             await _projects(writer, request, interface, role)
         elif command == "update":
@@ -538,6 +542,128 @@ async def _prefs(writer, request: dict, interface: str, role: str) -> None:
               f"Notifications: {level}; quiet hours: {current.quiet or 'off'}; suggestions per day: {current.per_day}"
               + (f"; muted: {', '.join(current.muted)}" if current.muted else ""))
     await _send(writer, _data({**current.to_data(), "text": text, "can_edit": role == "admin"}))
+
+
+async def _install(writer, request: dict, interface: str, role: str) -> None:
+    """
+    /pobierz skill|plugin <zrodlo> [filtr] bez LLM (core/extensions.py): najpierw podglad z `token`, potem — po TAK
+    w kliencie — {"command": "install", "token": ..., "execute": true}. Tylko administrator.
+    """
+    import shutil
+
+    from backend.core import extensions
+
+    if role != "admin":
+        await _send(writer, _error(tr("Skille i pluginy instaluje tylko administrator.", "Only an administrator installs skills and plugins.")))
+        return
+    servers_allowed = not runtime.observe()
+    if request.get("execute"):
+        found = extensions.take(str(request.get("token", "")))
+        if found is None:
+            await _send(writer, _error(tr("Podglad wygasl albo juz zainstalowano — wpisz /pobierz jeszcze raz.",
+                                          "The preview expired or was already installed — type /download again.")))
+            return
+        text, added = extensions.install(found, servers_allowed=servers_allowed)
+        for skill in found.skills:
+            await audit.log_file_write(interface, f"skills/{skill.name}/SKILL.md ({found.source})", 0)
+        if added:
+            from backend.core.mcp.registry import get_manager
+            asyncio.get_running_loop().create_task(get_manager().reload())
+        await _send(writer, _data({"text": text}))
+        return
+    words = str(request.get("args", "") or "").split()
+    kind = "plugin"
+    if words and words[0].lower() in ("skill", "skille", "skills"):
+        kind, words = "skill", words[1:]
+    elif words and words[0].lower() in ("plugin", "pluginy", "plugins"):
+        words = words[1:]
+    if not words:
+        await _send(writer, _error(tr("Uzycie: /pobierz skill <wlasciciel/repo|URL> [filtr] albo /pobierz plugin <...>.",
+                                      "Usage: /download skill <owner/repo|URL> [filter] or /download plugin <...>.")))
+        return
+    try:
+        url, ref, sub = extensions.parse_source(words[0])
+    except extensions.ExtensionError as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    await _send(writer, event_frame(Progress(tr(f"pobieram {url}...", f"fetching {url}..."), source="pobierz")))
+    try:
+        root = await extensions.fetch(url, ref)
+    except extensions.ExtensionError as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    try:
+        found = extensions.discover(root, sub, kind, url + (f" ({sub})" if sub else ""), " ".join(words[1:]))
+    except extensions.ExtensionError as exc:
+        await _send(writer, _error(str(exc)))
+        return
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    text = extensions.preview(found, servers_allowed=servers_allowed)
+    token = "" if found.empty else extensions.remember(found)
+    await _send(writer, _data({"token": token, "text": text, "skills": len(found.skills), "servers": len(found.servers),
+                               "empty": found.empty}))
+
+
+async def _mcp_servers(writer, request: dict, role: str) -> None:
+    """
+    Serwery MCP, z ktorych korzysta Pipe: lista; `dodaj <nazwa> <npx ...|uvx ...|docker run ...|url> [ZMIENNA=${MCP_X}]`,
+    `usun <nazwa>`, `odswiez`. Zmiany tylko administrator; wpisanie komendy jest zgoda (tresc widac w niej samej).
+    Dodanie uruchamia kontener, wiec nie w trybie obserwacji.
+    """
+    from backend.core.mcp import registry
+
+    manager = registry.get_manager()
+    words = str(request.get("args", "") or "").strip()
+    verb, _, rest = words.partition(" ")
+    verb = {"add": "dodaj", "remove": "usun", "usuń": "usun", "reload": "odswiez", "odśwież": "odswiez"}.get(
+        verb.lower(), verb.lower())
+    text = ""
+    if verb in ("dodaj", "usun", "odswiez"):
+        if role != "admin":
+            await _send(writer, _error(tr("Serwery MCP zmienia tylko administrator.", "Only an administrator changes MCP servers.")))
+            return
+        if verb == "dodaj":
+            if runtime.observe():
+                await _send(writer, _error(tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe nie uruchamia nowych serwerow MCP.",
+                                              "Observe mode (PIPE_OBSERVE=1): Pipe starts no new MCP servers.")))
+                return
+            try:
+                name, cfg = registry.parse_line(rest)
+                created = registry.add_server(name, cfg)
+            except registry.McpConfigError as exc:
+                await _send(writer, _error(str(exc)))
+                return
+            await audit.log_file_write("mcp_servers", f"mcp_servers.json#{name}", 0)
+            await manager.reload()
+            state = manager.servers.get(name)
+            text = (tr(f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP ", f"{'Added' if created else 'Updated'} MCP server ")
+                    + (state.describe() if state else name))
+        elif verb == "usun":
+            removed = registry.remove_server(rest.strip())
+            await manager.reload()
+            text = tr(f"Usunieto serwer MCP {rest.strip()}.", f"Removed MCP server {rest.strip()}.") if removed else                 tr(f"Nie ma serwera MCP {rest.strip()!r}.", f"No MCP server {rest.strip()!r}.")
+        else:
+            await manager.reload()
+    elif verb:
+        await _send(writer, _error(tr("Uzycie: /mcp, /mcp dodaj <nazwa> <npx ...|uvx ...|docker run ...|https://...> "
+                                      "[ZMIENNA=${MCP_...}], /mcp usun <nazwa>, /mcp odswiez.",
+                                      "Usage: /mcp, /mcp add <name> <npx ...|uvx ...|docker run ...|https://...> "
+                                      "[VAR=${MCP_...}], /mcp remove <name>, /mcp reload.")))
+        return
+    config = registry.load_config()
+    lines = [registry.describe_server(n, c) + "\n  " + (manager.servers[n].describe() if n in manager.servers
+                                                        else tr("(nie polaczony)", "(not connected)"))
+             for n, c in sorted(config.items())]
+    listing = "\n".join(f"- {line}" for line in lines) if lines else tr(
+        "Brak serwerow MCP. Dodaj: /mcp dodaj github npx -y @modelcontextprotocol/server-github "
+        "GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN} (token w backend/.env jako MCP_GITHUB_TOKEN=...).",
+        "No MCP servers. Add one: /mcp add github npx -y @modelcontextprotocol/server-github "
+        "GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN} (the token in backend/.env as MCP_GITHUB_TOKEN=...).")
+    text = (text + "\n\n" if text else "") + tr("Serwery MCP:\n", "MCP servers:\n") + listing
+    await _send(writer, _data({"text": text, "servers": [{"name": n, "status": manager.servers[n].status
+                                                            if n in manager.servers else "disconnected"}
+                                                           for n in sorted(config)]}))
 
 
 async def _cleanup(writer, agent, session_id: str, interface: str, role: str) -> None:
@@ -1138,6 +1264,13 @@ async def main() -> None:
                                       {o.strip() for o in settings.MCP_ALLOWED_ORIGINS.split(",") if o.strip()})
     if mcp_server is not None:
         print(f"[VPS Agent] MCP (HTTP)  : http://{settings.MCP_HOST}:{settings.MCP_PORT}/mcp", flush=True)
+
+    from backend.core.mcp.registry import get_manager as get_mcp_manager, load_config as mcp_config
+    if mcp_config():
+        # serwery MCP, z ktorych korzysta Pipe — w tle (pierwsze `npx -y` w kontenerze potrafi trwac minute)
+        mcp_task = asyncio.create_task(get_mcp_manager().reload())
+        mcp_task.add_done_callback(lambda t: print(tr("[VPS Agent] MCP: ", "[VPS Agent] MCP: ")
+                                                   + "; ".join(get_mcp_manager().status()), flush=True))
 
     from backend.core import webhooks
     hook_server = await webhooks.start(get_watcher(), settings.WEBHOOK_HOST, settings.WEBHOOK_PORT,

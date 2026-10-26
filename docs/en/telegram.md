@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -221,6 +221,7 @@ work in both languages.
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval; *Approve*/*Reject* buttons for admins, with the safety-fuse plan |
+| `/mcp [add <name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | MCP servers Pipe uses (in an isolated container). Do not type tokens in the chat -- `${MCP_...}` from `backend/.env`. Changes admin only |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then an *Undo* button. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation. Viewers can use it too |
@@ -234,6 +235,7 @@ work in both languages.
 | `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
 | `/directory` | Map of repositories and directories (DIRECTORY) |
 | `/skills` | List of saved skills with their commands |
+| `/download skill\|plugin <owner/repo\|URL> [filter]` | Skills and plugins from a git repository: a preview with *Install* / *Cancel* buttons (`/pobierz`); admin only |
 | `/alerts` | Active watcher alerts and recent events (not in the menu or `/help` -- messages are in `/news`) |
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; they arrive on time to the person who set them |

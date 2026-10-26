@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -314,8 +314,10 @@ You should see:
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | No |
 | `journal` | Journal of approved changes and undoing them | Undo: yes |
 | `server_history` | What changed, load/RAM/disk charts, certificates/sites/DNS/backups | No |
-| `server_md`, `directory`, `skill_manage`, `vibe` | Agent memory | No |
+| `server_md`, `directory`, `skill_manage`, `vibe` | Agent memory; `skill_manage install` -- skills and plugins from a git repository | No; saving a skill and `install`: yes |
 | `project` | The workshop: `clone`, `inspect`, `exec` (isolated container), `run`, `logs`, `stop`/`start`, `pull`, `remove` | `run` and `remove`: yes; the rest: no |
+| `mcp_manage` | External MCP servers: `list`, `add` (isolated container or HTTP), `remove`, `reload` | `add`: yes |
+| `mcp__<server>__<tool>` | Tools of connected MCP servers (group `mcp:<server>`, loaded on demand) | Reads (`readOnlyHint`): no; the rest: yes |
 | `load_tools` | Enables a group of tools whose descriptions the model has not received yet (tools on demand) | No |
 
 With `TOOLS_MODE=lazy` (default) the model starts with the basic tools only (commands, files, git, system state,
@@ -355,6 +357,7 @@ Docker, network, server history, `project`, `load_tools`). The `memory`, `securi
 | `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Server for alerts from outside (0 = off; won't start without a token) |
 | `WEBHOOK_INVESTIGATE` | 1 | A worker investigates a new webhook alert (reads only), findings with a *Fix it* button; limit once in 6 h per alert, 10/day |
 | `MCP_PORT`, `MCP_HOST`, `MCP_ALLOWED_ORIGINS` | 0, 127.0.0.1, -- | Pipe as an MCP server over HTTP (`/mcp`, Pipe token as Bearer) |
+| `MCP_<NAME>` (any) | -- | Secrets for the MCP servers Pipe uses -- referenced in the server configuration as `${MCP_<NAME>}` |
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | by provider, pl | Voice transcription (gemini/openai/groq automatically; `STT_*` takes precedence) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Failed verification of a config file change -> the backup is restored automatically |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Daily token / USD cost limit (0 = no limit) |

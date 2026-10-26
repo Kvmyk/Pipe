@@ -253,13 +253,16 @@ async def handle_load_tools(agent: Any, session: Session, tool_call: Any, args: 
     wanted = [str(g).strip().lower() for g in groups if isinstance(g, str)]
     if settings.WEB_SEARCH == "off" and "web" in wanted:
         wanted.remove("web")
-    valid = [g for g in wanted if g in toolsets.GROUPS and g != toolsets.CORE]
+    from backend.core.mcp.registry import get_manager
+    servers = {toolsets.MCP_PREFIX + n for n, st in get_manager().servers.items() if st.status == "connected"}
+    valid = [g for g in wanted if (g in toolsets.GROUPS and g != toolsets.CORE) or g in servers]
     if not valid:
         reply(session, tool_call, tr("Nie ma takich grup. Dostepne: " + ", ".join(toolsets.inactive(session) or ["-"]),
                                      "No such groups. Available: " + ", ".join(toolsets.inactive(session) or ["-"])))
         return
     toolsets.activate(session, valid)
-    names = [tool for group in valid for tool in toolsets.GROUPS[group]]
+    names = [tool for group in valid for tool in toolsets.GROUPS.get(group, ())] + \
+        [f"{group} ({tr('narzedzia serwera MCP', 'MCP server tools')})" for group in valid if group in servers]
     reply(session, tool_call, tr(f"Wlaczone: {', '.join(names)}. Pelne opisy masz od nastepnego kroku — wywolaj potrzebne "
                                  "narzedzie.", f"Enabled: {', '.join(names)}. You have their full descriptions from the "
                                  "next step — call the tool you need."))

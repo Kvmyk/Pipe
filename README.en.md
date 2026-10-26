@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.41.2-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.42.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -84,8 +84,9 @@ python3 -m backend.tokens add claude-code --role admin                 # on the 
 claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@server   # Claude Code on your laptop
 ```
 
-Other programs (Codex, Cursor, your own agent) get the same command: `pipe --mcp --host root@server` with the
-`AGENT_TOKEN` variable. Pipe doesn't need its own model for this: with `LLM_PROVIDER=none` your agent does the
+`pipe connect <program> --host root@server` prints a ready configuration for other programs: `claude`,
+`claude-desktop`, `cursor`, `codex`, `hermes` or `openclaw`. So Hermes Agent and OpenClaw can work on the server
+through Pipe, with the same approvals and `/undo`. Pipe doesn't need its own model for this: with `LLM_PROVIDER=none` your agent does the
 thinking and Pipe guards what gets executed. Details: [docs/en/features.md](./docs/en/features.md) (MCP section).
 
 ## What it does

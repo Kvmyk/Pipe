@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -102,7 +102,22 @@ provider (API key and model), and the switcher above the message box jumps betwe
 
 `pipe --mcp --host root@server` turns the CLI into an MCP server (stdio) for Claude Code, Cursor and other agents:
 Pipe's tools through the same SSH tunnel and token. Only the MCP protocol goes to stdout; the tunnel takes its own free
-port and never asks for a password (`BatchMode`, so an SSH key is required). Configuration, for example in Claude Code:
+port and never asks for a password (`BatchMode`, so an SSH key is required).
+
+A ready configuration for a given app -- to paste, with where it goes:
+
+```bash
+pipe connect claude --host root@server          # the claude mcp add command
+pipe connect claude-desktop --host root@server  # claude_desktop_config.json
+pipe connect cursor --host root@server          # ~/.cursor/mcp.json
+pipe connect codex --host root@server           # ~/.codex/config.toml
+pipe connect hermes --host root@server          # mcp_servers in Hermes Agent's config.yaml
+pipe connect openclaw --host root@server        # openclaw mcp add
+```
+
+The same options as the regular CLI (`--ssh-port`, `--key`, `--kube`). The token always goes to the `AGENT_TOKEN`
+variable, never to the process arguments; without `--token` the token is `<TOKEN>` with a hint on creating a separate
+token for that app (`python3 -m backend.tokens add hermes --role admin`). By hand, for example in Claude Code:
 
 ```json
 {"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@server"],
@@ -180,6 +195,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
+| `/mcp [add <name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | MCP servers Pipe uses (in an isolated container); secrets as `${MCP_...}` from `backend/.env`. Changes admin only |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation in Pipe's language |
@@ -195,6 +211,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
 | `/directory` | Map of repositories and directories (DIRECTORY) |
 | `/skills` | List of saved skills with their commands |
+| `/download skill\|plugin <owner/repo\|URL> [filter]` | Skills and plugins from a git repository: a preview, then a YES/NO question (`/pobierz`); admin only |
 | `/alerts` | Active watcher alerts (not suggested or in `/help` -- new ones show up by themselves above the prompt and in `/news`) |
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; the CLI prints them above the prompt by itself (it checks every 10 s), including the result of `/update`; those set from the CLI also go to Telegram and `pipe web` |

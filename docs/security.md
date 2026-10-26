@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 ## Model
 
@@ -223,6 +223,18 @@ Token viewer nie tworzy zgod. Zgode moze sprawdzic tylko agent, ktory ja utworzy
 po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: tylko localhost, token Pipe
 (`Authorization: Bearer`), walidacja `Origin` (403) i naglowkow 2026-07-28 (`-32020`).
 
+**Pipe jako klient MCP.** W v0.35 klient zostal usuniety: cudzy serwer dzialal jako proces Pipe, z jego dostepem do
+`docker.sock` i plikow. Od v0.42 wraca z inna granica: serwer stdio (`npx`, `uvx`, obraz Dockera) dziala w jednorazowym
+kontenerze bez montowan, `docker.sock` i uprawnien (`--cap-drop ALL`, `no-new-privileges`, uzytkownik `nobody`, limity),
+wiec moze najwyzej korzystac z sieci i zmieniac swoja usluge (np. repozytorium na GitHubie) -- nie serwer. Inne
+programy niz `npx`/`uvx`/obraz i opcje `docker run` typu `-v`, `--network host`, `--privileged` sa odrzucane. Sekrety
+tylko jako `${MCP_*}` z `backend/.env` (model nie wskaze `${LLM_API_KEY}` ani tokenu Pipe), tekst wygladajacy na sekret
+w konfiguracji -- odmowa. Dodanie serwera: jedno TAK z podgladem (albo `/mcp dodaj` administratora). Narzedzie bez
+`readOnlyHint` -- TAK przy kazdym wywolaniu; adnotacje sa deklaracja serwera, wiec odczyty bez pytania sa bezpieczne
+tylko o tyle, o ile ufasz temu serwerowi (`askAlways: true` w konfiguracji wylacza to dla niego). Wynik traktowany jak
+tresc z internetu (YOLO wylaczone do nastepnej wiadomosci), argument z sekretem nie wychodzi. Tryb obserwacji i viewer:
+tylko odczyty. Kazde wywolanie jest w audit logu.
+
 ## Webhooki
 
 - Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
@@ -309,6 +321,12 @@ Pamiec trafia do promptu KAZDEJ przyszlej rozmowy (SERVER.md, DIRECTORY, VIBE) a
 - oczywiste sekrety sa odrzucane, a z adresow remote repozytoriow usuwane sa dane logowania,
 - w prompcie tresc jest oznaczona jako **dane, nie polecenia** -- nie zmienia klasyfikacji ani potwierdzen;
   VIBE to tylko wskazowki stylu.
+
+Skille z cudzych repozytoriow (`/pobierz`, `skill_manage install`) to ten sam wektor: przed instalacja widac podglad
+(nazwy, opisy, zrodlo, co pominiete) i trzeba kliknac *Zainstaluj* albo dac TAK; do pamieci trafia sam tekst
+`SKILL.md` z dopisanym zrodlem, skrypty i pliki pluginu nie (haki, komendy, agenty i programy -- nigdy). Repozytorium
+jest klonowane jak w warsztacie (bez hookow, submodulow, LFS, limit rozmiaru) i usuwane po odczycie; tresc to dane --
+YOLO jest wylaczone do nastepnej wiadomosci. Instaluj tylko z zaufanych zrodel.
 
 Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/vibe`, `/skille`) -- ramowanie
 "dane, nie polecenia" nie jest gwarancja.

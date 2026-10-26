@@ -47,9 +47,10 @@ class TestGroups:
         assert sorted(grouped) == sorted(names) and len(grouped) == len(set(grouped))
 
     def test_load_tools_lists_every_lazy_group(self):
+        # bez enum: grupy mcp:<serwer> dochodza w locie — lista jest w opisie
         schema = next(t for t in TOOLS if t["function"]["name"] == "load_tools")
-        enum = schema["function"]["parameters"]["properties"]["groups"]["items"]["enum"]
-        assert sorted(enum) == sorted(g for g in toolsets.GROUPS if g != toolsets.CORE)
+        described = schema["function"]["parameters"]["properties"]["groups"]["description"]
+        assert all(g in described for g in toolsets.GROUPS if g != toolsets.CORE) and "mcp:<serwer>" in described
 
     @pytest.mark.parametrize("text,group", [
         ("przypomnij mi jutro o 9 o domenie", "schedule"), ("napisz do mnie za 10 minut", "schedule"),

@@ -14,6 +14,7 @@ from .diagram import handle_diagram
 from .history import handle_server_history
 from .journal import handle_journal
 from .projects import handle_load_tools, handle_project
+from .mcp import handle_mcp_manage
 from .remote import handle_delegate, handle_remote_exec, handle_target_manage
 from .reminders import handle_reminder
 from .update import handle_pipe_update
@@ -43,6 +44,7 @@ __all__ = [
     "handle_target_manage",
     "handle_remote_exec",
     "handle_delegate",
+    "handle_mcp_manage",
     "handle_reminder",
     "handle_pipe_update",
     "handle_routine_manage",

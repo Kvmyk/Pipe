@@ -481,8 +481,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.41.2[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.41.2[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.42.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.42.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -758,7 +758,7 @@ COMMAND_ALIASES = {
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
     "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj", "vulns": "podatnosci",
     "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
-    "cleanup": "sprzataj",
+    "cleanup": "sprzataj", "download": "pobierz",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -767,6 +767,10 @@ COMMANDS = [
     ("nowosci", "news", "co Pipe napisał sam (skrzynka) i akcje", "what Pipe wrote on its own (inbox) and actions"),
     ("projekty", "projects", "projekty w warsztacie", "workshop projects"),
     ("sprzataj", "cleanup", "zwolnij miejsce na dysku (bez AI)", "free up disk space (no AI)"),
+    ("pobierz", "download", "skille i pluginy z repozytorium: /pobierz skill <wlasciciel/repo|URL>, /pobierz plugin <...>",
+     "skills and plugins from a repository: /download skill <owner/repo|URL>, /download plugin <...>"),
+    ("mcp", "mcp", "serwery MCP: /mcp dodaj <nazwa> <npx ...|url>, /mcp usun <nazwa>",
+     "MCP servers: /mcp add <name> <npx ...|url>, /mcp remove <name>"),
     ("powiadomienia", "notifications", "kiedy Pipe ma powiadamiać: /powiadomienia wazne cisza 22-7",
      "when Pipe should notify you: /notifications important quiet 22-7"),
     ("raport", "report", "raport: stan, zmiany, certyfikaty, backupy", "report: health, changes, certificates, backups"),
@@ -1445,6 +1449,36 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         console.print(escape(data.get("text", "")))
         return True
 
+    if name == "pobierz":
+        console.print(tr("[dim]Pobieram i czytam repozytorium...[/dim]", "[dim]Fetching and reading the repository...[/dim]"))
+        frames = await client.send_command("install", args=args)
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        if error:
+            console.print(Text(error, overflow="fold"), style="red", highlight=False)
+            return True
+        data = _response_data(frames)
+        console.print(Markdown(data.get("text", "")))
+        if not data.get("token"):
+            return True
+        try:
+            confirmed = Confirm.ask(tr("[yellow]Zainstalować?[/yellow]", "[yellow]Install?[/yellow]"), default=False)
+        except (KeyboardInterrupt, EOFError):
+            confirmed = False
+        if confirmed:
+            result = _response_data(await client.send_command("install", token=data["token"], execute=True))
+            console.print(Text(result.get("text", ""), overflow="fold"), highlight=False)
+            await _refresh_skills(client)
+        else:
+            console.print(tr("[dim]✖ Anulowano.[/dim]", "[dim]✖ Cancelled.[/dim]"))
+        return True
+
+    if name == "mcp":
+        frames = await client.send_command("mcp_servers", args=args)
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        console.print(Text(error or _response_data(frames).get("text", ""), overflow="fold"),
+                      style="red" if error else None, highlight=False)
+        return True
+
     if name == "sprzataj":
         console.print(tr("[dim]Sprzątam to, co da się odtworzyć: obrazy bez tagu, cache budowania, pobrane paczki...[/dim]",
                          "[dim]Cleaning what is reproducible: untagged images, build cache, downloaded packages...[/dim]"))
@@ -1988,6 +2022,80 @@ async def run_cli(client: RemoteClient, host: str) -> None:
 
 # ─── Punkt wejścia ────────────────────────────────────────────────────────────
 
+# ─── pipe connect: Pipe jako serwer MCP dla innych aplikacji ─────────────────
+# Gotowa konfiguracja do wklejenia. Nic nie laczy sie z serwerem — skladamy most `pipe --mcp` z tych samych opcji
+# polaczenia co zwykle CLI. Token idzie do zmiennej srodowiskowej AGENT_TOKEN (nigdy do argumentow procesu).
+CONNECT_APPS = ("claude", "claude-desktop", "cursor", "codex", "hermes", "openclaw")
+
+
+def _bridge_args(host: str | None, ssh_port: int = DEFAULT_SSH_PORT, key: str | None = None,
+                 kube: str | None = None, kube_context: str | None = None) -> list[str]:
+    """Argumenty mostu MCP: `--mcp` + to, czym CLI laczy sie z serwerem."""
+    if kube:
+        return ["--mcp", "--kube", kube] + (["--kube-context", kube_context] if kube_context else [])
+    if not host:
+        raise ValueError(tr("Podaj serwer: pipe connect <aplikacja> --host root@serwer (albo --kube NAMESPACE).",
+                            "Give the server: pipe connect <app> --host root@server (or --kube NAMESPACE)."))
+    args = ["--mcp", "--host", host]
+    if ssh_port and ssh_port != DEFAULT_SSH_PORT:
+        args += ["--ssh-port", str(ssh_port)]
+    if key:
+        args += ["--key", key]
+    return args
+
+
+def _q(value: str) -> str:
+    """Argument do wklejenia w powloce (POSIX)."""
+    return value if re.fullmatch(r"[A-Za-z0-9@%+=:,./_-]+", value) else "'" + value.replace("'", "'\\''") + "'"
+
+
+def connect_config(app: str, bridge: list[str], token: str = "") -> str:
+    """Konfiguracja Pipe jako serwera MCP dla danej aplikacji (tekst do wklejenia, z instrukcja)."""
+    secret = token or "<TOKEN>"
+    hint = "" if token else tr(
+        "\nToken: na serwerze, w katalogu Pipe: python3 -m backend.tokens add {app} --role admin\n"
+        "(osobny token na aplikację — można go odwołać bez ruszania reszty).\n",
+        "\nToken: on the server, in the Pipe directory: python3 -m backend.tokens add {app} --role admin\n"
+        "(one token per app — it can be revoked without touching the rest).\n").format(app=app.split("-")[0])
+    as_json = {"command": "pipe", "args": bridge, "env": {"AGENT_TOKEN": secret}}
+    if app == "claude":
+        body = tr("Claude Code — wpisz w terminalu:\n\n", "Claude Code — run in a terminal:\n\n") + \
+            f"claude mcp add pipe -e AGENT_TOKEN={_q(secret)} -- pipe " + " ".join(_q(a) for a in bridge)
+    elif app in ("claude-desktop", "cursor"):
+        where = tr("Claude Desktop — dopisz do claude_desktop_config.json (Ustawienia → Developer → Edit Config):",
+                   "Claude Desktop — add to claude_desktop_config.json (Settings → Developer → Edit Config):") \
+            if app == "claude-desktop" else tr("Cursor — dopisz do ~/.cursor/mcp.json (albo .cursor/mcp.json w projekcie):",
+                                                "Cursor — add to ~/.cursor/mcp.json (or .cursor/mcp.json in the project):")
+        body = where + "\n\n" + json.dumps({"mcpServers": {"pipe": as_json}}, indent=2, ensure_ascii=False)
+    elif app == "codex":
+        body = tr("Codex — dopisz do ~/.codex/config.toml:\n\n", "Codex — add to ~/.codex/config.toml:\n\n") + \
+            "[mcp_servers.pipe]\ncommand = \"pipe\"\nargs = " + json.dumps(bridge) + \
+            f"\nenv = {{ AGENT_TOKEN = {json.dumps(secret)} }}"
+    elif app == "hermes":
+        body = tr("Hermes Agent — dopisz do config.yaml (~/.hermes/config.yaml):\n\n",
+                  "Hermes Agent — add to config.yaml (~/.hermes/config.yaml):\n\n") + \
+            "mcp_servers:\n  pipe:\n    command: \"pipe\"\n    args: " + json.dumps(bridge) + \
+            "\n    env:\n      AGENT_TOKEN: \"${env:PIPE_TOKEN}\"\n\n" + \
+            tr(f"a do ~/.hermes/.env: PIPE_TOKEN={secret}\nPotem w rozmowie z Hermesem: /reload-mcp",
+               f"and to ~/.hermes/.env: PIPE_TOKEN={secret}\nThen in a Hermes conversation: /reload-mcp")
+    elif app == "openclaw":
+        body = tr("OpenClaw — wpisz w terminalu:\n\n", "OpenClaw — run in a terminal:\n\n") + \
+            "openclaw mcp add pipe --command pipe " + " ".join(f"--arg {_q(a)}" for a in bridge) + \
+            "\nopenclaw mcp doctor pipe --probe\n\n" + \
+            tr(f"Token: ustaw AGENT_TOKEN={secret} w środowisku Gatewaya OpenClaw (np. w pliku usługi), żeby proces "
+               "`pipe` go odziedziczył.",
+               f"Token: set AGENT_TOKEN={secret} in the OpenClaw Gateway's environment (e.g. in its service file) so "
+               "the `pipe` process inherits it.")
+    else:
+        raise ValueError(tr(f"Nie znam aplikacji {app!r}. Dostępne: {', '.join(CONNECT_APPS)}.",
+                            f"Unknown app {app!r}. Available: {', '.join(CONNECT_APPS)}."))
+    footer = tr("\n\nAgent dostaje narzedzia Pipe: odczyty działają od razu, zmiany czekają na Twoją zgodę "
+                "(Telegram, /zgody w CLI), zakazane są odrzucane, a każda zmiana trafia do dziennika (/cofnij).",
+                "\n\nThe agent gets Pipe's tools: reads run right away, changes wait for your approval "
+                "(Telegram, /approvals in the CLI), forbidden ones are refused, and every change goes to the journal (/undo).")
+    return body + "\n" + hint + footer
+
+
 def main() -> None:
     """Punkt wejścia CLI."""
     parser = argparse.ArgumentParser(
@@ -2016,9 +2124,12 @@ Examples:
   python cli.py --no-tunnel --local-port 7379
         """),
     )
-    parser.add_argument("mode", nargs="?", choices=("web",), default=None,
-                        help=tr("web — interfejs w przeglądarce zamiast terminala (pipe web)",
-                                "web — browser interface instead of the terminal (pipe web)"))
+    parser.add_argument("mode", nargs="?", choices=("web", "connect"), default=None,
+                        help=tr("web — interfejs w przeglądarce zamiast terminala (pipe web); connect <aplikacja> — "
+                                "konfiguracja Pipe jako serwera MCP dla " + ", ".join(CONNECT_APPS),
+                                "web — browser interface instead of the terminal (pipe web); connect <app> — "
+                                "configuration of Pipe as an MCP server for " + ", ".join(CONNECT_APPS)))
+    parser.add_argument("app", nargs="?", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--web-port", type=int, default=int(os.getenv("PIPE_WEB_PORT", "7400")), metavar="PORT",
                         help=tr("pipe web: port strony na 127.0.0.1 (domyślnie 7400)",
                                 "pipe web: port of the page on 127.0.0.1 (default 7400)"))
@@ -2122,6 +2233,20 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    if args.mode == "connect":
+        if not args.app:
+            print(tr("Użyj: pipe connect <aplikacja> --host root@serwer. Aplikacje: ",
+                     "Use: pipe connect <app> --host root@server. Apps: ") + ", ".join(CONNECT_APPS), file=sys.stderr)
+            sys.exit(2)
+        try:
+            text = connect_config(args.app.lower(), _bridge_args(args.host, args.ssh_port, args.key, args.kube,
+                                                                 args.kube_context), args.token)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(2)
+        print(text)
+        return
 
     session_id = args.session or str(uuid.uuid4())
     global OPEN_IMAGES, BRIDGE_MODE, console, WEB_PORT, WEB_OPEN_BROWSER

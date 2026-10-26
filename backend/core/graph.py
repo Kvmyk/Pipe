@@ -357,7 +357,7 @@ def locate(tool: str, args: dict[str, Any], cwd: str = "/") -> list[str]:
         repo = str(args.get("repo_path", "") or "").strip()
         repo_cwd = runtime.to_host(repo if repo.startswith("/") else os.path.join(cwd, repo)) if repo else cwd
         nodes = _nodes_for_command("git " + str(args.get("subcommand", "") or ""), repo_cwd, infra)
-    elif tool in ("web_search", "web_fetch", "software_info"):
+    elif tool in ("web_search", "web_fetch", "software_info") or tool.startswith("mcp__"):
         nodes = ["internet"]
     elif tool == "project":
         name = str(args.get("name", "") or "").strip().lower()
@@ -416,5 +416,8 @@ def describe(tool: str, args: dict[str, Any]) -> str:
 
     fields = _Fields({k: short(k, v) for k, v in args.items() if isinstance(v, (str, int, float))})
     polish, english = _LABELS.get(tool, (tool, tool))
+    if tool.startswith("mcp__"):
+        parts = tool.split("__", 2)
+        polish = english = f"MCP {parts[1]}: {parts[2]}" if len(parts) == 3 else tool
     text = tr(polish, english).format_map(fields)
     return _BLANK.sub(" ", text).replace(" ()", "").strip() or tool

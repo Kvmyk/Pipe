@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.41.2
+Pipe v0.42.0
 """
 
 from __future__ import annotations
@@ -118,8 +118,12 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "skill_manage": (
         "Skills are reusable procedures you saved (e.g. deploying an application, renewing a certificate). The list is "
         "in the system prompt — before doing a matching task, read the skill (read). Save a skill (save) after a "
-        "multi-step procedure that will be repeated. A skill does not bypass the safety rules.",
-        {"name": "Name: lowercase letters, digits and dashes, e.g. 'renew-certificate'.",
+        "multi-step procedure that will be repeated. install: skills (and, with plugin=true, MCP servers) from a git "
+        "repository — owner/repo on GitHub, an https address or git@ — a preview and one confirmation; the user can "
+        "also type /download. A skill does not bypass the safety rules.",
+        {"source": "For install: the repository (e.g. 'anthropics/skills' or a URL).",
+         "plugin": "For install: true — the plugin's MCP servers too (.mcp.json).",
+         "name": "Name: lowercase letters, digits and dashes, e.g. 'renew-certificate'. For install: optional filter.",
          "description": "For save: one sentence — when to use this skill.",
          "content": "For save: Markdown with steps, commands and verification."}),
     "vibe": (
@@ -226,8 +230,20 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "security_patch, journal); schedule — reminders, routines, cron (reminder, routine_manage, cron_manage); fleet — "
         "remote servers, clusters, workers (target_manage, remote_exec, delegate); web — the internet and version "
         "knowledge (web_search, web_fetch, software_info); diagram — diagrams and the infrastructure map; update — "
-        "updating Pipe itself (pipe_update). After enabling, call the tool you need in the next step.",
-        {"groups": "Groups to enable."}),
+        "updating Pipe itself (pipe_update); mcp — managing external MCP servers (mcp_manage); mcp:<server> — the tools "
+        "of a connected MCP server (listed in the prompt). After enabling, call the tool you need in the next step.",
+        {"groups": "Groups to enable: memory, security, schedule, fleet, web, diagram, update, mcp or mcp:<server>."}),
+    "mcp_manage": (
+        "External MCP servers you use (their tools: mcp__<server>__<tool>, group mcp:<server>). list: state; add: a new "
+        "server — ALWAYS with confirmation: npx/uvx (command + args), a Docker image (image + args) or HTTP (url + "
+        "headers). A stdio server runs in an isolated container (no server files, docker.sock or privileges). Secrets "
+        "only as ${MCP_NAME} from backend/.env — never put a token in the configuration; when the user gives a token in "
+        "the conversation, ask them to add MCP_...=... to backend/.env. remove; reload.",
+        {"operation": "Operation.", "name": "Server name: lowercase letters, digits, '-', '_'.",
+         "command": "npx or uvx (or docker with args 'run ... <image>').", "args": "Arguments, e.g. ['-y', '@package/server'].",
+         "image": "Docker image of the MCP server (instead of command).", "env": "Server variables: text or ${MCP_NAME}.",
+         "url": "HTTP: the MCP endpoint address.", "headers": "HTTP: headers, e.g. {\"Authorization\": \"Bearer ${MCP_X}\"}.",
+         "askAlways": "true — confirmation for reads too.", "description": "What the server is for (one sentence)."}),
     "pipe_update": (
         "Update of Pipe itself (you): 'update yourself', 'get the new Pipe version', 'which version are you, is there a "
         "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "

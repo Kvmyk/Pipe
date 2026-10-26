@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -311,8 +311,10 @@ Powinienes zobaczyc:
 | `software_info` | `eol` (endoflife.date), `vulns` (OSV.dev) | Nie |
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
-| `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
+| `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta; `skill_manage install` -- skille i pluginy z repozytorium git | Nie; zapis skilla i `install`: tak |
 | `project` | Warsztat: `clone`, `inspect`, `exec` (izolowany kontener), `run`, `logs`, `stop`/`start`, `pull`, `remove` | `run` i `remove`: tak; reszta: nie |
+| `mcp_manage` | Zewnetrzne serwery MCP: `list`, `add` (izolowany kontener albo HTTP), `remove`, `reload` | `add`: tak |
+| `mcp__<serwer>__<narzedzie>` | Narzedzia podlaczonych serwerow MCP (grupa `mcp:<serwer>` ladowana na zadanie) | Odczyty (`readOnlyHint`): nie; reszta: tak |
 | `load_tools` | Wlacza grupe narzedzi, ktorych opisow model jeszcze nie dostal (narzedzia na zadanie) | Nie |
 
 Przy `TOOLS_MODE=lazy` (domyslnie) model dostaje na start tylko podstawowe narzedzia (komendy, pliki, git, stan
@@ -352,6 +354,7 @@ systemu, Docker, siec, historia serwera, `project`, `load_tools`). Grupy `memory
 | `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Serwer alertow z zewnatrz (0 = wylaczony; bez tokenu nie wystartuje) |
 | `WEBHOOK_INVESTIGATE` | 1 | Nowy alert z webhooka bada worker (tylko odczyty), ustalenia z przyciskiem *Napraw*; limit raz na 6 h na alert, 10/dzien |
 | `MCP_PORT`, `MCP_HOST`, `MCP_ALLOWED_ORIGINS` | 0, 127.0.0.1, -- | Pipe jako serwer MCP po HTTP (`/mcp`, token Pipe jako Bearer) |
+| `MCP_<NAZWA>` (dowolne) | -- | Sekrety dla serwerow MCP, z ktorych korzysta Pipe -- w konfiguracji serwera jako `${MCP_<NAZWA>}` |
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (gemini/openai/groq -- automatycznie; `STT_*` ma pierwszenstwo) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |

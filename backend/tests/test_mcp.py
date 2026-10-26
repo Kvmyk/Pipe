@@ -260,4 +260,4 @@ def test_telegram_approval_format():
     text = format_approval({"id": "ab12cd34", "requested_by": "token:<laptop>", "target": "local",
                             "command": "rm -f /tmp/<x>", "reason": "sprzatanie", "plan": "Bezpiecznik:\n- kopia"})
     assert "token:&lt;laptop&gt;" in text and "<pre>rm -f /tmp/&lt;x&gt;</pre>" in text and "wygasa" in text
-    assert "zgody" in {c for c, _ in BUILTIN_COMMANDS} and "mcp" not in {c for c, _ in BUILTIN_COMMANDS}
+    assert {"zgody", "mcp"} <= {c for c, _ in BUILTIN_COMMANDS}          # /mcp wrocilo w v0.42 (klient w izolacji)

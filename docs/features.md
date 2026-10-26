@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -569,6 +569,14 @@ Instalowane przy starcie do `backend/data/skills/` jak zwykle skille -- masz je 
 (`/nginx_vhost`). Mozesz je edytowac i usuwac: nowa wersja z aktualizacji Pipe zastapi tylko skill, ktorego
 nie zmieniales, a usunietego nie przywroci.
 
+**Skille i pluginy z innych ekosystemow.** `/pobierz skill <wlasciciel/repo|URL> [filtr]` i
+`/pobierz plugin <...>` (`/download`) biora gotowe zestawy z repozytorium git -- ten sam format `SKILL.md` co Claude
+Code, a pluginy w ukladzie pluginow Claude Code (`skills/`, `.mcp.json`, marketplace). Najpierw podglad: ktore skille
+trafia do pamieci (sam tekst, skrypty sa pomijane), ktore serwery MCP dojda (w izolowanym kontenerze, sekrety do
+dopisania w `backend/.env` jako `MCP_...`) i co zostanie pominiete -- z powodem (za dlugi skill, serwer, ktory
+potrzebuje plikow pluginu, haki, agenty). Instalacja dopiero po *Zainstaluj*. Ta sama nazwa w kilku pluginach
+dostaje przedrostek pluginu (`telegram-access`). W rozmowie: *"pobierz skille z anthropics/skills"*.
+
 Przy `PIPE_LANG=en` instalowane sa angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`
 (pozostale cztery maja te sama nazwe w obu jezykach).
 
@@ -763,7 +771,9 @@ Claude Code, Cursor albo wlasny agent dostaje narzedzia Pipe zamiast golej powlo
 Zgoda przychodzi na Telegram z komenda i planem bezpiecznika (kopia, `nginx -t`, weryfikacja) oraz przyciskami
 *Zatwierdz* / *Odrzuc*; w CLI -- `/zgody`. Agent dowiaduje sie o wyniku przez `get_approval`.
 
-**Polaczenie z laptopa** -- most stdio w CLI, przez ten sam tunel SSH i tokeny:
+**Polaczenie z laptopa** -- most stdio w CLI, przez ten sam tunel SSH i tokeny. Gotowa konfiguracja dla Claude Code,
+Claude Desktop, Cursora, Codexa, Hermes Agent i OpenClaw: `pipe connect <aplikacja> --host root@serwer`
+(`docs/cli.md`). Recznie:
 
 ```json
 {"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
@@ -774,8 +784,33 @@ Osobny token dla agenta: `python3 -m backend.tokens add claude-code --role admin
 agent tylko czyta, nie moze prosic o zgody). **Na serwerze** -- endpoint Streamable HTTP: `MCP_PORT=7381`,
 `http://127.0.0.1:7381/mcp`, token w `Authorization: Bearer`.
 
-Obslugiwane wersje protokolu: 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki `Mcp-Method`/`Mcp-Name`)
-i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
+### Pipe jako klient MCP
+
+Pipe korzysta tez z cudzych serwerow MCP -- np. GitHuba, Grafany albo dokumentacji -- jak z wlasnych narzedzi:
+
+```
+/mcp dodaj github npx -y @modelcontextprotocol/server-github GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN}
+/mcp dodaj fetch uvx mcp-server-fetch
+/mcp dodaj docs https://mcp.example.com/mcp TOKEN=${MCP_DOCS}
+/mcp                      # lista i stan;  /mcp usun github;  /mcp odswiez
+```
+
+Albo w rozmowie: *"podlacz serwer MCP GitHuba"* -- wtedy jedno TAK z podgladem tego, co Pipe uruchomi.
+
+| | |
+|---|---|
+| Gdzie dziala | `npx`, `uvx` i obraz Dockera (takze `docker run ...` z `.mcp.json` innych aplikacji) -- zawsze w osobnym kontenerze: bez plikow serwera, bez `docker.sock`, bez uprawnien (`--cap-drop ALL`, uzytkownik `nobody`), z limitem pamieci i procesow. Serwer widzi tylko siec. Serwery HTTP -- pod podanym adresem |
+| Sekrety | tylko jako `${MCP_NAZWA}` z `backend/.env` (np. `MCP_GITHUB_TOKEN=...`) -- nie wpisuj tokenu w czat; trafia do kontenera jako zmienna, nigdy w argumentach |
+| Zgody | narzedzie oznaczone przez serwer jako odczyt -- bez pytania; kazde inne -- TAK z widocznymi argumentami |
+| Tokeny modelu | narzedzia serwera to grupa `mcp:<nazwa>` ladowana na zadanie: zwykla rozmowa ich nie wysyla, wiadomosc z nazwa serwera (*"na githubie..."*) je wlacza |
+| Wynik | tresc z zewnatrz: w tej turze YOLO jest wylaczone; argument z sekretem nie wychodzi do serwera |
+| Tryb obserwacji, viewer | tylko narzedzia-odczyty; nowego serwera nie da sie dodac |
+
+Konfiguracja: `backend/data/mcp_servers.json` (0600). Start serwera stdio trwa od kilkunastu sekund do minuty (`npx` /
+`uvx` instaluja pakiet w kontenerze); Pipe laczy sie w tle po restarcie.
+
+Obslugiwane wersje protokolu (w obie strony): 2026-07-28 (`server/discover`, wersja w `_meta`, naglowki
+`Mcp-Method`/`Mcp-Name`) i starsze z `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
 
 ---
 

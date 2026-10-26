@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -582,6 +582,14 @@ Installed at startup into `backend/data/skills/` like normal skills, so you have
 (`/nginx_vhost`). You can edit and delete them: a new version from a Pipe update replaces only a skill you haven't
 changed, and doesn't bring back a deleted one.
 
+**Skills and plugins from other ecosystems.** `/download skill <owner/repo|URL> [filter]` and `/download plugin <...>`
+(`/pobierz`) take ready sets from a git repository -- the same `SKILL.md` format as Claude Code, and plugins in the
+Claude Code plugin layout (`skills/`, `.mcp.json`, marketplace). First a preview: which skills go into memory (text
+only, scripts are skipped), which MCP servers are added (in an isolated container, secrets to add to `backend/.env` as
+`MCP_...`) and what is skipped -- with the reason (a skill that is too long, a server that needs the plugin's files,
+hooks, agents). Installation only after *Install*. The same name in several plugins gets the plugin's prefix
+(`telegram-access`). In a conversation: *"download the skills from anthropics/skills"*.
+
 With `PIPE_LANG=pl` the Polish versions are installed: `aktualizuj-kontener`, `utwardz-ssh`, `wolne-miejsce` (the
 other four have the same name in both languages).
 
@@ -782,7 +790,9 @@ Claude Code, Cursor or your own agent gets Pipe's tools instead of a bare shell 
 The approval arrives on Telegram with the command and the safety-fuse plan (backup, `nginx -t`, verification) and
 *Approve* / *Reject* buttons; in the CLI, `/approvals`. The agent learns the result through `get_approval`.
 
-**Connecting from a laptop** -- the stdio bridge in the CLI, through the same SSH tunnel and tokens:
+**Connecting from a laptop** -- the stdio bridge in the CLI, through the same SSH tunnel and tokens. A ready
+configuration for Claude Code, Claude Desktop, Cursor, Codex, Hermes Agent and OpenClaw:
+`pipe connect <app> --host root@server` (`docs/en/cli.md`). By hand:
 
 ```json
 {"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@server"],
@@ -793,8 +803,33 @@ A separate token for the agent: `python3 -m backend.tokens add claude-code --rol
 agent only reads and can't ask for approvals). **On the server** -- a Streamable HTTP endpoint: `MCP_PORT=7381`,
 `http://127.0.0.1:7381/mcp`, the token in `Authorization: Bearer`.
 
-Supported protocol versions: 2026-07-28 (`server/discover`, the version in `_meta`, `Mcp-Method`/`Mcp-Name` headers)
-and older ones with `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
+### Pipe as an MCP client
+
+Pipe also uses other MCP servers -- e.g. GitHub, Grafana or documentation -- like its own tools:
+
+```
+/mcp add github npx -y @modelcontextprotocol/server-github GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN}
+/mcp add fetch uvx mcp-server-fetch
+/mcp add docs https://mcp.example.com/mcp TOKEN=${MCP_DOCS}
+/mcp                      # list and state;  /mcp remove github;  /mcp reload
+```
+
+Or in a conversation: *"connect the GitHub MCP server"* -- then one YES with a preview of what Pipe will run.
+
+| | |
+|---|---|
+| Where it runs | `npx`, `uvx` and a Docker image (including `docker run ...` from other apps' `.mcp.json`) -- always in a separate container: no server files, no `docker.sock`, no privileges (`--cap-drop ALL`, user `nobody`), memory and process limits. The server sees only the network. HTTP servers -- at the given address |
+| Secrets | only as `${MCP_NAME}` from `backend/.env` (e.g. `MCP_GITHUB_TOKEN=...`) -- do not type the token in the chat; it reaches the container as a variable, never in the arguments |
+| Approvals | a tool the server marks as a read -- without asking; any other -- a YES with the arguments shown |
+| Model tokens | the server's tools are the group `mcp:<name>`, loaded on demand: an ordinary conversation does not send them, a message naming the server (*"on github..."*) turns them on |
+| Result | outside content: YOLO is off for this turn; an argument with a secret does not go to the server |
+| Observe mode, viewer | read tools only; a new server cannot be added |
+
+Configuration: `backend/data/mcp_servers.json` (0600). A stdio server starts in ten seconds to a minute (`npx` / `uvx`
+install the package in the container); Pipe connects in the background after a restart.
+
+Supported protocol versions (both directions): 2026-07-28 (`server/discover`, the version in `_meta`,
+`Mcp-Method`/`Mcp-Name` headers) and older ones with `initialize` (2025-11-25, 2025-06-18, 2025-03-26).
 
 ---
 

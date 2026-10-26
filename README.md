@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.41.2-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.42.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -86,8 +86,9 @@ python3 -m backend.tokens add claude-code --role admin                 # na serw
 claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@serwer   # Claude Code na laptopie
 ```
 
-Inne programy (Codex, Cursor, własny agent) dostają to samo polecenie: `pipe --mcp --host root@serwer`
-ze zmienną `AGENT_TOKEN`. Pipe nie potrzebuje do tego własnego modelu: przy `LLM_PROVIDER=none` myśli Twój agent,
+Gotową konfigurację dla innych programów wypisze `pipe connect <program> --host root@serwer`, gdzie programem
+jest `claude`, `claude-desktop`, `cursor`, `codex`, `hermes` albo `openclaw`. Hermes Agent i OpenClaw mogą więc
+pracować na serwerze przez Pipe, z tymi samymi zgodami i `/cofnij`. Pipe nie potrzebuje do tego własnego modelu: przy `LLM_PROVIDER=none` myśli Twój agent,
 a Pipe pilnuje tego, co się wykonuje. Szczegóły: [docs/features.md](./docs/features.md) (sekcja MCP).
 
 ## Co potrafi

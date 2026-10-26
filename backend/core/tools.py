@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -257,9 +257,13 @@ TOOLS: list[dict] = [
         "skill_manage",
         "Skille to zapisane przez Ciebie procedury wielokrotnego uzytku (np. wdrozenie aplikacji, odnowienie "
         "certyfikatu). Lista jest w system prompcie — zanim wykonasz pasujace zadanie, wczytaj skill (read). "
-        "Zapisz skill (save) po wieloetapowej procedurze, ktora sie powtorzy. Skill nie omija zasad bezpieczenstwa.",
+        "Zapisz skill (save) po wieloetapowej procedurze, ktora sie powtorzy. install: skille (i z plugin=true serwery MCP) "
+        "z repozytorium git — wlasciciel/repo z GitHuba, adres https albo git@ — podglad i jedno potwierdzenie; "
+        "uzytkownik moze tez wpisac /pobierz. Skill nie omija zasad bezpieczenstwa.",
         {
-            "operation": {"type": "string", "enum": ["list", "read", "save", "delete"]},
+            "operation": {"type": "string", "enum": ["list", "read", "save", "delete", "install"]},
+            "source": {"type": "string", "description": "Dla install: repozytorium (np. 'anthropics/skills' albo URL)."},
+            "plugin": {"type": "boolean", "description": "Dla install: true — takze serwery MCP pluginu (.mcp.json)."},
             "name": {"type": "string", "description": "Nazwa: male litery, cyfry i myslniki, np. 'odnow-certyfikat'."},
             "description": {"type": "string", "description": "Dla save: jedno zdanie — kiedy uzyc tego skilla."},
             "content": {"type": "string", "description": "Dla save: Markdown z krokami, komendami i weryfikacja."},
@@ -439,12 +443,35 @@ TOOLS: list[dict] = [
         "(security_audit, security_patch, journal); schedule — przypomnienia, rutyny, cron (reminder, routine_manage, "
         "cron_manage); fleet — zdalne serwery, klastry, workery (target_manage, remote_exec, delegate); web — internet "
         "i wiedza o wersjach (web_search, web_fetch, software_info); diagram — diagramy i mapa infrastruktury; update "
-        "— aktualizacja samego Pipe (pipe_update). Po wlaczeniu wywolaj potrzebne narzedzie w nastepnym kroku.",
+        "— aktualizacja samego Pipe (pipe_update); mcp — zarzadzanie zewnetrznymi serwerami MCP (mcp_manage); "
+        "mcp:<serwer> — narzedzia podlaczonego serwera MCP (lista w prompcie). Po wlaczeniu wywolaj potrzebne "
+        "narzedzie w nastepnym kroku.",
         {
-            "groups": {"type": "array", "description": "Grupy do wlaczenia.",
-                       "items": {"type": "string",
-                                 "enum": ["memory", "security", "schedule", "fleet", "web", "diagram", "update"]}},
+            "groups": {"type": "array", "items": {"type": "string"},
+                       "description": "Grupy do wlaczenia: memory, security, schedule, fleet, web, diagram, update, mcp "
+                                      "albo mcp:<serwer>."},
         },
         ["groups"],
+    ),
+    _tool(
+        "mcp_manage",
+        "Zewnetrzne serwery MCP, z ktorych korzystasz (ich narzedzia: mcp__<serwer>__<narzedzie>, grupa mcp:<serwer>). "
+        "list: stan; add: nowy serwer — ZAWSZE z potwierdzeniem: npx/uvx (command + args), obraz Dockera (image + args) "
+        "albo HTTP (url + headers). Serwer stdio dziala w izolowanym kontenerze (bez plikow serwera, docker.sock i "
+        "uprawnien). Sekrety tylko jako ${MCP_NAZWA} z backend/.env — nigdy nie wpisuj tokenu w konfiguracje; gdy "
+        "uzytkownik poda token w rozmowie, popros go o dopisanie MCP_...=... do backend/.env. remove; reload.",
+        {
+            "operation": {"type": "string", "enum": ["list", "add", "remove", "reload"]},
+            "name": {"type": "string", "description": "Nazwa serwera: male litery, cyfry, '-', '_'."},
+            "command": {"type": "string", "description": "npx albo uvx (albo docker z args 'run ... <obraz>')."},
+            "args": {"type": "array", "items": {"type": "string"}, "description": "Argumenty, np. ['-y', '@pakiet/serwer']."},
+            "image": {"type": "string", "description": "Obraz Dockera serwera MCP (zamiast command)."},
+            "env": {"type": "object", "description": "Zmienne serwera: tekst albo ${MCP_NAZWA}."},
+            "url": {"type": "string", "description": "HTTP: adres endpointu MCP."},
+            "headers": {"type": "object", "description": "HTTP: naglowki, np. {\"Authorization\": \"Bearer ${MCP_X}\"}."},
+            "askAlways": {"type": "boolean", "description": "true — potwierdzenie takze dla odczytow."},
+            "description": {"type": "string", "description": "Do czego sluzy serwer (jedno zdanie)."},
+        },
+        ["operation"],
     ),
 ]

@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.41.2
+Pipe v0.42.0
 
 ## Opis
 
@@ -66,6 +66,8 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `feed` | `args`: puste albo `seen` (przeczytane); opcjonalnie `since` (znacznik czasu) | `"data": {"items": [{"id", "ts", "at", "type", "severity", "title", "text", "key", "kind", "actions": [{"index", "label", "kind", "command"?, "args"?, "admin"?, "primary"?}], "push", "held", "done", "unread"}], "unread", "seen", "text", "prefs"}` -- skrzynka: co Pipe wyslal sam |
 | `feed_act` | `id` wiadomosci, `action` (indeks) | wykonuje przycisk: `snooze` / `mute` / `dismiss` -> `"data": {"id", "done", "text"?, "muted"?}`; `message` -> streaming rozmowy z agentem; `command` -> jak ta komenda (`cleanup`, `patch`, `investigate`...). Akcja z `admin` -- tylko administrator; wykonana akcja (`done`) drugi raz -> `error` |
 | `prefs` | opcjonalnie `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` albo `off`), `per_day` (0-50), `args: unmute <rodzaj>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- ustawienia powiadomien; zmiana tylko dla administratora |
+| `install` | `args`: `skill\|plugin <zrodlo> [filtr]`; potem `token` + `execute: true` | `/pobierz` bez LLM: podglad `"data": {"token", "text", "skills", "servers", "empty"}` (repozytorium sklonowane i usuniete), po TAK `"data": {"text"}`; token wazny 15 min, jednorazowy. Tylko admin; w trybie obserwacji bez serwerow MCP |
+| `mcp_servers` | `args`: puste (lista), `dodaj <nazwa> <npx ...\|uvx ...\|docker run ...\|URL> [ZMIENNA=${MCP_X}]`, `usun <nazwa>`, `odswiez` (tez `add`/`remove`/`reload`) | serwery MCP, z ktorych korzysta Pipe: `"data": {"text", "servers": [{"name", "status"}]}`. Zmiany: tylko admin, dodanie nie w trybie obserwacji |
 | `cleanup` | -- | zwolnij miejsce **bez LLM**: ramki `progress`, potem `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Odrzucane: viewer, tryb obserwacji |
 | `projects` | `args`: puste albo `logs` / `stop` / `start` / `remove` (z `execute: true`, inaczej podglad), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; z `args` -- `"data": {"name", "text"}`. Zmiany: administrator, nie w trybie obserwacji |
 | `run_skill` | `name` (nazwa albo komenda skilla), opcjonalnie `args` | streaming |

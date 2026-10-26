@@ -102,7 +102,7 @@ async def handle_skill_manage(
     tool_call: Any,
     args: dict[str, Any],
 ) -> AsyncGenerator[str, None]:
-    """Obsługuje narzędzie skill_manage: list, read, save, delete."""
+    """Obsługuje narzędzie skill_manage: list, read, save, delete, install (z repozytorium)."""
     operation = (args.get("operation") or "list").strip()
     name = args.get("name", "")
     try:
@@ -144,6 +144,11 @@ async def handle_skill_manage(
             yield tr(f"[POTWIERDZ] {verb} skilla {as_code(skill_name)} wymaga potwierdzenia:\n{preview}",
                      f"[POTWIERDZ] {verb} the skill {as_code(skill_name)} requires confirmation:\n{preview}")
             return
+        if operation == "install":
+            async for event in _install_from_repo(session, tool_call, str(args.get("source", "") or ""),
+                                                  "plugin" if args.get("plugin") else "skill", str(name or "")):
+                yield event
+            return
         if operation == "delete":
             if memory.delete_skill(name):
                 skill_name = memory.validate_skill_name(name)
@@ -153,12 +158,64 @@ async def handle_skill_manage(
             else:
                 _reply(session, tool_call, tr(f"Brak skilla {name!r} — nic nie usunieto.", f"No skill {name!r} — nothing deleted."))
             return
-        _reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, read, save, delete.",
-                                      f"Unknown operation {operation!r}. Available: list, read, save, delete."))
+        _reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, read, save, delete, install.",
+                                      f"Unknown operation {operation!r}. Available: list, read, save, delete, install."))
     except memory.MemoryWriteError as exc:
         _reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
     except OSError as exc:
         _reply(session, tool_call, tr(f"Blad zapisu skilla: {exc}", f"Error writing the skill: {exc}"))
+
+
+async def _install_from_repo(session: Session, tool_call: Any, source: str, kind: str, only: str
+                             ) -> AsyncGenerator[str, None]:
+    """
+    skill_manage install: to samo co /pobierz — klon, odczyt, podglad i JEDNO potwierdzenie z lista tego, co trafi do
+    pamieci (sam tekst SKILL.md) i jakie serwery MCP dojda (izolowany kontener). Repozytorium to tresc z zewnatrz.
+    """
+    import shutil
+
+    from backend.core import extensions, runtime
+
+    try:
+        url, ref, sub = extensions.parse_source(source)
+        root = await extensions.fetch(url, ref)
+    except extensions.ExtensionError as exc:
+        _reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
+        return
+    try:
+        found = extensions.discover(root, sub, kind, url + (f" ({sub})" if sub else ""), only)
+    except extensions.ExtensionError as exc:
+        _reply(session, tool_call, tr(f"Blad: {exc}", f"Error: {exc}"))
+        return
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    session.web_tainted = True                      # tresc z cudzego repozytorium: bez YOLO do nastepnej wiadomosci
+    servers_allowed = not runtime.observe()
+    text = extensions.preview(found, servers_allowed=servers_allowed)
+    if found.empty:
+        _reply(session, tool_call, text)
+        return
+
+    async def do_install(interface=session.interface) -> str:
+        summary, added = extensions.install(found, servers_allowed=servers_allowed)
+        for skill in found.skills:
+            await audit.log_file_write(interface, f"skills/{skill.name}/SKILL.md ({found.source})", 0)
+        if added:
+            import asyncio
+
+            from backend.core.mcp.registry import get_manager
+            asyncio.get_running_loop().create_task(get_manager().reload())
+        return summary
+
+    session.pending_confirmation = ConfirmationRequest(
+        tool_call_id=tool_call.id, tool_name="skill_manage", command=tr(f"instalacja z {found.source}",
+                                                                        f"installing from {found.source}"),
+        classification="confirm", action=do_install,
+        plan=safety.Plan(local_files=[(str(memory.skills_dir() / s.name / "SKILL.md"),
+                                       tr(f"pamiec Pipe: skill {s.name}", f"Pipe memory: skill {s.name}")) for s in found.skills]),
+    )
+    yield tr(f"[POTWIERDZ] Instalacja skilli i pluginu wymaga potwierdzenia:\n{text}",
+             f"[POTWIERDZ] Installing skills and a plugin requires confirmation:\n{text}")
 
 
 async def handle_directory(
