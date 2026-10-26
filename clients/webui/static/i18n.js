@@ -3,7 +3,7 @@
   "use strict";
   const STRINGS = {
     pl: {
-      chat: "Rozmowa", stage: "Pulpit", newChat: "Nowa rozmowa", placeholder: "Napisz, co mam zrobić…  (/ — komendy)", placeholderShort: "Napisz, co mam zrobić…",
+      chat: "Rozmowa", stage: "Pulpit", newChat: "Nowa rozmowa", placeholder: "Napisz, co mam zrobić…  (/ — komendy)", placeholderShort: "Napisz, co mam zrobić…", more: "Więcej",
       map: "Schemat", changes: "Zmiany", alerts: "Alerty", home: "Pulpit", mapLive: "Agent pracuje — zobacz na schemacie",
       loadingHome: "Sprawdzam stan serwera…", waitTurn: "Poczekaj, aż agent skończy.",
       s_status: "Czy wszystko działa?", s_status_sub: "procesor, pamięć, dysk, kontenery, strony",
@@ -189,7 +189,7 @@
       ob_switchServer: "Zmień, gdzie działa Pipe", ob_noServer: "Pipe jeszcze nie działa",
     },
     en: {
-      chat: "Chat", stage: "Dashboard", newChat: "New chat", placeholder: "Tell me what to do…  (/ — commands)", placeholderShort: "Tell me what to do…",
+      chat: "Chat", stage: "Dashboard", newChat: "New chat", placeholder: "Tell me what to do…  (/ — commands)", placeholderShort: "Tell me what to do…", more: "More",
       map: "Map", changes: "Changes", alerts: "Alerts", home: "Dashboard", mapLive: "The agent is working — see it on the map",
       loadingHome: "Checking the server…", waitTurn: "Wait until the agent finishes.",
       s_status: "Is everything working?", s_status_sub: "CPU, memory, disk, containers, sites",

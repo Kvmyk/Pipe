@@ -962,6 +962,8 @@ body.pair-page { overflow-y: auto; display: block; min-height: 100%; }
 
 /* --- telefon: pole tekstowe 16 px (iOS nie powieksza strony przy dotknieciu), wysokosc bez paska przegladarki --- */
 @supports (height: 100dvh) { body:not(.pair-page) { height: 100dvh; } }
+/* telefon: wysokosc widocznej czesci (visualViewport, app.js) — pole pisania nad klawiatura */
+body:not(.pair-page) { height: var(--app-h, 100dvh); }
 @media (max-width: 900px) {
   .composer textarea, input[type="text"], input[type="url"], input[type="password"], input:not([type]) { font-size: 16px; }
 }
@@ -1021,3 +1023,91 @@ body.pair-page { overflow-y: auto; display: block; min-height: 100%; }
 .btn.danger { color: var(--bad); }
 .addon-manage { margin-left: auto; }
 @media (max-width: 560px) { .mcp-side { display: none; } .mcp-card { padding: 18px 14px 12px; } }
+
+
+/* ============================================================================================================
+   Telefon i dotyk. Zasady: nic nie wystaje w bok (pasek gorny miesci sie w 320 px), cel dotyku co najmniej 40 px
+   (Apple 44 pt, Material 48 dp, WCAG 2.5.8 minimum 24 px), zadnych akcji tylko na najechanie, marginesy na wyciecie
+   ekranu i pasek gestow, schemat z wlasnymi gestami (touch-action: none tylko na nim), szczegoly wezla od dolu.
+   ============================================================================================================ */
+.top-more { display: contents; }
+.more-btn { display: none; }
+button, a, input, textarea, select, [role="tab"] { touch-action: manipulation; }   /* bez opoznienia na podwojne stukniecie */
+.messages, .tab-body, .list, .home, .addons, .timeline, .detail, .mcp-body, .steps, .palette-list { overscroll-behavior: contain; }
+
+/* wyciecie ekranu i pasek gestow (viewport-fit=cover w index.html) */
+.topbar { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
+  padding-top: env(safe-area-inset-top); height: auto; min-height: calc(48px + env(safe-area-inset-top)); position: relative; }
+.composer { margin-bottom: max(16px, env(safe-area-inset-bottom)); }
+.stage { padding-bottom: env(safe-area-inset-bottom); }
+
+@media (max-width: 900px) {
+  .composer { margin-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .map { margin: 0 8px; min-height: 0; }
+  .timeline { height: 24%; min-height: 72px; max-height: 170px; }
+  .stage-tabs { overflow-x: auto; scrollbar-width: none; }
+  .stage-tabs::-webkit-scrollbar { display: none; }
+  .crumbs { overflow-x: auto; scrollbar-width: none; flex: 1; }
+  .crumbs::-webkit-scrollbar { display: none; }
+  .stage-tabs .stage-hide { display: none; }      /* `.stage-tabs button` odslanialo przycisk chowania panelu */
+}
+
+/* waski telefon: brand bez napisu, z adresu serwera zostaje kropka stanu, widok/jezyk/motyw w menu "wiecej" */
+@media (max-width: 560px) {
+  .topbar { gap: 4px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(6px, env(safe-area-inset-right)); }
+  .brand span, #server-name { display: none; }
+  .server-pill { border-left: 0; padding-left: 2px; max-width: none; }
+  .more-btn { display: grid; }
+  .top-more { display: none; }
+  .top-more.open { display: flex; align-items: center; gap: 4px; position: absolute; top: calc(100% + 6px); right: 8px; z-index: 30;
+    padding: 6px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop);
+    animation: palettein .14s var(--ease) both; transform-origin: 100% 0; }
+  .top-more.open #view-label { display: inline; }
+  .top-more.open .view-btn { padding: 0 10px; }
+  /* szczegoly wezla: panel od dolu na cala szerokosc zamiast waskiej kolumny z prawej */
+  .detail { top: auto; left: 6px; right: 6px; bottom: 6px; width: auto; max-height: min(55%, 380px); border-radius: 12px;
+    padding-top: 18px; animation: sheetup .24s var(--ease) both; }
+  .detail::before { content: ""; position: absolute; top: 7px; left: 50%; width: 34px; height: 4px; margin-left: -17px;
+    border-radius: 2px; background: var(--line-strong); }
+  /* "Sledze agenta": na waskim ekranie sama kropka stanu i oko — sciezka (okruszki) dostaje miejsce */
+  .follow { padding: 0 10px; gap: 6px; }
+  #follow-label { display: none; }
+  .follow svg { display: block; }
+  .map-bar { padding: 0 8px; gap: 4px; }
+  .timeline-head { padding: 10px 12px 4px; }
+  .sheet { padding: 0; align-items: end; }
+  .sheet-card { width: 100%; max-height: calc(var(--app-h, 100dvh) - 24px); border-radius: 14px 14px 0 0;
+    padding-bottom: max(14px, env(safe-area-inset-bottom)); animation: sheetup .26s var(--ease) both; }
+}
+@keyframes sheetup { from { opacity: 0; transform: translate3d(0, 24px, 0); } }
+
+/* ekran dotykowy: wieksze cele, niezaleznie od szerokosci (tablet tez) */
+@media (pointer: coarse) {
+  .topbar { min-height: calc(52px + env(safe-area-inset-top)); }
+  .icon { width: 40px; height: 40px; }
+  .ghost { height: 40px; min-width: 40px; justify-content: center; }
+  .mobile-switch button { padding: 8px 12px; }
+  .stage-tabs { height: 46px; }
+  .stage-tabs button { padding: 0 12px; }
+  .btn { min-height: 40px; }
+  .btn.small { height: auto; min-height: 38px; padding: 0 12px; }
+  .follow { height: 38px; }
+  .crumbs button { padding: 8px 8px; }
+  .composer .tool { width: 40px; height: 40px; }
+  .composer button.primary, #send { min-width: 40px; min-height: 40px; }
+  .model-pill, .yolo-chip { min-height: 36px; }
+  .mcp-row { min-height: 48px; }
+  .palette-item { min-height: 44px; }
+  .linkish { padding: 8px 0; }
+  .detail .close { width: 40px; height: 40px; top: 4px; right: 4px; }
+}
+
+/* telefon poziomo (niska wysokosc): mniej chromu, wiecej tresci */
+@media (max-height: 500px) and (pointer: coarse) {
+  .topbar { min-height: calc(44px + env(safe-area-inset-top)); }
+  .stage-tabs { height: 40px; }
+  /* os czasu zabierala schematowi polowe wysokosci — te same kroki widac w rozmowie */
+  .timeline, .timeline-head { display: none; }
+  .map { margin-bottom: 8px; }
+  .messages { padding-top: 10px; }
+}

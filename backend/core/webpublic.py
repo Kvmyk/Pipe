@@ -614,6 +614,37 @@ def _watch(publish: Callable[[dict], None] | None) -> None:
         _watcher = asyncio.create_task(watch_tunnel(publish))
 
 
+def _proxy_command(state: State) -> list[str]:
+    """Polecenie kontenera pipe-web dla zapisanego stanu (te same opcje co przy /web wlacz)."""
+    if state.mode == "tunnel":
+        return tunnel_command(tunnel_network())
+    if state.mode == "mikrus":
+        return caddy_command(state.host, state.listen, config=mikrus_caddyfile(state.host, state.listen))
+    return caddy_command(state.host, state.port, internal=state.tls == "internal")
+
+
+async def refresh_proxy() -> tuple[bool, str]:
+    """Nowszy obraz Caddy / cloudflared i ten sam kontener pipe-web (po /aktualizuj i w /zalataj obrazy).
+    (odtworzony, opis). Kontener, ktory juz dziala na najnowszym obrazie, zostaje."""
+    state = load_state()
+    if not state.on:
+        return False, tr("strona /web jest wylaczona", "the /web page is off")
+    image = TUNNEL_IMAGE if state.mode == "tunnel" else CADDY_IMAGE
+    await _run("docker", "pull", "-q", image, timeout=300)
+    running, code = await _run("docker", "inspect", "--format", "{{.Image}}", CONTAINER, timeout=20)
+    latest, _ = await _run("docker", "image", "inspect", "--format", "{{.Id}}", image, timeout=20)
+    if code == 0 and running.strip() and running.strip() == latest.strip():
+        return False, tr(f"{CONTAINER}: juz na najnowszym obrazie {image}", f"{CONTAINER}: already on the newest {image}")
+    await _run("docker", "rm", "-f", CONTAINER, timeout=60)
+    output, rc = await _run(*_proxy_command(state), timeout=120)
+    if rc != 0:
+        return False, tr(f"{CONTAINER}: nie odtworzylem kontenera: {output[:300]}",
+                         f"{CONTAINER}: could not recreate the container: {output[:300]}")
+    note = tr(" (tunel dostanie nowy adres — przyjdzie w wiadomosci)", " (the tunnel gets a new address — it comes in a message)") \
+        if state.mode == "tunnel" else ""
+    return True, tr(f"{CONTAINER}: odtworzony na nowym obrazie {image}{note}", f"{CONTAINER}: recreated on the new {image}{note}")
+
+
 async def resume(backend_socket: str, publish: Callable[[dict], None] | None = None) -> None:
     """Start serwera: wlaczona strona wraca. Caddy wstaje sam (--restart); cloudflared dzieli siec z kontenerem Pipe,
     wiec po nowym kontenerze Pipe trzeba go postawic od nowa — dostaje nowy adres, ktory idzie w wiadomosci."""
@@ -624,11 +655,15 @@ async def resume(backend_socket: str, publish: Callable[[dict], None] | None = N
         await start_bridge(state, backend_socket, publish)
         if state.mode == "tunnel":
             await _run("docker", "rm", "-f", CONTAINER, timeout=60)
+            await _run("docker", "pull", "-q", TUNNEL_IMAGE, timeout=300)
             await _run(*tunnel_command(tunnel_network()), timeout=120)
             for _ in range(30):
                 if await refresh_tunnel(publish):
                     break
                 await asyncio.sleep(2)
+        else:
+            # po /aktualizuj: nowszy obraz Caddy (latki bezpieczenstwa) — w tle, strona dziala dalej na starym
+            asyncio.create_task(refresh_proxy())
         _watch(publish)
         print(f"[VPS Agent] pipe web    : {state.url}", flush=True)
     except Exception as exc:

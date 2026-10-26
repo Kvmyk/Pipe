@@ -1182,7 +1182,7 @@ def images_alert(result: Scan, explain: dict[str, str], skip_projects: frozenset
     odswiezy (kontener bez compose, kontener samego Pipe), ma to w naglowku — przycisk nie obiecuje wiecej, niz zrobi.
     """
     patch = image_patch(result, skip_projects=skip_projects)
-    refreshable = {t.name for t in patch.refreshable}
+    refreshable = {t.name for t in patch.refreshable} | {t.name for t in patch.web}
     pipe_own = {t.name for t in result.of_kind("image")
                 if patch.skipped and set(t.meta.get("containers") or []) <= set(patch.skipped)}
     sections = []
@@ -1474,6 +1474,11 @@ class ImagePatch:
     skipped: list[str] = field(default_factory=list)     # kontenery samego Pipe — te odswieza /aktualizuj
     refreshable: list[TargetResult] = field(default_factory=list)   # obrazy, ktore latka naprawde odswiezy (z compose)
     projects: list[ComposeProject] = field(default_factory=list)
+    web: list[TargetResult] = field(default_factory=list)  # kontener /web (Caddy, cloudflared) — Pipe odtwarza go sam
+
+
+# Kontener strony /web (core/webpublic.py): bez compose, ale Pipe zna jego opcje i odtwarza go sam.
+WEB_CONTAINER = "pipe-web"
 
 
 def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] | set[str] = frozenset(),
@@ -1522,7 +1527,10 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
             retag[ref] = short
         with_compose = {c.get("container") for c in compose} | {c.get("container") for c in own}
         for container in target.meta.get("containers") or []:
-            if container not in with_compose:
+            if container == WEB_CONTAINER:
+                if target not in patch.web:
+                    patch.web.append(target)
+            elif container not in with_compose:
                 patch.manual.append(tr(f"{container}: kontener bez compose — docker pull {ref}, potem odtworz go "
                                        f"z tymi samymi opcjami", f"{container}: a container without compose — "
                                        f"docker pull {ref}, then recreate it with the same options"))

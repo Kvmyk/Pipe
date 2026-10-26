@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.46.0
+Pipe v0.47.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -717,6 +717,8 @@ marked *no AI* work instantly and cost nothing.
 An action is assigned to an element from the command itself: a container name, a systemd unit, a file path, a project
 directory. When that's not possible (for example an arbitrary script), the action is shown on the whole server.
 Searching and reading pages (`web_search`, `web_fetch`, `software_info`) lights up the *Internet* element.
+
+**On a phone** chat and dashboard switch with the buttons in the top bar, and the view, language and theme are in the *...* menu. On a narrow screen the diagram is laid out top to bottom (readable without zooming): one finger pans, two zoom, a double tap on empty space zooms in, the frame button goes back to the whole picture. Element details slide up from the bottom. The message field stays above the keyboard.
 
 **The side panel** takes half the screen by default. You can drag its edge to make it narrower or wider, up to half
 the screen; a double click on the edge restores the default width, and dragging it to the right edge of the window

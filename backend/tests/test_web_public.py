@@ -594,3 +594,75 @@ class TestCommand:
                             {"command": "web", "token": "oglad"}])
         assert replies[0][0]["status"] == "error" and pairing.status == "pending"
         assert replies[1][0]["data"]["devices"] == [] and replies[1][0]["data"]["can_edit"] is False
+
+
+class TestWebContainerRefresh:
+    """Kontener /web (pipe-web) nie ma compose, ale Pipe zna jego opcje — /zalataj i /aktualizuj odswiezaja go same."""
+
+    def test_patch_takes_the_web_container_instead_of_a_manual_hint(self):
+        from backend.core import patching, vulns
+        from backend.tests.test_vulns import image_target
+        target = image_target(name="caddy:2.11-alpine", containers=("pipe-web",))
+        target.meta["compose"] = []
+        scan = vulns.Scan(targets=[target])
+        patch = vulns.image_patch(scan)
+        assert patch.web == [target] and patch.manual == [] and not patch.projects
+        job = patching.plan(scan, "images")
+        assert [p.kind for p in job.parts] == ["images"]                    # nie "nie ma nic do zainstalowania"
+        assert "kontener bez compose" not in vulns.images_alert(scan, {})
+
+    def test_refresh_recreates_only_on_a_newer_image(self, monkeypatch):
+        webpublic.save_state(webpublic.State(on=True, host="adam100-7443.mikrus.cloud", port=443, mode="mikrus", listen=7443))
+        ids = {"running": "sha256:old", "latest": "sha256:new"}
+        calls = []
+
+        async def fake_run(*args, timeout=120):
+            calls.append(list(args))
+            if args[:3] == ("docker", "inspect", "--format"):
+                return ids["running"], 0
+            if args[:3] == ("docker", "image", "inspect"):
+                return ids["latest"], 0
+            return "ok", 0
+        monkeypatch.setattr(webpublic, "_run", fake_run)
+        changed, text = asyncio.run(webpublic.refresh_proxy())
+        run = next(c for c in calls if c[:3] == ["docker", "run", "-d"])
+        assert changed and webpublic.CADDY_IMAGE in run and any("bind tcp6/[::]" in a for a in run)
+        calls.clear()
+        ids["running"] = "sha256:new"
+        changed, _ = asyncio.run(webpublic.refresh_proxy())
+        assert not changed and not any(c[:3] == ["docker", "run", "-d"] for c in calls)
+
+    def test_web_container_is_refreshed_last(self, monkeypatch):
+        """Latanie z przegladarki idzie przez pipe-web — jego odtworzenie zrywa strone, wiec dopiero po wszystkim."""
+        from backend.core import patching, vulns
+        from backend.tests.test_vulns import image_target
+        target = image_target(name="caddy:2.11-alpine", containers=("pipe-web",))
+        target.meta["compose"] = []
+        patch = vulns.image_patch(vulns.Scan(targets=[target]))
+        job = patching.Job("all", [patching.Part("images", "images", [target], image_patch=patch),
+                                   patching.Part("server", "web2", [])], None)
+        order = []
+
+        async def part(kind):
+            async def runner(p):
+                order.append(kind)
+                return patching.PartResult(p)
+            return runner
+
+        async def refresh():
+            order.append("pipe-web")
+            return True, "odtworzony"
+
+        async def go():
+            run = patching.Run(job, "web:telefon")
+            run._images, run._server = await part("images"), await part("server")
+            monkeypatch.setattr(webpublic, "refresh_proxy", refresh)
+
+            async def no_cleanup():
+                return 0
+            run._cleanup = no_cleanup
+            await run._execute(None)
+            return run
+        run = asyncio.run(go())
+        assert order == ["images", "server", "pipe-web"]
+        assert any("na koniec odswiezam kontener strony /web" in getattr(e, "text", "") for e in run.events)

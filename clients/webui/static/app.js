@@ -634,6 +634,7 @@
     $("follow").classList.toggle("on", on);
     $("follow").setAttribute("aria-pressed", String(on));
     $("follow-label").textContent = on ? t("follow") : t("followOff");
+    $("follow").title = $("follow-label").textContent; $("follow").setAttribute("aria-label", $("follow-label").textContent);   // telefon: sama ikona
     if (!on && byUser && !hinted && activities.size) { hinted = true; toast(t("followOff"), t("followHint")); }
     if (on) followAgent();
   }
@@ -829,7 +830,9 @@
     detail.hidden = false;
     if (!keep) {
       detail.style.animation = "none"; void detail.offsetWidth; detail.style.animation = "";
-      graph.focus(node.id, 420, detail.offsetWidth + 20);        // wezel nie moze zostac pod panelem
+      // wezel nie moze zostac pod panelem: na szerokim ekranie panel jest z prawej, na telefonie wysuwa sie z dolu
+      const sheet = matchMedia("(max-width: 560px)").matches;
+      graph.focus(node.id, 420, sheet ? 0 : detail.offsetWidth + 20, sheet ? detail.offsetHeight + 16 : 0);
     }
   }
 
@@ -1829,6 +1832,28 @@
     try { localStorage.setItem("pipe-theme", theme); } catch (_) { /* tryb prywatny */ }
   }
   $("theme").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+  // Waski ekran: widok, jezyk i motyw w menu pod "wiecej" — pasek gorny miesci sie bez przewijania w bok
+  const moreBtn = $("more-btn"), topMore = $("top-more");
+  function setMore(open) {
+    topMore.classList.toggle("open", open);
+    moreBtn.setAttribute("aria-expanded", String(open));
+  }
+  moreBtn.addEventListener("click", (event) => { event.stopPropagation(); setMore(!topMore.classList.contains("open")); });
+  topMore.addEventListener("click", (event) => { if (event.target.closest("button")) setMore(false); });
+  document.addEventListener("click", (event) => { if (!event.target.closest("#top-more, #more-btn")) setMore(false); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") setMore(false); });
+  // Klawiatura na telefonie: Safari (i Chrome bez interactive-widget) zmniejsza tylko widoczna czesc strony, a pole
+  // pisania na dole zostaje pod klawiatura. Wysokosc aplikacji idzie wiec za visualViewport.
+  if (window.visualViewport && matchMedia("(pointer: coarse)").matches) {
+    const vv = window.visualViewport;
+    const fitViewport = () => {
+      document.documentElement.style.setProperty("--app-h", vv.height + "px");
+      if (vv.offsetTop > 0 && document.activeElement && document.activeElement.matches("textarea, input")) window.scrollTo(0, 0);
+    };
+    vv.addEventListener("resize", fitViewport);
+    vv.addEventListener("scroll", fitViewport);
+    fitViewport();
+  }
   $("lang").addEventListener("click", () => setLanguage(window.PipeI18n.lang === "en" ? "pl" : "en"));
   // Nowa rozmowa = nowa sesja (YOLO zostaje w starej); stara znika z backendu od razu, zamiast czekac
   // SESSION_KEEP_DAYS. Wiedza o serwerze zostaje — prompt sklada sie z pamieci przy kazdym zapytaniu.
@@ -1851,6 +1876,7 @@
   $("inbox-btn").addEventListener("click", openInbox);
   $("home-loading").textContent = t("loadingHome");
   $("theme").title = t("theme");
+  moreBtn.title = t("more"); moreBtn.setAttribute("aria-label", t("more"));
   $("lang").textContent = window.PipeI18n.lang.toUpperCase(); $("lang").title = t("language");
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
   $("stage-hide").title = t("hidePanel"); $("stage-hide").setAttribute("aria-label", t("hidePanel"));

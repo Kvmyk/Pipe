@@ -149,8 +149,8 @@ def plan(scan: Any, scope: str, *, skip_projects: frozenset[str] | set[str] = fr
             local.append(Part("apps", "apps", bumps))
     if scope in ("all", "images"):
         patch = vulns.image_patch(scan, skip_projects=skip_projects, now=now)
-        if patch.projects:
-            local.append(Part("images", "images", list(patch.refreshable), image_patch=patch))
+        if patch.projects or patch.web:
+            local.append(Part("images", "images", list(patch.refreshable) + list(patch.web), image_patch=patch))
     if local and local_blocker:
         job.notes.append(local_blocker)
     elif local:
@@ -567,6 +567,26 @@ class Run:
                                               f"image patches: {vulns.n_images(len(part.items))}"), result)
         return result
 
+    async def _web_container(self, results: list[PartResult]) -> None:
+        """
+        Kontener strony /web (Caddy albo tunel; bez compose, ale Pipe zna jego opcje) — na samym koncu, po wszystkich
+        czesciach: latanie zlecone z przegladarki przez /web idzie wlasnie przez ten kontener, wiec jego odtworzenie
+        zrywa strone (tunel dostaje nowy adres). Latanie trwa dalej w tle, wynik przychodzi jako wiadomosc.
+        """
+        from backend.core import webpublic
+        for result in results:
+            patch = result.part.image_patch
+            if result.part.kind != "images" or not patch or not patch.web or result.stopped:
+                continue
+            self.emit(tr("na koniec odswiezam kontener strony /web (pipe-web) — strona w przegladarce moze na chwile "
+                         "zniknac, wynik przyjdzie tez jako wiadomosc",
+                         "finally refreshing the /web page container (pipe-web) — the page in the browser may "
+                         "disappear for a moment, the result also comes as a message"))
+            changed, text = await webpublic.refresh_proxy()
+            result.output = "\n".join(o for o in (result.output, text) if o)
+            if changed:
+                result.refreshed += [t.name for t in patch.web]
+
     async def _refresh_or_layer(self, target: Any, result: PartResult) -> str:
         """
         Po pull/build: nowszy obraz pod tagiem — zostaje. Ten sam (nie ma nowszego) — warstwa z poprawkami
@@ -670,6 +690,7 @@ class Run:
             results.append(result)
             if result.stopped:
                 break
+        await self._web_container(results)
         # sprzatanie tego serwera po latce na nim (zdalne serwery sprzataja swoje kroki apt)
         freed = await self._cleanup() if any(r.part.kind in ("system", "images", "apps") for r in results) else 0
         finished = time.time()

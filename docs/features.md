@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.46.0
+Pipe v0.47.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -701,6 +701,8 @@ podsuwa zadania zwyklymi slowami (*Czy wszystko dziala?*, *Zwolnij miejsce na dy
 Przypisanie dzialania do elementu wynika z tresci komendy: nazwa kontenera, jednostka systemd, sciezka pliku, katalog
 projektu. Gdy sie nie da (np. dowolny skrypt), dzialanie jest pokazywane na calym serwerze. Wyszukiwanie i czytanie
 stron (`web_search`, `web_fetch`, `software_info`) swieci na elemencie *Internet*.
+
+**Na telefonie** rozmowa i pulpit przelaczaja sie przyciskami w gornym pasku, a widok, jezyk i motyw sa w menu *...*. Schemat na waskim ekranie uklada sie z gory na dol (czytelny bez przyblizania): jeden palec przesuwa, dwa przyblizaja, podwojne stukniecie w puste miejsce przybliza, przycisk z ramka wraca do calosci. Szczegoly elementu wysuwaja sie od dolu. Pole pisania zostaje nad klawiatura.
 
 **Panel boczny** zajmuje domyslnie pol ekranu. Jego krawedz mozna przeciagnac -- wezej albo szerzej, najwyzej do polowy
 ekranu; dwuklik na krawedzi przywraca domyslna szerokosc, a przeciagniecie do prawej krawedzi okna chowa panel.

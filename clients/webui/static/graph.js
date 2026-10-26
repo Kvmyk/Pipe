@@ -1,10 +1,15 @@
 // Schemat na zywo: uklad warstwowy, kamera (przesuwanie / zoom), plynne przejscia miedzy poziomami,
 // stany wezlow (agent pracuje / czeka na zgode) i impulsy plynace po polaczeniach.
 // Wszystko w SVG, animacje na transform/opacity + jedna petla requestAnimationFrame.
+// Telefon: na waskim, wysokim ekranie warstwy ida z gory na dol (poziomy uklad dawal skale ~0.4 i nieczytelny tekst);
+// gesty przez Pointer Events — jeden palec przesuwa, dwa przyblizaja wokol srodka miedzy palcami, podwojne stukniecie
+// w puste miejsce przybliza. touch-action: none jest tylko na samym schemacie (CSS), reszta strony przewija sie normalnie.
 (function () {
   "use strict";
   const NS = "http://www.w3.org/2000/svg";
   const W = 190, H = 58, COL = 286, ROW = 84;
+  const COL_V = W + 24, ROW_V = 112;                     // uklad pionowy: odstep wezlow w warstwie i miedzy warstwami
+  const K_MIN = 0.25, K_MAX = 2.4;
   const ICONS = {
     server: "M5 5h14v6H5zM5 13h14v6H5zM8.5 8h.01M8.5 16h.01",
     cluster: "M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9zM12 8.2v7.6M8.6 10l6.8 4M15.4 10l-6.8 4",
@@ -32,8 +37,8 @@
     return text.length > max ? text.slice(0, max - 1) + "…" : text;
   }
 
-  // --- uklad: warstwy od zrodel (internet) w prawo, wezly bez polaczen w osobnym bloku ---
-  function layout(view) {
+  // --- uklad: warstwy od zrodel (internet) w prawo (albo w dol — `vertical`), wezly bez polaczen w osobnym bloku ---
+  function layout(view, vertical) {
     const nodes = view.nodes, edges = view.edges;
     const ids = new Set(nodes.map((n) => n.id));
     const links = edges.filter((e) => ids.has(e.from) && ids.has(e.to));
@@ -70,6 +75,17 @@
     });
     const isolated = nodes.filter((n) => !level.has(n.id)).sort(byKind);
     const tallest = Math.max(1, ...compact.map((c) => c.length));
+    if (vertical) {
+      // warstwa = wiersz; wezly bez polaczen po dwa w wierszu — szerokosc zostaje na 2 wezly, tekst czytelny
+      for (let i = 0; i < isolated.length; i += 2) compact.push(isolated.slice(i, i + 2));
+      const across = Math.max(1, ...compact.map((c) => c.length));
+      const pos = new Map();
+      compact.forEach((row, ry) => {
+        const offset = ((across - row.length) * COL_V) / 2;
+        row.forEach((n, i) => pos.set(n.id, { x: offset + i * COL_V, y: ry * ROW_V, col: ry }));
+      });
+      return { pos, links, vertical: true, width: across * COL_V - (COL_V - W), height: Math.max(1, compact.length) * ROW_V - (ROW_V - H) };
+    }
     const perColumn = Math.max(3, Math.min(6, Math.max(tallest, Math.ceil(Math.sqrt(isolated.length * 1.4)))));
     for (let i = 0; i < isolated.length; i += perColumn) compact.push(isolated.slice(i, i + perColumn));
     const height = Math.max(1, ...compact.map((c) => c.length));
@@ -78,10 +94,20 @@
       const offset = ((height - column.length) * ROW) / 2;
       column.forEach((n, row) => pos.set(n.id, { x: cx * COL, y: offset + row * ROW, col: cx }));
     });
-    return { pos, links, width: Math.max(1, compact.length) * COL - (COL - W), height: height * ROW - (ROW - H) };
+    return { pos, links, vertical: false, width: Math.max(1, compact.length) * COL - (COL - W), height: height * ROW - (ROW - H) };
   }
 
-  function edgePath(a, b) {
+  function edgePath(a, b, vertical) {
+    if (vertical) {
+      const x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y;
+      if (y2 > y1) {
+        const bend = Math.max(28, (y2 - y1) * 0.5);
+        return `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2}`;
+      }
+      const sx1 = a.x + W, sy1 = a.y + H / 2, sx2 = b.x + W, sy2 = b.y + H / 2;      // wstecz: luk z prawej strony
+      const lift = Math.max(50, Math.abs(sy2 - sy1) * 0.4 + 36);
+      return `M${sx1},${sy1} C${sx1 + lift},${sy1} ${sx2 + lift},${sy2} ${sx2},${sy2}`;
+    }
     const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2;
     if (x2 > x1) {
       const bend = Math.max(36, (x2 - x1) * 0.5);
@@ -107,6 +133,9 @@
     camera.style.transformOrigin = "0 0";
     function applyCamera() { camera.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`; }
     function size() { const r = root.getBoundingClientRect(); return { w: Math.max(200, r.width), h: Math.max(160, r.height) }; }
+    // waski i wysoki obszar (telefon pionowo): warstwy z gory na dol
+    function wantVertical() { const r = root.getBoundingClientRect(); return r.width > 0 && r.width < 560 && r.height > r.width * 1.05; }
+    let userMoved = false;                                // uzytkownik ruszyl kamera — zmiana wysokosci (pasek adresu) jej nie cofa
 
     function fitTransform(scaleMul) {
       const { w, h } = size();
@@ -212,7 +241,7 @@
 
     function render(animateEnter) {
       const view = data.views[viewId];
-      const lay = layout(view);
+      const lay = layout(view, wantVertical());
       const old = current && current.viewId === viewId ? current.nodeEls : new Map();
       if (!current || current.viewId !== viewId) { gNodes.textContent = ""; }
       gEdges.textContent = "";
@@ -240,14 +269,15 @@
         if (!nodeEls.has(id)) { outer.style.opacity = "0"; setTimeout(() => outer.remove(), 320); }
       });
       const edgeEls = lay.links.map((edge) => {
-        const path = svg("path", { d: edgePath(lay.pos.get(edge.from), lay.pos.get(edge.to)), "marker-end": "url(#arrow)" },
+        const path = svg("path", { d: edgePath(lay.pos.get(edge.from), lay.pos.get(edge.to), lay.vertical), "marker-end": "url(#arrow)" },
           "edge kind-" + (edge.kind || "link") + (animateEnter ? " enter" : ""));
         gEdges.appendChild(path);
         let label = null;
         if (edge.label) {
-          const mid = path.getPointAtLength(path.getTotalLength() / 2);
+          // pionowo kilka polaczen wychodzi z jednego punktu — etykieta blizej celu, zeby sie nie nakladaly
+          const mid = path.getPointAtLength(path.getTotalLength() * (lay.vertical ? 0.7 : 0.5));
           label = svg("text", { x: mid.x, y: mid.y - 6, "text-anchor": "middle" }, "edge-label" + (animateEnter ? " enter" : ""));
-          label.textContent = clip(edge.label, 30);
+          label.textContent = clip(edge.label, lay.vertical ? 24 : 30);
           gEdges.appendChild(label);
         }
         return { edge, path, label, live: false };
@@ -348,44 +378,105 @@
       return node ? node.id : null;
     }
 
-    function fit(ms) { if (current) return moveCamera(fitTransform(), ms === undefined ? 420 : ms, easeInOut); }
-    // `covered` — szerokosc (px) zaslonieta z prawej przez panel szczegolow: wezel ma zostac w widocznej czesci
-    function focus(id, ms, covered) {
+    function fit(ms) { if (current) { userMoved = false; return moveCamera(fitTransform(), ms === undefined ? 420 : ms, easeInOut); } }
+    // `covered` — szerokosc (px) zaslonieta z prawej przez panel szczegolow, `coveredBottom` — wysokosc zaslonieta
+    // od dolu (telefon: panel wysuwa sie z dolu): wezel ma zostac w widocznej czesci
+    function focus(id, ms, covered, coveredBottom) {
       if (!current) return;
       const p = current.layout.pos.get(id);
       if (!p) return;
       const { w, h } = size();
-      const free = Math.max(160, w - (covered || 0));
+      const free = Math.max(160, w - (covered || 0)), freeH = Math.max(120, h - (coveredBottom || 0));
       const k = Math.max(cam.k, Math.min(1, fitTransform().k * 1.25));
       const cx = (p.x + W / 2) * cam.k + cam.x, cy = (p.y + H / 2) * cam.k + cam.y;
       const half = (W / 2) * cam.k;
-      const visible = cx - half > 12 && cx + half < free - 12 && cy > h * 0.12 && cy < h * 0.88;
+      const visible = cx - half > 12 && cx + half < free - 12 && cy > freeH * 0.12 && cy < freeH * 0.88;
       if (visible && Math.abs(k - cam.k) < 0.02) return;
-      return moveCamera({ k, x: free / 2 - (p.x + W / 2) * k, y: h / 2 - (p.y + H / 2) * k }, ms || 520, easeInOut);
+      return moveCamera({ k, x: free / 2 - (p.x + W / 2) * k, y: freeH / 2 - (p.y + H / 2) * k }, ms || 520, easeInOut);
+    }
+    // przyblizenie wokol punktu ekranu (podwojne stukniecie)
+    function zoomAt(px, py, mul) {
+      const k = Math.min(K_MAX, Math.max(K_MIN, cam.k * mul));
+      userMoved = true;
+      return moveCamera({ k, x: px - ((px - cam.x) / cam.k) * k, y: py - ((py - cam.y) / cam.k) * k }, 260, easeOut);
     }
 
-    // --- interakcja ---
-    let drag = null;
+    // --- interakcja: Pointer Events (mysz, palec, rysik); dwa palce = przyblizanie ---
+    const pointers = new Map();                       // pointerId -> { x, y } (wspolrzedne klienta)
+    let drag = null, pinch = null, lastTap = null, lastTouch = 0;
+    const tapSlop = (type) => (type === "mouse" ? 5 : 10);   // palec drga bardziej niz mysz — stukniecie to nie przesuniecie
+    function local(x, y) { const r = root.getBoundingClientRect(); return { x: x - r.left, y: y - r.top }; }
+    function stopCamera() {
+      wheelZoom = null;
+      if (camAnim) { const pending = camAnim.resolve; camAnim = null; if (pending) pending(); }
+    }
+    function userMove() { userMoved = true; options.onUserMove && options.onUserMove(); }
+    function startPinch() {
+      const [a, b] = [...pointers.values()];
+      const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), k: cam.k,
+                wx: (mid.x - cam.x) / cam.k, wy: (mid.y - cam.y) / cam.k };
+      if (drag) drag.moved = true;                    // dwa palce — to juz nie bedzie stukniecie
+      root.classList.add("dragging");
+      stopCamera(); userMove();
+    }
     root.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
-      drag = { x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false, target: event.target };
-      root.setPointerCapture(event.pointerId);
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (event.pointerType !== "mouse") lastTouch = Date.now();
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      try { root.setPointerCapture(event.pointerId); } catch (_) { /* wskaznik juz zniknal */ }
+      if (pointers.size === 1) {
+        drag = { x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false, target: event.target,
+                 type: event.pointerType, id: event.pointerId };
+      } else if (pointers.size === 2) startPinch();
     });
     root.addEventListener("pointermove", (event) => {
-      if (!drag) return;
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pinch && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()];
+        const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const k = Math.min(K_MAX, Math.max(K_MIN, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.dist));
+        // punkt swiata pod srodkiem palcow zostaje pod nim — przyblizanie i przesuwanie dwoma palcami naraz
+        cam = { k, x: mid.x - pinch.wx * k, y: mid.y - pinch.wy * k };
+        applyCamera();
+        return;
+      }
+      if (!drag || drag.id !== event.pointerId) return;
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
-      if (!drag.moved) { drag.moved = true; root.classList.add("dragging"); camAnim = null; wheelZoom = null; options.onUserMove && options.onUserMove(); }
+      if (!drag.moved && Math.hypot(dx, dy) < tapSlop(drag.type)) return;
+      if (!drag.moved) { drag.moved = true; root.classList.add("dragging"); stopCamera(); userMove(); }
       cam.x = drag.cx + dx; cam.y = drag.cy + dy; applyCamera();
     });
     const release = (event) => {
-      if (!drag) return;
+      if (!pointers.has(event.pointerId)) return;
+      pointers.delete(event.pointerId);
+      try { root.releasePointerCapture(event.pointerId); } catch (_) { /* juz zwolniony */ }
+      if (pinch) {
+        if (pointers.size >= 2) return;
+        pinch = null;
+        // zostal jeden palec — przesuwa dalej od miejsca, w ktorym jest (bez skoku kamery)
+        const rest = [...pointers.entries()][0];
+        drag = rest ? { x: rest[1].x, y: rest[1].y, cx: cam.x, cy: cam.y, moved: true, target: null, type: "touch", id: rest[0] } : null;
+        if (!drag) root.classList.remove("dragging");
+        return;
+      }
+      if (!drag || drag.id !== event.pointerId) return;
       const was = drag; drag = null;
       root.classList.remove("dragging");
-      try { root.releasePointerCapture(event.pointerId); } catch (_) { /* juz zwolniony */ }
-      if (was.moved) return;
-      const holder = was.target.closest ? was.target.closest(".node-pos") : null;
-      if (!holder) { select(null); options.onSelect && options.onSelect(null); return; }
+      if (was.moved || event.type === "pointercancel") return;
+      const holder = was.target && was.target.closest ? was.target.closest(".node-pos") : null;
+      if (!holder) {
+        if (was.type !== "mouse") {
+          // podwojne stukniecie w puste miejsce: przyblizenie w tym punkcie (mysz ma do tego dblclick = dopasuj)
+          const now = Date.now(), at = local(event.clientX, event.clientY);
+          if (lastTap && now - lastTap.t < 320 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 32) {
+            lastTap = null; options.onUserMove && options.onUserMove(); zoomAt(at.x, at.y, 1.8); return;
+          }
+          lastTap = { t: now, x: at.x, y: at.y };
+        }
+        select(null); options.onSelect && options.onSelect(null); return;
+      }
       const node = current.view.nodes.find((n) => n.id === holder.dataset.id);
       if (!node) return;
       options.onUserMove && options.onUserMove();
@@ -404,16 +495,27 @@
       const delta = event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1);
       const factor = Math.exp(-Math.max(-300, Math.min(300, delta)) * (event.ctrlKey ? 0.012 : 0.0016));
       const from = wheelZoom ? wheelZoom.k : camAnim ? camAnim.to.k : cam.k;
-      const k = Math.min(2.4, Math.max(0.25, from * factor));
-      options.onUserMove && options.onUserMove();
+      const k = Math.min(K_MAX, Math.max(K_MIN, from * factor));
+      userMove();
       if (camAnim) { const pending = camAnim.resolve; camAnim = null; if (pending) pending(); }
       // punkt pod kursorem liczony z tego, co widac teraz — kamera nie skacze, gdy kursor sie przesunal
       wheelZoom = { k, mx, my, wx: (mx - cam.x) / cam.k, wy: (my - cam.y) / cam.k };
       if (reduced || document.hidden) { cam = { k, x: mx - wheelZoom.wx * k, y: my - wheelZoom.wy * k }; wheelZoom = null; applyCamera(); }
       else loop();
     }, { passive: false });
-    root.addEventListener("dblclick", (event) => { if (!event.target.closest(".node-pos")) fit(); });
-    if (window.ResizeObserver) new ResizeObserver(() => { if (current && !drag && !busy && root.clientWidth) fit(0); }).observe(root);   // schowany panel: 0 px
+    // dblclick myszy = dopasuj; po dotyku przegladarka tez potrafi wyslac dblclick — wtedy go pomijamy
+    root.addEventListener("dblclick", (event) => { if (Date.now() - lastTouch > 700 && !event.target.closest(".node-pos")) fit(); });
+    // Zmiana rozmiaru: inna orientacja -> nowy uklad; inna szerokosc -> dopasowanie; sama wysokosc (pasek adresu,
+    // klawiatura na telefonie) dopasowuje tylko, gdy uzytkownik nie ruszal kamery — inaczej cofalaby jego przesuniecie.
+    let lastSize = { w: 0, h: 0 };
+    if (window.ResizeObserver) new ResizeObserver(() => {
+      const r = root.getBoundingClientRect();
+      if (!current || !r.width || drag || pinch || busy) { lastSize = { w: r.width, h: r.height }; return; }   // schowany panel: 0 px
+      const widthChanged = Math.abs(r.width - lastSize.w) > 2, heightChanged = Math.abs(r.height - lastSize.h) > 2;
+      lastSize = { w: r.width, h: r.height };
+      if (wantVertical() !== current.layout.vertical) { render(false); fit(0); }
+      else if (widthChanged || (heightChanged && !userMoved)) fit(0);
+    }).observe(root);
 
     function select(id) {
       selected = id;
@@ -429,6 +531,7 @@
       get view() { return viewId; },
       get data() { return data; },
       show, fit, focus, select, inView, deepestView,
+      get vertical() { return !!(current && current.layout.vertical); },
       setStates(next) { states = next; applyStates(); },
       flash(id, ok) {
         const local = current && inView(id, viewId), outer = local && current.nodeEls.get(local);

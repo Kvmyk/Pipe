@@ -1,5 +1,24 @@
 # Historia zmian -- Pipe
 
+## v0.47.0 (2026-10-26)
+
+### `pipe web` na telefonie
+
+- Strona miesci sie na ekranie od 320 px: przy 360 px gorny pasek byl szerszy niz telefon i cala strona sie
+  pomniejszala albo przesuwala w bok. Widok, jezyk i motyw sa na waskim ekranie w menu *...*
+- Schemat na waskim, wysokim ekranie uklada sie z gory na dol (wczesniej wezly byly w skali ~0,4, tekst nieczytelny).
+  Jeden palec przesuwa, dwa przyblizaja wokol srodka miedzy palcami, podwojne stukniecie w puste miejsce przybliza;
+  chowajacy sie pasek adresu i klawiatura nie cofaja juz widoku do calosci. Szczegoly elementu wysuwaja sie od dolu
+- Przyciski na ekranach dotykowych maja 40-46 px (byly 26-30), pole pisania zostaje nad klawiatura, marginesy na
+  wyciecie ekranu i pasek gestow, okna otwieraja sie od dolu; w poziomie schemat dostaje cala wysokosc
+
+### Kontener strony /web w latkach i aktualizacjach
+
+- `/zalataj obrazy` odswieza kontener `pipe-web` (Caddy albo tunel) sam -- wczesniej konczylo sie "nie ma nic do
+  zainstalowania" i rada, zeby odtworzyc go recznie. Robi to na samym koncu, bo latanie zlecone z przegladarki idzie
+  wlasnie przez ten kontener
+- Po `/aktualizuj` (kazdy start Pipe) kontener `pipe-web` dostaje nowszy obraz, jesli jest
+
 ## v0.46.0 (2026-10-26)
 
 ### `/web` na mikr.us i naprawiony tunel
