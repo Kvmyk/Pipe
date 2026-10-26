@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator
 
 from backend.core import audit, executor, runtime, safety
-from backend.core.events import Event
+from backend.core.events import Event, Progress
 from backend.core.handlers.common import reply
 from backend.core.memory import REDACTION_MARK
 from backend.core.security import classify_file_write, is_sensitive, resolve_local, validate_workspace_access
@@ -144,6 +144,26 @@ async def handle_write_file(
                                      "SYSTEM REFUSAL: writing to this path is forbidden."))
         return
 
+    real_host = runtime.to_host(local)
+    if workspace_write(host, real_host):
+        # Warsztat Pipe (core/projects.py): agent pisze tu swoje skrypty i pliki projektow sam. Sprawdzana jest
+        # sciezka PO rozwiazaniu symlinkow — link w sklonowanym repozytorium nie wyprowadzi zapisu poza warsztat.
+        from backend.core import projects
+        try:
+            projects.ensure_workspace(_workspace_config())
+            await executor.write_file(local, content)
+            await audit.log_file_write(session.interface + " [warsztat]", real_host, 0)
+        except (OSError, projects.ProjectError) as exc:
+            await audit.log_file_write(session.interface + " [warsztat]", real_host, 1)
+            reply(session, tool_call, tr(f"Blad zapisu pliku: {exc}", f"File write error: {exc}"))
+            return
+        yield Progress(tr(f"warsztat: zapisano {real_host}", f"workshop: wrote {real_host}"), source="warsztat")
+        reply(session, tool_call, tr(f"Plik {real_host} zapisany (warsztat — bez pytania). Uruchom go w izolowanym "
+                                     "kontenerze: project exec.",
+                                     f"File {real_host} written (workshop — no confirmation). Run it in the isolated "
+                                     "container: project exec."))
+        return
+
     # Zapis pliku zawsze wymaga potwierdzenia — pokazujemy uzytkownikowi, CO sie zmieni
     plan = await safety.plan_for_write(runtime.to_host(local))
     session.pending_confirmation = ConfirmationRequest(
@@ -167,6 +187,23 @@ async def handle_write_file(
     if described:
         message.append(described)
     yield "\n".join(message)
+
+
+def _workspace_config():
+    from backend.core.handlers.projects import config
+    return config()
+
+
+def workspace_write(host: str, real_host: str) -> bool:
+    """Zapis bez pytania: autonomia warsztatu wlaczona, obie sciezki (podana i rozwiazana) w warsztacie, nie plik startowy."""
+    from backend.config import settings
+    from backend.core import projects
+
+    if not settings.WORKSPACE_AUTONOMY:
+        return False
+    cfg = _workspace_config()
+    return (projects.inside_workspace(cfg, host) and projects.inside_workspace(cfg, real_host)
+            and not startup_file_warning(host) and not startup_file_warning(real_host))
 
 
 # Pliki uruchamiane automatycznie przy logowaniu/starcie — zapis = trwaly backdoor.

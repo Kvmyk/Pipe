@@ -1,5 +1,55 @@
 # Historia zmian -- Pipe
 
+## v0.39.0 (2026-10-26)
+
+### Pipe pisze pierwszy
+
+- Wszystko, co Pipe wysyla sam (alerty, podpowiedzi, ustalenia, raporty), trafia do skrzynki
+  (`backend/data/feed.json`) i ma przyciski akcji: *Zbadaj*, *Zwolnij miejsce*, *Zalataj*, *Napraw*. Nic nie ginie,
+  gdy nikt nie byl podlaczony. `/nowosci` (`/news`) we wszystkich klientach
+- Podpowiedzi bez AI, co godzine (`INSIGHTS_INTERVAL`): kiedy zapelni sie dysk (z tempa przyrostu z 48 h), ile
+  miejsca da sie odzyskac, kontener, ktory czesto sie restartuje, serwer czekajacy na restart, stale rosnacy RAM.
+  Przyciski *Pozniej* (wraca za dobe) i *Mniej takich*
+- Przy krytycznym alercie Pipe sam bada przyczyne (worker, tylko odczyty) i zaraz po alercie pisze, co ustalil, z
+  przyciskiem *Napraw*. `AUTO_INVESTIGATE=critical|all|off`, najwyzej `AUTO_INVESTIGATE_DAILY` (4) badan dziennie
+- Powiadomienia maja poziom (`NOTIFY_LEVEL`: wszystko / wazne / krytyczne), cisze nocna (`QUIET_HOURS`) i limit
+  podpowiedzi dziennie (`INSIGHTS_PER_DAY`). Zmienisz je w trakcie przez `/powiadomienia`; reszta czeka w skrzynce
+- `/sprzataj` (`/cleanup`) zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki
+  apt i cache npm/pip/yarn/composer. Wynik mowi, ile zwolnil
+
+### Warsztat: projekty, ktore Pipe stawia sam
+
+- Nowe narzedzie `project`: *"postaw mi te aplikacje: https://github.com/..."* klonuje repozytorium, rozpoznaje bez
+  AI, co to jest i jak to uruchomic (compose, Dockerfile, Node, Python, Go, PHP, strona statyczna), uruchamia je
+  w kontenerze z portem na `127.0.0.1` i podaje adres. Projekty leza w `WORKSPACE_DIR` (`/root/pipe-workspace`)
+- W warsztacie agent pisze pliki i uruchamia komendy bez pytania, ale zawsze w jednorazowym kontenerze bez
+  `docker.sock` i uprawnien, z limitem pamieci, procesow i czasu. O zgode pyta raz przed uruchomieniem uslugi na
+  stale i przed usunieciem projektu; wdrozenie jest w dzienniku, wiec `/cofnij` je usuwa
+- Po przeczytaniu README sklonowanego repozytorium albo strony z internetu Pipe znow pyta o zgode na uruchomienie
+  kodu, do Twojej nastepnej wiadomosci. `WORKSPACE_AUTONOMY=0` -- zgoda na kazda operacje
+- `/projekty` (`/projects`) w CLI i na Telegramie, karty projektow z logami i zatrzymaniem w `pipe web`
+
+### Mniej tokenow
+
+- Narzedzia na zadanie (`TOOLS_MODE=lazy`, domyslnie): rozmowa zaczyna od podstawowych narzedzi, reszta wlacza
+  sie sama, gdy wiadomosc jej potrzebuje, albo gdy model poprosi (`load_tools`). Ok. 2,4 tys. tokenow zamiast 6,2
+  tys. przy kazdym kroku agenta. `TOOLS_MODE=all` przywraca stare zachowanie
+- Wyniki narzedzi starsze niz dwie tury (`CONTEXT_KEEP_TURNS`) ida do modelu skrocone; historia w sesji zostaje
+  pelna. Prompt systemowy jest krotszy
+- `/status` nie pyta juz modelu: stan serwera przychodzi od razu i za darmo. `/koszt` i pulpit pokazuja, ile
+  tokenow Pipe nie wyslal i ile wejscia przyszlo z cache providera
+
+### Prostsze interfejsy
+
+- `pipe web`: nowy *Pulpit* -- *Wszystko dziala* albo co wymaga uwagi, pierscienie procesora, pamieci i dysku z
+  przebiegiem z doby, skrzynka *Od Pipe*, projekty, zuzycie modelu. Dzwonek liczy nowe wiadomosci. Zakladki *Skille*
+  i *Alerty* zniknely (skille sa na liscie `/`, alerty w skrzynce); pusty ekran rozmowy podsuwa zadania zwyklymi
+  slowami
+- Telegram: stala klawiatura (*Stan serwera*, *Co nowego*, *Projekty*, *Pomoc*), krotsze menu `/`, ustawienia
+  powiadomien przyciskami
+- CLI: po polaczeniu pokazuje stan serwera, a wiadomosci od Pipe pojawiaja sie nad promptem; akcje wybierasz w
+  `/nowosci`, wpisujac np. `1a`
+
 ## v0.38.0 (2026-10-17)
 
 ### `/zalataj` lata od razu

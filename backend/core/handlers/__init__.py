@@ -14,6 +14,7 @@ from .memory import handle_directory, handle_server_md, handle_skill_manage, han
 from .diagram import handle_diagram
 from .history import handle_server_history
 from .journal import handle_journal
+from .projects import handle_load_tools, handle_project
 from .remote import handle_delegate, handle_remote_exec, handle_target_manage
 from .reminders import handle_reminder
 from .update import handle_pipe_update
@@ -54,4 +55,6 @@ __all__ = [
     "handle_web_search",
     "handle_web_fetch",
     "handle_software_info",
+    "handle_project",
+    "handle_load_tools",
 ]

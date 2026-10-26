@@ -221,8 +221,22 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command == "scan_server":
             message = prompt("SCAN_SERVER_UPDATE") if memory.read_server_md().strip() else prompt("SCAN_SERVER_CREATE")
             await _stream_chat(writer, agent, session_id, message, interface, generated=True, **chat_as)
-        elif command == "status":
-            await _stream_chat(writer, agent, session_id, prompt("STATUS_MESSAGE"), interface, generated=True)
+        elif command in ("status", "overview"):
+            # stan serwera bez modelu: od razu i za darmo; tekst w `response` dla starszych klientow
+            data = await _overview(interface)
+            if command == "status":
+                await _send(writer, {"response": data["text"], "status": "ok", "done": False})
+            await _send(writer, _data(data))
+        elif command == "feed":
+            await _feed(writer, request, interface)
+        elif command == "feed_act":
+            await _feed_act(writer, agent, request, session_id, interface, identity, role)
+        elif command == "prefs":
+            await _prefs(writer, request, interface, role)
+        elif command == "cleanup":
+            await _cleanup(writer, agent, session_id, interface, role)
+        elif command == "projects":
+            await _projects(writer, request, interface, role)
         elif command == "update":
             # /aktualizuj [sprawdz] — aktualizacja samego Pipe narzedziem pipe_update (potwierdzenie jak zwykle)
             check = args.lower() in ("sprawdz", "sprawdź", "check", "wersja", "version")
@@ -400,6 +414,204 @@ async def _undo(writer, request: dict, interface: str) -> None:
                                       "Undo needs the entry id from the preview.")))
         return
     await _send(writer, _data({"id": entry.id, "text": await journal.rollback(entry, interface)}))
+
+
+async def _overview(interface: str) -> dict:
+    """Stan serwera bez LLM (core/overview.py): pulpit pipe web, /status w CLI i na Telegramie."""
+    from backend.core import feed, infra, overview, projects
+
+    watcher = get_watcher()
+    containers = await infra.docker_containers()
+    found = projects.load()
+    states = await projects.statuses(found) if found else {}
+    listed = [{"name": p.name, "stack": p.stack, "url": p.run.get("url", ""), "strategy": p.run.get("strategy", ""),
+               "status": states.get(p.name, {}).get("status", "none"), "source": p.url} for p in found]
+    return overview.build(
+        active=list(watcher.active.values()), checks_report=watcher.checks_report, containers=containers,
+        projects=listed, unread=feed.unread(memory.vibe_key(interface)), usage_today=usage.day_summary(),
+        hostname=infra.host_identity()[0], disk_pct=settings.WATCH_DISK_PCT, mem_pct=settings.WATCH_MEM_PCT,
+        load_factor=settings.WATCH_LOAD_FACTOR)
+
+
+async def _feed(writer, request: dict, interface: str) -> None:
+    """
+    Skrzynka (core/feed.py): wiadomosci, ktore Pipe wyslal sam, z liczba nowych dla tego odbiorcy. `args: seen` —
+    przeczytane; `since` (znacznik czasu) — tylko nowsze (CLI sprawdza tak w tle, czy cos przyszlo).
+    """
+    from backend.core import feed
+
+    user = memory.vibe_key(interface)
+    if str(request.get("args", "")).strip().lower() in ("seen", "przeczytane", "read"):
+        feed.mark_seen(user)
+    try:
+        since = float(request.get("since")) if request.get("since") not in (None, "") else None
+    except (TypeError, ValueError):
+        since = None
+    data = feed.listing(user)
+    if since is not None:
+        data["items"] = [i for i in data["items"] if i["ts"] > since]
+    data["text"] = feed.text_list(user)
+    data["prefs"] = feed.prefs(get_watcher().feed_defaults()).to_data()
+    await _send(writer, _data(data))
+
+
+# Komendy, ktore moze uruchomic przycisk wiadomosci ze skrzynki — akcje buduje backend, ale i tak tylko z tej listy.
+FEED_COMMANDS = frozenset({"cleanup", "patch", "investigate", "overview", "digest", "audit", "vulns", "projects"})
+
+
+async def _feed_act(writer, agent, request: dict, session_id: str, interface: str, identity: str, role: str) -> None:
+    """Przycisk wiadomosci ze skrzynki: komenda backendu, wiadomosc do agenta, "pozniej", "mniej takich", "ukryj"."""
+    from backend.core import feed
+
+    item = feed.get(str(request.get("id", "") or ""))
+    try:
+        index = int(request.get("action"))
+    except (TypeError, ValueError):
+        index = -1
+    if item is None or not 0 <= index < len(item.actions):
+        await _send(writer, _error(tr("Nie znam tej wiadomosci albo przycisku.", "I do not know this message or button.")))
+        return
+    action = item.actions[index]
+    kind, label = action.get("kind"), str(action.get("label", ""))
+    if action.get("admin") and role != "admin":
+        await _send(writer, _error(tr("To moze zrobic tylko administrator.", "Only an administrator can do this.")))
+        return
+    if item.done and kind in ("command", "message"):
+        await _send(writer, _error(tr(f"Juz zrobione: {item.done}", f"Already done: {item.done}")))
+        return
+    if kind == "snooze":
+        feed.snooze(item.key or item.id, 24)
+        feed.mark_done(item.id, label)
+        await _send(writer, _data({"id": item.id, "done": label, "text": tr("Odlozone o dobe.", "Snoozed for a day.")}))
+    elif kind == "mute":
+        muted = feed.mute(item.kind)
+        feed.mark_done(item.id, label)
+        await _send(writer, _data({"id": item.id, "done": label, "muted": muted,
+                                   "text": tr("Takie podpowiedzi zostana w skrzynce, bez powiadomien. Przywrocisz je w "
+                                              "ustawieniach powiadomien.", "Suggestions like this stay in the inbox, "
+                                              "without notifications. Bring them back in the notification settings.")}))
+    elif kind == "dismiss":
+        feed.mark_done(item.id, label)
+        await _send(writer, _data({"id": item.id, "done": label}))
+    elif kind == "message":
+        feed.mark_done(item.id, label)
+        text = str((action.get("args") or {}).get("text", "")).strip()
+        await _stream_chat(writer, agent, session_id, text, interface, generated=True, owner=identity, role=role)
+    elif kind == "command" and action.get("command") in FEED_COMMANDS:
+        feed.mark_done(item.id, label)
+        await _handle_command(writer, agent, {**(action.get("args") or {}), "command": action["command"]},
+                              session_id, interface, identity, role)
+    else:
+        await _send(writer, _error(tr("Ten przycisk nie jest juz obslugiwany.", "This button is no longer supported.")))
+
+
+async def _prefs(writer, request: dict, interface: str, role: str) -> None:
+    """Ustawienia powiadomien: poziom, cisza nocna, podpowiedzi dziennie, wyciszone rodzaje (zmiana — administrator)."""
+    from backend.core import feed
+
+    defaults = get_watcher().feed_defaults()
+    changes = {k: request.get(k) for k in ("level", "quiet", "per_day") if request.get(k) not in (None, "")}
+    args = str(request.get("args", "") or "").strip().lower()
+    if changes or args.startswith("unmute"):
+        if role != "admin":
+            await _send(writer, _error(tr("Ustawienia powiadomien zmienia administrator.",
+                                          "An administrator changes the notification settings.")))
+            return
+        try:
+            if "per_day" in changes:
+                changes["per_day"] = int(changes["per_day"])
+            if changes:
+                feed.set_prefs(defaults=defaults, **{k: (str(v) if k != "per_day" else v) for k, v in changes.items()})
+            if args.startswith("unmute"):
+                kind = args.split(None, 1)[1] if " " in args else "all"
+                for muted in (feed.prefs(defaults).muted if kind == "all" else [kind]):
+                    feed.mute(muted, on=False)
+        except (feed.FeedError, ValueError) as exc:
+            await _send(writer, _error(str(exc)))
+            return
+        await audit.log_file_write(interface, f"feed.json (prefs: {', '.join(changes) or args})", 0)
+    current = feed.prefs(defaults)
+    level = {"all": tr("wszystko", "everything"), "important": tr("wazne", "important"),
+             "critical": tr("tylko krytyczne", "critical only")}[current.level]
+    text = tr(f"Powiadomienia: {level}; cisza nocna: {current.quiet or 'wylaczona'}; podpowiedzi dziennie: "
+              f"{current.per_day}" + (f"; wyciszone: {', '.join(current.muted)}" if current.muted else ""),
+              f"Notifications: {level}; quiet hours: {current.quiet or 'off'}; suggestions per day: {current.per_day}"
+              + (f"; muted: {', '.join(current.muted)}" if current.muted else ""))
+    await _send(writer, _data({**current.to_data(), "text": text, "can_edit": role == "admin"}))
+
+
+async def _cleanup(writer, agent, session_id: str, interface: str, role: str) -> None:
+    """Zwolnij miejsce (core/cleanup.py) — bez LLM, z postepem na zywo; wynik trafia tez do rozmowy."""
+    from backend.core import cleanup
+
+    if role != "admin":
+        await _send(writer, _error(tr("Sprzatanie moze uruchomic tylko administrator.", "Only an administrator can clean up.")))
+        return
+    if runtime.observe():
+        await _send(writer, _error(tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe niczego nie usuwa.",
+                                      "Observe mode (PIPE_OBSERVE=1): Pipe removes nothing.")))
+        return
+
+    async def emit(text: str) -> None:
+        await _send(writer, event_frame(Progress(text, source=cleanup.SOURCE)))
+
+    result = await cleanup.run(interface, emit)
+    try:
+        agent.note(session_id, tr(f"Uzytkownik zwolnil miejsce (sprzatanie Pipe):\n{result.text()}",
+                                  f"The user freed disk space (Pipe cleanup):\n{result.text()}"))
+    except Exception:
+        pass
+    await _send(writer, _data(result.to_data()))
+
+
+async def _projects(writer, request: dict, interface: str, role: str) -> None:
+    """
+    Warsztat bez LLM (pulpit pipe web, /projekty): lista ze stanem; `args`: logs | stop | start | remove (z
+    `execute: true`, inaczej podglad) dla projektu `name`. Zmiany — administrator, nie w trybie obserwacji.
+    """
+    from backend.core import hostexec, projects
+    from backend.core.handlers.projects import config, project_list
+
+    op = str(request.get("args", "") or "").strip().lower()
+    if not op:
+        found = projects.load()
+        states = await projects.statuses(found) if found else {}
+        await _send(writer, _data({"projects": [p.to_data(states.get(p.name)) for p in found],
+                                   "workspace": settings.WORKSPACE_DIR, "text": await project_list(),
+                                   "can_edit": role == "admin" and not runtime.observe()}))
+        return
+    project = projects.get(str(request.get("name", "") or "").strip().lower())
+    if project is None:
+        await _send(writer, _error(tr("Nie ma takiego projektu.", "No such project.")))
+        return
+    if op == "logs":
+        await _send(writer, _data({"name": project.name, "text": await projects.logs(project)}))
+        return
+    if op not in ("stop", "start", "remove"):
+        await _send(writer, _error(tr(f"Nieznana operacja {op!r}.", f"Unknown operation {op!r}.")))
+        return
+    reason = tr("Rola viewer: tylko odczyt.", "Viewer role: read-only.") if role != "admin" else projects.blocker()
+    if reason:
+        await _send(writer, _error(reason))
+        return
+    if op == "remove":
+        if not request.get("execute"):
+            await _send(writer, _data({"name": project.name, "preview": tr(
+                f"Usune projekt {project.name}: katalog {project.path}, jego kontenery i zbudowany obraz.",
+                f"I will remove project {project.name}: directory {project.path}, its containers and the built image.")}))
+            return
+        image_ref = await hostexec.image() if runtime.kind() == "docker" and project.run.get("compose") else ""
+        try:
+            text = await projects.remove(config(), project, image_ref=image_ref)
+        except projects.ProjectError as exc:
+            await _send(writer, _error(str(exc)))
+            return
+        await audit.log_confirmed(interface, f"project remove {project.name}", 0)
+        await _send(writer, _data({"name": project.name, "removed": True, "text": text}))
+        return
+    text = await projects.set_running(project, op == "start")
+    await audit.log_confirmed(interface, f"project {op} {project.name}", 0)
+    await _send(writer, _data({"name": project.name, "text": text}))
 
 
 async def _vulns_report() -> tuple[str, dict]:
@@ -778,7 +990,7 @@ async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
 REMEMBERED_COMMANDS = {
     "vulns": ("/podatnosci", "/vulns"), "audit": ("/audyt", "/audit"),
     "health": ("/zdrowie", "/health"), "changes": ("/zmiany", "/changes"), "alerts": ("/alerty", "/alerts"),
-    "journal": ("/dziennik", "/journal"),
+    "journal": ("/dziennik", "/journal"), "status": ("/status", "/status"), "feed": ("/nowosci", "/news"),
 }
 REMEMBERED_TEXT = 3500
 _RECORDED: contextvars.ContextVar[list | None] = contextvars.ContextVar("pipe_recorded_frames", default=None)
@@ -799,6 +1011,8 @@ async def _remembered_command(writer, agent, request: dict, session_id: str, int
     """`_handle_command` + wynik wybranych komend jako notatka w rozmowie (agent.note), zeby model wiedzial, co widac."""
     command = str(request.get("command", "")).strip()
     names = REMEMBERED_COMMANDS.get(command)
+    if command == "feed" and str(request.get("args", "")).strip().lower() not in ("seen", "przeczytane", "read"):
+        names = None            # odswiezanie pulpitu w tle to nie "uzytkownik zobaczyl"
     if names is None:
         await _handle_command(writer, agent, request, session_id, interface, identity, role)
         return
@@ -812,6 +1026,8 @@ async def _remembered_command(writer, agent, request: dict, session_id: str, int
     if not shown:
         return
     args = str(request.get("scope") or request.get("args") or "").strip()
+    if command == "feed":
+        args = ""
     typed = tr(names[0], names[1]) + (f" {args}" if args else "")
     shown = memory.redact_secrets(shown)[0]
     if len(shown) > REMEMBERED_TEXT:

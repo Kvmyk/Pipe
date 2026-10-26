@@ -578,6 +578,7 @@ RESERVED_COMMANDS = frozenset({
     "routines", "targets", "journal", "undo", "approvals", "cost", "usage", "history", "incidents",
     "przypomnienia", "reminders", "aktualizuj", "update", "provider", "providerzy", "providers", "yolo", "jezyk", "język", "language", "lang",
     "plik", "file", "attach", "zalataj", "patch", "podatnosci", "vulns", "nowa", "new",
+    "nowosci", "news", "inbox", "projekty", "projects", "powiadomienia", "notifications", "sprzataj", "cleanup",
 })
 MAX_COMMAND_CHARS = 32  # limit Telegrama
 

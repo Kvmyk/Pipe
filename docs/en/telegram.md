@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -12,7 +12,11 @@ Telegram to the agent. Answers are formatted as HTML and sent back to the user.
 It handles confirmations with inline buttons (YES / NO; the decision is added to the same message), sends diagrams
 as photos, shows progress in a single message that keeps updating (when the work is done it collapses to "Steps
 taken: N", tap to expand the list) and, most importantly, **writes by itself when something happens**: watcher alerts and
-routine reports arrive without asking, with an *Investigate* button.
+watcher alerts, suggestions, findings of its own investigations and
+routine reports arrive without asking, each with action buttons (*Investigate*, *Free up space*, *Patch*, *Fix it*).
+
+Under the message box there is a fixed keyboard: *Server status*, *What's new*, *Projects*, *Help* -- the most common
+things without knowing any command. The `/` menu shows only the everyday commands; the full list is in `/help`.
 
 ## Alerts
 
@@ -20,7 +24,15 @@ The bot keeps a permanent connection to the backend (`{"command": "subscribe"}`,
 events to every user in `TELEGRAM_ALLOWED_USER_IDS`:
 
 - **WARNING / CRITICAL** -- disk, RAM, load, a container in a restart loop or unhealthy, a stopped container, a new
-  public port. The **Investigate** button asks the agent for a diagnosis (reads only) and a proposed fix.
+  public port. The **Investigate** button asks the agent for a diagnosis (reads only) and a proposed fix; a full disk
+  also gets **Free up space**.
+- **Findings** -- on a critical alert Pipe does not wait for *Investigate*: a worker checks the cause by itself (reads
+  only) and right after the alert writes what it found, with a **Fix it** button (one confirmation; admins only).
+  `AUTO_INVESTIGATE` in `backend/.env`.
+- **Suggestion** -- something that will become a problem or could be better: when the disk fills up, how much space
+  can be reclaimed, a container that restarts often, a server waiting for a reboot, RAM that keeps growing. Computed
+  without AI. Buttons: the action (e.g. *Free up space*), **Later** (back in a day), **Fewer like this** (that kind
+  stays in the inbox only).
 - **RESOLVED** -- the problem is gone.
 - **Routine X -- OK/PROBLEM** -- a report from a scheduled task.
 - **Report** -- every day at `DIGEST_TIME` (7:00 by default): health, changes since yesterday, certificates, backups,
@@ -42,6 +54,11 @@ events to every user in `TELEGRAM_ALLOWED_USER_IDS`:
 - **Welcome** -- once, after installation: a map of the server, a security score and what Pipe watches.
 - Alerts for certificates (expiring in 14 days / invalid), sites (not answering twice in a row), DNS and backups (the
   newest file older than 26 h), for the domains and directories Pipe found by itself.
+
+Everything Pipe wrote by itself also lands in the inbox: `/news` (the *What's new* button) shows the latest messages
+with their buttons. When the bot should notify you is set with buttons in `/notifications`: the level (everything /
+important / critical only), quiet hours (at night only critical things, the rest in the morning with the report), the
+daily limit of suggestions. A message held back by these settings waits in the inbox.
 
 `TELEGRAM_ALERTS=0` in `clients/telegram/.env` turns forwarding off. Thresholds: [Watching](features.md#watching).
 
@@ -176,6 +193,8 @@ The full list is below (the *Commands* section). You can also just write, for ex
 - "check the disks on all servers" (workers)
 - "every day at 7 check the backups" (a routine)
 - "keep your answers shorter" (VIBE)
+- "set up this app for me: https://github.com/acme/notebook" (the workshop)
+- "write a script that counts the orders in the logs" (the workshop)
 
 ## Security
 
@@ -189,7 +208,11 @@ work in both languages.
 
 | Command | What it does |
 |---|---|
-| `/status` | Quick overview of the server's load |
+| `/status` | Server status at once, without AI: a plain-words headline (*All good* or what needs attention), CPU, memory and disk bars, the number of new messages and projects |
+| `/news` | The inbox: what Pipe wrote by itself (alerts, findings, suggestions, reports), with action buttons (`/nowosci`) |
+| `/projects` | Workshop projects: state, address, *Logs* and *Stop*/*Start* buttons (`/projekty`) |
+| `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded apt packages and npm/pip caches; says how much it freed. Admins only (`/sprzataj`) |
+| `/notifications` | When Pipe should notify you: level, quiet hours, suggestion limit -- with buttons (`/powiadomienia`) |
 | `/update [check]` | Update Pipe itself (confirmed with buttons); `check` only shows the versions |
 | `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |

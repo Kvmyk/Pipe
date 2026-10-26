@@ -69,6 +69,16 @@
   function nearBottom() { return messages.scrollHeight - messages.scrollTop - messages.clientHeight < 140; }
   function scrollDown() { requestAnimationFrame(() => messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" })); }
 
+  // Pusty ekran rozmowy: powitanie i zadania zwyklymi slowami. Czesc dziala bez modelu (natychmiast, bez kosztu) —
+  // oznaczone "bez AI"; reszta to zwykla wiadomosc do agenta.
+  const SUGGESTIONS = [
+    { key: "s_status", icon: "check", free: true, run: () => statusMessage() },
+    { key: "s_changes", icon: "clock", free: true, run: () => dataMessage({ command: "changes" }, (d) => listing(d.text)) },
+    { key: "s_secure", icon: "shield", free: true, run: () => dataMessage({ command: "audit" }, auditBody) },
+    { key: "s_space", icon: "trash", free: true, admin: true, run: () => cleanupRun() },
+    { key: "s_repo", icon: "box", run: () => askRepo() },
+    { key: "s_script", icon: "code", run: () => { input.value = t("s_scriptPrefill"); autosize(); input.focus(); } },
+  ];
   function welcome() {
     const box = el("div", "welcome");
     const mark = document.querySelector(".brand svg").cloneNode(true);
@@ -76,8 +86,22 @@
     box.appendChild(mark);
     box.appendChild(el("h1", "", t("welcomeTitle")));
     box.appendChild(el("p", "", t("welcomeText")));
+    const grid = el("div", "suggest");
+    SUGGESTIONS.forEach((item) => {
+      const card = el("button", "suggest-card");
+      card.type = "button";
+      const head = el("span", "suggest-head");
+      head.appendChild(icon(item.icon, 15));
+      head.appendChild(el("b", "", t(item.key)));
+      card.appendChild(head);
+      card.appendChild(el("span", "suggest-sub", t(item.key + "_sub")));
+      if (item.free) card.appendChild(el("span", "suggest-free", t("s_free")));
+      card.addEventListener("click", () => { if (busy) return; add("user", t(item.key)); item.run(); });
+      grid.appendChild(card);
+    });
+    box.appendChild(grid);
     messages.appendChild(box);
-    document.body.classList.add("fresh");      // szybkie akcje tylko na pustym ekranie — potem nie zabieraja miejsca
+    document.body.classList.add("fresh");
   }
   function add(kind, node) {
     const first = messages.querySelector(".welcome");
@@ -116,6 +140,10 @@
     restore: "M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4",
     undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
     info: "M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+    clock: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+    trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13",
+    box: "M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8",
+    code: "M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14",
   };
   function icon(name, size) {
     const NS = "http://www.w3.org/2000/svg";
@@ -249,7 +277,8 @@
     add("agent", body);
   }
 
-  async function run(payload, label) {
+  // `onData(data)` — komendy bez modelu (sprzatanie, akcje ze skrzynki) koncza sie danymi zamiast tekstem.
+  async function run(payload, label, onData) {
     if (busy) return;
     busy = true;
     $("send").disabled = true;
@@ -262,6 +291,7 @@
         if (event && event.type === "progress") { setWorking(event.text); activityStep(event); }
         else if (event && event.type === "activity") { const entry = await onActivity(event); if (entry) changed.push(entry); }
         else if (frame.response) { showText(frame.response, frame.status); setWorking(t("working")); }
+        if (frame.data !== undefined && frame.data !== null && onData) onData(frame.data);
       });
     } catch (error) {
       add("agent error", md(t("errorPrefix") + ": " + error.message));
@@ -276,7 +306,35 @@
     if (changed.length) loadChanges();
     loadSkills();
     loadGraph(true);
+    home.refresh(true);
   }
+  // Wynik komendy bez modelu jako wiadomosc: raport poranny, zestawienie tekstowe albo sam tekst.
+  function showData(data) {
+    if (!data || typeof data !== "object") return;
+    if (data.sections) add("agent", digestBody(data));
+    else if (data.text) add("agent", listing(data.text));
+  }
+  // Stan serwera bez modelu: naglowek zwyklymi slowami i paski procesora, pamieci i dysku.
+  function overviewBody(data) {
+    const box = el("div", "body ov");
+    box.appendChild(el("div", "ov-head st-" + (data.status || "ok"), data.headline || ""));
+    (data.gauges || []).forEach((gauge) => {
+      const row = el("div", "ov-row lvl-" + gauge.level);
+      row.appendChild(el("span", "ov-label", gauge.label));
+      const bar = el("span", "ov-bar"), fill = el("i");
+      fill.style.width = Math.max(2, Math.min(100, gauge.pct)) + "%";
+      bar.appendChild(fill);
+      row.appendChild(bar);
+      row.appendChild(el("span", "ov-pct", gauge.pct + "%"));
+      row.appendChild(el("span", "ov-value", gauge.value));
+      box.appendChild(row);
+    });
+    if ((data.facts || []).length) box.appendChild(el("div", "ov-facts", data.facts.join(" · ")));
+    if (data.unread) box.appendChild(el("div", "ov-facts", fmt("h_unreadLine", { n: data.unread })));
+    return box;
+  }
+  function statusMessage() { return dataMessage({ command: "overview" }, overviewBody); }
+  function cleanupRun() { return run({ command: "cleanup" }, t("working"), showData); }
 
   async function send(text) {
     text = text.trim();
@@ -470,19 +528,6 @@
   input.addEventListener("blur", () => setTimeout(closePalette, 140));
   $("composer").addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
 
-  // szybkie akcje
-  const chips = [
-    ["chipStatus", () => { add("user", t("chipStatus")); run({ command: "status" }, t("working")); }],
-    ["chipChanges", async () => { add("user", t("chipChanges")); await dataMessage({ command: "changes" }, (d) => listing(d.text)); }],
-    ["chipAudit", async () => { add("user", t("chipAudit")); await dataMessage({ command: "audit" }, auditBody); }],
-    ["chipReport", async () => { add("user", t("chipReport")); await dataMessage({ command: "digest" }, digestBody); }],
-  ];
-  chips.forEach(([key, action]) => {
-    const chip = el("button", "chip", t(key));
-    chip.type = "button";
-    chip.addEventListener("click", () => { if (!busy) action(); });
-    $("chips").appendChild(chip);
-  });
   function plain(text) {
     const body = el("div", "body"), pre = el("pre");
     pre.appendChild(el("code", "", text || ""));
@@ -655,6 +700,7 @@
     renderActivity(item);
     pushStates();
     setWorking(event.phase === "wait" ? "" : event.label);
+    if (currentTab !== "map") $("map-live").hidden = false;     // na schemacie widac, gdzie agent wlasnie pracuje
     await followAgent();
     refreshDetail();
     return "";
@@ -858,55 +904,39 @@
   const vx = window.PipeVulns.create({
     el, icon, t, fmt, request, add, dataMessage, setWorking,
     isBusy: () => busy, setBusy: (value) => { busy = value; },
-    onPatched: () => { loadChanges(); loadAlerts(); loadGraph(true); },
+    onPatched: () => { loadChanges(); home.refresh(true); loadGraph(true); },
   });
 
-  // ---------------------------------------------------------------- alerty i zdarzenia na zywo
-  const alertsList = $("alerts");
-  const liveEvents = [];
-  let activeAlerts = [], unseenAlerts = 0;
-  function badge(id, count) { const node = $(id); node.hidden = !count; node.textContent = String(count); }
-  function renderAlerts() { renderList(alertsList, [activeAlerts, liveEvents], buildAlerts); }
-  function buildAlerts() {
-    if (!activeAlerts.length && !liveEvents.length) { alertsList.appendChild(el("div", "empty", t("noAlerts"))); return; }
-    if (activeAlerts.length) {
-      alertsList.appendChild(el("div", "section-title", t("active")));
-      activeAlerts.forEach((alert) => {
-        const card = el("div", "card-item alert-" + alert.severity);
-        card.dataset.key = "alert:" + alert.id;
-        const head = el("div", "head");
-        head.appendChild(el("span", "tag " + (alert.severity === "critical" ? "del" : "warn"), t("sev_" + alert.severity) === "sev_" + alert.severity ? alert.severity : t("sev_" + alert.severity)));
-        head.appendChild(el("b", "", alert.title));
-        card.appendChild(head);
-        if (alert.report) card.appendChild(alertReport(alert.report));
-        else if (alert.detail) card.appendChild(el("div", "meta", alert.detail));
-        if (alert.history) card.appendChild(el("div", "meta", alert.history));
-        const foot = el("div", "foot"), look = el("button", "btn no small", t("investigate"));
-        look.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("investigate") + ": " + alert.title); run({ command: "investigate", id: alert.id }, t("working")); });
-        foot.appendChild(look);
-        const patchScope = ({ "vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers" })[alert.key];
-        if (patchScope) {
-          const patch = el("button", "btn no small", t("patch"));
-          patch.addEventListener("click", () => { if (busy) return; switchPane("chat"); add("user", t("patch") + ": " + alert.title); vx.patchRun(patchScope); });
-          foot.appendChild(patch);
-        }
-        card.appendChild(foot);
-        alertsList.appendChild(card);
-      });
-    }
-    if (liveEvents.length) {
-      alertsList.appendChild(el("div", "section-title", t("live")));
-      // Rutyna, ktora codziennie konczy sie "ok", nie potrzebuje osobnej karty za kazdym razem: kolejne udane
-      // przebiegi tej samej rutyny lacza sie w jeden wpis z licznikiem (pokazany jest najnowszy raport).
-      let last = null;
-      liveEvents.forEach((event) => {
-        const quiet = event.type === "routine" && String(event.status).toLowerCase() === "ok";
-        if (quiet && last && last.name === event.name) { last.count++; last.badge.textContent = fmt("times", { n: last.count }); last.badge.hidden = false; return; }
-        const card = eventCard(event);
-        alertsList.appendChild(card);
-        last = quiet ? { name: event.name, count: 1, badge: card.querySelector(".count") } : null;
-      });
-    }
+  // ---------------------------------------------------------------- pulpit i skrzynka (home.js)
+  // Pipe pisze pierwszy: alerty, podpowiedzi, raporty i ustalenia z badan trafiaja do skrzynki na pulpicie (z przyciskami
+  // akcji zbudowanymi w backendzie). Wyskakujace powiadomienie tylko dla wiadomosci z `push` (poziom, cisza nocna, limit).
+  function badge(id, count) { const node = $(id); node.hidden = !count; node.textContent = count > 99 ? "99+" : String(count); }
+  const home = window.PipeHome.create({
+    el, md, t, fmt, command, toast,
+    onAction: (item, action) => feedAction(item, action),
+    onAsk: (text) => { switchPane("chat"); send(text); },
+    askRepo: () => askRepo(),
+    showText: (title, text) => {
+      switchPane("chat");
+      const body = el("div", "body");
+      body.appendChild(el("div", "caption", title));
+      body.appendChild(plain(text).firstChild);
+      add("agent", body);
+    },
+    onUnread: (count) => { badge("inbox-badge", count); badge("home-badge", count); },
+  });
+  async function feedAction(item, action) {
+    if (busy) { toast(t("working"), t("waitTurn")); return; }
+    switchPane("chat");
+    if (pendingCard) pendingCard.supersede();
+    add("user", action.label + " — " + item.title);
+    if (action.kind === "command" && action.command === "patch") { await vx.patchRun((action.args || {}).scope || ""); return; }
+    await run({ command: "feed_act", id: item.id, action: action.index }, t("working"), showData);
+  }
+  function openInbox() {
+    switchTab("home");
+    requestAnimationFrame(() => { const box = $("home-inbox"); if (box) box.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    setTimeout(() => home.markSeen(), 1500);
   }
   function eventTitle(event) {
     switch (event.type) {
@@ -916,56 +946,22 @@
       case "digest": case "welcome": return event.title || t("report");
       case "investigation": return t("investigation") + " — " + (event.title || "");
       case "approval": return t("approval") + ": " + (event.command || "");
+      case "insight": case "notice": return event.title || "";
       default: return event.type;
     }
   }
-  // Tresc alertu w Markdownie (podatnosci: kazda z opisem) — renderowana jak odpowiedz w czacie, bez innerHTML.
-  function alertReport(text) {
-    const box = el("div", "report-md");
-    box.appendChild(md(String(text)));
-    return box;
+  function eventText(event) {
+    if (event.type === "reminder") return event.report ? String(event.report).slice(0, 160) : "";
+    return String(event.detail || event.text || event.report || "").replace(/[*_`#]/g, "").slice(0, 160);
   }
-  function eventCard(event) {
-    const card = el("div", "card-item" + (event.type === "alert" && event.state !== "resolved" ? " alert-" + event.severity : ""));
-    card.dataset.key = "event:" + eventKey(event);
-    const head = el("div", "head");
-    head.appendChild(el("b", "", eventTitle(event)));
-    const count = el("span", "count"); count.hidden = true; head.appendChild(count);
-    card.appendChild(head);
-    card.appendChild(el("div", "meta", event.at || ""));
-    if (event.type === "alert" && event.report) { card.appendChild(alertReport(event.report)); return card; }
-    const text = event.report || event.detail || (event.sections || []).map((s) => s.title + "\n" + (s.lines || []).map((l) => "• " + l).join("\n")).join("\n\n");
-    if (text) card.appendChild(el("div", "report", String(text).slice(0, 4000)));
-    return card;
-  }
-  // Zdarzenia nie sa powtarzane przez backend: kto nie byl podlaczony w chwili publikacji (np. strona laczaca sie
-  // ponownie po restarcie backendu), ten je traci. Dlatego przy starcie i po kazdym ponownym polaczeniu dobieramy
-  // ostatnie zdarzenia z historii backendu ("recent") — bez duplikatow.
+  // Zdarzenia z historii backendu (po ponownym polaczeniu) nie wyskakuja drugi raz.
   const seenEvents = new Set();
-  const eventKey = (event) => [event.type, event.at, event.id, event.key, event.title, event.text, event.name].join("|");
-  function addEvent(event, announce) {
-    const key = eventKey(event);
-    if (seenEvents.has(key)) return false;
-    seenEvents.add(key);
-    liveEvents.unshift(event); liveEvents.splice(40);
-    if (!announce) return true;
-    if ($("tab-alerts").hidden) unseenAlerts++;
-    toast(eventTitle(event), event.detail || (event.type === "reminder" ? "" : String(event.report || "").slice(0, 160)), () => switchTab("alerts"));
-    return true;
-  }
-  async function loadAlerts(announce) {
-    try {
-      const data = await command({ command: "alerts" });
-      activeAlerts = data.active || [];
-      (data.recent || []).forEach((event) => addEvent(event, announce));
-      renderAlerts(); badge("alerts-badge", activeAlerts.length + unseenAlerts);
-    } catch (_) { /* pokazemy przy nastepnej probie */ }
-  }
+  const eventKey = (event) => [event.type, event.at, event.id, event.key, event.title, event.text, event.name, event.feed_id].join("|");
   let subscribedOnce = false;
   function onLiveEvent(event) {
     if (!event || event.type === "subscribed") {
       setLink(true);
-      if (subscribedOnce) { loadAlerts(true); loadProviders(false); }     // po zerwaniu polaczenia: co nas ominelo
+      if (subscribedOnce) { home.refresh(true); loadProviders(false); }     // po zerwaniu polaczenia: co nas ominelo
       subscribedOnce = true;
       return;
     }
@@ -974,10 +970,13 @@
       if (event.lang !== window.PipeI18n.lang) toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
       return;
     }
-    if (!addEvent(event, false)) return;
-    if ($("tab-alerts").hidden) { unseenAlerts++; }
-    toast(eventTitle(event), event.detail || (event.type === "reminder" ? "" : String(event.report || "").slice(0, 160)), () => switchTab("alerts"));
-    if (event.type === "alert") { loadAlerts(); loadGraph(true); } else { renderAlerts(); badge("alerts-badge", activeAlerts.length + unseenAlerts); }
+    const key = eventKey(event);
+    if (seenEvents.has(key)) return;
+    seenEvents.add(key);
+    home.onEvent(event);
+    if (event.type === "alert") loadGraph(true);
+    if (event.push === false) return;                 // w skrzynce, bez powiadomienia (cisza nocna, poziom, limit)
+    toast(eventTitle(event), eventText(event), () => (event.type === "approval" ? HANDLERS.zgody("") : openInbox()));
   }
   function connectEvents() {
     const source = new EventSource("/api/events");
@@ -985,11 +984,58 @@
     source.onerror = () => setLink(false, t("reconnecting"));
   }
 
+  // "Uruchom z GitHuba": adres repozytorium -> zwykla wiadomosc do agenta (klonuje, rozpoznaje, uruchamia w warsztacie)
+  const ask = $("ask");
+  function askRepo() {
+    const card = ask.querySelector(".sheet-card");
+    card.textContent = "";
+    const close = el("button", "icon close", "×");
+    close.type = "button"; close.setAttribute("aria-label", t("close"));
+    close.addEventListener("click", closeAsk);
+    card.appendChild(close);
+    card.appendChild(el("h2", "", t("p_repoTitle")));
+    card.appendChild(el("p", "lead", t("p_repoLead")));
+    const form = el("form", "provider-form");
+    form.noValidate = true;
+    const field = el("div", "field"), url = el("input");
+    url.type = "url"; url.placeholder = "https://github.com/…"; url.autocomplete = "off"; url.spellcheck = false;
+    url.setAttribute("aria-label", t("p_repoUrl"));
+    field.appendChild(url);
+    form.appendChild(field);
+    const extra = el("input");
+    extra.type = "text"; extra.placeholder = t("p_repoExtra"); extra.setAttribute("aria-label", t("p_repoExtra"));
+    const field2 = el("div", "field");
+    field2.appendChild(extra);
+    form.appendChild(field2);
+    const foot = el("div", "sheet-foot"), go = el("button", "btn yes", t("p_repoGo"));
+    go.type = "submit";
+    foot.appendChild(el("span", "hint", t("p_repoHint"))); foot.appendChild(el("div", "spacer")); foot.appendChild(go);
+    form.appendChild(foot);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = url.value.trim();
+      if (!/^(https:\/\/|git@)\S+$/.test(value)) { url.focus(); field.classList.add("bad"); return; }
+      closeAsk();
+      switchPane("chat");
+      send(fmt("p_cloneMsg", { url: value }) + (extra.value.trim() ? " " + extra.value.trim() : ""));
+    });
+    card.appendChild(form);
+    ask.classList.remove("out"); ask.hidden = false;
+    requestAnimationFrame(() => url.focus());
+  }
+  function closeAsk() {
+    if (ask.hidden) return;
+    ask.classList.add("out");
+    setTimeout(() => { ask.hidden = true; ask.classList.remove("out"); }, 180);
+  }
+  ask.addEventListener("mousedown", (event) => { if (event.target === ask) closeAsk(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeAsk(); });
+
   // ---------------------------------------------------------------- skille
+  // Lista skilli jako wiadomosc w rozmowie (/skille) — z przyciskiem uruchomienia i podgladem tresci.
   let skills = [];
   async function loadSkills() {
-    try { skills = (await command({ command: "list_skills" })).skills || []; } catch (_) { return; }
-    renderSkills();                      // takze w ukrytej zakladce: przy otwarciu lista jest gotowa (renderList)
+    try { skills = (await command({ command: "list_skills" })).skills || []; } catch (_) { /* podpowiedzi to wygoda */ }
   }
   function runSkill(skill, args) {
     if (busy) return;
@@ -998,14 +1044,13 @@
     add("user", "/" + (skill.command || skill.name) + (args ? " " + args : ""));
     run({ command: "run_skill", name: skill.name, args: args || "" }, t("runningSkill") + " " + skill.name + "…");
   }
-  function renderSkills() { renderList($("skills"), skills, buildSkills); }
-  function buildSkills() {
-    const list = $("skills");
-    if (!skills.length) { list.appendChild(el("div", "empty", t("noSkills"))); return; }
-    skills.forEach((skill, index) => {
-      const card = el("div", "card-item skill");
-      card.dataset.key = "skill:" + skill.name;
-      card.style.animationDelay = Math.min(index, 10) * 28 + "ms";
+  async function showSkills() {
+    await loadSkills();
+    if (!skills.length) { add("agent", md(t("noSkills"))); return; }
+    const list = el("div", "skill-list");
+    list.appendChild(el("div", "caption", t("skills")));
+    skills.forEach((skill) => {
+      const card = el("div", "card-item skill settled");
       const head = el("div", "head");
       head.appendChild(el("b", "", skill.name));
       if (skill.command) head.appendChild(el("span", "cmd-chip", "/" + skill.command));
@@ -1030,6 +1075,7 @@
       card.appendChild(foot);
       list.appendChild(card);
     });
+    add("agent", list);
   }
 
   // ---------------------------------------------------------------- providerzy LLM
@@ -1362,8 +1408,10 @@
   // ---------------------------------------------------------------- komendy "/"
   // [nazwa polska, alias angielski, klucz opisu, czy przyjmuje argumenty]
   const COMMANDS = [
-    ["status", "status", "c_status"], ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
+    ["status", "status", "c_status"], ["nowosci", "news", "c_news"], ["projekty", "projects", "c_projects"],
+    ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
     ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
+    ["sprzataj", "cleanup", "c_cleanup"], ["powiadomienia", "notifications", "c_notify"],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
@@ -1422,7 +1470,11 @@
   const HANDLERS = {
     jezyk: (args) => setLanguage(args),
     yolo: (args) => setYolo(args),
-    status: () => run({ command: "status" }, t("working")),
+    status: () => statusMessage(),
+    nowosci: () => openInbox(),
+    projekty: () => dataMessage({ command: "projects" }, (d) => listing(d.text)),
+    sprzataj: () => cleanupRun(),
+    powiadomienia: () => home.openSettings(),
     aktualizuj: (args) => run({ command: "update", args }, t("working")),
     raport: () => dataMessage({ command: "digest" }, digestBody),
     zmiany: (args) => dataMessage({ command: "changes", args }, (d) => listing(d.text)),
@@ -1471,15 +1523,15 @@
       });
     },
     mapa: () => { switchTab("map"); loadGraph(false); },
-    skille: () => switchTab("skills"),
-    alerty: () => switchTab("alerts"),
+    skille: () => showSkills(),
+    alerty: () => openInbox(),
     dziennik: () => switchTab("changes"),
     cofnij: () => switchTab("changes"),
     providerzy: (args) => providersCommand(args),
     pomoc: () => add("agent", listing(COMMANDS.map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
       + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
   };
-  const PANEL_ONLY = ["mapa", "skille", "alerty", "dziennik", "cofnij", "providerzy"];
+  const PANEL_ONLY = ["mapa", "alerty", "nowosci", "dziennik", "cofnij", "providerzy", "powiadomienia"];
 
   // Zwraca true, gdy tekst byl komenda (wbudowana albo skillem); false — idzie do agenta jako zwykla wiadomosc.
   async function slash(text) {
@@ -1648,14 +1700,19 @@
   $("stage-toggle").addEventListener("click", () => setStageHidden(!stageHidden));
   window.addEventListener("resize", () => { if (stageWidth) applyStage(); });
 
-  function switchTab(name) {
-    if (stageHidden && wide.matches) setStageHidden(false);         // komenda albo powiadomienie otwiera schowany panel
-    ["map", "changes", "skills", "alerts"].forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
-    if (name === "skills") loadSkills();
+  // Zakladki panelu: Pulpit (domyslnie — stan, skrzynka, projekty), Schemat (agent na zywo), Zmiany (dziennik z /cofnij).
+  const TABS = ["home", "map", "changes"];
+  let currentTab = "home";
+  function switchTab(name, quiet) {
+    if (!TABS.includes(name)) name = "home";
+    if (stageHidden && wide.matches && !quiet) setStageHidden(false);   // komenda albo powiadomienie otwiera schowany panel
+    TABS.forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
+    currentTab = name;
+    try { localStorage.setItem("pipe-tab", name); } catch (_) { /* tryb prywatny */ }
     if (name === "changes") { unseenChanges = 0; badge("changes-badge", 0); loadChanges(); }
-    if (name === "alerts") { unseenAlerts = 0; loadAlerts(); }
-    if (name === "map") requestAnimationFrame(() => graph.fit(0));
-    switchPane("stage");
+    if (name === "home") home.refresh(true);
+    if (name === "map") { $("map-live").hidden = true; requestAnimationFrame(() => graph.fit(0)); }
+    if (!quiet) switchPane("stage");
   }
   function switchPane(name) {
     $("layout").dataset.pane = name;
@@ -1684,8 +1741,11 @@
   // teksty
   $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat-label").textContent = t("newChat");
   $("timeline-head").textContent = t("activity");
-  $("st-skills").textContent = t("skills");
-  $("st-map").textContent = t("map"); $("st-changes-label").textContent = t("changes"); $("st-alerts-label").textContent = t("alerts");
+  $("st-home-label").textContent = t("home"); $("st-map-label").textContent = t("map"); $("st-changes-label").textContent = t("changes");
+  $("map-live").title = t("mapLive");
+  $("inbox-btn").title = t("h_inbox"); $("inbox-btn").setAttribute("aria-label", t("h_inbox"));
+  $("inbox-btn").addEventListener("click", openInbox);
+  $("home-loading").textContent = t("loadingHome");
   $("theme").title = t("theme");
   $("lang").textContent = window.PipeI18n.lang.toUpperCase(); $("lang").title = t("language");
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
@@ -1703,7 +1763,10 @@
   if (languageNote) add("agent", md(languageNote));
   loadSkills();
   loadGraph(false);
-  loadAlerts();
+  let savedTab = "home";
+  try { savedTab = localStorage.getItem("pipe-tab") || "home"; } catch (_) { /* tryb prywatny */ }
+  switchTab(savedTab, true);
+  home.refresh(false);
   loadChanges();                         // zakladka gotowa przed pierwszym otwarciem — bez pustej listy na chwile
   loadProviders(true);
   loadYolo();

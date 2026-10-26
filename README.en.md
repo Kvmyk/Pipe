@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.38.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.39.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -37,8 +37,11 @@ or Polish. Ask it to diagnose something ("why is the shop slow?"), change someth
 or explain something ("what changed since yesterday?").
 
 Pipe keeps working between conversations. Every two minutes it checks disks, memory, load, containers and ports
-open to the internet. Every hour it records the state of the server, so it knows what changed and when. When
-something is wrong it sends an alert to Telegram, and every morning a short report.
+open to the internet. Every hour it records the state of the server, so it knows what changed and when. You don't
+have to ask: when something is wrong, Pipe writes first, to Telegram, the browser or the terminal. On a serious
+failure it checks the cause right away and sends what it found, with a *Fix it* button. It also warns you before
+something becomes a problem: "the disk will be full in about 4 days", "I can free up 6 GB". Every morning a short
+report arrives.
 
 The agent can read the server freely, but it changes nothing without asking. Every command goes through a
 classifier written in code (not in the prompt): reads run right away, changes wait for your confirmation, and
@@ -59,6 +62,8 @@ Pipe works with any model that speaks the OpenAI API. The default is Google Gemi
 | *check the disks on all servers* | sends parallel helpers (workers) to remote machines over SSH |
 | *is our PostgreSQL still supported?* | reads the version on the server and checks it against endoflife.date |
 | *undo the last change* | restores the files from the backup taken before the change |
+| *set up this app for me: https://github.com/acme/notebook* | clones the repository, works out what it is and how to run it, starts it in a container and gives you the address; asks once, before starting it |
+| *write a script that counts the orders in the logs* | writes the script in its working directory, runs it in an isolated container and hands you the result |
 | *why is this broken?* + a screenshot or a log | looks at the screenshot, reads the log (secrets hidden from the model) and looks for the cause on the server |
 
 ## For Claude Code, Codex and other agents
@@ -89,6 +94,15 @@ thinking and Pipe guards what gets executed. Details: [docs/en/features.md](./do
 Pipe finds domains in the nginx, Caddy and Traefik configuration by itself and watches certificate expiry, site
 responses and DNS. It notices new accounts, SSH keys and suspicious logins. It also accepts alerts from
 Alertmanager, Grafana, Uptime Kuma and GitHub and starts looking into the cause right away.
+
+**Sets things up and writes code by itself.** It keeps projects in one directory on the server
+(`/root/pipe-workspace`). There it clones repositories, writes scripts and runs them without asking, but always in a
+separate container with no access to the rest of the server, so no Node.js or Python piles up on the host. It asks
+before putting something up for good, and that deployment can be undone too.
+
+**Saves tokens.** Alerts, suggestions, the morning report, `/status` and `/cleanup` don't use the model at all. When
+a conversation does go to the model, Pipe sends only the tools that conversation needs (about 2.4k tokens instead of
+6.2k on every step) and shortens old command output. `/cost` shows how much was not sent this way.
 
 **Changes things carefully.** Before every approved change it backs up the files. It validates configuration before
 reloading (`nginx -t`, `sshd -t`, `docker compose config`) and afterwards checks that the service runs and the sites

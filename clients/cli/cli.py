@@ -477,12 +477,12 @@ def _print_banner(host: str) -> None:
     grid.add_column(style="dim", no_wrap=True)
     grid.add_column()
     grid.add_row(tr("serwer", "server"), f"[green]●[/green] [bold]{escape(host)}[/bold]")
-    grid.add_row(tr("na start", "try"), tr("/status  /raport  /mapa  /pomoc  [dim]albo po prostu napisz, co mam zrobić[/dim]",
-                                           "/status  /report  /map  /help  [dim]or just write what I should do[/dim]"))
+    grid.add_row(tr("na start", "try"), tr("/status  /nowosci  /projekty  /pomoc  [dim]albo po prostu napisz, co mam zrobić[/dim]",
+                                           "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.38.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.38.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.39.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.39.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -629,6 +629,122 @@ async def _handle_responses(
     return False
 
 
+# ─── Stan serwera i skrzynka (Pipe pisze pierwszy) ───────────────────────────
+
+_LEVEL_STYLE = {"ok": "white", "warn": "yellow", "crit": "red"}
+_STATUS_DOT = {"ok": "[green]●[/green]", "warning": "[yellow]▲[/yellow]", "critical": "[red]■[/red]"}
+
+
+def _bar(pct: float, width: int = 16) -> str:
+    filled = max(0, min(width, round(float(pct) * width / 100)))
+    return "━" * filled + "[dim]" + "━" * (width - filled) + "[/dim]"
+
+
+def _print_overview(data: dict, compact: bool = False) -> None:
+    """Stan serwera bez LLM (komenda overview): naglowek zwyklymi slowami i paski procesora, pamieci, dysku."""
+    dot = _STATUS_DOT.get(str(data.get("status")), "[green]●[/green]")
+    console.print(f"{dot} [bold]{escape(str(data.get('headline', '')))}[/bold]", highlight=False)
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="dim", no_wrap=True)
+    table.add_column(no_wrap=True)
+    table.add_column(justify="right", no_wrap=True)
+    table.add_column(style="dim")
+    for gauge in data.get("gauges") or []:
+        style = _LEVEL_STYLE.get(str(gauge.get("level")), "white")
+        table.add_row(escape(str(gauge.get("label", ""))), f"[{style}]{_bar(gauge.get('pct', 0))}[/{style}]",
+                      f"[{style}]{int(gauge.get('pct', 0))}%[/{style}]", escape(str(gauge.get("value", ""))))
+    console.print(Padding(table, (0, 0, 0, 2)), highlight=False)
+    if data.get("facts") and not compact:
+        console.print(Padding(f"[dim]{escape(' · '.join(data['facts']))}[/dim]", (0, 0, 0, 2)), highlight=False)
+    if data.get("unread"):
+        console.print(Padding(tr(f"📬 Nowe wiadomości od Pipe: [bold]{int(data['unread'])}[/bold] — /nowosci",
+                                 f"📬 New messages from Pipe: [bold]{int(data['unread'])}[/bold] — /news"), (0, 0, 0, 2)))
+
+
+def _feed_item(index: int, item: dict, full: bool = True) -> None:
+    """Jedna wiadomosc ze skrzynki: naglowek, tresc (Markdown), przyciski jako 1a, 1b..."""
+    mark = {"critical": "[red]■[/red]", "warning": "[yellow]▲[/yellow]", "ok": "[green]✓[/green]"}.get(
+        str(item.get("severity")), "[cyan]●[/cyan]")
+    new = tr(" [bold blue]nowe[/bold blue]", " [bold blue]new[/bold blue]") if item.get("unread") else ""
+    console.print(f"{mark} [bold]{index}. {escape(str(item.get('title', '')))}[/bold]{new} "
+                  f"[dim]{escape(str(item.get('at', ''))[5:])}[/dim]", highlight=False)
+    text = str(item.get("text") or "").strip()
+    if full and text:
+        console.print(Padding(Markdown(text if len(text) < 1200 else text[:1200] + " …"), (0, 0, 0, 3)))
+    if item.get("done"):
+        console.print(Padding(f"[green]✓ {escape(str(item['done']))}[/green]", (0, 0, 0, 3)))
+    elif item.get("actions"):
+        labels = "   ".join(f"[bold]{index}{chr(97 + n)}[/bold] {escape(str(a.get('label', '')))}"
+                           for n, a in enumerate(item["actions"]))
+        console.print(Padding(labels, (0, 0, 0, 3)), highlight=False)
+
+
+async def _inbox(client: "RemoteClient") -> None:
+    """/nowosci: co Pipe napisal sam; wybor akcji (np. 1a) wykonuje ja w backendzie — jak przycisk w Telegramie."""
+    data = _response_data(await client.send_command("feed", args="seen"))
+    items = (data.get("items") or [])[:8]
+    if not items:
+        console.print(tr("[dim]Skrzynka jest pusta — nic nie wymaga Twojej uwagi. Napiszę sam, gdy coś zauważę.[/dim]",
+                         "[dim]The inbox is empty — nothing needs your attention. I will write when I notice something.[/dim]"))
+        return
+    for index, item in enumerate(items, start=1):
+        _feed_item(index, item, full=index <= 3 or bool(item.get("unread")))
+        console.print()
+    if not any(i.get("actions") and not i.get("done") for i in items):
+        return
+    try:
+        choice = Prompt.ask(tr("[yellow]Akcja (np. 1a), Enter — nic[/yellow]", "[yellow]Action (e.g. 1a), Enter — none[/yellow]"),
+                            default="", show_default=False).strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return
+    match = re.fullmatch(r"(\d+)\s*([a-z])", choice)
+    if not match:
+        return
+    position, letter = int(match.group(1)) - 1, ord(match.group(2)) - 97
+    if not 0 <= position < len(items) or not 0 <= letter < len(items[position].get("actions") or []):
+        console.print(tr("[dim]Nie ma takiej akcji.[/dim]", "[dim]No such action.[/dim]"))
+        return
+    item = items[position]
+    responses = await client.send_command("feed_act", id=item["id"], action=item["actions"][letter].get("index", letter))
+    await _handle_responses(responses, client)
+    result = next((r.get("data") for r in reversed(responses) if isinstance(r.get("data"), dict)), None)
+    if result and result.get("text"):
+        console.print(Text(str(result["text"]), overflow="fold"), highlight=False)
+    elif result and result.get("done"):
+        console.print(f"[green]✓[/green] {escape(str(result['done']))}")
+
+
+def _prefs_fields(args: str) -> dict:
+    """'krytyczne cisza 22-7 dziennie 1' -> {"level": "critical", "quiet": "22:00-07:00", "per_day": 1}."""
+    fields: dict = {}
+    words = args.lower().split()
+    levels = {"wszystko": "all", "all": "all", "wazne": "important", "ważne": "important", "important": "important",
+              "krytyczne": "critical", "critical": "critical"}
+    i = 0
+    while i < len(words):
+        word = words[i]
+        if word in levels:
+            fields["level"] = levels[word]
+        elif word in ("cisza", "quiet") and i + 1 < len(words):
+            i += 1
+            value = words[i]
+            hours = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?-(\d{1,2})(?::(\d{2}))?", value)
+            if value in ("off", "wyl", "wył", "nie", "no"):
+                fields["quiet"] = "off"
+            elif hours:
+                h1, m1, h2, m2 = hours.groups()
+                fields["quiet"] = f"{int(h1):02d}:{m1 or '00'}-{int(h2):02d}:{m2 or '00'}"
+            else:
+                return {}
+        elif word in ("dziennie", "daily") and i + 1 < len(words) and words[i + 1].isdigit():
+            i += 1
+            fields["per_day"] = int(words[i])
+        else:
+            return {}
+        i += 1
+    return fields
+
+
 # ─── Komendy "/" ──────────────────────────────────────────────────────────────
 
 SCAN_WORDS = ("aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan")
@@ -641,12 +757,18 @@ COMMAND_ALIASES = {
     "approvals": "zgody", "cost": "koszt", "usage": "koszt", "history": "historia", "incidents": "incydenty",
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
     "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj", "vulns": "podatnosci",
-    "new": "nowa",
+    "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
+    "cleanup": "sprzataj",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
 COMMANDS = [
-    ("status", "status", "stan serwera", "server status"),
+    ("status", "status", "stan serwera — od razu, bez AI", "server status — instant, no AI"),
+    ("nowosci", "news", "co Pipe napisał sam (skrzynka) i akcje", "what Pipe wrote on its own (inbox) and actions"),
+    ("projekty", "projects", "projekty w warsztacie", "workshop projects"),
+    ("sprzataj", "cleanup", "zwolnij miejsce na dysku (bez AI)", "free up disk space (no AI)"),
+    ("powiadomienia", "notifications", "kiedy Pipe ma powiadamiać: /powiadomienia wazne cisza 22-7",
+     "when Pipe should notify you: /notifications important quiet 22-7"),
     ("raport", "report", "raport: stan, zmiany, certyfikaty, backupy", "report: health, changes, certificates, backups"),
     ("zmiany", "changes", "co się zmieniło na serwerze (np. /zmiany 3d)", "what changed on the server (e.g. /changes 3d)"),
     ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
@@ -685,11 +807,14 @@ COMMANDS = [
     ("exit", "exit", "wyjście", "quit"),
 ]
 
-HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zrobić, np. „czemu sklep działa wolno?”.
+HELP_TEXT = """Nie musisz znać komend — napisz, co mam zrobić, np. „czemu sklep działa wolno?”, „postaw mi tę aplikację
+z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam pisze, gdy coś wymaga uwagi.
 
 **Na co dzień**
 
-- `/status` — stan serwera
+- `/status` — stan serwera, od razu i bez AI
+- `/nowosci` — co Pipe napisał sam: alerty, podpowiedzi, ustalenia (z akcjami: wpisz np. `1a`)
+- `/projekty` — projekty w warsztacie (sklonowane repozytoria, Twoje skrypty)
 - `/raport` — stan, zmiany od wczoraj, certyfikaty, backupy (przychodzi też sam co rano)
 - `/zmiany [24h|3d]` — co się zmieniło na serwerze
 - `/alerty` — aktywne alerty
@@ -702,6 +827,7 @@ HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zr
 - `/audyt` — ocena bezpieczeństwa z gotowymi poprawkami („napraw 1”)
 - `/podatnosci` — znane podatności, każda z krótkim opisem
 - `/zalataj [obrazy|serwer|serwery]` — łata od razu: pakiety, obrazy kontenerów, zdalne serwery; sprząta po sobie
+- `/sprzataj` — zwolnij miejsce: obrazy bez tagu, cache budowania, pobrane paczki
 - `/dziennik` — zatwierdzone zmiany; `/cofnij [id]` — cofnij ostatnią albo wybraną
 - `/zgody` — operacje innych agentów (MCP) czekające na Twoją zgodę
 
@@ -715,6 +841,7 @@ HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zr
 
 **Ustawienia**
 
+- `/powiadomienia [wszystko|wazne|krytyczne] [cisza 22-7|cisza off] [dziennie 3]` — kiedy Pipe ma pisać sam
 - `/providerzy` — model AI: klucz, model, przełączenie (`/providerzy groq`, `/providerzy model`)
 - `/jezyk [pl|en]` — język Pipe
 - `/yolo [on|off]` — zmiany bez pytania o TAK w tej rozmowie (kopie i `/cofnij` działają dalej)
@@ -728,11 +855,15 @@ HELP_TEXT = """Nie musisz znać komend — możesz po prostu napisać, co mam zr
 
 Tab podpowiada komendy i ścieżki. Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
 
-HELP_TEXT_EN = """You don't need to know the commands — you can just write what I should do, e.g. "why is the shop slow?".
+HELP_TEXT_EN = """You don't need to know the commands — write what I should do, e.g. "why is the shop slow?", "set up this app
+from GitHub for me" or "write a script that backs up the database every night". Pipe writes on its own when
+something needs attention.
 
 **Every day**
 
-- `/status` — server status
+- `/status` — server status, instant and without AI
+- `/news` — what Pipe wrote on its own: alerts, suggestions, findings (with actions: type e.g. `1a`)
+- `/projects` — workshop projects (cloned repositories, your scripts)
 - `/report` — health, changes since yesterday, certificates, backups (also arrives every morning)
 - `/changes [24h|3d]` — what changed on the server
 - `/alerts` — active alerts
@@ -745,6 +876,7 @@ HELP_TEXT_EN = """You don't need to know the commands — you can just write wha
 - `/audit` — security score with ready-made fixes ("fix 1")
 - `/vulns` — known vulnerabilities, each briefly explained
 - `/patch [images|server|servers]` — patches right away: packages, container images, remote servers; cleans up after itself
+- `/cleanup` — free up space: untagged images, build cache, downloaded packages
 - `/journal` — approved changes; `/undo [id]` — undo the last or the chosen one
 - `/approvals` — operations of other agents (MCP) waiting for your approval
 
@@ -758,6 +890,7 @@ HELP_TEXT_EN = """You don't need to know the commands — you can just write wha
 
 **Settings**
 
+- `/notifications [all|important|critical] [quiet 22-7|quiet off] [daily 3]` — when Pipe writes on its own
 - `/providers` — the AI model: key, model, switching (`/providers groq`, `/providers model`)
 - `/language [pl|en]` — Pipe's language
 - `/yolo [on|off]` — changes without asking for YES in this conversation (backups and `/undo` still work)
@@ -1286,8 +1419,35 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         return True
 
     if name == "status":
-        console.print(tr("[dim]Analizuję stan serwera...[/dim]", "[dim]Analysing the server status...[/dim]"))
-        await _handle_responses(await client.send_command("status"), client)
+        _print_overview(_response_data(await client.send_command("overview")))
+        return True
+
+    if name == "nowosci":
+        await _inbox(client)
+        return True
+
+    if name == "projekty":
+        data = _response_data(await client.send_command("projects"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
+        console.print(tr("[dim]Nowy projekt: napisz np. „sklonuj https://github.com/… i uruchom”.[/dim]",
+                         '[dim]New project: write e.g. "clone https://github.com/… and run it".[/dim]'))
+        return True
+
+    if name == "powiadomienia":
+        fields = _prefs_fields(args)
+        if args and not fields:
+            console.print(tr("[yellow]Użyj: /powiadomienia [wszystko|wazne|krytyczne] [cisza 22-7|cisza off] [dziennie 3][/yellow]",
+                             "[yellow]Use: /notifications [all|important|critical] [quiet 22-7|quiet off] [daily 3][/yellow]"))
+            return True
+        data = _response_data(await client.send_command("prefs", **fields))
+        console.print(escape(data.get("text", "")))
+        return True
+
+    if name == "sprzataj":
+        console.print(tr("[dim]Sprzątam to, co da się odtworzyć: obrazy bez tagu, cache budowania, pobrane paczki...[/dim]",
+                         "[dim]Cleaning what is reproducible: untagged images, build cache, downloaded packages...[/dim]"))
+        data = _response_data(await client.send_command("cleanup"))
+        console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
         return True
 
     if name == "mapa":
@@ -1569,13 +1729,41 @@ async def run_mcp_bridge(client: "RemoteClient", host: str) -> None:
 
 
 async def _watch_reminders(client: "RemoteClient", stop: asyncio.Event) -> None:
-    """W tle, gdy CLI czeka na wpis: pokazuje wiadomosci od Pipe (np. wynik aktualizacji), gdy tylko przyjda."""
+    """
+    W tle, gdy CLI czeka na wpis: pokazuje wiadomosci od Pipe, gdy tylko przyjda — przypomnienia i wiadomosci ze
+    skrzynki, o ktorych backend chce powiadomic (`push`: poziom, cisza nocna, limit podpowiedzi).
+    """
     while True:
         try:
             await asyncio.wait_for(stop.wait(), REMINDER_POLL)
             return
         except asyncio.TimeoutError:
             await _show_due_reminders(client, quiet=True)
+            await _show_new_feed(client)
+
+
+_feed_since: float = 0.0     # znacznik czasu ostatniej pokazanej wiadomosci ze skrzynki (0 = jeszcze nie pobrano)
+
+
+async def _show_new_feed(client: "RemoteClient", baseline: bool = False) -> None:
+    """Nowe wiadomosci ze skrzynki od ostatniego sprawdzenia. `baseline` — tylko zapamietaj, od kiedy liczyc."""
+    global _feed_since
+    try:
+        data = _response_data(await client.probe("feed", **({"since": _feed_since} if _feed_since else {})))
+    except Exception:
+        return
+    items = data.get("items") or []
+    newest = max([float(i.get("ts", 0)) for i in items] + [_feed_since])
+    if baseline or not _feed_since:
+        _feed_since = newest or time.time()
+        return
+    _feed_since = newest
+    for item in reversed([i for i in items if i.get("push", True)]):
+        console.print(Panel(Group(Markdown(str(item.get("text") or "")[:1500])) if item.get("text") else "",
+                            title=f" {escape(str(item.get('title', '')))} ", title_align="left",
+                            subtitle=tr(" /nowosci — akcje ", " /news — actions ") if item.get("actions") else None,
+                            subtitle_align="right", border_style={"critical": "red", "warning": "yellow"}.get(
+                                str(item.get("severity")), "dim"), box=box.ROUNDED))
 
 
 async def _show_due_reminders(client: "RemoteClient", quiet: bool = False) -> None:
@@ -1708,6 +1896,13 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     await _sync_yolo(client)
     _print_banner(host)
     await _first_run_welcome(client, host)
+    # na dzien dobry: stan serwera i ile nowych wiadomosci od Pipe (bez modelu, od razu)
+    try:
+        _print_overview(_response_data(await client.probe("overview")), compact=True)
+        console.print()
+    except Exception:
+        pass                    # starszy backend bez `overview` — po prostu bez paska stanu
+    await _show_new_feed(client, baseline=True)
     await _show_due_reminders(client)
     await _refresh_skills(client)
     ask = _prompt_reader(client)

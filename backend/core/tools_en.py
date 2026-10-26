@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.38.0
+Pipe v0.39.0
 """
 
 from __future__ import annotations
@@ -30,8 +30,9 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "Secrets in the content are hidden from you ([ZREDAGOWANO]).",
         {"path": "Path to the file on the server."}),
     "write_file": (
-        "Writes a whole file on the server (creates or overwrites). ALWAYS requires confirmation. Do not use it for files "
-        "you read with [ZREDAGOWANO] — change them surgically with execute_command (sed -i).",
+        "Writes a whole file on the server (creates it together with missing directories, or overwrites). Outside the "
+        "workshop it requires confirmation; in the workshop directory (projects, your scripts) it writes right away. "
+        "Do not use it for files you read with [ZREDAGOWANO] — change them surgically with execute_command (sed -i).",
         {"path": "Path to the file on the server.", "content": "New, complete file content."}),
     "change_directory": (
         "Changes the working directory on the server (e.g. '/srv/app'). Use it when the user wants to work in another "
@@ -207,6 +208,30 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
                       "'crates.io', 'RubyGems'.",
          "package": "For vulns: the package name; on Debian and Ubuntu the SOURCE package "
                     "(dpkg-query -W -f='${source:Package} ${Version}' name)."}),
+    "project": (
+        "Workshop: projects in the workshop directory (path in the ENVIRONMENT section) — repositories, small apps and "
+        "your own scripts. Use it when the user asks: 'clone and run', 'set up this app', 'what does this repo do', "
+        "'write a script that...'. In the workshop you act on your own, without asking: list, create, clone, inspect, "
+        "exec (a command in a one-off, isolated container that sees only the project directory as /work: installing "
+        "dependencies, tests, builds, your scripts), logs, stop, start, pull — and you write the project files with "
+        "write_file. run (a long-running service: container pipe-<name>, port on 127.0.0.1 only) and remove ask once. "
+        "Order: clone -> inspect (what it is and how to run it) -> run -> logs. When inspect does not know how to run "
+        "it, write a Dockerfile in the project directory and run with strategy=dockerfile.",
+        {"name": "Project name: lowercase letters, digits, hyphens (for clone taken from the address by default).",
+         "url": "For clone: https://github.com/org/repo or git@host:org/repo.git (no tokens).",
+         "command": "For exec: a shell command in the project directory, e.g. 'npm test', 'python3 report.py'.",
+         "image": "For exec: an image, e.g. python:3.12-slim, node:22-bookworm-slim, golang:1.23 (by default from the "
+                  "project's stack).",
+         "strategy": "For run: how to run it (auto by default — from inspect).",
+         "port": "For run: the port the app listens on inside the container (by default from inspect)."}),
+    "load_tools": (
+        "Enables tool groups whose full descriptions you do not have yet (Pipe saves tokens). memory — your memory "
+        "(server_md, directory, skill_manage, vibe); security — audit, patches, change journal and undo (security_audit, "
+        "security_patch, journal); schedule — reminders, routines, cron (reminder, routine_manage, cron_manage); fleet — "
+        "remote servers, clusters, workers (target_manage, remote_exec, delegate); web — the internet and version "
+        "knowledge (web_search, web_fetch, software_info); diagram — diagrams and the infrastructure map; update — "
+        "updating Pipe itself (pipe_update). After enabling, call the tool you need in the next step.",
+        {"groups": "Groups to enable."}),
     "pipe_update": (
         "Update of Pipe itself (you): 'update yourself', 'get the new Pipe version', 'which version are you, is there a "
         "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "

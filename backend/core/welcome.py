@@ -88,6 +88,8 @@ async def build(*, checks_report: Any = None, digest_time: str = "07:00", cert_d
                            "backups: tell me where they live (e.g. \"database backups are in /var/backups/pg\") and I will watch them"))
     if digest_time and digest_time.lower() not in ("off", "0"):
         watching.append(tr(f"raport codziennie o {digest_time}", f"daily report at {digest_time}"))
+    watching.append(tr("gdy cos sie zepsuje, sam sprawdze przyczyne i napisze, co ustalilem — z przyciskiem naprawy",
+                       "when something breaks, I check the cause myself and write what I found — with a fix button"))
 
     sections = [
         {"title": tr("Co tu stoi", "What runs here"),
@@ -95,11 +97,13 @@ async def build(*, checks_report: Any = None, digest_time: str = "07:00", cert_d
         {"title": tr("Bezpieczenstwo", "Security"), "lines": security},
         {"title": tr("Pilnuje", "I watch"), "lines": watching},
         {"title": tr("Na poczatek", "To get started"),
-         "lines": tr(["/audyt — pelny audyt z poprawkami", "/zmiany — co sie zmienilo",
-                      "/wykres — obciazenie", "/cofnij — cofnij ostatnia zmiane",
+         "lines": tr(["/status — stan serwera, od razu i bez AI", "/nowosci — co napisalem sam (alerty, podpowiedzi)",
+                      "/audyt — pelny audyt z poprawkami", "/cofnij — cofnij ostatnia zmiane",
+                      "\"postaw mi te aplikacje: https://github.com/...\" — sklonuje, sprawdze i uruchomie w izolowanym kontenerze",
                       "albo po prostu napisz, co chcesz zrobic"],
-                     ["/audit — full audit with fixes", "/changes — what changed",
-                      "/chart — load", "/undo — undo the last change",
+                     ["/status — server status, instant and without AI", "/news — what I wrote on my own (alerts, suggestions)",
+                      "/audit — full audit with fixes", "/undo — undo the last change",
+                      "\"set this app up for me: https://github.com/...\" — I clone, check and start it in an isolated container",
                       "or just write what you want to do"])},
     ]
     title = tr(f"Czesc! Jestem Pipe na {found.hostname or 'tym serwerze'}.",

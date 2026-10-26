@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 ## Model
 
@@ -271,6 +271,33 @@ a host symlink (`/etc/nginx/sites-enabled/x -> /etc/nginx/sites-available/x`) is
 everything outside the host (`/hostfs` in Docker), `/boot`, `/dev`, `/proc`, `/sys`, `/var/spool`, binary
 directories, `/root/.ssh`, `/home/*/.ssh`, `/etc/shadow`, `/etc/gshadow`, the SSH host private keys. Writing to
 `/etc/passwd`, `/etc/shadow`, `/boot`, `/dev` is forbidden; every other write requires confirmation.
+
+## The workshop (`project`) and Pipe writing first
+
+The workshop (`WORKSPACE_DIR`, `/root/pipe-workspace` by default) is the only place where Pipe changes things without
+asking. The limits:
+
+- **Files are written without confirmation** only when both the given path and the path after resolving symlinks are
+  inside the workshop and it is not a startup file (`.bashrc`, cron, systemd...) -- a link in a cloned repository
+  cannot lead a write out of the workshop. Each such write is in the audit log marked `[warsztat]`.
+- **Code from a repository never runs in Pipe's process or container** (that is where `docker.sock` is). `exec` runs
+  it in a one-off container from an official language image: only the project directory as `/work`, no `docker.sock`,
+  `--cap-drop ALL`, `no-new-privileges`, memory, process and time limits. It does have network (installing
+  dependencies).
+- **`clone`**: only `https://` or `git@`, `--depth 1`, no hooks, submodules or LFS, no password prompt; a repository
+  that is too big (`PROJECT_MAX_MB`) is deleted at once.
+- **README and AGENTS.md are data.** After reading them (or content from the internet) `exec` requires confirmation
+  again until the user's next message -- as with YOLO, text from someone else's repository cannot run code by itself.
+- **`run` and `remove` are always confirmed** with a plan. The port is bound to `127.0.0.1` only. A compose file with
+  `privileged`, `docker.sock`, host networking, system directory mounts or a port open to the world -- the
+  confirmation says so plainly. `run` is in the journal, `/undo` removes the deployment.
+- `WORKSPACE_AUTONOMY=0` -- confirmation for every operation. Observe mode and viewers -- the list and logs only.
+
+Messages Pipe sends by itself (the inbox, `core/feed.py`) carry buttons built by the backend; the client sends back
+only the message and action number (`feed_act`), so it cannot pass a command of its own. Actions that change the
+server (*Free up space*, *Patch*, *Fix it*) are for admins only. *Fix it* sends the proposal from the investigation
+to the agent as an ordinary message -- the changes go through the classifier and confirmation as always. The
+investigation itself is a read-only worker, at most `AUTO_INVESTIGATE_DAILY` a day.
 
 ## Agent memory
 

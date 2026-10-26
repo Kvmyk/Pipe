@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 ## Model
 
@@ -268,6 +268,32 @@ korzenia hosta (`/hostfs`), a `..` nie wychodzi ponad ten korzen. Odrzucane:
 wszystko poza hostem (`/hostfs` w Dockerze), `/boot`, `/dev`, `/proc`, `/sys`, `/var/spool`, katalogi binarek,
 `/root/.ssh`, `/home/*/.ssh`, `/etc/shadow`, `/etc/gshadow`, prywatne klucze hosta SSH. Zapis do
 `/etc/passwd`, `/etc/shadow`, `/boot`, `/dev` jest zakazany; kazdy inny zapis wymaga potwierdzenia.
+
+## Warsztat (`project`) i Pipe piszacy pierwszy
+
+Warsztat (`WORKSPACE_DIR`, domyslnie `/root/pipe-workspace`) to jedyne miejsce, w ktorym Pipe zmienia cos bez
+pytania. Granice:
+
+- **Zapis plikow bez potwierdzenia** tylko wtedy, gdy podana sciezka i sciezka po rozwiazaniu symlinkow leza w
+  warsztacie i nie jest to plik startowy (`.bashrc`, cron, systemd...) -- link w sklonowanym repozytorium nie
+  wyprowadzi zapisu poza warsztat. Kazdy taki zapis jest w audit logu z dopiskiem `[warsztat]`.
+- **Kod z repozytorium nigdy nie dziala w procesie ani kontenerze Pipe** (tam jest `docker.sock`). `exec` uruchamia
+  go w jednorazowym kontenerze z oficjalnego obrazu jezyka: tylko katalog projektu jako `/work`, bez `docker.sock`,
+  `--cap-drop ALL`, `no-new-privileges`, limit pamieci, procesow i czasu. Siec ma (instalacja zaleznosci).
+- **`clone`**: tylko `https://` albo `git@`, `--depth 1`, bez hookow, submodulow i LFS, bez pytania o haslo; za duze
+  repozytorium (`PROJECT_MAX_MB`) jest od razu usuwane.
+- **README i AGENTS.md to dane.** Po ich przeczytaniu (albo po tresci z internetu) `exec` znow wymaga potwierdzenia
+  do nastepnej wiadomosci uzytkownika -- jak YOLO, tekst z cudzego repozytorium nie uruchomi sam kodu.
+- **`run` i `remove` zawsze z potwierdzeniem** z planem. Port tylko na `127.0.0.1`. Compose z `privileged`,
+  `docker.sock`, siecia hosta, montowaniem katalogow systemowych albo portem na swiat -- potwierdzenie mowi to wprost.
+  `run` jest w dzienniku, `/cofnij` usuwa wdrozenie.
+- `WORKSPACE_AUTONOMY=0` -- zgoda na kazda operacje. Tryb obserwacji i viewer -- tylko lista i logi.
+
+Wiadomosci, ktore Pipe wysyla sam (skrzynka, `core/feed.py`), maja przyciski zbudowane przez backend; klient odsyla
+tylko numer wiadomosci i akcji (`feed_act`), wiec nie da sie nim podac wlasnej komendy. Akcje zmieniajace serwer
+(*Zwolnij miejsce*, *Zalataj*, *Napraw*) sa tylko dla administratora. *Napraw* wysyla agentowi propozycje z
+samodzielnego badania jako zwykla wiadomosc -- zmiany przechodza przez klasyfikator i potwierdzenie jak zawsze.
+Samodzielne badanie to worker tylko z odczytami, z limitem `AUTO_INVESTIGATE_DAILY` dziennie.
 
 ## Pamiec agenta
 

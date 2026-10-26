@@ -60,6 +60,10 @@ EXPLAIN_WAIT = 40
 VULN_ALERT_EXPLAIN_WAIT = 120
 # Strona musi nie odpowiadac dwa sprawdzenia z rzedu, zanim przyjdzie alert (chwilowe 502 przy deployu).
 SITE_FAILURES_BEFORE_ALERT = 2
+# Pipe sam bada przyczyne tych problemow (AUTO_INVESTIGATE) — nie podatnosci (maja opisy) ani zdarzen bezpieczenstwa
+# (port, konta: ich przyczyna to decyzja czlowieka, nie stan serwera).
+AUTO_INVESTIGATE_SCOPES = frozenset({"disk", "memory", "load", "container", "site", "backup", "dns"})
+AUTO_INVESTIGATE_COOLDOWN = 6 * 3600
 
 
 @dataclass
@@ -95,11 +99,15 @@ class Alert:
 # ─── Powiadomienia ──────────────────────────────────────────────────────────
 
 class Notifier:
-    """Prosty pub/sub zdarzen dla podlaczonych klientow."""
+    """
+    Prosty pub/sub zdarzen dla podlaczonych klientow. `on_publish(event) -> event` (Watcher: skrzynka,
+    core/feed.py) dopisuje do zdarzenia `feed_id`, `push` i `actions` — klienci powiadamiaja tylko o `push`.
+    """
 
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue] = set()
         self.history: list[dict[str, Any]] = []
+        self.on_publish: Any = None
 
     def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=200)
@@ -116,6 +124,11 @@ class Notifier:
     def publish(self, event: dict[str, Any], *, transient: bool = False) -> None:
         """`transient` — zdarzenie techniczne (np. zmiana jezyka): trafia do klientow, ale nie do historii."""
         event = {**event, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
+        if not transient and self.on_publish is not None:
+            try:
+                event = self.on_publish(event) or event
+            except Exception as exc:          # skrzynka nie moze zatrzymac powiadomienia
+                print(tr(f"[Czuwanie] Skrzynka: {exc}", f"[Watcher] Inbox: {exc}"), flush=True)
         if not transient:
             self.history = (self.history + [event])[-MAX_HISTORY:]
         for queue in list(self._subscribers):
@@ -220,6 +233,26 @@ class Watcher:
         self._reminder_wakeup = asyncio.Event()
         from backend.core.posture import AuthWatch
         self._auth = AuthWatch()
+        self.notifier.on_publish = self._to_feed
+        self._investigated: dict[str, float] = {}       # klucz alertu -> kiedy Pipe sam go badal
+        self._investigations: dict[str, int] = {}       # dzien -> ile badan (AUTO_INVESTIGATE_DAILY)
+
+    # --- skrzynka (Pipe pisze pierwszy) -------------------------------------
+
+    @staticmethod
+    def feed_defaults() -> Any:
+        from backend.core import feed
+        return feed.defaults_from(settings.NOTIFY_LEVEL, settings.QUIET_HOURS, settings.INSIGHTS_PER_DAY)
+
+    def _to_feed(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Zdarzenie -> wiadomosc skrzynki; do zdarzenia dochodzi decyzja o powiadomieniu i przyciski."""
+        from backend.core import feed
+
+        item = feed.add(event, defaults=self.feed_defaults())
+        if item is None:
+            return event
+        return {**event, "feed_id": item.id, "push": item.push, "held": item.held, "feed_severity": item.severity,
+                "actions": [{**a, "index": i} for i, a in enumerate(item.actions)]}
 
     # --- alerty -------------------------------------------------------------
 
@@ -290,7 +323,7 @@ class Watcher:
             save_state(state)
         except OSError:
             pass
-        return self._publish(self.apply(findings, RESOURCE_SCOPE))
+        return self._publish(self.apply(findings, RESOURCE_SCOPE), investigate=True)
 
     async def _security_findings(self, state: dict[str, Any]) -> list[Finding]:
         """Straznik (konta, klucze SSH, SUID, sudoers/sshd) i przyrost logu SSH."""
@@ -315,12 +348,110 @@ class Watcher:
             print(tr(f"[Czuwanie] Log SSH: {exc}", f"[Watcher] SSH log: {exc}"), flush=True)
         return findings
 
-    def _publish(self, events: list[Alert]) -> list[Alert]:
+    def _publish(self, events: list[Alert], *, investigate: bool = False) -> list[Alert]:
         for alert in events:
             if alert.state in ("new", "resolved"):
                 self._track_incident(alert)
             self.notifier.publish(alert.to_event())
+            if investigate and self._should_investigate(alert):
+                try:
+                    asyncio.get_running_loop().create_task(self._safe(self.auto_investigate(alert), "badanie"))
+                except RuntimeError:          # bez petli zdarzen (testy synchroniczne) — bez badania
+                    pass
         return events
+
+    # --- Pipe sam bada przyczyne -------------------------------------------
+
+    def _should_investigate(self, alert: Alert) -> bool:
+        """Krytyczny problem (albo kazdy przy AUTO_INVESTIGATE=all): Pipe bada go od razu — w limicie dziennym."""
+        mode = settings.AUTO_INVESTIGATE
+        if mode in ("off", "0", "no", "nie", "false") or self.agent is None:
+            return False
+        if not getattr(self.agent, "llm_enabled", lambda: True)():
+            return False
+        if alert.state not in ("new", "event") or alert.key.split(":", 1)[0] not in AUTO_INVESTIGATE_SCOPES:
+            return False
+        if mode != "all" and alert.severity != "critical":
+            return False
+        now = time.time()
+        if now - self._investigated.get(alert.key, 0) < AUTO_INVESTIGATE_COOLDOWN:
+            return False
+        day = datetime.now().strftime("%Y-%m-%d")
+        if self._investigations.get(day, 0) >= max(0, settings.AUTO_INVESTIGATE_DAILY):
+            return False
+        self._investigations = {day: self._investigations.get(day, 0) + 1}
+        self._investigated[alert.key] = now
+        return True
+
+    async def auto_investigate(self, alert: Alert) -> dict[str, Any] | None:
+        """Worker (tylko odczyty) bada problem; ustalenia ida do skrzynki z przyciskiem Napraw i do pamieci incydentow."""
+        from backend.core import incidents, workers
+        from backend.core.session import Session
+
+        target = targets.get_target("local")
+        if target is None or self.agent is None:
+            return None
+        task = prompt("AUTO_INVESTIGATE_TASK").format(title=alert.title, detail=alert.detail or "-")
+        task += incidents.context_for(alert.key)
+        try:
+            from backend.core.handlers.history import changes_text
+            task += tr("\n\nZmiany na serwerze z ostatniej doby (migawki Pipe):\n",
+                       "\n\nChanges on the server in the last 24 h (Pipe snapshots):\n") + await changes_text(24)
+        except Exception:
+            pass
+        parent = Session(session_id=f"auto:{alert.key}", interface="auto-investigate", learns_vibe=False)
+        try:
+            result = await asyncio.wait_for(workers.run_worker(self.agent, parent, "zbadaj", target, task),
+                                            timeout=settings.WORKER_TIMEOUT)
+        except (asyncio.TimeoutError, Exception) as exc:
+            print(tr(f"[Czuwanie] Badanie {alert.key} nie powiodlo sie: {exc}",
+                     f"[Watcher] Investigating {alert.key} failed: {exc}"), flush=True)
+            return None
+        if result.error or not result.report.strip():
+            return None
+        report = result.report.strip()
+        if result.proposals:
+            report += tr("\n\nProponowane komendy (wykonam po Twojej zgodzie):\n",
+                         "\n\nProposed commands (I run them after your approval):\n") + \
+                "\n".join(f"- {p}" for p in result.proposals[:6])
+        incidents.note_investigation(alert.key, report)
+        event = {"type": "investigation", "key": alert.key, "title": alert.title, "report": report,
+                 "alert_id": alert.id, "severity": alert.severity, "auto": True,
+                 "fix_message": prompt("AUTO_FIX_MESSAGE").format(title=alert.title, report=report[:1500])}
+        self.notifier.publish(event)
+        return event
+
+    # --- podpowiedzi (core/insights.py) ------------------------------------
+
+    async def insights_once(self) -> list[dict[str, Any]]:
+        """Podpowiedzi bez LLM: kazda raz, potem po okresie ciszy albo gdy sprawa jest powazniejsza."""
+        from backend.core import feed, infra, insights
+
+        path = memory.data_dir() / "insights_state.json"
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            state = state if isinstance(state, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        containers = await infra.docker_containers()
+        points = await asyncio.to_thread(metrics.load, 48)
+        found = await insights.collect(state, containers=containers, points=points)
+        now = time.time()
+        sent = state.get("sent") if isinstance(state.get("sent"), dict) else {}
+        published = []
+        for insight in found:
+            if feed.snoozed(insight.key, now) or not insights.due(insight, sent, now):
+                continue
+            sent[insight.key] = {"at": now, "severity": insight.severity}
+            event = insight.to_event()
+            self.notifier.publish(event)
+            published.append(event)
+        state["sent"] = {k: v for k, v in sent.items() if isinstance(v, dict) and now - float(v.get("at", 0)) < 30 * 86400}
+        try:
+            memory._write_atomic(path, json.dumps(state, indent=1) + "\n")
+        except OSError:
+            pass
+        return published
 
     @staticmethod
     def _track_incident(alert: Alert) -> None:
@@ -394,7 +525,7 @@ class Watcher:
         findings = [f for f in findings
                     if f.scope != "site" or self._site_failures.get(f.key, 0) >= SITE_FAILURES_BEFORE_ALERT
                     or f.key in self.active]
-        return self._publish(self.apply(findings, CHECKS_SCOPE))
+        return self._publish(self.apply(findings, CHECKS_SCOPE), investigate=True)
 
     async def vuln_scan_now(self, *, max_age: float | None = None, since: float = 0) -> Any:
         """
@@ -584,8 +715,11 @@ class Watcher:
             return False
         return not await asyncio.to_thread(vulns.needing_explanation, result, language, extra)
 
-    async def build_digest(self, *, fresh_checks: bool = False) -> Any:
-        """Poranny raport (core/digest.py) z wykresem obciazenia z ostatniej doby."""
+    async def build_digest(self, *, fresh_checks: bool = False, held: list[Any] | None = None) -> Any:
+        """
+        Poranny raport (core/digest.py) z wykresem obciazenia z ostatniej doby. `held` — wiadomosci skrzynki
+        wstrzymane przez cisze nocna: raport wymienia je na poczatku zamiast osobnego powiadomienia.
+        """
         from backend.core import digest, infra, snapshots, usage
         from backend.core.handlers.history import chart_attachment
 
@@ -609,6 +743,9 @@ class Watcher:
             current=current, report=report, usage_line=usage.yesterday_line(priced),
             cert_days=settings.WATCH_CERT_DAYS, backup_hours=settings.WATCH_BACKUP_HOURS,
             load_factor=settings.WATCH_LOAD_FACTOR, vuln_scan=self.vuln_scan)
+        if held:
+            result.sections.insert(0, digest.Section(tr("Czekalo na Ciebie (cisza nocna)", "Waiting for you (quiet hours)"),
+                                                     [item.title for item in held[:10]]))
         attachment, _ = await chart_attachment("load", 24)
         result.attachment = attachment
         return result
@@ -763,13 +900,13 @@ class Watcher:
                 print(tr(f"[Czuwanie] Blad ({name}): {exc}", f"[Watcher] Error ({name}): {exc}"), flush=True)
             await asyncio.sleep(max(300, interval))
 
-    async def publish_digest(self) -> None:
-        result = await self.build_digest()
+    async def publish_digest(self, held: list[Any] | None = None) -> None:
+        result = await self.build_digest(held=held)
         self.notifier.publish(result.to_event())
 
     async def _clock_loop(self) -> None:
-        """Co minute: rutyny wedlug harmonogramu i poranny raport."""
-        from backend.core import digest
+        """Co minute: rutyny wedlug harmonogramu, poranny raport i koniec ciszy nocnej."""
+        from backend.core import digest, feed
 
         last_minute = None
         while True:
@@ -780,9 +917,19 @@ class Watcher:
                     for routine in routines.due(routines.load_routines(), now):
                         asyncio.create_task(self.run_routine(routine))
                 stamp = now.strftime("%Y-%m-%d")
+                try:
+                    quiet_end = feed.quiet_ends_now(feed.prefs(self.feed_defaults()).quiet, now)
+                except Exception:
+                    quiet_end = False
                 if digest.due(settings.DIGEST_TIME, now) and self._last_digest != stamp:
                     self._last_digest = stamp
-                    asyncio.create_task(self._safe(self.publish_digest(), "raport"))
+                    # co czekalo w ciszy nocnej, trafia do raportu — jedno powiadomienie zamiast dwoch
+                    held = feed.release_held() if quiet_end else []
+                    asyncio.create_task(self._safe(self.publish_digest(held), "raport"))
+                elif quiet_end:
+                    notice = feed.held_notice(feed.release_held())
+                    if notice:
+                        self.notifier.publish(notice)
             await asyncio.sleep(15)
 
     async def _welcome_loop(self) -> None:
@@ -819,6 +966,10 @@ class Watcher:
                 # lista pakietow co godzine (lokalny odczyt), OSV tylko przy zmianie albo co VULN_INTERVAL
                 self._tasks.append(asyncio.create_task(
                     self._periodic("podatnosci", self.vulns_once, min(3600, settings.VULN_INTERVAL), 120)))
+            if settings.INSIGHTS_INTERVAL > 0:
+                # podpowiedzi po tym, jak historia pomiarow i migawka zdaza sie zebrac
+                self._tasks.append(asyncio.create_task(
+                    self._periodic("podpowiedzi", self.insights_once, settings.INSIGHTS_INTERVAL, 600)))
         self._tasks.append(asyncio.create_task(self._clock_loop()))
         self._tasks.append(asyncio.create_task(self._reminder_loop()))
         self._tasks.append(asyncio.create_task(self._safe(self._welcome_loop(), "powitanie")))

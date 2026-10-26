@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -11,7 +11,11 @@ Bot Telegram to klient agenta. Laczy sie z backendem przez Unix socket i przekaz
 Obsluguje potwierdzenia przez przyciski inline (TAK / NIE; decyzja dopisuje sie do tej samej wiadomosci), wysyla
 diagramy jako zdjecia, pokazuje postep w jednej, aktualizowanej wiadomosci (po zakonczeniu zwija sie do linii
 "Wykonane kroki: N", liste rozwijasz dotknieciem) i -- co najwazniejsze -- **sam pisze, gdy cos sie dzieje**:
-alerty czuwania i raporty rutyn przychodza bez pytania, z przyciskiem *Zbadaj*.
+alerty czuwania, podpowiedzi, ustalenia z samodzielnego badania i raporty rutyn przychodza bez pytania, kazde
+z przyciskami akcji (*Zbadaj*, *Zwolnij miejsce*, *Zalataj*, *Napraw*).
+
+Pod polem wiadomosci jest stala klawiatura: *Stan serwera*, *Co nowego*, *Projekty*, *Pomoc* -- najczestsze sprawy
+bez znajomosci komend. Menu `/` pokazuje tylko komendy uzywane co dzien; pelna lista jest w `/pomoc`.
 
 ## Alerty
 
@@ -19,7 +23,15 @@ Bot utrzymuje stale polaczenie z backendem (`{"command": "subscribe"}`, ponawian
 zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
 
 - **OSTRZEZENIE / KRYTYCZNY** -- dysk, RAM, obciazenie, kontener w petli restartow albo unhealthy, zatrzymany
-  kontener, nowy publiczny port. Przycisk **Zbadaj** prosi agenta o diagnoze (tylko odczyty) i propozycje naprawy.
+  kontener, nowy publiczny port. Przycisk **Zbadaj** prosi agenta o diagnoze (tylko odczyty) i propozycje naprawy,
+  przy pelnym dysku jest tez **Zwolnij miejsce**.
+- **Ustalenia** -- przy krytycznym alercie Pipe nie czeka na *Zbadaj*: worker sam sprawdza przyczyne (tylko odczyty)
+  i zaraz po alercie pisze, co ustalil, z przyciskiem **Napraw** (jedno potwierdzenie; tylko administratorzy).
+  `AUTO_INVESTIGATE` w `backend/.env`.
+- **Podpowiedz** -- sprawa, ktora dopiero bedzie problemem albo cos do poprawy: kiedy zapelni sie dysk, ile miejsca
+  da sie odzyskac, kontener, ktory czesto sie restartuje, serwer czekajacy na restart, stale rosnacy RAM. Liczona
+  bez AI. Przyciski: akcja (np. *Zwolnij miejsce*), **Pozniej** (wraca za dobe), **Mniej takich** (ten rodzaj
+  zostaje tylko w skrzynce).
 - **ROZWIAZANE** -- problem minal.
 - **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
 - **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
@@ -40,6 +52,11 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
 - **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
 - Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
   i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
+
+Wszystko, co Pipe napisal sam, trafia tez do skrzynki: `/nowosci` (przycisk *Co nowego*) pokazuje ostatnie
+wiadomosci z ich przyciskami. Kiedy bot ma powiadamiac, ustawiasz przyciskami w `/powiadomienia`: poziom
+(wszystko / wazne / tylko krytyczne), cisza nocna (w nocy tylko sprawy krytyczne, reszta rano z raportem), limit
+podpowiedzi dziennie. Wiadomosc, ktora nie przeszla przez te ustawienia, czeka w skrzynce.
 
 `TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
 
@@ -169,6 +186,8 @@ Pelna lista ponizej (sekcja *Komendy*). Mozesz tez pisac bezposrednio, np.:
 - "sprawdz dyski na wszystkich serwerach" (workery)
 - "codziennie o 7 sprawdzaj backupy" (rutyna)
 - "odpowiadaj krocej" (VIBE)
+- "postaw mi te aplikacje: https://github.com/acme/notatnik" (warsztat)
+- "napisz skrypt, ktory policzy zamowienia z logow" (warsztat)
 
 ## Bezpieczenstwo
 
@@ -181,7 +200,11 @@ nazwy dzialaja w obu jezykach.
 
 | Komenda | Dzialanie |
 |---|---|
-| `/status` | Szybki przeglad obciazenia serwera |
+| `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami (*Wszystko dziala* albo co wymaga uwagi), paski procesora, pamieci i dysku, liczba nowych wiadomosci i projektow |
+| `/nowosci` | Skrzynka: co Pipe napisal sam (alerty, ustalenia, podpowiedzi, raporty), z przyciskami akcji (`/news`) |
+| `/projekty` | Projekty w warsztacie: stan, adres, przyciski *Logi* i *Zatrzymaj*/*Uruchom* (`/projects`) |
+| `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki apt i cache npm/pip; mowi, ile zwolnil. Tylko administrator (`/cleanup`) |
+| `/powiadomienia` | Kiedy Pipe ma powiadamiac: poziom, cisza nocna, limit podpowiedzi -- przyciskami (`/notifications`) |
 | `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe (potwierdzenie przyciskami); `sprawdz` tylko pokazuje wersje |
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |

@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -29,7 +29,7 @@ from openai.types.chat import ChatCompletion
 from backend.config import settings
 from backend.config.providers import NO_KEY_PLACEHOLDER, LLMConfig, chat_model_ids, model_available
 from backend.core import attachments as attachments_module, audit, executor, llm as llm_choice, memory, runtime, \
-    sessions_store, usage
+    sessions_store, toolsets, usage
 from backend.core.i18n import tr
 from backend.core.events import Activity, Event, Progress
 from backend.core.session import ConfirmationRequest, Session
@@ -41,6 +41,11 @@ import backend.core.handlers as handlers_module
 MAX_TOOL_RESULT_CHARS = 24_000
 # Historia sesji — starsze tury sa odcinane na granicy wiadomosci uzytkownika.
 MAX_HISTORY_MESSAGES = 120
+# Wyniki narzedzi sprzed CONTEXT_KEEP_TURNS tur ida do modelu skrocone do poczatku (observation masking —
+# JetBrains, "The Complexity Trap", NeurIPS 2025: polowa kosztu przy tej samej skutecznosci). Historia w sesji
+# zostaje pelna — skracana jest tylko kopia wysylana do providera.
+MASK_MIN_CHARS = 1_500
+MASK_KEEP_CHARS = 500
 
 SKIPPED_FOR_CONFIRMATION = (
     "NIE WYKONANO: poprzednie narzedzie czeka na potwierdzenie uzytkownika. "
@@ -68,8 +73,9 @@ VIEWER_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "cron_manage": frozenset({"add", "remove"}),
     "pipe_update": frozenset({"apply"}),
     "security_patch": None,
+    "project": frozenset({"create", "clone", "run", "exec", "stop", "start", "pull", "remove"}),
 }
-OBSERVE_NOTICE = ("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
+OBSERVE_NOTICE =("Pipe dziala w trybie obserwacji (PIPE_OBSERVE=1) — tej zmiany nie wykonam. "
                   "Zmiany wymagaja wylaczenia trybu obserwacji.")
 OBSERVE_NOTICE_EN = ("Pipe runs in observe mode (PIPE_OBSERVE=1) — I will not make this change. "
                      "Changes need observe mode turned off.")
@@ -85,6 +91,7 @@ OBSERVE_WRITE_OPERATIONS: dict[str, frozenset[str] | None] = {
     "cron_manage": frozenset({"add", "remove"}),
     "pipe_update": frozenset({"apply"}),
     "security_patch": None,
+    "project": frozenset({"create", "clone", "run", "exec", "stop", "start", "pull", "remove"}),
 }
 INTERRUPTED_TOOL = "PRZERWANO: klient rozlaczyl sie, zanim narzedzie skonczylo. Wynik nieznany."
 INTERRUPTED_TOOL_EN = "INTERRUPTED: the client disconnected before the tool finished. Result unknown."
@@ -177,6 +184,7 @@ class VPSAgent:
              "pipe_generated": True},
             {"role": "assistant", "content": tr("Przyjalem do wiadomosci.", "Noted."), "pipe_generated": True},
         ]
+        toolsets.observe(session, text)          # po /audyt "zrob to sam" ma od razu narzedzia latania
         _trim_history(session)
         self._persist(session_id)
         return True
@@ -263,6 +271,7 @@ class VPSAgent:
         if generated:
             message["pipe_generated"] = True
         session.messages.append(message)
+        toolsets.observe(session, user_message)
         _trim_history(session)
         self.vibe.observe(session)
 
@@ -347,12 +356,20 @@ class VPSAgent:
         """
         iterations = max_iterations or settings.AGENT_MAX_ITERATIONS
         for _ in range(iterations):
+            saved = 0
+            if tools is None:
+                current = tools_for_agent(session)
+                # ile tokenow schematow nie poszlo do modelu (narzedzia na zadanie) — do /koszt
+                saved = max(0, toolsets.size(tools_for_agent()) - toolsets.size(current))
+            else:
+                current = tools
             response = await self.call_llm(
                 system_prompt if system_prompt is not None else session.system_prompt,
                 session.messages,
-                tools=tools_for_agent() if tools is None else tools,
+                tools=current,
                 model=model,
                 who=session.interface,
+                saved_tools=saved,
             )
             message = response.choices[0].message
             entry = message.model_dump(exclude_unset=True, exclude_none=True)
@@ -410,11 +427,14 @@ class VPSAgent:
         tools: list[dict] | None = None,
         model: str | None = None,
         who: str = "",
+        saved_tools: int = 0,
     ) -> ChatCompletion:
         """
         Wysyla historie do LLM i zwraca odpowiedz. Zuzycie tokenow trafia do
         licznika (core/usage.py) z etykieta `who` (interfejs sesji); przy
         wyczerpanym dziennym limicie rzuca usage.BudgetExceeded bez zapytania.
+        Stare wyniki narzedzi ida skrocone (mask_old_results); `saved_tools` — ile tokenow
+        schematow narzedzi pominieto (do licznika oszczednosci).
         """
         config, client = self.active_llm()
         if not config.enabled:
@@ -428,7 +448,8 @@ class VPSAgent:
         extra_body: dict[str, Any] = {}
         if config.reasoning_effort:
             extra_body["reasoning_effort"] = config.reasoning_effort
-        clean = [_for_provider(m, config.provider_id) for m in messages]
+        clean, saved_history = mask_old_results([_for_provider(m, config.provider_id) for m in messages],
+                                                settings.CONTEXT_KEEP_TURNS)
         kwargs: dict[str, Any] = {
             # WORKER_MODEL to nazwa modelu u providera bazowego — u innego nie istnieje.
             "model": config.model if switched or not model else model,
@@ -438,7 +459,8 @@ class VPSAgent:
         if tools:
             kwargs["tools"] = tools
         response = await client.chat.completions.create(**kwargs)
-        _record_usage(kwargs["model"], getattr(response, "usage", None), who, priced=not switched)
+        _record_usage(kwargs["model"], getattr(response, "usage", None), who, priced=not switched,
+                      saved={"tools": saved_tools, "history": saved_history})
         return response
 
     async def complete(self, system_prompt: str, user_message: str, model: str | None = None,
@@ -500,6 +522,9 @@ class VPSAgent:
                                      "content": tr(f"Nieznane narzedzie: {tool_call.function.name}",
                                                    f"Unknown tool: {tool_call.function.name}")})
             return
+        if dispatch is None:
+            # narzedzie spoza listy (model znal je z opisu load_tools albo promptu) — od teraz z pelnym opisem
+            toolsets.activate_for_tool(session, tool_call.function.name)
 
         viewer = session.role == "viewer" and dispatch is None
         if viewer and viewer_blocked(tool_call.function.name, args):
@@ -723,10 +748,12 @@ def _rejects_images(exc: Exception) -> bool:
     return status in (415, 422)
 
 
-def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = True) -> None:
+def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = True,
+                  saved: dict[str, int] | None = None) -> None:
     """
     Licznik kosztow nigdy nie przerywa rozmowy — blad zapisu jest tylko logowany.
     `priced=False`: provider wybrany w interfejsie — ceny z .env dotycza bazowego, wiec liczymy same tokeny.
+    `saved` — tokeny, ktorych Pipe nie wyslal (narzedzia na zadanie, skrocone stare wyniki).
     """
     main_model = settings.LLM.model if settings.LLM else ""
     worker = bool(settings.WORKER_MODEL) and model == settings.WORKER_MODEL and model != main_model
@@ -737,19 +764,52 @@ def _record_usage(model: str, response_usage: Any, who: str, *, priced: bool = T
     else:
         prices = usage.Prices(settings.LLM_PRICE_IN, settings.LLM_PRICE_OUT)
     try:
-        usage.record(model, response_usage, usage.who_from_interface(who), prices)
+        usage.record(model, response_usage, usage.who_from_interface(who), prices, saved=saved)
     except OSError as exc:
         print(tr(f"[usage] Nie zapisano zuzycia tokenow: {exc}", f"[usage] Token usage not saved: {exc}"), flush=True)
 
 
-def tools_for_agent() -> list[dict]:
-    """Narzedzia Pipe w jezyku Pipe; bez narzedzi internetu, gdy WEB_SEARCH=off."""
+def tools_for_agent(session: Session | None = None) -> list[dict]:
+    """
+    Narzedzia Pipe w jezyku Pipe; bez narzedzi internetu, gdy WEB_SEARCH=off. Z sesja (TOOLS_MODE=lazy) — tylko
+    grupy wlaczone w tej rozmowie i `load_tools` (core/toolsets.py); bez sesji — wszystkie.
+    """
     from backend.core.i18n import is_en
 
     base = _english_tools() if is_en() else TOOLS
     if settings.WEB_SEARCH == "off":
         base = [t for t in base if t["function"]["name"] not in ("web_search", "web_fetch", "software_info")]
-    return base
+    return toolsets.select(base, session, lazy=settings.TOOLS_MODE == "lazy")
+
+
+def mask_old_results(messages: list[dict[str, Any]], keep_turns: int) -> tuple[list[dict[str, Any]], int]:
+    """
+    Wyniki narzedzi starsze niz `keep_turns` ostatnich wiadomosci uzytkownika — skrocone do poczatku z adnotacja.
+    Zwraca (kopia historii dla providera, szacunek zaoszczedzonych tokenow). Model widzi, ze wynik byl i jak sie
+    zaczynal; gdy potrzebuje calosci, uruchamia narzedzie ponownie.
+    """
+    if keep_turns <= 0:
+        return messages, 0
+    turns = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    if len(turns) <= keep_turns:
+        return messages, 0
+    boundary = turns[-keep_turns]
+    saved = 0
+    result = []
+    for index, message in enumerate(messages):
+        content = message.get("content")
+        if index < boundary and message.get("role") == "tool" and isinstance(content, str) \
+                and len(content) > MASK_MIN_CHARS:
+            omitted = len(content) - MASK_KEEP_CHARS
+            short = content[:MASK_KEEP_CHARS].rstrip() + tr(
+                f"\n[... starszy wynik skrocony przez Pipe — pominieto {omitted} znakow. Jesli go potrzebujesz, "
+                "uruchom narzedzie jeszcze raz.]",
+                f"\n[... older result shortened by Pipe — {omitted} characters omitted. If you need it, run the tool "
+                "again.]")
+            saved += len(content) - len(short)
+            message = {**message, "content": short}
+        result.append(message)
+    return result, max(0, saved // 4)
 
 
 _ENGLISH_TOOLS: list[dict] | None = None

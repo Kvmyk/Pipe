@@ -260,11 +260,20 @@ class TestParseCommand:
 class TestBuildMenu:
 
     def test_builtins_first_then_skills_with_command(self):
+        from tg_format import MENU_COMMANDS
+
         menu = build_menu(SKILLS)
-        # wszystkie wbudowane (w kolejnosci grup pomocy, najczestsze na gorze), potem skille
-        assert sorted(menu[:len(BUILTIN_COMMANDS)]) == sorted(BUILTIN_COMMANDS)
-        assert menu[0] == ("status", dict(BUILTIN_COMMANDS)["status"]) and menu[1][0] == "raport"
-        assert menu[len(BUILTIN_COMMANDS):] == [("odnow_certyfikat", "Odnowienie TLS dla <nginx>")]
+        # menu "/" to tylko codzienne komendy (reszta w /pomoc), w ustalonej kolejnosci, potem skille
+        assert [name for name, _ in menu[:len(MENU_COMMANDS)]] == list(MENU_COMMANDS)
+        assert menu[0] == ("status", dict(BUILTIN_COMMANDS)["status"]) and menu[1][0] == "nowosci"
+        assert menu[len(MENU_COMMANDS):] == [("odnow_certyfikat", "Odnowienie TLS dla <nginx>")]
+        assert set(MENU_COMMANDS) <= set(dict(BUILTIN_COMMANDS))
+
+    def test_every_builtin_is_in_help(self):
+        from tg_format import format_help
+
+        text = format_help([])
+        assert all(f"/{name}" in text for name, _ in BUILTIN_COMMANDS)
 
     def test_limits(self):
         many = [{"name": f"s{i}", "description": "x" * 400, "command": f"s{i}"} for i in range(200)]

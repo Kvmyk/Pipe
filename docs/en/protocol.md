@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 ## Overview
 
@@ -61,7 +61,13 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `list_skills` | -- | one line with `"data": {"skills": [{"name", "description", "command"}]}` |
 | `server_md` | -- | `"data": {"content": "..."}` (empty when SERVER.md doesn't exist) |
 | `scan_server` | -- | streaming: the agent explores the server, creates/updates SERVER.md and DIRECTORY |
-| `status` | -- | streaming: a summary of the server's state |
+| `status` | -- | server status **without the LLM**: a frame with the text in `response` (for older clients), then `done` with `"data"` like `overview` |
+| `overview` | -- | `"data": {"hostname", "status": "ok\|warning\|critical", "headline", "facts", "gauges": [{"id", "label", "pct", "level": "ok\|warn\|crit", "value"}], "series": {"cpu", "mem", "disk"}, "alerts", "containers", "sites", "projects", "unread", "usage": {"tokens", "cost", "cached", "prompt", "saved", "calls"}, "text"}` -- the dashboard **without the LLM** |
+| `feed` | `args`: empty or `seen` (mark as read); optionally `since` (a timestamp) | `"data": {"items": [{"id", "ts", "at", "type", "severity", "title", "text", "key", "kind", "actions": [{"index", "label", "kind", "command"?, "args"?, "admin"?, "primary"?}], "push", "held", "done", "unread"}], "unread", "seen", "text", "prefs"}` -- the inbox: what Pipe sent on its own |
+| `feed_act` | the message's `id`, `action` (index) | runs a button: `snooze` / `mute` / `dismiss` -> `"data": {"id", "done", "text"?, "muted"?}`; `message` -> a streamed conversation with the agent; `command` -> like that command (`cleanup`, `patch`, `investigate`...). An action with `admin` -- administrator only; an action already done (`done`) a second time -> `error` |
+| `prefs` | optionally `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` or `off`), `per_day` (0-50), `args: unmute <kind>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- notification settings; changes by the administrator only |
+| `cleanup` | -- | free up space **without the LLM**: `progress` frames, then `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Refused: viewer, observe mode |
+| `projects` | `args`: empty or `logs` / `stop` / `start` / `remove` (with `execute: true`, otherwise a preview), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; with `args` -- `"data": {"name", "text"}`. Changes: administrator, not in observe mode |
 | `run_skill` | `name` (skill name or command), optionally `args` | streaming |
 | `diagram` | optionally `args` (title) | infrastructure map **without the LLM**: a frame with `attachment`, then `done` with `"data": {"summary": "..."}` |
 | `directory` | -- | `"data": {"entries": [{"path", "kind", "description", "remote", "branch", ...}], "text": "..."}` |
@@ -101,8 +107,8 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
 | `subscribe` | -- | the connection stays open; watcher events (below) until the client disconnects |
 
-The backend builds the message for the agent (`scan_server`, `status`, `run_skill`, `investigate`); the client sends
-only the command. Messages built by the backend don't teach VIBE.
+The backend builds the message for the agent (`scan_server`, `run_skill`, `investigate`, a `message` action from the
+inbox); the client sends only the command. Messages built by the backend don't teach VIBE.
 A skill's `command` field is a name that follows Telegram's rules (lowercase letters, digits, `_`, up to 32
 characters). It is empty when the skill name is reserved (`status`, `mapa`, `server`, `skille`, `katalogi`, `vibe`,
 `alerty`, `cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, `cofnij`, `dziennik`, `audyt`, ...) or
@@ -190,8 +196,18 @@ field contains the worker's report.
   "attachment": {"name": "load-chart.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
-`{"type": "investigation", "key", "title", "report"}` -- the report of a worker that investigated a webhook alert by
-itself (`WEBHOOK_INVESTIGATE=1`). `history` in an alert -- the last occurrence of the same problem (incident memory).
+`{"type": "investigation", "key", "title", "report", "auto"?, "alert_id"?, "severity"?}` -- the report of a worker that
+investigated a webhook alert (`WEBHOOK_INVESTIGATE=1`) or a critical watcher alert (`AUTO_INVESTIGATE`, `auto: true`)
+by itself. `history` in an alert -- the last occurrence of the same problem (incident memory).
+
+`{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- a suggestion without the LLM (disk
+full forecast, space to reclaim, container restarts, a pending server reboot, growing RAM).
+`{"type": "notice", "title", "text"}` -- a summary of what waited during quiet hours.
+
+**The inbox.** `alert`, `insight`, `digest`, `welcome`, `routine`, `investigation` and `notice` events land in the
+inbox and also carry `feed_id`, `push` (whether to notify now: level, quiet hours, the suggestion limit), `held`
+(waits for the end of quiet hours) and `actions` (buttons: `index`, `label`, `kind`, `admin`...). A client notifies
+only on `push: true`, and a button sends `feed_act` with `feed_id` and `index`. No `push` (an older backend) = notify.
 
 `{"type": "approval", "id", "command", "target", "requested_by", "reason", "plan", "status"}` -- an external agent
 (MCP) is waiting for admin approval; the client shows buttons and sends `approve`.

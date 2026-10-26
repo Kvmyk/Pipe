@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -14,9 +14,12 @@ Funkcje:
   - Przypomnienia: "napisz do mnie za 10 minut" -- wiadomosc przychodzi sama o czasie (/przypomnienia)
   - InlineKeyboard dla potwierdzen (TAK / NIE)
   - Zdjecia, zrzuty ekranu i dokumenty (podpis = tresc wiadomosci, album = jedna wiadomosc) oraz glosowki
-  - Komendy: /status /raport /zmiany /wykres /zdrowie /mapa /server /katalogi /skille /alerty /rutyny
-    /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill ma wlasna komende /<nazwa>
-    (angielskie aliasy: /report /changes /chart /health /map /undo ... — dzialaja w obu jezykach)
+  - Pipe pisze pierwszy: alerty, podpowiedzi i ustalenia z badan przychodza same, z przyciskami akcji zbudowanymi
+    w backendzie (skrzynka: /nowosci); powiadamia tylko o tym, co ma `push` (poziom, cisza nocna, limit — /powiadomienia)
+  - Klawiatura pod polem wiadomosci: Stan serwera (bez LLM), Co nowego, Projekty, Pomoc
+  - Komendy: /status /nowosci /projekty /sprzataj /powiadomienia /raport /zmiany /wykres /zdrowie /mapa /server
+    /katalogi /skille /alerty /rutyny /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill
+    ma wlasna komende /<nazwa> (angielskie aliasy: /news /projects /report /changes ... — dzialaja w obu jezykach)
   - Poranny raport przychodzi sam (DIGEST_TIME w backendzie) razem z wykresem obciazenia
   - Menu '/' ustawiane per czat dozwolonego uzytkownika (opisy skilli nie wyciekaja do obcych)
   - HTML parse mode (nie MarkdownV2) -- formatowanie w tg_format.py
@@ -56,6 +59,7 @@ try:
         InlineKeyboardButton,
         InlineKeyboardMarkup,
         InputFile,
+        ReplyKeyboardMarkup,
         Update,
     )
     from telegram.constants import ParseMode
@@ -77,6 +81,16 @@ from tg_format import (
     build_menu,
     collect_response_text,
     command_names,
+    feed_buttons,
+    format_feed,
+    format_feed_item,
+    format_overview,
+    format_prefs,
+    format_projects,
+    keyboard_command,
+    keyboard_rows,
+    prefs_buttons,
+    project_buttons,
     format_alert,
     format_alerts,
     format_approval,
@@ -402,47 +416,110 @@ async def _backend_call(update: Update, context: ContextTypes.DEFAULT_TYPE, coro
 
 # --- Handlery komend ---
 
+def _reply_keyboard() -> ReplyKeyboardMarkup:
+    """Cztery najczestsze sprawy pod polem wiadomosci — bez znajomosci komend."""
+    return ReplyKeyboardMarkup(keyboard_rows(), resize_keyboard=True, is_persistent=True,
+                               input_field_placeholder=tr("Napisz, co mam zrobic…", "Tell me what to do…"))
+
+
+def _inline(buttons: list[tuple[str, str]], per_row: int = 2) -> InlineKeyboardMarkup | None:
+    if not buttons:
+        return None
+    rows = [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
+    return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row] for row in rows])
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/start -- przywitanie bez automatycznego statusu."""
+    """/start -- przywitanie z klawiatura najczestszych spraw."""
     if not await _guard(update):
         return  # Milcz dla nieautoryzowanych
 
     welcome = tr(
-        "<b>Witaj, tutaj Pipe.</b>\n\n"
-        "Jestem agentem AI do zarzadzania Twoim serwerem (i innymi, jesli je dodasz).\n"
-        "Czuwam w tle: jesli cos sie zepsuje, napisze pierwszy.\n\n"
-        "<b>Na poczatek:</b>\n"
-        "/mapa - diagram tego, co stoi na serwerze\n"
-        "/raport - stan, zmiany od wczoraj, certyfikaty i backupy (przychodzi sam co rano)\n"
-        "/audyt - ocena bezpieczenstwa z gotowymi poprawkami\n"
-        "/server - co wiem o serwerze (SERVER.md)\n"
-        "/status - szybki przeglad obciazenia\n"
-        "/pomoc - wszystkie komendy\n\n"
-        "Mozesz tez pisac do mnie normalnie, np. "
-        "<i>\"dlaczego sklep dziala wolno?\"</i> albo <i>\"sprawdz dyski na wszystkich serwerach\"</i>.",
+        "<b>Czesc, tu Pipe.</b>\n\n"
+        "Dbam o Twoj serwer. Pilnuje go w tle i <b>sam napisze</b>, gdy cos bedzie wymagalo uwagi — z gotowym "
+        "przyciskiem, ktory to naprawi.\n\n"
+        "Pisz do mnie normalnie, np. <i>\"czemu sklep dziala wolno?\"</i>, <i>\"postaw mi te aplikacje z GitHuba\"</i> "
+        "albo <i>\"napisz skrypt, ktory co noc robi kopie bazy\"</i>. Mozesz tez nagrac glosowke.\n\n"
+        "Przyciski pod polem wiadomosci: stan serwera, co nowego, projekty, pomoc.",
         "<b>Hi, this is Pipe.</b>\n\n"
-        "I am an AI agent that manages your server (and others, if you add them).\n"
-        "I keep watch in the background: if something breaks, I write first.\n\n"
-        "<b>To get started:</b>\n"
-        "/map - a diagram of what runs on the server\n"
-        "/report - health, changes since yesterday, certificates and backups (arrives every morning)\n"
-        "/audit - a security score with ready-made fixes\n"
-        "/server - what I know about the server (SERVER.md)\n"
-        "/status - a quick look at the load\n"
-        "/help - all commands\n\n"
-        "You can also just write to me, e.g. "
-        "<i>\"why is the shop slow?\"</i> or <i>\"check the disks on all servers\"</i>."
+        "I look after your server. I keep watch in the background and <b>write on my own</b> when something needs "
+        "attention — with a ready button that fixes it.\n\n"
+        "Just write to me, e.g. <i>\"why is the shop slow?\"</i>, <i>\"set up this app from GitHub for me\"</i> or "
+        "<i>\"write a script that backs up the database every night\"</i>. You can also record a voice note.\n\n"
+        "Buttons under the message field: server status, what's new, projects, help."
     )
-    await update.message.reply_text(welcome, parse_mode=ParseMode.HTML)
+    await update.message.reply_text(welcome, parse_mode=ParseMode.HTML, reply_markup=_reply_keyboard())
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/status -- stan serwera (prompt buduje backend)."""
+    """/status -- stan serwera bez LLM: od razu i za darmo."""
+    await _show_data(update, context, "overview", format_overview)
+
+
+async def cmd_nowosci(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/nowosci -- skrzynka: co Pipe napisal sam; nowe wiadomosci z przyciskami akcji."""
     user_id = await _guard(update)
     if not user_id:
         return
-    await _backend_call(update, context, _run_and_reply(
-        context, update.effective_chat.id, user_id, get_client(user_id).command("status")))
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        data = await get_client(user_id).data("feed", args="seen")
+        await _send_html(context.bot, chat_id, format_feed(data))
+        # nowe sprawy z przyciskami (najwyzej trzy) — reszta jest na liscie
+        for item in [i for i in data.get("items") or [] if i.get("unread") and i.get("actions")][:3]:
+            await _send_html(context.bot, chat_id, format_feed_item(item), _inline(feed_buttons(item, _is_admin(user_id))))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_projekty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/projekty -- warsztat: projekty ze stanem; przyciski logow i zatrzymania."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        data = await get_client(user_id).data("projects")
+        buttons = [b for p in (data.get("projects") or [])[:6] for b in project_buttons(p, _is_admin(user_id) and data.get("can_edit"))]
+        await _send_html(context.bot, chat_id, format_projects(data), _inline(buttons))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_powiadomienia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/powiadomienia -- kiedy Pipe ma powiadamiac: poziom, cisza nocna, podpowiedzi dziennie."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+
+    async def go() -> None:
+        data = await get_client(user_id).data("prefs")
+        rows = prefs_buttons(data) if data.get("can_edit") and _is_admin(user_id) else []
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=cb) for label, cb in row] for row in rows]) \
+            if rows else None
+        await _send_html(context.bot, update.effective_chat.id, format_prefs(data), markup)
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_sprzataj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sprzataj -- zwolnij miejsce (obrazy bez tagu, cache) bez LLM, z krokami na zywo."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    if not _is_admin(user_id):
+        await update.message.reply_text(tr("Sprzata tylko administrator.", "Only an administrator cleans up."))
+        return
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        data = response_data(await _collect(context.bot, chat_id, get_client(user_id).command("cleanup")))
+        await _send_html(context.bot, chat_id, format_listing(tr("Sprzatanie", "Cleanup"), data.get("text", "")))
+
+    await _backend_call(update, context, go())
 
 
 async def cmd_aktualizuj(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -864,6 +941,83 @@ async def _handle_patch_callback(update: Update, context: ContextTypes.DEFAULT_T
     await _backend_call(update, context, go())
 
 
+async def _handle_feed_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """fa:<id>:<indeks> — przycisk wiadomosci ze skrzynki; backend wie, co zrobic (i sprawdza role)."""
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":")
+    if not user or not _is_allowed(user.id) or len(parts) != 3 or not parts[2].isdigit():
+        await query.answer()
+        return
+    await query.answer(tr("Robie...", "On it..."))
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    async def go() -> None:
+        chat_id = query.message.chat_id
+        async with _user_locks.setdefault(user.id, asyncio.Lock()):
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            frames = await _collect(context.bot, chat_id, get_client(user.id).command(
+                "feed_act", id=parts[1], action=int(parts[2])))
+            text, needs_confirm = collect_response_text(frames)
+            result = next((f.get("data") for f in reversed(frames) if isinstance(f.get("data"), dict)), None)
+            if text:
+                markup = _confirm_keyboard(user.id) if needs_confirm and _is_admin(user.id) else None
+                await _send_html(context.bot, chat_id, to_telegram_html(text), markup)
+            elif result and result.get("text"):
+                await _send_html(context.bot, chat_id, format_listing("", result["text"]))
+            elif result and result.get("done"):
+                await query.message.reply_text("✓ " + str(result["done"]))
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_project_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """pj:<logs|stop|start>:<nazwa> — projekt z warsztatu (bez LLM); zmiany tylko administrator."""
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":", 2)
+    if not user or not _is_allowed(user.id) or len(parts) != 3 or parts[1] not in ("logs", "stop", "start"):
+        await query.answer()
+        return
+    if parts[1] != "logs" and not _is_admin(user.id):
+        await query.answer(tr("To moze zrobic tylko administrator.", "Only an administrator can do this."), show_alert=True)
+        return
+    await query.answer()
+
+    async def go() -> None:
+        result = response_data([f async for f in get_client(user.id).command("projects", args=parts[1], name=parts[2])])
+        title = tr(f"Logi {parts[2]}", f"Logs of {parts[2]}") if parts[1] == "logs" else parts[2]
+        await _send_html(context.bot, query.message.chat_id, format_pre(title, result.get("text", "")[-3500:]))
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_prefs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """pf:<level|quiet|per_day>:<wartosc> — zmiana ustawien powiadomien (administrator), wiadomosc odswiezona."""
+    query = update.callback_query
+    user = update.effective_user
+    parts = data.split(":", 2)
+    if not user or not _is_admin(user.id) or len(parts) != 3 or parts[1] not in ("level", "quiet", "per_day"):
+        await query.answer(tr("Ustawienia zmienia administrator.", "An administrator changes the settings."), show_alert=True)
+        return
+    value: object = int(parts[2]) if parts[1] == "per_day" and parts[2].isdigit() else parts[2]
+    try:
+        result = response_data([f async for f in get_client(user.id).command("prefs", **{parts[1]: value})])
+    except Exception as exc:
+        await query.answer(str(exc)[:180], show_alert=True)
+        return
+    await query.answer(tr("Zapisano", "Saved"))
+    rows = prefs_buttons(result)
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=cb) for label, cb in row] for row in rows])
+    try:
+        await query.edit_message_text(format_prefs(result), parse_mode=ParseMode.HTML, reply_markup=markup)
+    except Exception:
+        pass
+
+
 async def _handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -1030,6 +1184,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text.strip():
         return
 
+    # Przycisk klawiatury (Stan serwera, Co nowego, Projekty, Pomoc) — ta sama droga co komenda, bez LLM
+    button = keyboard_command(text)
+    if button:
+        handler = {"status": cmd_status, "nowosci": cmd_nowosci, "projekty": cmd_projekty, "pomoc": cmd_pomoc}.get(button)
+        if handler is not None:
+            await handler(update, context)
+            return
+
     # Rate limiting: max 1 wiadomosc na sekunde od uzytkownika
     now = time.monotonic()
     if now - _last_message_time.get(user_id, 0.0) < 1.0:
@@ -1157,6 +1319,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith(("prov:", "pmp:", "pms:")):
         await _handle_provider_callback(update, context, data)
+        return
+
+    if data.startswith("fa:"):
+        await _handle_feed_callback(update, context, data)
+        return
+
+    if data.startswith("pj:"):
+        await _handle_project_callback(update, context, data)
+        return
+
+    if data.startswith("pf:"):
+        await _handle_prefs_callback(update, context, data)
         return
 
     if data.startswith("investigate:"):
@@ -1308,19 +1482,27 @@ async def _broadcast(app: Application, event: dict) -> None:
             except Exception as exc:
                 print(f"[Pipe Telegram] Nie wyslano przypomnienia do {user_id}: {exc}", flush=True)
         return
+    if event.get("push") is False:
+        return          # zostaje w skrzynce (/nowosci) bez powiadomienia: poziom, cisza nocna albo limit podpowiedzi
     if kind == "alert":
-        text, markup = format_alert(event), None
+        text = format_alert(event)
     elif kind == "routine":
-        text, markup = format_routine(event), None
+        text = format_routine(event)
     elif kind in ("digest", "welcome"):
-        text, markup = format_digest(event), None
+        text = format_digest(event)
     elif kind == "investigation":
-        text, markup = format_investigation(event), None
+        text = format_investigation(event)
+    elif kind in ("insight", "notice"):
+        text = format_feed_item(event)
     else:
         return
     for user_id in sorted(ALLOWED_USER_IDS | VIEWER_USER_IDS):
+        if event.get("feed_id"):
+            markup = _inline(feed_buttons(event, _is_admin(user_id)))       # przyciski zbudowane w backendzie
+        else:
+            markup = _alert_keyboard(event, user_id) if kind == "alert" else None   # backend sprzed skrzynki
         try:
-            await _send_html(app.bot, user_id, text, _alert_keyboard(event, user_id) if kind == "alert" else markup)
+            await _send_html(app.bot, user_id, text, markup)
             if event.get("attachment"):
                 await _send_attachment(app.bot, user_id, event["attachment"])
         except Exception as exc:
@@ -1329,7 +1511,7 @@ async def _broadcast(app: Application, event: dict) -> None:
 
 # Zdarzenia czuwania, ktore TELEGRAM_ALERTS=0 wycisza. Przypomnienia i prosby o zgode przychodza zawsze —
 # uzytkownik sam o nie poprosil albo czeka na nie zewnetrzny agent.
-WATCH_EVENT_TYPES = frozenset({"alert", "routine", "digest", "welcome", "investigation"})
+WATCH_EVENT_TYPES = frozenset({"alert", "routine", "digest", "welcome", "investigation", "insight", "notice"})
 # Stan kanalu zdarzen — pokazywany w /przypomnienia i /alerty, zeby cisza nie byla zagadka.
 _subscription: dict = {"connected": False, "error": "", "since": 0.0}
 
@@ -1467,6 +1649,9 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
+    for polish, handler in (("nowosci", cmd_nowosci), ("projekty", cmd_projekty), ("powiadomienia", cmd_powiadomienia),
+                            ("sprzataj", cmd_sprzataj)):
+        app.add_handler(CommandHandler(command_names(polish), handler))
     # Polskie nazwy i ich angielskie aliasy (/raport i /report) dzialaja w obu jezykach.
     for polish, handler in (
         ("raport", cmd_raport), ("audyt", cmd_audyt), ("zmiany", cmd_zmiany), ("wykres", cmd_wykres),

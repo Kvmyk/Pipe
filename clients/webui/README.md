@@ -26,20 +26,23 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 
 ## Co jest na stronie
 
-- **Rozmowa** -- odpowiedzi agenta, diagramy, potwierdzenia z planem bezpiecznika i roznica pliku.
+- **Pulpit** (pierwsza zakladka) -- bez modelu: naglowek *Wszystko dziala* albo co wymaga uwagi, pierscienie
+  procesora, pamieci i dysku z przebiegiem z ostatniej doby, skrzynka *Od Pipe* (alerty, ustalenia, podpowiedzi
+  i raporty z przyciskami akcji; dzwonek w gornym pasku liczy nowe i otwiera ustawienia powiadomien), karty projektow
+  z warsztatu (logi, zatrzymanie, *Z GitHuba*) i zuzycie modelu dzis. Wiadomosc z `push` pokazuje sie tez jako okienko.
+- **Rozmowa** -- pusty ekran podsuwa zadania zwyklymi slowami (te oznaczone *bez AI* dzialaja od razu i nic nie kosztuja); odpowiedzi agenta, diagramy, potwierdzenia z planem bezpiecznika i roznica pliku.
 - **Zalaczniki i glos** -- spinacz, przeciagniecie pliku albo wklejenie zrzutu ekranu dolacza pliki do wiadomosci
   (miniatury przed wyslaniem, do 10 MB na plik); mikrofon nagrywa glosowke (WAV 16 kHz) i wysyla jej tekst.
 - **Schemat** -- generowany automatycznie, trzy poziomy: serwery -> wnetrze serwera -> projekt compose.
   Element, na ktorym agent pracuje, jest podswietlony; *Sledze agenta* przenosi widok za nim. Dowolny ruch
   na schemacie wylacza sledzenie, przycisk wlacza je z powrotem. Pod schematem os czasu dzialan.
 - **Zmiany** -- dziennik zatwierdzonych zmian: roznica "przed -> po" dla kazdego pliku i przycisk cofniecia.
-- **Skille** -- lista zapisanych procedur z podgladem tresci i przyciskiem uruchomienia.
-- **Alerty** -- aktywne alerty z przyciskiem *Zbadaj* oraz zdarzenia na zywo.
 - **Provider** -- przy pierwszym wejsciu ekran wyboru providera LLM (klucz API, sprawdzenie, model). Nad polem
   rozmowy przelacznik: lista providerow, do ktorych jest klucz, i przelaczenie jednym kliknieciem. `/provider`
   otwiera ekran ponownie. Logotypy providerow (`static/providers/`, pakiet `@lobehub/icons-static-svg`, MIT) sa znakami towarowymi swoich wlascicieli i sluza tylko wskazaniu, z czyimi modelami laczy sie agent -- patrz `static/providers/NOTICE.md`; wlasni providerzy maja monogram. Klucze sa zapisywane na serwerze (`DATA_DIR/llm_keys.json`), nie w przegladarce.
 - **Komendy** -- wpisz `/` w polu rozmowy: rozwija sie lista wszystkich komend i skilli z opisami
   (strzalki, Enter uruchamia, Tab uzupelnia, Esc zamyka). Te same komendy co w CLI, po polsku i po angielsku.
+  Skille uruchamiasz stad (`/skille` pokazuje liste z trescia); alerty sa w skrzynce na pulpicie i w `/alerty`.
 
 ## Pliki
 
@@ -47,6 +50,7 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 |------|------|
 | `server.py` | lokalny serwer HTTP i most do backendu |
 | `static/app.js` | czat, potwierdzenia, os czasu, zakladki |
+| `static/home.js` | pulpit: stan serwera, skrzynka z akcjami, projekty, ustawienia powiadomien |
 | `static/graph.js` | schemat: uklad, kamera, przejscia miedzy poziomami, animacje |
 | `static/md.js` | bezpieczny renderer Markdowna (bez `innerHTML`) |
 | `static/i18n.js` | teksty pl / en |

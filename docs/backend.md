@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -38,6 +38,12 @@ i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
 | `core/patching.py` | `/zalataj`: latanie w tle bez pytan o kazda komende, czesci przez bezpiecznik, warstwa z poprawkami w obrazie, sprzatanie, wynik |
 | `core/fleet.py` | Zdalne serwery w skanie i latkach: baza pakietow przez ssh, komendy jako root albo `sudo -n` |
 | `core/welcome.py` | Powitanie po instalacji: mapa, ocena bezpieczenstwa, co Pipe pilnuje |
+| `core/feed.py` | Skrzynka: wiadomosci, ktore Pipe wyslal sam, z akcjami; decyzja o powiadomieniu (poziom, cisza nocna, limit, wyciszenia) |
+| `core/insights.py` | Podpowiedzi bez LLM: prognoza zapelnienia dysku, miejsce do odzyskania, restarty, czekajacy restart, rosnacy RAM |
+| `core/overview.py` | Stan serwera bez LLM (pulpit, `/status`): naglowek, wskazniki, przebieg doby |
+| `core/cleanup.py` | Zwolnij miejsce: obrazy bez tagu, cache budowania, pobrane paczki (`/sprzataj`, przycisk podpowiedzi) |
+| `core/projects.py` | Warsztat: klonowanie, rozpoznanie projektu, plan uruchomienia, piaskownica (`docker run` bez uprawnien) |
+| `core/toolsets.py` | Narzedzia na zadanie: grupy narzedzi wlaczane slowami kluczowymi albo `load_tools` |
 | `skills_builtin/`, `skills_builtin_en/` | Wbudowane skille (polskie i angielskie), instalowane do `data/skills` przy starcie wedlug `PIPE_LANG` |
 | `core/i18n.py` | Jezyk Pipe (`PIPE_LANG=pl\|en`): `tr("polski", "english")` obok tekstu zrodlowego, `prompt()` wybiera `prompts_en.py` / `tools_en.py` |
 | `core/selfupdate.py` | Aktualizacja samego Pipe: kontener pomocniczy (`git pull`, obraz wydania z GHCR albo `docker-compose up -d --build`), raport po restarcie |
@@ -285,7 +291,7 @@ Powinienes zobaczyc:
 |-----------|------|----------------------|
 | `execute_command` | Komendy shell; w trybie docker z `host: true` na hoscie (kontener pomocniczy) | Zalezne od klasyfikacji; `host`: zawsze |
 | `read_file` | Odczyt plikow (sekrety redagowane) | Nie |
-| `write_file` | Zapis plikow | Zawsze |
+| `write_file` | Zapis plikow (tworzy brakujace katalogi) | Tak; w warsztacie (`WORKSPACE_DIR`): nie |
 | `change_directory` | Katalog roboczy | Nie |
 | `git_command` | Operacje Git | Modyfikujace: tak |
 | `system_stats` | CPU/RAM/dyski/procesy z `/proc` hosta | Nie |
@@ -307,6 +313,12 @@ Powinienes zobaczyc:
 | `journal` | Dziennik zatwierdzonych zmian i ich cofanie | Cofniecie: tak |
 | `server_history` | Co sie zmienilo, wykresy load/RAM/dyskow, certyfikaty/strony/DNS/backupy | Nie |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Pamiec agenta | Nie |
+| `project` | Warsztat: `clone`, `inspect`, `exec` (izolowany kontener), `run`, `logs`, `stop`/`start`, `pull`, `remove` | `run` i `remove`: tak; reszta: nie |
+| `load_tools` | Wlacza grupe narzedzi, ktorych opisow model jeszcze nie dostal (narzedzia na zadanie) | Nie |
+
+Przy `TOOLS_MODE=lazy` (domyslnie) model dostaje na start tylko podstawowe narzedzia (komendy, pliki, git, stan
+systemu, Docker, siec, historia serwera, `project`, `load_tools`). Grupy `memory`, `security`, `schedule`, `fleet`,
+`web`, `diagram` i `update` wlaczaja sie same, gdy wiadomosc ich potrzebuje, albo przez `load_tools`.
 
 ## Dodatkowe ustawienia `.env`
 
@@ -344,6 +356,18 @@ Powinienes zobaczyc:
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (gemini/openai/groq -- automatycznie; `STT_*` ma pierwszenstwo) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
+| `TOOLS_MODE` | `lazy` | `lazy` -- narzedzia na zadanie; `all` -- opisy wszystkich narzedzi przy kazdym zapytaniu |
+| `CONTEXT_KEEP_TURNS` | 2 | Wyniki narzedzi starsze niz tyle tur ida do modelu skrocone (0 = zawsze w calosci) |
+| `NOTIFY_LEVEL` | `important` | Kiedy powiadamiac: `all`, `important`, `critical` (zmiana w trakcie pracy: `/powiadomienia`) |
+| `QUIET_HOURS` | -- | Cisza nocna, np. `22:00-07:00`: niekrytyczne wiadomosci czekaja do rana |
+| `INSIGHTS_PER_DAY` | 3 | Najwyzej tyle podpowiedzi dziennie z powiadomieniem (reszta w skrzynce) |
+| `INSIGHTS_INTERVAL` | 3600 | Co ile sekund szukac podpowiedzi (0 = wylaczone) |
+| `AUTO_INVESTIGATE`, `AUTO_INVESTIGATE_DAILY` | `critical`, 4 | Pipe sam bada przyczyne alertu (`critical`, `all`, `off`) i limit badan dziennie |
+| `WORKSPACE_DIR` | `/root/pipe-workspace` | Warsztat: katalog hosta na projekty i skrypty agenta |
+| `WORKSPACE_AUTONOMY` | 1 | W warsztacie zapis plikow i `project exec` bez pytania (0 = pytanie o kazda operacje) |
+| `PROJECT_MEMORY`, `PROJECT_CPUS` | `1g`, `1` | Limity kontenerow projektow (piaskownica i uslugi) |
+| `PROJECT_EXEC_TIMEOUT`, `PROJECT_BUILD_TIMEOUT` | 600, 1800 | Limit czasu (s) komendy w piaskownicy i budowania/uruchomienia |
+| `PROJECT_MAX_MB` | 1024 | Najwiekszy rozmiar sklonowanego repozytorium |
 
 ## Zatrzymanie
 

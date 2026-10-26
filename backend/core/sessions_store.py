@@ -71,6 +71,7 @@ def save(session: Session) -> None:
         "messages": _storable(session.messages),
         "workers": {name: _storable(history) for name, history in session.workers.items()},
         "web_urls": sorted(session.web_urls)[-MAX_WEB_URLS:],
+        "tool_groups": sorted(session.tool_groups),
         "pending_tool_call_id": pending.tool_call_id if pending else None,
         "saved": time.time(),
     }
@@ -102,6 +103,7 @@ def load(session_id: str, keep_days: int) -> Session | None:
         messages=messages,
         workers={str(k): [m for m in v if isinstance(m, dict)] for k, v in workers.items() if isinstance(v, list)},
         web_urls={str(u) for u in data.get("web_urls") or []},
+        tool_groups={str(g) for g in data.get("tool_groups") or []} | {"core"},
     )
 
 

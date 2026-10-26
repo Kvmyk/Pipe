@@ -78,8 +78,13 @@ def _bump(bucket: dict[str, Any], prompt: int, completion: int, cached: int, cos
     bucket["cost"] = round(bucket.get("cost", 0.0) + cost, 6)
 
 
-def record(model: str, usage: Any, who: str, prices: Prices, today: date | None = None) -> None:
-    """Dopisuje zuzycie jednego zapytania. `usage` to obiekt/slownik z odpowiedzi OpenAI (moze byc None)."""
+def record(model: str, usage: Any, who: str, prices: Prices, today: date | None = None,
+           saved: dict[str, int] | None = None) -> None:
+    """
+    Dopisuje zuzycie jednego zapytania. `usage` to obiekt/slownik z odpowiedzi OpenAI (moze byc None).
+    `saved` — ile tokenow Pipe NIE wyslal w tym zapytaniu ({"tools": ..., "history": ...}: narzedzia na zadanie,
+    skrocone stare wyniki) — szacunek (znaki / 4), pokazywany w /koszt i na pulpicie.
+    """
     if usage is None:
         return
     get = (lambda k: usage.get(k)) if isinstance(usage, dict) else (lambda k: getattr(usage, k, None))
@@ -101,6 +106,10 @@ def record(model: str, usage: Any, who: str, prices: Prices, today: date | None 
         _bump(entry.setdefault("total", {}), prompt, completion, cached, cost)
         _bump(entry.setdefault("by", {}).setdefault(who, {}), prompt, completion, cached, cost)
         _bump(entry.setdefault("models", {}).setdefault(model or "?", {}), prompt, completion, cached, cost)
+        for reason, tokens in (saved or {}).items():
+            if tokens > 0:
+                bucket = entry.setdefault("saved", {})
+                bucket[reason] = bucket.get(reason, 0) + int(tokens)
         cutoff = ((today or date.today()) - timedelta(days=KEEP_DAYS)).isoformat()
         for old in [d for d in days if d < cutoff]:
             del days[old]
@@ -109,6 +118,33 @@ def record(model: str, usage: Any, who: str, prices: Prices, today: date | None 
 
 def day_total(day: date | None = None) -> dict[str, Any]:
     return _load().get("days", {}).get((day or date.today()).isoformat(), {}).get("total", {})
+
+
+def day_summary(day: date | None = None) -> dict[str, Any]:
+    """Suma dnia razem z zaoszczedzonymi tokenami (`saved`: suma, `saved_by`: z jakiego powodu)."""
+    entry = _load().get("days", {}).get((day or date.today()).isoformat(), {})
+    saved = {k: int(v) for k, v in (entry.get("saved") or {}).items() if isinstance(v, (int, float))}
+    return {**entry.get("total", {}), "saved": sum(saved.values()), "saved_by": saved}
+
+
+def _saved_line(saved: dict[str, int], prompt: int, cached: int) -> str:
+    """'Zaoszczedzone: ~X tokenow (...)' — ile Pipe nie wyslal i ile wejscia przyszlo z cache providera."""
+    parts = []
+    total = sum(saved.values())
+    if total:
+        reasons = []
+        if saved.get("tools"):
+            reasons.append(tr(f"narzedzia na zadanie {_tokens(saved['tools'])}", f"tools on demand {_tokens(saved['tools'])}"))
+        if saved.get("history"):
+            reasons.append(tr(f"skrocone stare wyniki {_tokens(saved['history'])}",
+                              f"trimmed old results {_tokens(saved['history'])}"))
+        parts.append(tr(f"Pipe nie wyslal ~{_tokens(total)} tokenow zbednego kontekstu",
+                        f"Pipe did not send ~{_tokens(total)} tokens of unneeded context")
+                     + (f" ({', '.join(reasons)})" if reasons else ""))
+    if prompt and cached:
+        parts.append(tr(f"z cache providera {round(cached * 100 / prompt)}% wejscia",
+                        f"{round(cached * 100 / prompt)}% of the input came from the provider's cache"))
+    return "; ".join(parts)
 
 
 def check_budget(token_limit: int, cost_limit: float, today: date | None = None) -> None:
@@ -168,14 +204,24 @@ def report(days: int = 7, *, priced: bool, token_limit: int = 0, cost_limit: flo
     for offset in range(days):
         day = (today - timedelta(days=offset)).isoformat()
         total = data.get(day, {}).get("total", {})
-        history.append({"day": day, **{k: total.get(k, 0) for k in ("calls", "prompt", "completion", "cached", "cost")}})
+        saved = sum(int(v) for v in (data.get(day, {}).get("saved") or {}).values() if isinstance(v, (int, float)))
+        history.append({"day": day, "saved": saved,
+                        **{k: total.get(k, 0) for k in ("calls", "prompt", "completion", "cached", "cost")}})
     month_prefix = today.strftime("%Y-%m")
-    month = {"prompt": 0, "completion": 0, "cost": 0.0, "calls": 0}
+    month = {"prompt": 0, "completion": 0, "cost": 0.0, "calls": 0, "cached": 0, "saved": 0}
     for day, entry in data.items():
         if day.startswith(month_prefix):
             for key in month:
-                month[key] += entry.get("total", {}).get(key, 0)
+                if key == "saved":
+                    month[key] += sum(int(v) for v in (entry.get("saved") or {}).values() if isinstance(v, (int, float)))
+                else:
+                    month[key] += entry.get("total", {}).get(key, 0)
     lines = [_line(tr("Dzis", "Today"), current.get("total", {}), priced)]
+    today_saved = {k: int(v) for k, v in (current.get("saved") or {}).items() if isinstance(v, (int, float))}
+    saved_text = _saved_line(today_saved, current.get("total", {}).get("prompt", 0),
+                             current.get("total", {}).get("cached", 0))
+    if saved_text:
+        lines.append("  " + saved_text)
     for who, bucket in sorted(current.get("by", {}).items(), key=lambda kv: -kv[1].get("prompt", 0)):
         lines.append("  " + _line(who_label(who), bucket, priced))
     for model, bucket in sorted(current.get("models", {}).items()):
@@ -185,6 +231,8 @@ def report(days: int = 7, *, priced: bool, token_limit: int = 0, cost_limit: flo
         if item["calls"]:
             lines.append("  " + _line(item["day"], item, priced))
     lines.append(_line(tr(f"Miesiac {month_prefix}", f"Month {month_prefix}"), month, priced))
+    if month["saved"]:
+        lines.append("  " + _saved_line({"total": month["saved"]}, month["prompt"], month["cached"]))
     if not priced:
         lines.append(tr("Ceny nieustawione — podaj LLM_PRICE_IN i LLM_PRICE_OUT (USD za milion tokenow) "
                         "w backend/.env, a pokaze koszt.",
@@ -197,7 +245,8 @@ def report(days: int = 7, *, priced: bool, token_limit: int = 0, cost_limit: flo
         if cost_limit:
             limits.append(f"${cost_limit:.2f}")
         lines.append(tr("Dzienny limit: ", "Daily limit: ") + " / ".join(limits))
-    return {"today": current.get("total", {}), "history": history, "month": month, "text": "\n".join(lines)}
+    return {"today": current.get("total", {}), "saved": today_saved, "history": history, "month": month,
+            "text": "\n".join(lines)}
 
 
 def yesterday_line(priced: bool, today: date | None = None) -> str:

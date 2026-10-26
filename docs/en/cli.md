@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -21,6 +21,11 @@ Your laptop
 ```
 
 The CLI sets up the SSH tunnel by itself, there is nothing to do by hand.
+
+Once connected, the CLI shows the server's state in one line right away (without the model) and the number of new
+messages from Pipe. While you sit at the prompt, messages Pipe wrote by itself (alerts, findings, suggestions) appear
+above it as boxes -- the same ones Pipe notifies about on Telegram (`/notifications`). You pick a message's action in
+`/news` by typing the message number and the action letter, e.g. `1a`.
 
 ## Requirements
 
@@ -84,9 +89,10 @@ The same process as the CLI: an SSH tunnel (or `--kube`, `--no-tunnel`), and a l
 backend token stays in the `pipe web` process; the browser only gets a one-time key in the address. The page listens
 only on `127.0.0.1` and refuses requests with a foreign `Host` or `Origin` header.
 
-On the page: the conversation, a live map of the server (three levels: servers, inside a server, a compose project;
-a *Follow the agent* button), a timeline of actions, a *Changes* tab with diffs and undo, an *Alerts* tab with live
-events, a *Skills* tab with preview and run. The paperclip next to the message box (or dragging a file in, or pasting
+On the page: the conversation and three side-panel tabs. *Dashboard* answers without the model whether everything works
+(CPU, memory and disk rings, the *From Pipe* inbox with action buttons, workshop project cards, model usage today),
+*Map* shows the server live (three levels: servers, inside a server, a compose project; a *Follow the agent* button),
+*Changes* -- diffs and undo. Skills are run from the `/` list. The paperclip next to the message box (or dragging a file in, or pasting
 a screenshot) attaches files to the message, and the microphone records a voice message. Typing `/` in the message
 box opens the list of commands and skills, the same commands as below. On the first visit the page asks for an LLM
 provider (API key and model), and the switcher above the message box jumps between providers that have a key
@@ -161,7 +167,11 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 
 | Command | What it does |
 |---|---|
-| `/status` | Server status |
+| `/status` | Server status at once, without AI: a plain-words headline, CPU, memory and disk bars, new messages, projects |
+| `/news` | The inbox: what Pipe wrote by itself, with actions -- type the number and the letter, e.g. `1a` (`/nowosci`) |
+| `/projects` | Workshop projects: state and address (`/projekty`). A new project: write e.g. *"clone https://github.com/... and run it"* |
+| `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded packages and npm/pip caches; admins only (`/sprzataj`) |
+| `/notifications [all\|important\|critical] [quiet 22-7\|quiet off] [daily 3]` | When Pipe should notify you; without arguments shows the current settings (`/powiadomienia`) |
 | `/update [check]` | Update Pipe itself on the server (after confirmation); `check` only shows the versions; after the backend restarts the CLI reconnects by itself (up to 3 min), no need to start it again |
 | `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
@@ -185,7 +195,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
 | `/directory` | Map of repositories and directories (DIRECTORY) |
 | `/skills` | List of saved skills with their commands |
-| `/alerts` | Active watcher alerts (the alerts themselves arrive on Telegram) |
+| `/alerts` | Active watcher alerts (new ones show up by themselves above the prompt and in `/news`) |
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; the CLI prints them above the prompt by itself (it checks every 10 s), including the result of `/update`; those set from the CLI also go to Telegram and `pipe web` |
 | `/targets` | Remote servers, containers and clusters |

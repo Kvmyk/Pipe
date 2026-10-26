@@ -1,9 +1,108 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
+
+---
+
+## Pipe writes first
+
+You don't have to ask what is going on. Pipe writes on its own -- on Telegram, in `pipe web` and in the CLI -- when
+something needs attention, and gives a button that deals with it right away. Everything it sends also lands in the
+**inbox** (`backend/data/feed.json`), so nothing is lost when nobody was connected.
+
+| Message | When | Buttons |
+|---------|------|---------|
+| Alert | the problem is already there: disk, memory, container, site, certificate, vulnerabilities | *Free up space*, *Patch*, *Investigate* |
+| Findings | a critical problem: Pipe checks the cause itself (a worker, reads only) and writes what it found | *Fix it* -- one approval |
+| Suggestion | a problem is coming or something can be improved (table below) | the action, *Later*, *Fewer like this* |
+| Morning report | at `DIGEST_TIME` | -- |
+| Resolved | the problem went away | -- |
+
+**Suggestions** are computed without a language model, from data Pipe collects anyway (every `INSIGHTS_INTERVAL`, 1 h):
+
+| Suggestion | From |
+|------------|------|
+| *Disk / will be full in about 4 days* | the growth rate from the metric history (a regression over the last 48 h) |
+| *I can free about 6 GB* | untagged Docker images, build cache, downloaded apt packages |
+| *Container X restarted 4 times within a day* | the restart counter (restart loops raise an alert) |
+| *The server has been waiting 5 days for a reboot* | `/run/reboot-required` |
+| *Memory keeps growing* | RAM use growing for a day (a possible leak) |
+
+**Investigating on its own.** When a critical problem appears (a container stopped, a site does not answer, the disk
+is full), Pipe does not wait for *Investigate*: a worker checks the logs, resources and the changes of the last day
+(reads only), and the findings arrive right after the alert, with a *Fix it* button. `AUTO_INVESTIGATE=critical`
+(default), `all` or `off`; at most `AUTO_INVESTIGATE_DAILY` (4) investigations a day, the same problem at most once
+every 6 h.
+
+**When to notify.** The level (`NOTIFY_LEVEL`): `all` -- everything; `important` (default) -- problems, warnings, the
+report and important suggestions, informational ones wait in the inbox; `critical` -- only what cannot wait. Quiet
+hours (`QUIET_HOURS=22:00-07:00`): at night only critical matters come through, the rest arrives in the morning
+together with the report. At most `INSIGHTS_PER_DAY` (3) suggestions a day with a notification. *Fewer like this*
+mutes that kind of suggestion (it stays in the inbox without a notification), *Later* snoozes it for a day. You can
+change the same settings while Pipe runs: `/notifications` (Telegram -- with buttons, CLI --
+`/notifications important quiet 22-7 daily 3`, `pipe web` -- the bell on the dashboard).
+
+- `/news` (`/nowosci`): the inbox with actions (in the CLI you type e.g. `1a`). A short status without a model: `/status`.
+- The backend builds the buttons -- a client only sends back the action number (`feed_act`). *Fix it* and *Patch* are
+  for the administrator.
+- Clients notify only about messages with `push` (level, quiet hours, limit); the CLI prints them above the prompt,
+  `pipe web` as a pop-up, Telegram as a message.
+
+---
+
+## The workshop: projects Pipe sets up on its own
+
+Write *"set this app up for me: https://github.com/acme/notebook"* or *"write a script that counts the orders in the
+logs"*, and Pipe sees it through on its own. Projects live in one host directory -- the **workshop** (`WORKSPACE_DIR`,
+`/root/pipe-workspace` by default), each in its own subdirectory and in `backend/data/projects.json`.
+
+| Step | What Pipe does | Asks? |
+|------|----------------|-------|
+| `clone` | `git clone --depth 1` from an https or `git@` address (the server's SSH key); no hooks, submodules, LFS; a repository that is too big (`PROJECT_MAX_MB`) is removed | no |
+| `inspect` | what it is and how to run it -- without a model: compose, Dockerfile, Node, Python (Django, FastAPI, Flask, Streamlit), Go, PHP, a static site; ports, needed variables, README and AGENTS.md | no |
+| writing files | `write_file` in the workshop directory (e.g. a Dockerfile, a script) | no |
+| `exec` | a command in a one-off container: only the project directory as `/work`, no `docker.sock` and no privileges (`--cap-drop ALL`, `no-new-privileges`), memory, process and time limits | no* |
+| `run` | a long-running service: container `pipe-<name>` (or compose project `pipe-<name>`), the port on `127.0.0.1` only | **yes, once** -- with the plan |
+| `logs`, `stop`, `start`, `pull` | logs, stopping, resuming, `git pull --ff-only` | no |
+| `remove` | the directory, containers and the built image | **yes** |
+
+\* After reading content from outside (the README of a cloned repository, a web page) Pipe asks for approval of `exec`
+until your next message -- like YOLO: text from someone else's repository cannot run code by itself.
+
+- Code from a repository never runs in Pipe's process or container (that is where `docker.sock` is). It is installed
+  and run in containers -- no Node.js, Python or libraries pile up on the server.
+- `run` is in the change journal: `/undo` stops and removes the deployment. Running it again keeps the same port.
+- A compose project with risky settings (`privileged`, `docker.sock`, host network, mounting `/etc`) or ports open to
+  the world -- the confirmation says so plainly.
+- When `inspect` does not know how to run a project, the agent writes a Dockerfile in its directory and uses
+  `run strategy=dockerfile`.
+- The app's address is `http://127.0.0.1:<port>` on the server (from a laptop: `ssh -L <port>:127.0.0.1:<port> <server>`);
+  publishing it under a domain through the reverse proxy is a separate request (a normal confirmation).
+- `/projects` (`/projekty`) in the CLI and on Telegram, project cards with logs and stopping on the `pipe web`
+  dashboard. `WORKSPACE_AUTONOMY=0` -- approval for every operation. Observe mode and the viewer role -- list and logs only.
+
+---
+
+## Saving tokens
+
+Watching, suggestions, reports, `/status`, `/changes`, `/audit`, `/cleanup` and the dashboard work without a language
+model -- zero tokens. When the conversation does go to the model, Pipe sends less:
+
+- **Tools on demand** (`TOOLS_MODE=lazy`). The descriptions of the 29 tools are ~6k tokens with every step of the
+  agent. A conversation starts with the basic ones (~2.4k), and the rest turns on by itself when a message needs it
+  (*"remind me tomorrow"* -> reminders, *"is the server secure"* -> audit) or when the model asks (`load_tools`). An
+  enabled group stays until the end of the conversation, so the provider's prompt cache keeps working.
+  `TOOLS_MODE=all` -- all of them, always.
+- **Trimming old results** (`CONTEXT_KEEP_TURNS`, 2). Tool results older than two turns go to the model as their
+  beginning with a note (*"if you need it, run it again"*). JetBrains research (*The Complexity Trap*, NeurIPS 2025)
+  showed that this cuts an agent's cost by more than half without losing effectiveness. The history in the session
+  stays complete.
+- **A shorter prompt**: no repeated tool list and no mandatory directory prefix in every answer.
+- `/cost` and the dashboard show how many tokens Pipe **did not send** (tools on demand, trimmed results) and how much
+  of the input came from the provider's cache.
 
 ---
 
@@ -184,7 +283,8 @@ Deterministic checks every `WATCH_INTERVAL` (120 s), without the LLM and at no c
 | **New public port on the host** | compared to the previous check | warning (once) |
 
 - An alert is sent once, and when the problem goes away a *RESOLVED* message arrives.
-- Telegram: an alert with an **Investigate** button; the agent looks for the cause (reads only) and proposes a fix.
+- An alert has buttons (**Investigate**, for the disk **Free up space**, for vulnerabilities **Patch**); Pipe
+  investigates a critical one itself and sends the findings (section *Pipe writes first*).
 - Active alerts are in the agent's prompt, so when asked about the server's state it takes them into account.
   `/alerts` in both clients.
 - State (previous ports and containers) in `backend/data/watch_state.json`. `WATCH_ENABLED=0` turns it off.
@@ -273,7 +373,8 @@ A load chart for the last day is attached. `/report` -- the report on demand.
 
 Every request to the provider (conversation, workers, routines, VIBE) is counted in `backend/data/usage.json`.
 
-- `/cost` -- tokens today (split by user, workers, routines, VIBE and model), recent days, the month.
+- `/cost` -- tokens today (split by user, workers, routines, VIBE and model), recent days, the month, plus how many
+  tokens Pipe did not send and how much input came from the cache (section *Saving tokens*).
 - The cost in USD shows up once you give the model prices: `LLM_PRICE_IN` and `LLM_PRICE_OUT` (USD per million
   tokens), and separately `WORKER_PRICE_IN/OUT` for `WORKER_MODEL`.
 - `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT` -- once exceeded, the agent answers with a limit message until midnight
@@ -558,6 +659,14 @@ Groq `whisper-large-v3-turbo` or a local faster-whisper); `STT_*` always takes p
 `pipe web` opens an interface with the conversation and a side panel in the browser. It runs on your computer, through
 the same tunnel as the CLI.
 
+**The dashboard** (the panel's first tab) answers *"is everything working?"* without a model: a headline in plain words
+(*"Everything works"* or *"Needs attention: ..."*), rings for CPU, memory and disk with the last day's trend, the *From
+Pipe* inbox (messages with action buttons, new ones marked with a dot; the bell in the top bar shows how many), cards of
+the workshop projects (logs, stopping, *From GitHub*) and today's model usage (tokens, cost, cache, how much Pipe
+saved). The bell next to the inbox opens the notification settings. The empty conversation screen suggests tasks in
+plain words (*Is everything working?*, *Free up disk space*, *Run an app from GitHub*, *Write me a script*); the ones
+marked *no AI* work instantly and cost nothing.
+
 **The map** builds itself from what Pipe knows about the infrastructure; nothing to draw or configure:
 
 | Level | What you see |
@@ -591,9 +700,11 @@ after" diff appears in the conversation and in the *Changes* tab, also when a co
 `sed`), because the safety fuse takes a backup. Secrets in diffs are redacted. Every entry has an undo button. There
 are no diffs for directories and data in databases.
 
-**Commands and skills.** Typing `/` in the message box opens the list of commands (`/report`, `/changes`, `/audit`,
-`/cost`...) and skills with descriptions; pick with the arrows or a click, Tab completes the command so you can add
-arguments. The *Skills* tab shows saved procedures with a content preview and a run button.
+**Commands and skills.** Typing `/` in the message box opens the list of commands (`/status`, `/news`, `/report`,
+`/audit`...) and skills with descriptions; pick with the arrows or a click, Tab completes the command so you can add
+arguments. `/skills` shows saved procedures in the conversation, with a content preview and a run button. The panel has
+three tabs: *Dashboard*, *Map* (a dot next to the name while the agent is working) and *Changes*; the last one you
+picked stays in the browser.
 
 **LLM provider.** On the first visit the page asks which provider Pipe should work with: you pick it from the list,
 paste the API key (it is checked with the provider before it is saved) and pick a model from its current list. You

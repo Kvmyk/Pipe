@@ -1,9 +1,104 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
+
+---
+
+## Pipe pisze pierwszy
+
+Nie musisz pytac, co sie dzieje. Pipe pisze sam -- na Telegram, w `pipe web` i w CLI -- gdy cos wymaga uwagi,
+i od razu daje przycisk, ktory sprawe zalatwia. Wszystko, co wysle, trafia tez do **skrzynki**
+(`backend/data/feed.json`), wiec nic nie ginie, gdy nikt nie byl podlaczony.
+
+| Wiadomosc | Kiedy | Przyciski |
+|-----------|-------|-----------|
+| Alert | problem juz jest: dysk, pamiec, kontener, strona, certyfikat, podatnosci | *Zwolnij miejsce*, *Zalataj*, *Zbadaj* |
+| Ustalenia | krytyczny problem: Pipe sam sprawdza przyczyne (worker, tylko odczyty) i pisze, co ustalil | *Napraw* -- jedno potwierdzenie |
+| Podpowiedz | problem dopiero bedzie albo cos mozna poprawic (tabela nizej) | akcja, *Pozniej*, *Mniej takich* |
+| Raport poranny | o `DIGEST_TIME` | -- |
+| Rozwiazane | problem minal | -- |
+
+**Podpowiedzi** licza sie bez modelu jezykowego, z danych, ktore Pipe i tak zbiera (co `INSIGHTS_INTERVAL`, 1 h):
+
+| Podpowiedz | Skad |
+|------------|------|
+| *Dysk / zapelni sie za ok. 4 dni* | tempo przyrostu z historii pomiarow (regresja z ostatnich 48 h) |
+| *Moge zwolnic ok. 6 GB* | obrazy Dockera bez tagu, cache budowania, pobrane paczki apt |
+| *Kontener X zrestartowal sie 4 razy w ciagu doby* | licznik restartow (petle restartow lapie alert) |
+| *Serwer od 5 dni czeka na restart* | `/run/reboot-required` |
+| *Pamiec RAM stale rosnie* | zajetosc RAM rosnaca przez dobe (mozliwy wyciek) |
+
+**Samodzielne badanie.** Gdy pojawia sie krytyczny problem (kontener przestal dzialac, strona nie odpowiada, dysk
+pelny), Pipe nie czeka na *Zbadaj*: worker sprawdza logi, zasoby i zmiany z ostatniej doby (tylko odczyty), a ustalenia
+przychodza zaraz po alercie, z przyciskiem *Napraw*. `AUTO_INVESTIGATE=critical` (domyslnie), `all` albo `off`;
+najwyzej `AUTO_INVESTIGATE_DAILY` (4) badan dziennie, ten sam problem najwyzej raz na 6 h.
+
+**Kiedy powiadamiac.** Poziom (`NOTIFY_LEVEL`): `all` -- wszystko; `important` (domyslnie) -- problemy, ostrzezenia,
+raport i wazne podpowiedzi, informacyjne czekaja w skrzynce; `critical` -- tylko to, co nie moze czekac. Cisza nocna
+(`QUIET_HOURS=22:00-07:00`): w nocy przychodza tylko sprawy krytyczne, reszta rano razem z raportem. Najwyzej
+`INSIGHTS_PER_DAY` (3) podpowiedzi dziennie z powiadomieniem. *Mniej takich* wycisza dany rodzaj podpowiedzi (zostaje w
+skrzynce bez powiadomienia), *Pozniej* odklada ja o dobe. Te same ustawienia zmienisz w trakcie pracy:
+`/powiadomienia` (Telegram -- przyciskami, CLI -- `/powiadomienia wazne cisza 22-7 dziennie 3`, `pipe web` -- dzwonek na
+pulpicie).
+
+- `/nowosci` (`/news`): skrzynka z akcjami (w CLI wpisujesz np. `1a`). Krotki stan bez modelu: `/status`.
+- Przyciski buduje backend -- klient odsyla tylko numer akcji (`feed_act`). *Napraw* i *Zalataj* sa dla administratora.
+- Klienci powiadamiaja tylko o wiadomosciach z `push` (poziom, cisza nocna, limit); CLI pokazuje je nad promptem,
+  `pipe web` jako okienko, Telegram jako wiadomosc.
+
+---
+
+## Warsztat: projekty, ktore Pipe stawia sam
+
+Napisz *"postaw mi te aplikacje: https://github.com/acme/notatnik"* albo *"napisz skrypt, ktory policzy zamowienia z
+logow"*, a Pipe poprowadzi to do konca sam. Projekty leza w jednym katalogu hosta -- **warsztacie**
+(`WORKSPACE_DIR`, domyslnie `/root/pipe-workspace`), kazdy w swoim podkatalogu i w `backend/data/projects.json`.
+
+| Krok | Co robi Pipe | Pyta? |
+|------|--------------|-------|
+| `clone` | `git clone --depth 1` z adresu https albo `git@` (klucz SSH serwera); bez hookow, submodulow, LFS; za duze repozytorium (`PROJECT_MAX_MB`) usuwa | nie |
+| `inspect` | co to jest i jak to uruchomic -- bez modelu: compose, Dockerfile, Node, Python (Django, FastAPI, Flask, Streamlit), Go, PHP, strona statyczna; porty, potrzebne zmienne, README i AGENTS.md | nie |
+| zapis plikow | `write_file` w katalogu warsztatu (np. Dockerfile, skrypt) | nie |
+| `exec` | komenda w jednorazowym kontenerze: tylko katalog projektu jako `/work`, bez `docker.sock` i uprawnien (`--cap-drop ALL`, `no-new-privileges`), limit pamieci, procesow i czasu | nie* |
+| `run` | usluga na stale: kontener `pipe-<nazwa>` (albo projekt compose `pipe-<nazwa>`), port tylko na `127.0.0.1` | **tak, raz** -- z planem |
+| `logs`, `stop`, `start`, `pull` | logi, zatrzymanie, wznowienie, `git pull --ff-only` | nie |
+| `remove` | katalog, kontenery i zbudowany obraz | **tak** |
+
+\* Po przeczytaniu tresci z zewnatrz (README sklonowanego repozytorium, strona z internetu) Pipe pyta o zgode na
+`exec` do Twojej nastepnej wiadomosci -- jak YOLO: tekst z cudzego repozytorium nie moze sam uruchomic kodu.
+
+- Kod z repozytorium nigdy nie dziala w procesie ani kontenerze Pipe (tam jest `docker.sock`). Instaluje sie i
+  uruchamia w kontenerach -- na serwerze nie przybywa Node.js, Pythona ani bibliotek.
+- `run` jest w dzienniku zmian: `/cofnij` zatrzymuje i usuwa wdrozenie. Ponowne `run` zostaje na tym samym porcie.
+- Projekt compose z ryzykownymi ustawieniami (`privileged`, `docker.sock`, siec hosta, montowanie `/etc`) albo
+  portami otwartymi na swiat -- potwierdzenie mowi to wprost.
+- Gdy `inspect` nie wie, jak uruchomic projekt, agent pisze Dockerfile w jego katalogu i uruchamia `run strategy=dockerfile`.
+- Adres aplikacji to `http://127.0.0.1:<port>` na serwerze (z laptopa: `ssh -L <port>:127.0.0.1:<port> <serwer>`);
+  wystawienie pod domena przez reverse proxy to osobna prosba (zwykle potwierdzenie).
+- `/projekty` (`/projects`) w CLI i na Telegramie, karty projektow z logami i zatrzymaniem na pulpicie `pipe web`.
+  `WORKSPACE_AUTONOMY=0` -- zgoda na kazda operacje. Tryb obserwacji i rola viewer -- tylko lista i logi.
+
+---
+
+## Oszczednosc tokenow
+
+Czuwanie, podpowiedzi, raporty, `/status`, `/zmiany`, `/audyt`, `/sprzataj` i pulpit dzialaja bez modelu
+jezykowego -- zero tokenow. Gdy rozmowa juz idzie do modelu, Pipe wysyla mniej:
+
+- **Narzedzia na zadanie** (`TOOLS_MODE=lazy`). Opisy 29 narzedzi to ~6 tys. tokenow przy kazdym kroku agenta.
+  Rozmowa zaczyna od podstawowych (~2,4 tys.), a reszta wlacza sie sama, gdy wiadomosc jej potrzebuje
+  (*"przypomnij jutro"* -> przypomnienia, *"czy serwer jest bezpieczny"* -> audyt) albo gdy model poprosi
+  (`load_tools`). Wlaczona grupa zostaje do konca rozmowy, wiec cache promptu u providera dziala dalej.
+  `TOOLS_MODE=all` -- wszystkie zawsze.
+- **Skracanie starych wynikow** (`CONTEXT_KEEP_TURNS`, 2). Wyniki narzedzi starsze niz dwie tury ida do modelu jako
+  poczatek z adnotacja (*"jesli potrzebujesz, uruchom jeszcze raz"*). Badania JetBrains (*The Complexity Trap*, NeurIPS
+  2025) pokazaly, ze taki zabieg obniza koszt agenta o ponad polowe bez spadku skutecznosci. Historia w sesji zostaje pelna.
+- **Krotszy prompt**: bez powtorzonej listy narzedzi i bez obowiazkowego prefiksu z katalogiem w kazdej odpowiedzi.
+- `/koszt` i pulpit pokazuja, ile tokenow Pipe **nie wyslal** (narzedzia na zadanie, skrocone wyniki) i ile wejscia
+  przyszlo z cache providera.
 
 ---
 
@@ -184,7 +279,8 @@ Deterministyczne sprawdzenia co `WATCH_INTERVAL` (120 s), bez LLM i bez kosztow:
 | **Nowy publiczny port na hoscie** | wzgledem poprzedniego sprawdzenia | ostrzezenie (jednorazowo) |
 
 - Alert jest wysylany raz, a gdy problem minie -- przychodzi *ROZWIAZANE*.
-- Telegram: alert z przyciskiem **Zbadaj** -- agent bada przyczyne (tylko odczyty) i proponuje naprawe.
+- Alert ma przyciski (**Zbadaj**, przy dysku **Zwolnij miejsce**, przy podatnosciach **Zalataj**); krytyczny Pipe
+  bada sam i dosyla ustalenia (sekcja *Pipe pisze pierwszy*).
 - Aktywne alerty sa w prompcie agenta -- pytany o stan serwera, uwzgledni je. `/alerty` w obu klientach.
 - Stan (poprzednie porty i kontenery) w `backend/data/watch_state.json`. `WATCH_ENABLED=0` wylacza.
 
@@ -270,7 +366,8 @@ Do raportu dolaczony jest wykres obciazenia z ostatniej doby. `/raport` -- rapor
 
 Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `backend/data/usage.json`.
 
-- `/koszt` -- tokeny dzis (z podzialem na uzytkownika, workery, rutyny, VIBE i model), ostatnie dni, miesiac.
+- `/koszt` -- tokeny dzis (z podzialem na uzytkownika, workery, rutyny, VIBE i model), ostatnie dni, miesiac, oraz ile
+  tokenow Pipe nie wyslal i ile wejscia przyszlo z cache (sekcja *Oszczednosc tokenow*).
 - Koszt w USD pojawi sie po podaniu cen modelu: `LLM_PRICE_IN` i `LLM_PRICE_OUT` (USD za milion tokenow),
   osobno `WORKER_PRICE_IN/OUT` dla `WORKER_MODEL`.
 - `DAILY_TOKEN_LIMIT` / `DAILY_COST_LIMIT` -- po przekroczeniu agent odpowiada komunikatem o limicie do polnocy
@@ -547,6 +644,14 @@ bez konfiguracji. Przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `
 `pipe web` otwiera w przegladarce interfejs z rozmowa i panelem bocznym. Dziala na Twoim komputerze, przez ten sam
 tunel co CLI.
 
+**Pulpit** (pierwsza zakladka panelu) odpowiada na pytanie *"czy wszystko dziala?"* bez modelu: naglowek zwyklymi
+slowami (*"Wszystko dziala"* albo *"Wymaga uwagi: ..."*), pierscienie procesora, pamieci i dysku z przebiegiem
+ostatniej doby, skrzynka *Od Pipe* (wiadomosci z przyciskami akcji, nowe oznaczone kropka; dzwonek w gornym pasku
+pokazuje, ile ich jest), karty projektow z warsztatu (logi, zatrzymanie, *Z GitHuba*) i zuzycie modelu dzis (tokeny,
+koszt, cache, ile Pipe zaoszczedzil). Dzwonek przy skrzynce otwiera ustawienia powiadomien. Pusty ekran rozmowy
+podsuwa zadania zwyklymi slowami (*Czy wszystko dziala?*, *Zwolnij miejsce na dysku*, *Uruchom aplikacje z GitHuba*,
+*Napisz mi skrypt*); te oznaczone *bez AI* dzialaja natychmiast i nic nie kosztuja.
+
 **Schemat** powstaje sam z tego, co Pipe wie o infrastrukturze -- nic sie nie rysuje ani nie konfiguruje:
 
 | Poziom | Co widac |
@@ -578,9 +683,10 @@ krawedzi, strzalki zmieniaja szerokosc, Enter chowa.
 pojawia sie w rozmowie i w zakladce *Zmiany* -- takze gdy plik zmienila komenda (np. `sed`), bo bezpiecznik robi kopie.
 Sekrety w roznicach sa redagowane. Kazdy wpis ma przycisk cofniecia. Roznic nie ma dla katalogow i danych w bazach.
 
-**Komendy i skille.** Wpisanie `/` w polu rozmowy rozwija liste komend (`/raport`, `/zmiany`, `/audyt`, `/koszt`...)
-i skilli z opisami -- wybor strzalkami albo kliknieciem, Tab uzupelnia komende, zeby dopisac argumenty. Zakladka
-*Skille* pokazuje zapisane procedury z podgladem tresci i przyciskiem uruchomienia.
+**Komendy i skille.** Wpisanie `/` w polu rozmowy rozwija liste komend (`/status`, `/nowosci`, `/raport`, `/audyt`...)
+i skilli z opisami -- wybor strzalkami albo kliknieciem, Tab uzupelnia komende, zeby dopisac argumenty. `/skille`
+pokazuje zapisane procedury w rozmowie, z podgladem tresci i przyciskiem uruchomienia. Panel ma trzy zakladki:
+*Pulpit*, *Schemat* (kropka przy nazwie, gdy agent wlasnie pracuje) i *Zmiany*; ostatnio wybrana zostaje w przegladarce.
 
 **Provider LLM.** Przy pierwszym wejsciu strona pyta, z ktorym providerem ma pracowac Pipe: wybierasz go z listy,
 wklejasz klucz API (jest sprawdzany u providera, zanim zostanie zapisany) i wybierasz model z jego aktualnej listy.

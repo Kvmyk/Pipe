@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.38.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.39.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -37,8 +37,10 @@ z Telegrama, po polsku lub po angielsku. Możesz poprosić o diagnozę („czemu
 („podnieś limit pamięci PHP”) albo o wyjaśnienie („co się zmieniło od wczoraj?”).
 
 Pipe pracuje także między rozmowami. Co dwie minuty sprawdza dyski, pamięć, obciążenie, kontenery i porty otwarte na
-świat. Co godzinę zapisuje stan serwera, więc wie, co i kiedy się zmieniło. Gdy coś jest nie tak, wysyła alert
-na Telegram, a rano krótki raport.
+świat. Co godzinę zapisuje stan serwera, więc wie, co i kiedy się zmieniło. Nie musisz pytać: gdy coś jest nie tak,
+Pipe pisze pierwszy, na Telegram, do przeglądarki albo do terminala. Przy poważnej awarii od razu sprawdza przyczynę
+i przysyła, co ustalił, z przyciskiem *Napraw*. Uprzedza też, zanim zrobi się problem: „dysk zapełni się za ok.
+4 dni”, „mogę zwolnić 6 GB”. Rano przychodzi krótki raport.
 
 Agent może czytać serwer swobodnie, ale niczego nie zmienia bez pytania. Każda komenda przechodzi przez
 klasyfikator zapisany w kodzie (nie w prompcie): odczyty wykonują się od razu, zmiany czekają na Twoje
@@ -61,6 +63,8 @@ Tak wyglądają typowe prośby:
 | *sprawdź dyski na wszystkich serwerach* | wysyła równoległych pomocników (workerów) na zdalne maszyny przez SSH |
 | *czy nasz PostgreSQL jest jeszcze wspierany?* | sprawdza wersję na serwerze i porównuje z endoflife.date |
 | *cofnij ostatnią zmianę* | przywraca pliki z kopii zrobionej przed zmianą |
+| *postaw mi tę aplikację: https://github.com/acme/notatnik* | klonuje repozytorium, sam rozpoznaje, co to jest i jak to uruchomić, stawia je w kontenerze i podaje adres; pyta raz, przed uruchomieniem |
+| *napisz skrypt, który policzy zamówienia z logów* | pisze skrypt w swoim katalogu roboczym, uruchamia go w odizolowanym kontenerze i oddaje wynik |
 | *czemu to nie działa?* + zrzut ekranu albo log | ogląda zrzut, czyta log (sekrety ukrywa przed modelem) i szuka przyczyny na serwerze |
 
 Pełna lista funkcji z przykładami: [docs/features.md](./docs/features.md).
@@ -92,6 +96,15 @@ a Pipe pilnuje tego, co się wykonuje. Szczegóły: [docs/features.md](./docs/fe
 kosztują. Pipe sam znajduje domeny w konfiguracji nginx, Caddy i Traefika, a potem pilnuje ważności certyfikatów,
 odpowiedzi stron i DNS. Wykrywa nowe konta, klucze SSH i podejrzane logowania. Przyjmuje też alerty z Alertmanagera,
 Grafany, Uptime Kuma i GitHuba i od razu bada ich przyczynę.
+
+**Stawia i pisze rzeczy sam.** Projekty trzyma w jednym katalogu na serwerze (`/root/pipe-workspace`). Tam klonuje
+repozytoria, pisze skrypty i uruchamia je bez pytania, ale zawsze w osobnym kontenerze bez dostępu do reszty
+serwera, więc na hoście nie przybywa Node.js ani Pythona. O zgodę pyta, zanim coś wystawi na stałe, i to wdrożenie
+też da się cofnąć.
+
+**Oszczędza tokeny.** Alerty, podpowiedzi, raport poranny, `/status` i `/sprzataj` w ogóle nie używają modelu.
+Gdy rozmowa trafia do modelu, Pipe wysyła mu tylko te narzędzia, których rozmowa potrzebuje (ok. 2,4 tys. tokenów
+zamiast 6,2 tys. przy każdym kroku) i skraca stare wyniki komend. `/koszt` pokazuje, ile w ten sposób nie poszło.
 
 **Zmienia ostrożnie.** Przed każdą zatwierdzoną zmianą robi kopię plików. Konfigurację sprawdza przed
 przeładowaniem (`nginx -t`, `sshd -t`, `docker compose config`), a po zmianie upewnia się, że usługa działa i strony

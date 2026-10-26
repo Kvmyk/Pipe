@@ -11,7 +11,9 @@ Nowych funkcji nie dodajemy, dopoki Pipe nie ma uzytkownikow spoza autora. Prior
    Kubernetes) dojrzewaja albo znikaja, zaleznie od tego, czy ktos ich uzywa.
 
 Wyjatki: zmiana, o ktora prosi wiecej niz jedna osoba korzystajaca z Pipe na prawdziwym serwerze, oraz zmiany
-z punktu 1 -- dlatego ponizsze lacenie podatnosci wchodzi mimo zamrozenia.
+z punktu 1 -- dlatego ponizsze lacenie podatnosci wchodzi mimo zamrozenia. Decyzja autora byla tez przebudowa
+z v0.39 (Pipe pisze pierwszy, warsztat, narzedzia na zadanie, pulpit w `pipe web`) -- kolejne funkcje znow tylko
+wedlug punktow wyzej.
 
 ## Dalej: podatnosci i latki
 

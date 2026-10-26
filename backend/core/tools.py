@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -54,7 +54,8 @@ TOOLS: list[dict] = [
     ),
     _tool(
         "write_file",
-        "Zapisuje caly plik na serwerze (tworzy albo nadpisuje). ZAWSZE wymaga potwierdzenia. Nie uzywaj dla "
+        "Zapisuje caly plik na serwerze (tworzy go razem z brakujacymi katalogami albo nadpisuje). Poza warsztatem "
+        "wymaga potwierdzenia; w katalogu warsztatu (projekty, Twoje skrypty) zapisuje od razu. Nie uzywaj dla "
         "plikow, ktore czytales z [ZREDAGOWANO] — zmien je punktowo przez execute_command (sed -i).",
         {
             "path": {"type": "string", "description": "Sciezka do pliku na serwerze."},
@@ -170,6 +171,36 @@ TOOLS: list[dict] = [
             "since": {"type": "string",
                       "description": "Okres wstecz: '24h' (domyslnie), '3h', '7d'. Dla changes i chart."},
             "metric": {"type": "string", "enum": ["load", "memory", "disk"], "description": "Dla chart."},
+        },
+        ["operation"],
+    ),
+    _tool(
+        "project",
+        "Warsztat: projekty w katalogu warsztatu (sciezka w sekcji SRODOWISKO) — repozytoria, male aplikacje i Twoje "
+        "skrypty. Uzyj, gdy uzytkownik prosi: 'sklonuj i uruchom', 'postaw te aplikacje', 'co robi to repo', "
+        "'napisz skrypt, ktory...'. W warsztacie dzialasz sam, bez pytania: list, create, clone, inspect, exec "
+        "(komenda w jednorazowym, izolowanym kontenerze widzacym tylko katalog projektu jako /work: instalacja "
+        "zaleznosci, testy, build, Twoje skrypty), logs, stop, start, pull — a pliki projektu piszesz write_file. "
+        "run (usluga na stale: kontener pipe-<nazwa>, port tylko na 127.0.0.1) i remove pytaja raz. Kolejnosc: clone "
+        "-> inspect (co to jest i jak to uruchomic) -> run -> logs. Gdy inspect nie wie, jak uruchomic, napisz "
+        "Dockerfile w katalogu projektu i run strategy=dockerfile.",
+        {
+            "operation": {"type": "string",
+                          "enum": ["list", "create", "clone", "inspect", "run", "exec", "logs", "stop", "start", "pull",
+                                   "remove"]},
+            "name": {"type": "string",
+                     "description": "Nazwa projektu: male litery, cyfry, myslniki (przy clone domyslnie z adresu)."},
+            "url": {"type": "string",
+                    "description": "Dla clone: https://github.com/org/repo albo git@host:org/repo.git (bez tokenow)."},
+            "command": {"type": "string",
+                        "description": "Dla exec: komenda powloki w katalogu projektu, np. 'npm test', 'python3 raport.py'."},
+            "image": {"type": "string",
+                      "description": "Dla exec: obraz, np. python:3.12-slim, node:22-bookworm-slim, golang:1.23 "
+                                     "(domyslnie wedlug stosu projektu)."},
+            "strategy": {"type": "string", "enum": ["auto", "compose", "dockerfile", "node", "python", "static"],
+                         "description": "Dla run: sposob uruchomienia (domyslnie auto — z inspect)."},
+            "port": {"type": "integer",
+                     "description": "Dla run: port, na ktorym aplikacja slucha w kontenerze (domyslnie z inspect)."},
         },
         ["operation"],
     ),
@@ -415,5 +446,20 @@ TOOLS: list[dict] = [
                                                          "ZRODLOWEGO (dpkg-query -W -f='${source:Package} ${Version}' nazwa)."},
         },
         ["operation"],
+    ),
+    _tool(
+        "load_tools",
+        "Wlacza grupy narzedzi, ktorych pelnych opisow jeszcze nie masz (Pipe oszczedza tokeny). memory — Twoja "
+        "pamiec (server_md, directory, skill_manage, vibe); security — audyt, latki, dziennik zmian i cofanie "
+        "(security_audit, security_patch, journal); schedule — przypomnienia, rutyny, cron (reminder, routine_manage, "
+        "cron_manage); fleet — zdalne serwery, klastry, workery (target_manage, remote_exec, delegate); web — internet "
+        "i wiedza o wersjach (web_search, web_fetch, software_info); diagram — diagramy i mapa infrastruktury; update "
+        "— aktualizacja samego Pipe (pipe_update). Po wlaczeniu wywolaj potrzebne narzedzie w nastepnym kroku.",
+        {
+            "groups": {"type": "array", "description": "Grupy do wlaczenia.",
+                       "items": {"type": "string",
+                                 "enum": ["memory", "security", "schedule", "fleet", "web", "diagram", "update"]}},
+        },
+        ["groups"],
     ),
 ]

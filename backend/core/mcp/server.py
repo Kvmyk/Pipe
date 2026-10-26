@@ -109,6 +109,11 @@ TOOLS: list[dict[str, Any]] = sorted([
     _tool("journal", "Dziennik zmian", "Zatwierdzone zmiany z kopiami (cofac moze administrator: /cofnij).", _schema()),
     _tool("ask_pipe", "Zapytaj Pipe", "Pytanie do agenta Pipe (zna SERVER.md, DIRECTORY, historie). Tylko odczyty.",
           _schema({"question": {"type": "string"}}, ["question"])),
+    _tool("inbox", "Co Pipe zauwazyl", "Wiadomosci, ktore Pipe wyslal sam: alerty, podpowiedzi (np. dysk zapelni sie za "
+          "3 dni), ustalenia z badania awarii, raport poranny — od najnowszej. Zacznij od tego, zanim zaczniesz szukac "
+          "przyczyny problemu na serwerze.", _schema({"limit": {"type": "integer", "description": "Ile wiadomosci (1-30)."}})),
+    _tool("projects", "Projekty w warsztacie", "Projekty, ktore Pipe sklonowal i uruchomil w izolowanych kontenerach "
+          "(stan, adres, zrodlo).", _schema()),
 ], key=lambda t: t["name"])
 
 # Angielskie tytuly, opisy i opisy parametrow narzedzi (PIPE_LANG=en).
@@ -131,6 +136,10 @@ TOOLS_EN: dict[str, tuple[str, str, dict[str, str]]] = {
     "health_checks": ("Service health", "TLS certificates, domain responses, DNS, backup freshness.", {}),
     "journal": ("Change journal", "Approved changes with backups (the administrator can undo: /undo).", {}),
     "ask_pipe": ("Ask Pipe", "A question for the Pipe agent (knows SERVER.md, DIRECTORY, history). Read-only.", {}),
+    "inbox": ("What Pipe noticed", "Messages Pipe sent on its own: alerts, suggestions (e.g. the disk will be full in 3 "
+              "days), findings of an outage investigation, the morning report — newest first. Start here before you "
+              "look for the cause of a problem on the server.", {"limit": "How many messages (1-30)."}),
+    "projects": ("Workshop projects", "Projects Pipe cloned and runs in isolated containers (state, address, source).", {}),
 }
 _TOOLS_EN_CACHE: list[dict[str, Any]] | None = None
 
@@ -309,10 +318,34 @@ async def _ask(caller: Caller, args: dict) -> tuple[str, bool]:
     return answer or tr("(brak odpowiedzi)", "(no answer)"), answer.startswith("[BLAD]")
 
 
+async def _inbox(caller: Caller, args: dict) -> str:
+    from backend.core import feed
+
+    try:
+        limit = max(1, min(30, int(args.get("limit") or 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    items = feed.recent(limit)
+    if not items:
+        return tr("Skrzynka jest pusta — Pipe nic ostatnio nie zglaszal.", "The inbox is empty — Pipe reported nothing lately.")
+    parts = []
+    for item in items:
+        head = f"[{item.at}] [{item.severity}] {item.title}" + (tr(f" (zrobione: {item.done})", f" (done: {item.done})")
+                                                                 if item.done else "")
+        parts.append(head + (f"\n{item.text.strip()[:1500]}" if item.text.strip() else ""))
+    return "\n\n".join(parts)
+
+
+async def _projects(caller: Caller, args: dict) -> str:
+    from backend.core.handlers.projects import project_list
+
+    return await project_list()
+
+
 HANDLERS: dict[str, Callable[[Caller, dict], Awaitable[Any]]] = {
     "server_status": _status, "run_command": _run_command, "get_approval": _get_approval,
     "read_file": _read_file, "server_changes": _changes, "security_audit": _audit, "infra_map": _infra,
-    "health_checks": _health, "journal": _journal, "ask_pipe": _ask,
+    "health_checks": _health, "journal": _journal, "ask_pipe": _ask, "inbox": _inbox, "projects": _projects,
 }
 
 

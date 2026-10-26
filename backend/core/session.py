@@ -56,6 +56,8 @@ class Session:
     # turze model czytal tresc z internetu — wtedy YOLO jest wstrzymane do nastepnej wiadomosci uzytkownika.
     web_urls: set[str] = field(default_factory=set)
     web_tainted: bool = False
+    # Narzedzia na zadanie (core/toolsets.py): grupy, ktorych pelne opisy model dostaje w tej rozmowie.
+    tool_groups: set[str] = field(default_factory=lambda: {"core"})
 
     @property
     def runs_yolo(self) -> bool:
@@ -89,6 +91,7 @@ class Session:
         baza -> tryb dzialania -> pamiec (SERVER.md, DIRECTORY, skille, VIBE)
         -> alerty czuwania -> katalog roboczy (zmienia sie najczesciej).
         """
+        from backend.config import settings
         from backend.core.i18n import prompt, tr
         from backend.core import runtime
         from backend.core.memory import prompt_context
@@ -98,6 +101,7 @@ class Session:
         return (
             base
             + tr("\n\n--- SRODOWISKO ---\n", "\n\n--- ENVIRONMENT ---\n") + runtime.describe()
+            + prompt("workspace_block")(settings.WORKSPACE_DIR, settings.WORKSPACE_AUTONOMY)
             + prompt_context(self.user_key)
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")

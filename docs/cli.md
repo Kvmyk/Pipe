@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -21,6 +21,11 @@ Twoj laptop
 ```
 
 CLI automatycznie zestawia tunel SSH -- nie musisz nic robic recznie.
+
+Po polaczeniu CLI od razu pokazuje stan serwera jednym wierszem (bez modelu) i liczbe nowych wiadomosci od Pipe.
+Gdy czekasz przy prompcie, wiadomosci, ktore Pipe napisal sam (alerty, ustalenia, podpowiedzi), pojawiaja sie nad nim
+jako ramki -- te same, o ktorych Pipe powiadamia na Telegramie (`/powiadomienia`). Akcje wiadomosci wybierasz w
+`/nowosci`, wpisujac numer wiadomosci i litere akcji, np. `1a`.
 
 ## Wymagania
 
@@ -84,9 +89,10 @@ Ten sam proces co CLI: tunel SSH (albo `--kube`, `--no-tunnel`), a zamiast REPL-
 zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w adresie. Strona dziala wylacznie na
 `127.0.0.1` i odrzuca zadania z obcym naglowkiem `Host` albo `Origin`.
 
-Na stronie: rozmowa, schemat serwera na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk
-*Sledze agenta*), os czasu dzialan, zakladka *Zmiany* z roznicami i cofaniem, zakladka *Alerty* ze zdarzeniami na
-zywo, zakladka *Skille* z podgladem i uruchamianiem. Spinacz przy polu rozmowy (albo przeciagniecie pliku,
+Na stronie: rozmowa i trzy zakladki panelu bocznego. *Pulpit* odpowiada bez modelu, czy wszystko dziala (pierscienie
+procesora, pamieci i dysku, skrzynka *Od Pipe* z przyciskami akcji, karty projektow z warsztatu, zuzycie modelu dzis),
+*Schemat* pokazuje serwer na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk *Sledze agenta*),
+*Zmiany* -- roznice i cofanie. Skille uruchamiasz z listy `/`. Spinacz przy polu rozmowy (albo przeciagniecie pliku,
 albo wklejenie zrzutu ekranu) dolacza pliki do wiadomosci, a mikrofon nagrywa glosowke. Po wpisaniu `/` w polu rozmowy rozwija sie lista komend
 i skilli -- dzialaja te same komendy co ponizej. Przy pierwszym wejsciu strona pyta o providera LLM (klucz API
 i model), a przelacznik nad polem rozmowy pozwala skakac miedzy providerami, do ktorych jest klucz (`/provider`). W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
@@ -154,7 +160,7 @@ Pythonie / venv, z ktorego startuje `pipe` -- CLI przy starcie podaje gotowe pol
 bez niego CLI dziala jak dotad, bez podpowiedzi.
 
 Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
-`/audit`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/patch`,
+`/audit`, `/news`, `/projects`, `/cleanup`, `/notifications`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/patch`,
 `/approvals`, `/cost`, `/history`, `/providers`, `/language`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski
 tylko w tym uruchomieniu; `/jezyk en` (`/language pl`) zmienia jezyk calego Pipe -- instrukcje agenta, raporty,
 komunikaty -- bez restartu, takze w `pipe web` i na Telegramie. Wybor zostaje po restarcie i CLI przejmuje go
@@ -162,7 +168,11 @@ przy polaczeniu (chyba ze podano `--lang`).
 
 | Komenda | Dzialanie |
 |---|---|
-| `/status` | Stan serwera |
+| `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami, paski procesora, pamieci i dysku, nowe wiadomosci, projekty |
+| `/nowosci` | Skrzynka: co Pipe napisal sam, z akcjami -- wpisz numer i litere, np. `1a` (`/news`) |
+| `/projekty` | Projekty w warsztacie: stan i adres (`/projects`). Nowy projekt: napisz np. *"sklonuj https://github.com/... i uruchom"* |
+| `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki i cache npm/pip; tylko administrator (`/cleanup`) |
+| `/powiadomienia [wszystko\|wazne\|krytyczne] [cisza 22-7\|cisza off] [dziennie 3]` | Kiedy Pipe ma powiadamiac; bez argumentow pokazuje obecne ustawienia (`/notifications`) |
 | `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe na serwerze (po potwierdzeniu); `sprawdz` tylko pokazuje wersje; po restarcie backendu CLI laczy sie ponownie samo (do 3 min), bez uruchamiania od nowa |
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
@@ -186,7 +196,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
 | `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
-| `/alerty` | Aktywne alerty czuwania (same alerty przychodza na Telegram) |
+| `/alerty` | Aktywne alerty czuwania (nowe pokazuja sie same nad promptem i w `/nowosci`) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |
 | `/cele` | Zdalne serwery, kontenery i klastry |

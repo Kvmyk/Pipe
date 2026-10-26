@@ -21,7 +21,7 @@ def names(text, skills=SKILLS):
 def test_slash_lists_every_command_and_skill(monkeypatch):
     monkeypatch.setattr(cli, "LANG", "pl")
     options = names("/")
-    assert options[:2] == ["status", "raport"]
+    assert options[:3] == ["status", "nowosci", "projekty"]       # najczestsze sprawy na gorze
     assert len(options) == len(cli.COMMANDS) + 1
     assert "odnow_certyfikat" in options
 
@@ -30,7 +30,9 @@ def test_prefix_narrows_and_exact_match_goes_first(monkeypatch):
     monkeypatch.setattr(cli, "LANG", "pl")
     assert names("/sta") == ["status"]
     assert names("/co") == ["cofnij", "koszt"]       # "cost" pasuje po angielsku, polska nazwa pierwsza
-    assert names("/now")[0] == "nowa"
+    assert names("/now")[:2] == ["nowosci", "nowa"]           # potem skill "odnow..." (dopasowanie w srodku)
+    assert names("/nowa") == ["nowa"]
+    assert names("/news") == ["nowosci"]             # alias angielski
 
 
 def test_names_follow_language_but_both_match(monkeypatch):
@@ -79,7 +81,7 @@ def test_tab_fills_the_command(monkeypatch):
 
     assert asyncio.run(typed("/sta\t\r")) == "/status"
     assert asyncio.run(typed("/odn\t tylko example.com\r")) == "/odnow_certyfikat tylko example.com"
-    assert asyncio.run(typed("/\t\t\r")) == "/raport"
+    assert asyncio.run(typed("/\t\t\r")) == "/nowosci"
     assert asyncio.run(typed("co tam\t\r")).strip() == "co tam"
 
 

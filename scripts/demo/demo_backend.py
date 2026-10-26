@@ -195,7 +195,10 @@ def journal_changes() -> dict:
 class Demo:
     def __init__(self, full: bool = False) -> None:
         self.fixed = False
-        self.full = full          # --full: przykladowe skille, alerty i wpisy dziennika (do testow interfejsu)
+        self.full = full          # --full: przykladowe skille, alerty, skrzynka, projekty i dziennik (do testow interfejsu)
+        self.seen = False
+        self.done_actions: dict[str, str] = {}
+        self.prefs = {"level": "important", "quiet": "", "per_day": 3}
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -253,8 +256,115 @@ class Demo:
             skills = [{"name": name, "command": name, "description": L(f"Procedura {name}.", f"The {name} procedure.")}
                       for name in ("swap", "fail2ban-ssh", "certbot-renew", "docker-cleanup", "postgres-backup")]
             await done(writer, {"skills": skills if self.full else []})
+        elif command in ("overview", "status"):
+            data = overview_data(self.full)
+            if command == "status":
+                await send(writer, {"response": data["text"], "status": "ok", "done": False})
+            await done(writer, data)
+        elif command == "feed":
+            if str(request.get("args", "")) == "seen":
+                self.seen = True
+            await done(writer, feed_data(self.full, self.seen, self.done_actions))
+        elif command == "feed_act":
+            item_id, index = str(request.get("id", "")), int(request.get("action") or 0)
+            item = next((i for i in feed_data(self.full, self.seen, {})["items"] if i["id"] == item_id), None)
+            action = item["actions"][index] if item and index < len(item["actions"]) else {"label": "?", "kind": "dismiss"}
+            self.done_actions[item_id] = action["label"]
+            if action["kind"] in ("snooze", "mute", "dismiss"):
+                await done(writer, {"id": item_id, "done": action["label"], "text": L("Odlozone o dobe.", "Snoozed for a day.")})
+            else:
+                from backend.core.events import Progress
+                await send(writer, frame(Progress(L("sprzatam: obrazy bez tagu", "cleaning: untagged images"), source="sprzatanie")))
+                await asyncio.sleep(1.2)
+                await done(writer, {"freed": 6.4e9, "text": L("Zwolnione miejsce: 6.0 GB.\nZrobione: obrazy bez tagu; cache budowania.",
+                                                               "Space freed: 6.0 GB.\nDone: untagged images; build cache.")})
+        elif command == "prefs":
+            for key in ("level", "quiet", "per_day"):
+                if request.get(key) not in (None, ""):
+                    self.prefs[key] = request[key] if key != "per_day" else int(request[key])
+                    if key == "quiet" and request[key] == "off":
+                        self.prefs["quiet"] = ""
+            await done(writer, {**self.prefs, "muted": [], "can_edit": True, "text": ""})
+        elif command == "projects":
+            await done(writer, {"projects": overview_data(self.full)["projects"], "workspace": "/root/pipe-workspace",
+                                "text": L("Warsztat /root/pipe-workspace:\n- notatnik [node] dziala — http://127.0.0.1:18000",
+                                          "Workshop /root/pipe-workspace:\n- notebook [node] running — http://127.0.0.1:18000"),
+                                "can_edit": True})
         else:
             await done(writer, {})
+
+
+def overview_data(full: bool) -> dict:
+    """Pulpit demo: realistyczne liczby, przebieg doby z lagodna fala (bez losowosci — nagranie jest powtarzalne)."""
+    import math
+    from backend.core import overview
+
+    cpu = [round(18 + 9 * math.sin(i / 5) + (14 if 30 < i < 34 else 0), 1) for i in range(48)]
+    mem = [round(52 + i * 0.12 + 3 * math.sin(i / 7), 1) for i in range(48)]
+    disk = [round(71 + i * 0.4, 1) for i in range(48)]
+    data = {
+        "hostname": HOST, "status": "warning" if full else "ok",
+        "headline": L("Do sprawdzenia: dysk / zapelni sie za ok. 3 dni", "Worth a look: disk / will be full in about 3 days")
+        if full else L("Wszystko dziala", "Everything works"),
+        "facts": [L("dziala od 23 dni", "up for 23 days"), L("kontenery: 5 z 5 dziala", "containers: 5 of 5 running"),
+                  L("strony: 2/2 odpowiada", "sites: 2/2 responding")],
+        "gauges": [
+            {"id": "cpu", "label": L("Procesor", "CPU"), "pct": 23, "level": "ok", "value": L("obciazenie 0,9 / 4 rdz.", "load 0.9 / 4 cores")},
+            {"id": "mem", "label": L("Pamiec", "Memory"), "pct": 58, "level": "ok", "value": L("4,6 z 7,8 GB", "4.6 of 7.8 GB")},
+            {"id": "disk:/", "label": L("Dysk /", "Disk /"), "pct": 89 if full else 64, "level": "warn" if full else "ok",
+             "value": L("wolne 8,4 GB", "8.4 GB free")},
+        ],
+        "series": {"cpu": cpu, "mem": mem, "disk": disk},
+        "alerts": [], "containers": {"running": 5, "total": 5}, "sites": {"ok": 2, "total": 2},
+        "projects": [{"name": L("notatnik", "notebook"), "stack": ["node"], "url": "http://127.0.0.1:18000", "status": "running",
+                      "strategy": "node", "source": "https://github.com/acme/notebook"}] if full else [],
+        "unread": 3 if full else 0,
+        "usage": {"tokens": 41200, "cost": 0.031, "cached": 21000, "prompt": 33800, "saved": 118400, "calls": 14},
+    }
+    data["text"] = overview.text(data)
+    return data
+
+
+def feed_data(full: bool, seen: bool, done_actions: dict) -> dict:
+    """Skrzynka demo: podpowiedz z akcja, ustalenia z badania alertu, rozwiazany problem i raport poranny."""
+    if not full:
+        return {"items": [], "unread": 0, "text": "", "prefs": {"level": "important", "quiet": "", "per_day": 3, "muted": []}}
+    items = [
+        {"id": "f1", "type": "insight", "severity": "warning", "at": "2026-10-25 09:12", "title":
+         L("Dysk / zapelni sie za ok. 3 dni", "Disk / will be full in about 3 days"),
+         "text": L("Teraz 89%, przybywa 2,1 GB na dobe. Przy tym tempie miejsce skonczy sie za ok. 3 dni — wtedy przestana "
+                   "dzialac bazy danych, logi i wdrozenia. Moge od razu usunac to, co odtwarzalne (stare obrazy Dockera, "
+                   "cache budowania, pobrane paczki), albo sprawdzic, co tak rosnie.",
+                   "Now 89%, 2.1 GB more every day. At this rate the space runs out in about 3 days — then databases, "
+                   "logs and deployments stop working. I can remove what is reproducible right away (old Docker images, "
+                   "build cache, downloaded packages) or check what keeps growing."),
+         "actions": [{"label": L("Zwolnij miejsce", "Free up space"), "kind": "command", "command": "cleanup", "admin": True, "primary": True, "index": 0},
+                     {"label": L("Co tak rosnie?", "What is growing?"), "kind": "message", "index": 1},
+                     {"label": L("Pozniej", "Later"), "kind": "snooze", "index": 2},
+                     {"label": L("Mniej takich", "Fewer like this"), "kind": "mute", "index": 3}]},
+        {"id": "f2", "type": "investigation", "severity": "critical", "at": "2026-10-25 03:41",
+         "title": L("Ustalilem: Kontener shop-worker przestal dzialac", "What I found: Container shop-worker stopped"),
+         "text": L("Worker padl o 03:38, bo zabraklo mu pamieci (limit 512 MB, kolejka zamowien urosla po nocnym imporcie). "
+                   "Kontener sam wstal po minucie, zamowienia sie nie zgubily.\n\n- OOMKilled o 03:38\n- import produktow o 03:30 "
+                   "dodal 12 tys. zadan\n\nProponuje podniesc limit pamieci workera do 1 GB.",
+                   "The worker died at 03:38 because it ran out of memory (512 MB limit, the order queue grew after the "
+                   "nightly import). The container came back after a minute, no orders were lost.\n\n- OOMKilled at 03:38\n"
+                   "- the product import at 03:30 added 12k jobs\n\nI suggest raising the worker memory limit to 1 GB."),
+         "actions": [{"label": L("Napraw", "Fix it"), "kind": "message", "admin": True, "primary": True, "index": 0}]},
+        {"id": "f3", "type": "alert", "severity": "ok", "at": "2026-10-25 03:39",
+         "title": L("Rozwiazane: Kontener shop-worker przestal dzialac", "Resolved: Container shop-worker stopped"),
+         "text": "", "actions": []},
+        {"id": "f4", "type": "digest", "severity": "info", "at": "2026-10-25 07:00",
+         "title": L(f"Raport {HOST} — 25.10.2026 07:00", f"Report for {HOST} — 25.10.2026 07:00"),
+         "text": L("**Stan**\n- dziala od 23 dni\n- RAM 58% (4,6 z 7,8 GB)\n\n**Zmiany od wczoraj**\n- pakiety: 3 zmiany (openssl, libssl3, curl)",
+                   "**Health**\n- up for 23 days\n- RAM 58% (4.6 of 7.8 GB)\n\n**Changes since yesterday**\n- packages: 3 changes (openssl, libssl3, curl)"),
+         "actions": []},
+    ]
+    for item in items:
+        item["unread"] = not seen and item["id"] in ("f1", "f2", "f4")
+        if item["id"] in done_actions:
+            item["done"] = done_actions[item["id"]]
+    return {"items": items, "unread": 0 if seen else 3, "text": "", "prefs": {"level": "important", "quiet": "", "per_day": 3, "muted": []}}
 
 
 async def main() -> None:

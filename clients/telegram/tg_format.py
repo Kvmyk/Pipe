@@ -228,7 +228,11 @@ def split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]
 
 # Komendy wbudowane w menu Telegrama, w kolejnosci wyswietlania.
 BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("status", "Szybki przeglad obciazenia serwera"),
+    ("status", "Stan serwera — od razu, bez AI"),
+    ("nowosci", "Co Pipe napisal sam: alerty, podpowiedzi, raporty"),
+    ("projekty", "Projekty w warsztacie: stan, logi, zatrzymanie"),
+    ("sprzataj", "Zwolnij miejsce na dysku (bez AI)"),
+    ("powiadomienia", "Kiedy Pipe ma powiadamiac (poziom, cisza nocna)"),
     ("aktualizuj", "Zaktualizuj Pipe (/aktualizuj sprawdz - tylko wersja)"),
     ("raport", "Poranny raport: stan, zmiany, certyfikaty, backupy"),
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
@@ -259,7 +263,11 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("pomoc", "Lista komend"),
 )
 BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
-    ("status", "Quick look at the server load"),
+    ("status", "Server status — instant, no AI"),
+    ("news", "What Pipe wrote on its own: alerts, suggestions, reports"),
+    ("projects", "Workshop projects: state, logs, stopping"),
+    ("cleanup", "Free up disk space (no AI)"),
+    ("notifications", "When Pipe should notify you (level, quiet hours)"),
     ("update", "Update Pipe (/update check - version only)"),
     ("report", "Morning report: health, changes, certificates, backups"),
     ("changes", "What changed on the server (/changes 3d)"),
@@ -296,7 +304,8 @@ COMMAND_ALIASES: dict[str, str] = {
     "targets": "cele", "undo": "cofnij", "journal": "dziennik", "approvals": "zgody", "cost": "koszt",
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
     "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj", "vulns": "podatnosci",
-    "new": "nowa",
+    "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
+    "cleanup": "sprzataj",
 }
 
 
@@ -328,12 +337,42 @@ def parse_command(text: str) -> tuple[str, str]:
 # Pomoc i menu "/" w grupach wedlug zadan (polskie nazwy; angielskie przez COMMAND_ALIASES). Komenda spoza grup
 # trafia do "Inne", wiec nowa komenda nie zniknie z pomocy.
 HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("Na co dzien", "Every day", ("status", "raport", "alerty", "zmiany", "mapa", "wykres", "zdrowie")),
-    ("Bezpieczenstwo i zmiany", "Security and changes", ("audyt", "podatnosci", "zalataj", "dziennik", "cofnij", "zgody")),
+    ("Na co dzien", "Every day", ("status", "nowosci", "projekty", "raport", "zmiany", "mapa", "wykres", "zdrowie", "alerty")),
+    ("Bezpieczenstwo i zmiany", "Security and changes",
+     ("audyt", "podatnosci", "zalataj", "sprzataj", "dziennik", "cofnij", "zgody")),
     ("Pamiec i automatyzacja", "Memory and automation",
      ("server", "skille", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
-    ("Ustawienia", "Settings", ("nowa", "providerzy", "jezyk", "yolo", "koszt", "historia", "aktualizuj", "pomoc")),
+    ("Ustawienia", "Settings", ("powiadomienia", "nowa", "providerzy", "jezyk", "yolo", "koszt", "historia", "aktualizuj",
+                                "pomoc")),
 )
+# Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
+MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
+                                  "powiadomienia", "nowa", "pomoc")
+
+# Klawiatura pod polem wiadomosci — cztery najczestsze sprawy jednym dotknieciem, bez znajomosci komend.
+KEYBOARD: tuple[tuple[tuple[str, str], ...], ...] = (
+    (("📊 Stan serwera", "status"), ("📬 Co nowego", "nowosci")),
+    (("🧩 Projekty", "projekty"), ("❓ Pomoc", "pomoc")),
+)
+KEYBOARD_EN: tuple[tuple[tuple[str, str], ...], ...] = (
+    (("📊 Server status", "status"), ("📬 What's new", "nowosci")),
+    (("🧩 Projects", "projekty"), ("❓ Help", "pomoc")),
+)
+
+
+def keyboard_rows() -> list[list[str]]:
+    """Etykiety przyciskow klawiatury w jezyku bota."""
+    return [[label for label, _ in row] for row in tr(KEYBOARD, KEYBOARD_EN)]
+
+
+def keyboard_command(text: str) -> str:
+    """Tekst przycisku klawiatury (w dowolnym jezyku) -> komenda; inny tekst -> ''."""
+    for layout in (KEYBOARD, KEYBOARD_EN):
+        for row in layout:
+            for label, command in row:
+                if text.strip() == label:
+                    return command
+    return ""
 
 
 def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
@@ -352,8 +391,9 @@ def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
 
 
 def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
-    """Menu '/' Telegrama: komendy wbudowane w kolejnosci grup (najczestsze na gorze), potem skille z komenda."""
-    menu = [item for _, items in _grouped_commands() for item in items]
+    """Menu '/' Telegrama: najczestsze komendy (MENU_COMMANDS), potem skille z komenda. Pozostale — /pomoc."""
+    by_polish = {COMMAND_ALIASES.get(name, name): (name, desc) for name, desc in builtin_commands()}
+    menu = [by_polish[name] for name in MENU_COMMANDS if name in by_polish]
     for skill in skills:
         if skill.get("command"):
             description = " ".join((skill.get("description") or "").split()) or "Skill"
@@ -736,12 +776,13 @@ def format_audit_vulns(data: dict) -> str:
 
 
 def format_investigation(event: dict, limit: int = 3000) -> str:
-    """Raport workera, ktory sam zbadal alert z zewnatrz (webhook)."""
+    """Raport workera, ktory sam zbadal alert — z zewnatrz (webhook) albo czuwania (Pipe pisze pierwszy)."""
     report = str(event.get("report", "")).strip()
     if len(report) > limit:
         report = report[:limit] + "\n[...]"
-    return (tr("<b>Zbadalem alert</b>", "<b>I investigated the alert</b>")
-            + f" — {html.escape(str(event.get('title', '')))}\n\n{report_html(report, limit)}")
+    head = tr("🔎 <b>Ustalilem, co sie stalo</b>", "🔎 <b>I found out what happened</b>") if event.get("auto") \
+        else tr("<b>Zbadalem alert</b>", "<b>I investigated the alert</b>")
+    return head + f" — {html.escape(str(event.get('title', '')))}\n\n{report_html(report, limit)}"
 
 
 def format_reminder(event: dict, limit: int = 3000) -> str:
@@ -781,3 +822,147 @@ def format_approval(event: dict) -> str:
         lines.append(html.escape(str(event["plan"])))
     lines.append(tr("<i>Zgoda wygasa po 30 minutach.</i>", "<i>The approval expires after 30 minutes.</i>"))
     return "\n".join(lines)
+
+
+# ─── Pipe pisze pierwszy: stan, skrzynka, projekty, powiadomienia ───────────
+
+STATUS_MARK = {"ok": "🟢", "warning": "🟠", "critical": "🔴"}
+LEVEL_MARK = {"ok": "", "warn": " ⚠️", "crit": " 🔴"}
+SEVERITY_MARK = {"critical": "🔴", "warning": "🟠", "ok": "✅", "info": "💡"}
+TYPE_MARK = {"digest": "☀️", "welcome": "👋", "investigation": "🔎", "routine": "🕒", "notice": "🌙"}
+
+
+def _bar(pct: float, width: int = 10) -> str:
+    filled = max(0, min(width, round(float(pct) * width / 100)))
+    return "▰" * filled + "▱" * (width - filled)
+
+
+def format_overview(data: dict) -> str:
+    """Stan serwera bez LLM (/status): naglowek zwyklymi slowami, paski procesora, pamieci i dysku."""
+    mark = STATUS_MARK.get(str(data.get("status")), "🟢")
+    host = html.escape(str(data.get("hostname") or ""))
+    lines = [f"{mark} <b>{html.escape(str(data.get('headline', '')))}</b>" + (f"\n<i>{host}</i>" if host else ""), ""]
+    for gauge in data.get("gauges") or []:
+        label = html.escape(str(gauge.get("label", "")))
+        lines.append(f"<code>{_bar(gauge.get('pct', 0))}</code> <b>{int(gauge.get('pct', 0))}%</b> {label}"
+                     f"{LEVEL_MARK.get(str(gauge.get('level')), '')}\n      <i>{html.escape(str(gauge.get('value', '')))}</i>")
+    if data.get("facts"):
+        lines.append("\n" + html.escape(" · ".join(data["facts"])))
+    projects = data.get("projects") or []
+    if projects:
+        running = sum(1 for p in projects if p.get("status") == "running")
+        lines.append(tr(f"Projekty w warsztacie: {len(projects)} (dziala: {running}) — /projekty",
+                        f"Workshop projects: {len(projects)} (running: {running}) — /projects"))
+    if data.get("unread"):
+        lines.append(tr(f"📬 Nowe wiadomosci od Pipe: <b>{int(data['unread'])}</b> — /nowosci",
+                        f"📬 New messages from Pipe: <b>{int(data['unread'])}</b> — /news"))
+    return "\n".join(lines)
+
+
+def format_feed_item(item: dict, limit: int = 2500) -> str:
+    """Wiadomosc ze skrzynki (podpowiedz, ustalenia, alert, raport) jako HTML Telegrama."""
+    mark = TYPE_MARK.get(str(item.get("type")), SEVERITY_MARK.get(str(item.get("severity")), "💡"))
+    title = html.escape(str(item.get("title", "")))
+    text = str(item.get("text", "") or "").strip()
+    if len(text) > limit:
+        text = text[:limit] + "\n[...]"
+    body = f"{mark} <b>{title}</b>"
+    if text:
+        body += "\n\n" + (report_html(text, limit) if item.get("type") == "investigation" else markdown_html(text))
+    if item.get("done"):
+        body += "\n\n✓ " + html.escape(str(item["done"]))
+    return body
+
+
+def feed_buttons(item: dict, admin: bool) -> list[tuple[str, str]]:
+    """Przyciski wiadomosci: (etykieta, callback_data `fa:<id>:<indeks>`) — akcje zbudowal backend."""
+    if item.get("done") or not item.get("feed_id", item.get("id")):
+        return []
+    feed_id = str(item.get("feed_id") or item.get("id"))
+    buttons = []
+    for index, action in enumerate(item.get("actions") or []):
+        if action.get("admin") and not admin:
+            continue
+        buttons.append((str(action.get("label", "?"))[:40], f"fa:{feed_id}:{action.get('index', index)}"))
+    return buttons
+
+
+def format_feed(data: dict, limit: int = 8) -> str:
+    """Skrzynka (/nowosci): ostatnie wiadomosci od Pipe, nowe oznaczone."""
+    items = (data.get("items") or [])[:limit]
+    if not items:
+        return tr("📬 <b>Skrzynka jest pusta</b>\nCisza — nic nie wymaga Twojej uwagi. Napisze sam, gdy cos zauwaze.",
+                  "📬 <b>The inbox is empty</b>\nQuiet — nothing needs your attention. I will write when I notice something.")
+    lines = [tr(f"📬 <b>Od Pipe</b> — nowe: {int(data.get('unread', 0))}", f"📬 <b>From Pipe</b> — new: {int(data.get('unread', 0))}")]
+    for item in items:
+        mark = TYPE_MARK.get(str(item.get("type")), SEVERITY_MARK.get(str(item.get("severity")), "💡"))
+        new = " 🆕" if item.get("unread") else ""
+        done = f" <i>({html.escape(str(item['done']))})</i>" if item.get("done") else ""
+        lines.append(f"{mark} {html.escape(str(item.get('at', ''))[5:])} — {html.escape(str(item.get('title', '')))}{new}{done}")
+    return "\n".join(lines)
+
+
+def format_projects(data: dict) -> str:
+    """Warsztat (/projekty): projekty ze stanem i adresem."""
+    projects = data.get("projects") or []
+    workspace = html.escape(str(data.get("workspace", "")))
+    if not projects:
+        return tr(f"🧩 <b>Warsztat</b> <code>{workspace}</code>\nNie ma jeszcze projektow. Napisz np. <i>\"sklonuj "
+                  "https://github.com/... i uruchom\"</i> — Pipe sklonuje repozytorium, sprawdzi, co to jest, i uruchomi je "
+                  "w izolowanym kontenerze.",
+                  f"🧩 <b>Workshop</b> <code>{workspace}</code>\nNo projects yet. Write e.g. <i>\"clone https://github.com/... "
+                  "and run it\"</i> — Pipe clones the repository, checks what it is and starts it in an isolated container.")
+    lines = [tr(f"🧩 <b>Warsztat</b> <code>{workspace}</code>", f"🧩 <b>Workshop</b> <code>{workspace}</code>")]
+    for project in projects:
+        status = str(project.get("status", "none"))
+        mark = {"running": "🟢", "partial": "🟠", "stopped": "🔴"}.get(status, "⚪")
+        word = {"running": tr("dziala", "running"), "partial": tr("czesciowo", "partly"), "stopped": tr("zatrzymany", "stopped")}.get(
+            status, tr("nieuruchomiony", "not started"))
+        url = (project.get("run") or {}).get("url", "") if status in ("running", "partial") else ""
+        stack = ", ".join(project.get("stack") or [])
+        lines.append(f"{mark} <b>{html.escape(str(project.get('name', '')))}</b> — {word}"
+                     + (f" · <code>{html.escape(url)}</code>" if url else "") + (f" <i>[{html.escape(stack)}]</i>" if stack else ""))
+    return "\n".join(lines)
+
+
+def project_buttons(project: dict, admin: bool) -> list[tuple[str, str]]:
+    """Przyciski projektu: logi; administrator — zatrzymaj albo wznow (callback `pj:<op>:<nazwa>`)."""
+    name = str(project.get("name", ""))[:40]
+    buttons = [(tr("📜 Logi", "📜 Logs"), f"pj:logs:{name}")]
+    if admin and project.get("status") == "running":
+        buttons.append((tr("⏹ Zatrzymaj", "⏹ Stop"), f"pj:stop:{name}"))
+    elif admin and project.get("status") in ("stopped", "partial"):
+        buttons.append((tr("▶ Wznow", "▶ Resume"), f"pj:start:{name}"))
+    return buttons
+
+
+def format_prefs(data: dict) -> str:
+    """Ustawienia powiadomien (/powiadomienia)."""
+    level = {"all": tr("wszystko", "everything"), "important": tr("wazne", "important"),
+             "critical": tr("tylko krytyczne", "critical only")}.get(str(data.get("level")), str(data.get("level")))
+    quiet = html.escape(str(data.get("quiet") or "")) or tr("wylaczona", "off")
+    lines = [tr("🔔 <b>Powiadomienia</b>", "🔔 <b>Notifications</b>"),
+             tr(f"Kiedy: <b>{level}</b>", f"When: <b>{level}</b>"),
+             tr(f"Cisza nocna: <b>{quiet}</b> (wtedy tylko sprawy krytyczne, reszta rano)",
+                f"Quiet hours: <b>{quiet}</b> (critical matters only, the rest in the morning)"),
+             tr(f"Podpowiedzi dziennie: <b>{int(data.get('per_day', 0))}</b>",
+                f"Suggestions per day: <b>{int(data.get('per_day', 0))}</b>")]
+    if data.get("muted"):
+        lines.append(tr("Wyciszone: ", "Muted: ") + html.escape(", ".join(data["muted"])))
+    lines.append(tr("<i>Wszystko i tak trafia do skrzynki — /nowosci.</i>", "<i>Everything lands in the inbox anyway — /news.</i>"))
+    return "\n".join(lines)
+
+
+def prefs_buttons(data: dict) -> list[list[tuple[str, str]]]:
+    """Wiersze przyciskow ustawien (callback `pf:<pole>:<wartosc>`); wybrane oznaczone kropka."""
+    def mark(on: bool, label: str) -> str:
+        return ("● " if on else "") + label
+
+    level, quiet, per_day = data.get("level"), data.get("quiet") or "", data.get("per_day")
+    return [
+        [(mark(level == value, label), f"pf:level:{value}") for value, label in
+         (("all", tr("Wszystko", "Everything")), ("important", tr("Wazne", "Important")), ("critical", tr("Krytyczne", "Critical")))],
+        [(mark(quiet == value, label), f"pf:quiet:{value or 'off'}") for value, label in
+         (("", tr("Bez ciszy", "No quiet")), ("22:00-07:00", "🌙 22–7"), ("23:00-08:00", "🌙 23–8"))],
+        [(mark(per_day == value, tr(f"{value}/dzien", f"{value}/day")), f"pf:per_day:{value}") for value in (0, 1, 3, 5)],
+    ]

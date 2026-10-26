@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.38.0
+Pipe v0.39.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -38,6 +38,12 @@ and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
 | `core/patching.py` | `/patch`: patching in the background without a question for every command, parts through the safety fuse, a fix layer inside the image, cleanup, result |
 | `core/fleet.py` | Remote servers in the scan and patches: the package database over ssh, commands as root or through `sudo -n` |
 | `core/welcome.py` | Welcome after installation: map, security score, what Pipe watches |
+| `core/feed.py` | The inbox: messages Pipe sent on its own, with actions; the notification decision (level, quiet hours, limit, muted kinds) |
+| `core/insights.py` | Suggestions without an LLM: disk full forecast, space to reclaim, restarts, a pending reboot, growing RAM |
+| `core/overview.py` | Server status without an LLM (dashboard, `/status`): headline, gauges, the last day's trend |
+| `core/cleanup.py` | Free up space: untagged images, build cache, downloaded packages (`/cleanup`, the suggestion button) |
+| `core/projects.py` | The workshop: cloning, recognising a project, the run plan, the sandbox (`docker run` without privileges) |
+| `core/toolsets.py` | Tools on demand: tool groups enabled by keywords or `load_tools` |
 | `skills_builtin/`, `skills_builtin_en/` | Built-in skills (Polish and English), installed into `data/skills` at startup according to `PIPE_LANG` |
 | `core/i18n.py` | Pipe's language (`PIPE_LANG=pl\|en`): `tr("polski", "english")` next to the source text, `prompt()` picks `prompts_en.py` / `tools_en.py` |
 | `core/selfupdate.py` | Updating Pipe itself: a helper container (`git pull`, the release image from GHCR or `docker-compose up -d --build`), report after the restart |
@@ -288,7 +294,7 @@ You should see:
 |------|-------------|-----------------------|
 | `execute_command` | Shell commands; in docker mode with `host: true` on the host (helper container) | Depends on classification; `host`: always |
 | `read_file` | Reading files (secrets redacted) | No |
-| `write_file` | Writing files | Always |
+| `write_file` | Writing files (creates missing directories) | Yes; in the workshop (`WORKSPACE_DIR`): no |
 | `change_directory` | Working directory | No |
 | `git_command` | Git operations | Modifying ones: yes |
 | `system_stats` | CPU/RAM/disks/processes from the host's `/proc` | No |
@@ -310,6 +316,12 @@ You should see:
 | `journal` | Journal of approved changes and undoing them | Undo: yes |
 | `server_history` | What changed, load/RAM/disk charts, certificates/sites/DNS/backups | No |
 | `server_md`, `directory`, `skill_manage`, `vibe` | Agent memory | No |
+| `project` | The workshop: `clone`, `inspect`, `exec` (isolated container), `run`, `logs`, `stop`/`start`, `pull`, `remove` | `run` and `remove`: yes; the rest: no |
+| `load_tools` | Enables a group of tools whose descriptions the model has not received yet (tools on demand) | No |
+
+With `TOOLS_MODE=lazy` (default) the model starts with the basic tools only (commands, files, git, system state,
+Docker, network, server history, `project`, `load_tools`). The `memory`, `security`, `schedule`, `fleet`, `web`,
+`diagram` and `update` groups turn on by themselves when a message needs them, or through `load_tools`.
 
 ## More `.env` settings
 
@@ -347,6 +359,18 @@ You should see:
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | by provider, pl | Voice transcription (gemini/openai/groq automatically; `STT_*` takes precedence) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Failed verification of a config file change -> the backup is restored automatically |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Daily token / USD cost limit (0 = no limit) |
+| `TOOLS_MODE` | `lazy` | `lazy` -- tools on demand; `all` -- the descriptions of all tools with every request |
+| `CONTEXT_KEEP_TURNS` | 2 | Tool results older than this many turns go to the model trimmed (0 = always in full) |
+| `NOTIFY_LEVEL` | `important` | When to notify: `all`, `important`, `critical` (change it while running: `/notifications`) |
+| `QUIET_HOURS` | -- | Quiet hours, e.g. `22:00-07:00`: non-critical messages wait until the morning |
+| `INSIGHTS_PER_DAY` | 3 | At most this many suggestions a day with a notification (the rest in the inbox) |
+| `INSIGHTS_INTERVAL` | 3600 | How often (s) to look for suggestions (0 = off) |
+| `AUTO_INVESTIGATE`, `AUTO_INVESTIGATE_DAILY` | `critical`, 4 | Pipe investigates the cause of an alert itself (`critical`, `all`, `off`) and the daily limit |
+| `WORKSPACE_DIR` | `/root/pipe-workspace` | The workshop: the host directory for projects and the agent's scripts |
+| `WORKSPACE_AUTONOMY` | 1 | In the workshop, file writes and `project exec` without asking (0 = approval for every operation) |
+| `PROJECT_MEMORY`, `PROJECT_CPUS` | `1g`, `1` | Limits of project containers (sandbox and services) |
+| `PROJECT_EXEC_TIMEOUT`, `PROJECT_BUILD_TIMEOUT` | 600, 1800 | Time limit (s) of a sandbox command and of building/starting |
+| `PROJECT_MAX_MB` | 1024 | The largest size of a cloned repository |
 
 ## Stopping
 

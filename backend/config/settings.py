@@ -114,6 +114,37 @@ WORKER_MAX_ITERATIONS: int = _int("WORKER_MAX_ITERATIONS", 8)
 WORKER_TIMEOUT: int = _int("WORKER_TIMEOUT", 240)
 MAX_WORKERS: int = _int("MAX_WORKERS", 6)
 
+# ─── Oszczednosc tokenow ────────────────────────────────────────────────────
+# lazy (domyslnie): model dostaje opisy grup narzedzi, ktorych rozmowa potrzebuje (core/toolsets.py), reszta
+# na zadanie (load_tools); all: wszystkie narzedzia przy kazdym zapytaniu (jak przed v0.39).
+TOOLS_MODE: str = "all" if os.getenv("TOOLS_MODE", "lazy").strip().lower() in ("all", "full", "wszystkie") else "lazy"
+# Wyniki narzedzi starsze niz tyle tur rozmowy ida do modelu skrocone (0 = zawsze w calosci).
+CONTEXT_KEEP_TURNS: int = _int("CONTEXT_KEEP_TURNS", 2)
+
+# ─── Pipe pisze pierwszy: skrzynka, podpowiedzi, badanie alertow ────────────
+# Poziom powiadomien: all | important (domyslnie) | critical. Zmienia go tez /powiadomienia (zapis w DATA_DIR).
+NOTIFY_LEVEL: str = os.getenv("NOTIFY_LEVEL", "important").strip().lower()
+# Cisza nocna, np. 22:00-07:00 (pusta = wylaczona): niekrytyczne wiadomosci czekaja do jej konca.
+QUIET_HOURS: str = os.getenv("QUIET_HOURS", "").strip()
+# Najwyzej tyle podpowiedzi (prognoza dysku, miejsce do odzyskania...) dziennie z powiadomieniem.
+INSIGHTS_PER_DAY: int = _int("INSIGHTS_PER_DAY", 3)
+# Co ile sekund Pipe szuka podpowiedzi (0 = wylaczone).
+INSIGHTS_INTERVAL: int = _int("INSIGHTS_INTERVAL", 3600)
+# Pipe sam bada przyczyne alertu (worker, tylko odczyty) i pisze, co ustalil: critical (domyslnie) | all | off.
+AUTO_INVESTIGATE: str = os.getenv("AUTO_INVESTIGATE", "critical").strip().lower()
+AUTO_INVESTIGATE_DAILY: int = _int("AUTO_INVESTIGATE_DAILY", 4)
+
+# ─── Warsztat: projekty, ktore Pipe klonuje i uruchamia sam ─────────────────
+# Katalog hosta na projekty (w trybie docker /root jest zapisywalny). W nim zapis plikow i kod w izolowanym
+# kontenerze nie wymagaja potwierdzenia (WORKSPACE_AUTONOMY=0 — pytanie o kazda operacje).
+WORKSPACE_DIR: str = os.getenv("WORKSPACE_DIR", "/root/pipe-workspace").strip() or "/root/pipe-workspace"
+WORKSPACE_AUTONOMY: bool = os.getenv("WORKSPACE_AUTONOMY", "1").strip().lower() not in ("0", "false", "no", "nie")
+PROJECT_MEMORY: str = os.getenv("PROJECT_MEMORY", "1g").strip() or "1g"
+PROJECT_CPUS: str = os.getenv("PROJECT_CPUS", "1").strip() or "1"
+PROJECT_EXEC_TIMEOUT: int = _int("PROJECT_EXEC_TIMEOUT", 600)
+PROJECT_BUILD_TIMEOUT: int = _int("PROJECT_BUILD_TIMEOUT", 1800)
+PROJECT_MAX_MB: int = _int("PROJECT_MAX_MB", 1024)
+
 # ─── Internet (web_search / web_fetch) ──────────────────────────────────────
 # on (domyslnie): DuckDuckGo, a gdy nie odpowiada — Wikipedia (bez klucza API); off: agent nie ma dostepu do internetu.
 WEB_SEARCH: str = "off" if os.getenv("WEB_SEARCH", "on").strip().lower() in ("0", "off", "false", "no", "nie") else "on"

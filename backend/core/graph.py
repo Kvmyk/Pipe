@@ -362,6 +362,13 @@ def locate(tool: str, args: dict[str, Any], cwd: str = "/") -> list[str]:
         nodes = _nodes_for_command(("git " + command) if tool == "git_command" else command, cwd, infra)
     elif tool in ("web_search", "web_fetch", "software_info"):
         nodes = ["internet"]
+    elif tool == "project":
+        name = str(args.get("name", "") or "").strip().lower()
+        names = {c.name for c in (infra.containers or [])} if infra else set()
+        if args.get("operation") == "clone":
+            nodes = ["internet"]
+        elif f"pipe-{name}" in names:
+            nodes = [f"c:pipe-{name}"]
     cleaned = [n for n in nodes if n not in ("t:", "t:local")]
     return cleaned or ["host"]
 
@@ -392,6 +399,9 @@ _LABELS = {
     "software_info": ("oprogramowanie: {operation} {product}{package} {version}", "software: {operation} {product}{package} {version}"),
     "journal": ("dziennik zmian ({operation})", "change journal ({operation})"),
     "security_audit": ("audyt bezpieczenstwa", "security audit"),
+    "security_patch": ("latanie podatnosci ({scope})", "patching vulnerabilities ({scope})"),
+    "project": ("projekt {name}: {operation} {command}", "project {name}: {operation} {command}"),
+    "load_tools": ("wlacza narzedzia", "enables tools"),
 }
 _BLANK = re.compile(r"\s+")
 
