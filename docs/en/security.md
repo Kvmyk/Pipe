@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.45.0
+Pipe v0.46.0
 
 ## Model
 
@@ -221,9 +221,14 @@ A file sent by the user is foreign text too: a log can contain a line written by
 
 `/web on` exposes `pipe web` at a public HTTPS address (`core/webpublic.py`, `core/webaccess.py`):
 
+- mikr.us (`/web on mikrus`, or on its own when `/klucz_api` is on the host): Caddy over plain HTTP on IPv6 only
+  (`[::]:7443`), HTTPS ends at the mikr.us proxy. The proxy -> server hop goes without TLS over the mikr.us network;
+  the device cookie is `Secure`, so the browser sends it only over HTTPS. The client address comes from the proxy's
+  `X-Forwarded-For` -- it can be forged by connecting to the port directly, but it is only shown and used for the
+  attempt limit (the global cap on pending requests stays).
 - Tunnel (`/web on tunnel`, or on its own when ports 80/443 cannot be reached): a `cloudflared` container (pinned
-  version) without ports or the host network, only with the bridge socket, `--cap-drop ALL`, `no-new-privileges`; root
-  inside the container only to open the 0600 socket. Cloudflare terminates TLS, so it sees the page traffic (the chat,
+  version) without ports, files or privileges (`--cap-drop ALL`, `no-new-privileges`), sharing the network of Pipe's
+  container -- the bridge listens for it only on `127.0.0.1:7402`, invisible from outside. Cloudflare terminates TLS, so it sees the page traffic (the chat,
   the device cookie) -- a deliberate trade-off for working without open ports; whoever does not want it uses
   `/web on direct` with their own domain or an SSH tunnel. The client address comes from the `Cf-Connecting-Ip` header
   (set by Cloudflare). A new tunnel address after a restart is a new domain, so old devices' cookies do not match and

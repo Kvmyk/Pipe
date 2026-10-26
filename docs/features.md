@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.45.0
+Pipe v0.46.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -741,7 +741,11 @@ Pipe stawia przed soba serwer HTTPS (Caddy w kontenerze `pipe-web`) i odpisuje a
 Encrypt powstaje sam, bez kupowania domeny. Z wlasna domena: `/web wlacz pipe.mojafirma.pl` (rekord DNS musi juz
 wskazywac na serwer). Port to 443, a gdy jest zajety (np. przez nginx) -- 8443; wlasny: `/web wlacz 9443`.
 
-**Gdy dostawca nie wpuszcza ruchu na 80/443** (mikr.us i inne serwery na wspoldzielonym adresie, serwer w domu za
+**Na mikr.us** Pipe rozpoznaje serwer (plik `/klucz_api`) i korzysta z subdomen mikr.us: strona nasluchuje na
+IPv6, a mikr.us sam daje adres `https://<serwer>-7443.mikrus.cloud` z certyfikatem. Nic nie trzeba otwierac ani
+zakladac, adres sie nie zmienia, ruch nie idzie przez nikogo poza mikr.us. Wymuszenie: `/web wlacz mikrus`.
+
+**Gdy dostawca nie wpuszcza ruchu na 80/443** (inne serwery na wspoldzielonym adresie, serwer w domu za
 routerem, panel chmury z zablokowanymi portami), certyfikatu nie da sie wystawic. Pipe sprawdza to sam: jesli
 publiczny adres nie jest adresem serwera albo certyfikat nie powstaje, przechodzi na **tunel Cloudflare** i odpisuje
 adresem w rodzaju `https://quiet-river-1a2b.trycloudflare.com`. Tunel to kontener `cloudflared`, ktory sam laczy sie
@@ -750,6 +754,9 @@ szyfruje polaczenie z przegladarka), szybki tunel nie ma gwarancji dzialania, po
 kilka sekund zamiast od razu, a adres zmienia sie po restarcie serwera -- Pipe zauwaza nowy i przysyla go w
 wiadomosci (urzadzenia wpuszcza sie wtedy jeszcze raz). Wymuszenie: `/web wlacz tunel` albo
 `/web wlacz bezposrednio`.
+
+Zanim Pipe poda link, sam go otwiera z internetu i sprawdza, czy odpowiada strona prosby o dostep. Gdy nie, mowi
+dlaczego i pokazuje ostatnie linie z logow Caddy albo `cloudflared`.
 
 **Jak sie wchodzi.** Strona nie ma hasla ani tajnego linku. Otwierasz adres, naciskasz *Popros o dostep* i widzisz
 kod, np. `K7P-4QX`. W tym samym momencie Pipe pisze do Ciebie (Telegram, `pipe web` na innym urzadzeniu, CLI):

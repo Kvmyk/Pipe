@@ -1,5 +1,19 @@
 # Historia zmian -- Pipe
 
+## v0.46.0 (2026-10-26)
+
+### `/web` na mikr.us i naprawiony tunel
+
+- Tunel Cloudflare z v0.45.0 nie dzialal nigdzie: cloudflared uruchamia szybki tunel tylko z jawnym `--url`, a Pipe
+  podawal mu gniazdo (`--unix-socket`), wiec kontener konczyl sie bledem, a Pipe pokazywal ogolnikowe "Cloudflare
+  chwilowo odmawia". Teraz cloudflared dostaje `--url` do mostu na 127.0.0.1 i dzieli siec z kontenerem Pipe --
+  nadal bez zadnego otwartego portu
+- Na mikr.us (`/klucz_api` na serwerze) `/web wlacz` korzysta z subdomen mikr.us: strona slucha na IPv6, a adres
+  `https://<serwer>-7443.mikrus.cloud` z certyfikatem daje sam mikr.us -- bez Cloudflare, adres sie nie zmienia.
+  Wymuszenie: `/web wlacz mikrus`; gdy subdomena nie odpowiada, Pipe przechodzi na tunel
+- Zanim Pipe poda link, sam go otwiera z internetu i sprawdza, czy odpowiada strona prosby o dostep; przy bledzie
+  pokazuje ostatnie linie z logow Caddy albo cloudflared zamiast ogolnikow
+
 ## v0.45.0 (2026-10-26)
 
 ### Gotowe dodatki: Outlook, Microsoft 365 (Teams), Google, GitHub

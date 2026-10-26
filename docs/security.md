@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.45.0
+Pipe v0.46.0
 
 ## Model
 
@@ -218,9 +218,14 @@ Plik wyslany przez uzytkownika to tez obcy tekst -- log moze zawierac linie napi
 
 `/web wlacz` wystawia `pipe web` pod publicznym adresem HTTPS (`core/webpublic.py`, `core/webaccess.py`):
 
+- mikr.us (`/web wlacz mikrus` albo sam, gdy na hoscie jest `/klucz_api`): Caddy po zwyklym HTTP tylko na IPv6
+  (`[::]:7443`), HTTPS konczy proxy mikr.us. Odcinek proxy -> serwer idzie bez TLS przez siec mikr.us; ciasteczko
+  urzadzenia ma `Secure`, wiec przegladarka wysyla je tylko po HTTPS. Adres klienta z `X-Forwarded-For` proxy --
+  da sie go podrobic, laczac sie z portem wprost, ale sluzy tylko do pokazania i limitu prob (globalny limit
+  oczekujacych prosb zostaje).
 - Tunel (`/web wlacz tunel` albo sam, gdy porty 80/443 sa nieosiagalne): kontener `cloudflared` (przypieta wersja)
-  bez portow i bez sieci hosta, tylko z gniazdem mostu, `--cap-drop ALL`, `no-new-privileges`; root w kontenerze
-  tylko po to, by otworzyc gniazdo 0600. Cloudflare konczy TLS, wiec widzi ruch strony (tresc rozmowy, ciasteczko
+  bez portow, plikow i uprawnien (`--cap-drop ALL`, `no-new-privileges`), we wspolnej sieci z kontenerem Pipe --
+  most slucha dla niego tylko na `127.0.0.1:7402`, niewidocznym z zewnatrz. Cloudflare konczy TLS, wiec widzi ruch strony (tresc rozmowy, ciasteczko
   urzadzenia) -- to swiadomy kompromis za dzialanie bez otwartych portow; kto tego nie chce, uzywa
   `/web wlacz bezposrednio` z wlasna domena albo tunelu SSH. Adres klienta z naglowka `Cf-Connecting-Ip` (ustawia go
   Cloudflare). Nowy adres tunelu po restarcie = nowa domena, wiec ciasteczka starych urzadzen nie pasuja i trzeba je

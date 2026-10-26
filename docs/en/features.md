@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.45.0
+Pipe v0.46.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -760,7 +760,11 @@ Pipe puts an HTTPS server in front of itself (Caddy in the `pipe-web` container)
 issued on its own, without buying a domain. With your own domain: `/web on pipe.mycompany.com` (the DNS record must
 already point to the server). The port is 443, and when it is taken (e.g. by nginx) -- 8443; your own: `/web on 9443`.
 
-**When the provider lets no traffic in on 80/443** (mikr.us and other servers on a shared address, a home server
+**On mikr.us** Pipe recognises the server (the `/klucz_api` file) and uses mikr.us subdomains: the page listens on
+IPv6 and mikr.us itself gives the address `https://<server>-7443.mikrus.cloud` with a certificate. Nothing to open or
+sign up for, the address does not change, and traffic goes through nobody but mikr.us. To force it: `/web on mikrus`.
+
+**When the provider lets no traffic in on 80/443** (other servers on a shared address, a home server
 behind a router, a cloud panel with blocked ports), no certificate can be issued. Pipe checks this itself: if the
 public address is not the server's own address or the certificate is not issued, it switches to a **Cloudflare
 tunnel** and answers with an address like `https://quiet-river-1a2b.trycloudflare.com`. The tunnel is a `cloudflared`
@@ -769,6 +773,9 @@ Cloudflare (it encrypts the connection to the browser), a quick tunnel has no up
 page arrive every few seconds instead of instantly, and the address changes after a server restart -- Pipe notices the
 new one and sends it in a message (devices are let in once more then). To force it: `/web on tunnel` or
 `/web on direct`.
+
+Before Pipe gives you the link, it opens it from the internet itself and checks that the access-request page
+answers. If not, it says why and shows the last lines from the Caddy or `cloudflared` logs.
 
 **How you get in.** The page has no password and no secret link. You open the address, press *Ask for access* and
 see a code, e.g. `K7P-4QX`. At the same moment Pipe writes to you (Telegram, `pipe web` on another device, the CLI):

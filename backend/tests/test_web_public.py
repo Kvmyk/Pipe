@@ -131,6 +131,7 @@ class TestPublic:
         assert webpublic.parse_on(["https://Pipe.Example.com/", "8443"]) == (8443, "pipe.example.com", "")
         assert webpublic.parse_on(["tunel"]) == (0, "", "tunnel")
         assert webpublic.parse_on(["bezposrednio", "9443"]) == (9443, "", "direct")
+        assert webpublic.parse_on(["mikrus"]) == (0, "", "mikrus")
         assert webpublic.parse("tunel")[0] == "tunnel"
         for bad in (["99999"], ["nie domena"], ["evil.com;rm"], ["tunel", "8443"]):
             with pytest.raises(ValueError):
@@ -177,6 +178,7 @@ class TestPublic:
         monkeypatch.setattr(webpublic, "busy_ports", lambda: {22, 443})
         monkeypatch.setattr(webpublic, "ufw_rules", lambda root="": (True, {22}))
         monkeypatch.setattr(webpublic, "local_ipv4", lambda proc=None: {"203.0.113.9", "127.0.0.1"})
+        monkeypatch.setattr(webpublic, "mikrus_name", lambda: "")
         calls = []
 
         async def fake_run(*args, timeout=120):
@@ -212,11 +214,13 @@ class TestPublic:
         assert not webpublic.load_state().on and not webpublic.bridge_running() and "nie jest juz" in off
 
     def test_tunnel_runs_without_ports_or_privileges(self):
-        command = webpublic.tunnel_command()
+        command = webpublic.tunnel_command("container:abc123")
         joined = " ".join(command)
-        assert "--network" not in command and "-p" not in command and "docker.sock" not in joined
-        assert "--cap-drop ALL" in joined and "no-new-privileges" in joined
-        assert command[-4:] == ["tunnel", "--no-autoupdate", "--unix-socket", "/run/pipe-web/web.sock"]
+        assert "--network container:abc123" in joined and "-p" not in command and "-v" not in command
+        assert "docker.sock" not in joined and "--cap-drop ALL" in joined and "no-new-privileges" in joined
+        # szybki tunel startuje tylko z jawnym --url (z samym --unix-socket cloudflared konczy sie bledem)
+        assert command[-4:] == ["tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{webpublic.TUNNEL_PORT}"]
+        assert "--unix-socket" not in command
         logs = ("INF Requesting new quick Tunnel on trycloudflare.com...\n"
                 "INF |  https://brave-lion-ab12.trycloudflare.com  |\nINF later https://second-one-cd34.trycloudflare.com")
         assert webpublic.tunnel_host(logs) == "second-one-cd34.trycloudflare.com" and webpublic.tunnel_host("nic") == ""
@@ -230,7 +234,7 @@ class TestPublic:
             "     |-- 127.0.0.1\n        /32 host LOCAL\n")
         assert webpublic.local_ipv4(str(tmp_path)) == {"10.0.0.5", "127.0.0.1"}
 
-    def _fake_env(self, monkeypatch, *, local, logs, busy=frozenset({22})):
+    def _fake_env(self, monkeypatch, *, local, logs, busy=frozenset({22}), mikrus="", check=lambda url: ""):
         sock_dir = Path(tempfile.mkdtemp(prefix="pt"))
         monkeypatch.setattr(webpublic, "SOCKET_DIR", str(sock_dir))
         monkeypatch.setattr(webpublic.runtime, "kind", lambda: "native")
@@ -256,6 +260,11 @@ class TestPublic:
         monkeypatch.setattr(webpublic, "_run", fake_run)
         monkeypatch.setattr(webpublic, "public_ip", ip)
         monkeypatch.setattr(webpublic, "_tls_check", lambda *a: "refused")
+        monkeypatch.setattr(webpublic, "mikrus_name", lambda: mikrus)
+        monkeypatch.setattr(webpublic, "tunnel_network", lambda: "container:pipe")
+        monkeypatch.setattr(webpublic, "TUNNEL_PORT", 0)              # testy obok siebie — dowolny wolny port
+        monkeypatch.setattr(webpublic, "SELF_CHECK_TIMEOUT", 0)
+        monkeypatch.setattr(webpublic, "_fetch_page", check)
         return calls
 
     def _enable(self, **kwargs):
@@ -316,6 +325,49 @@ class TestPublic:
         assert ok and changed and not again and "second-bb22.trycloudflare.com" in hosts
         assert webpublic.load_state().host == "second-bb22.trycloudflare.com"
         assert published[-1]["type"] == "notice" and "second-bb22" in published[-1]["text"]
+
+    def test_mikrus_server_uses_its_own_https_subdomain(self, monkeypatch):
+        checked = []
+        calls = self._fake_env(monkeypatch, local=set(), logs=lambda c: "", mikrus="adam100",
+                               check=lambda url: checked.append(url) or "")
+        ok, text, state, _ = self._enable()
+        assert ok and "https://adam100-7443.mikrus.cloud" in text and "mikr.us" in text
+        assert (state.mode, state.listen, state.host) == ("mikrus", 7443, "adam100-7443.mikrus.cloud")
+        assert checked == ["https://adam100-7443.mikrus.cloud/"]                     # Pipe sprawdzil link, zanim go podal
+        caddy = next(c for c in calls if c[:3] == ["docker", "run", "-d"])
+        config = next(a for a in caddy if a.startswith("PIPE_CADDYFILE="))
+        assert "bind tcp6/[::]" in config and "http://:7443" in config and "header_up Host adam100-7443.mikrus.cloud" in config
+        assert not any(webpublic.TUNNEL_IMAGE in c for c in calls)
+
+    def test_mikrus_failure_falls_back_to_the_tunnel(self, monkeypatch):
+        def check(url):
+            return "HTTP 502" if "mikrus.cloud" in url else ""
+        self._fake_env(monkeypatch, local=set(), mikrus="adam100", check=check,
+                       logs=lambda c: "INF https://calm-bay-77aa.trycloudflare.com")
+        ok, text, state, _ = self._enable()
+        assert ok and state.mode == "tunnel" and "calm-bay-77aa" in text and "HTTP 502" in text
+
+    def test_tunnel_errors_show_cloudflared_logs(self, monkeypatch):
+        self._fake_env(monkeypatch, local=set(), logs=lambda c: "ERR failed to request quick Tunnel: 429 Too Many Requests")
+        monkeypatch.setattr(webpublic, "TUNNEL_TIMEOUT", 0.3)
+        ok, text, state, _ = self._enable(mode="tunnel")
+        assert not ok and "429 Too Many Requests" in text and not state.on
+
+    def test_tunnel_page_must_answer_before_the_link_is_given(self, monkeypatch):
+        self._fake_env(monkeypatch, local=set(), logs=lambda c: "INF https://dead-end-00aa.trycloudflare.com",
+                       check=lambda url: "timed out")
+        ok, text, state, _ = self._enable(mode="tunnel")
+        assert not ok and "dead-end-00aa" in text and "timed out" in text and not state.on
+
+    def test_mikrus_detection(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(webpublic.runtime, "to_local", lambda path: str(tmp_path) + path)
+        (tmp_path / "etc").mkdir()
+        (tmp_path / "etc" / "hostname").write_text("Adam100\n")
+        assert webpublic.mikrus_name() == ""                                   # bez /klucz_api to nie mikr.us
+        (tmp_path / "klucz_api").write_text("x")
+        assert webpublic.mikrus_name() == "adam100"
+        (tmp_path / "etc" / "hostname").write_text("zla nazwa;rm\n")
+        assert webpublic.mikrus_name() == ""
 
     def test_kubernetes_and_observe_are_refused(self, monkeypatch):
         monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
