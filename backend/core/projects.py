@@ -606,7 +606,7 @@ def free_port(projects: list[Project], *, low: int = PORT_RANGE[0], high: int = 
 
 def _hardening(config: Config) -> list[str]:
     return ["--security-opt", "no-new-privileges", "--pids-limit", str(max(64, config.pids * 2)),
-            "--memory", config.memory, "--cpus", hostinfo.cpu_limit(config.cpus)]
+            "--memory", config.memory, *hostinfo.cpu_args(config.cpus)]
 
 
 def plan_run(config: Config, project: Project, profile: Profile, *, strategy: str = "", port: int = 0,
@@ -827,7 +827,7 @@ def sandbox_argv(config: Config, project: Project, command: str, image: str, nam
             "--network", "bridge", "--cap-drop", "ALL",
             "--cap-add", "CHOWN", "--cap-add", "DAC_OVERRIDE", "--cap-add", "FOWNER", "--cap-add", "SETUID",
             "--cap-add", "SETGID", "--security-opt", "no-new-privileges", "--pids-limit", str(config.pids),
-            "--memory", config.memory, "--memory-swap", config.memory, "--cpus", hostinfo.cpu_limit(config.cpus),
+            "--memory", config.memory, "--memory-swap", config.memory, *hostinfo.cpu_args(config.cpus),
             "-e", "CI=1", "-e", "PYTHONUNBUFFERED=1", "-v", f"{project.path}:/work", "-w", "/work",
             image, "sh", "-c", command]
 
@@ -851,6 +851,9 @@ async def sandbox_exec(config: Config, project: Project, command: str, *, image:
     name = f"pipe-sbx-{project.name[:24]}-{secrets.token_hex(3)}"
     output, code = await _run(sandbox_argv(config, project, command, chosen, name),
                               timeout=timeout or config.exec_timeout, kill_container=name)
+    if hostinfo.cpu_limit_rejected(output, code):
+        output, code = await _run(sandbox_argv(config, project, command, chosen, name),
+                                  timeout=timeout or config.exec_timeout, kill_container=name)
     return _tail(memory.redact_secrets(output)[0]), code
 
 

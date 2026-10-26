@@ -324,7 +324,7 @@ def docker_command(directory: str, bump: Bump, uid: int, gid: int) -> str:
     env = {"HOME": "/tmp", "CI": "1", "npm_config_update_notifier": "false", **env}
     argv = ["docker", "run", "--rm", "--init", "--label", "pipe.appdeps=1", "--network", "bridge", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", str(PIDS), "--memory", MEMORY,
-            "--memory-swap", MEMORY, "--cpus", hostinfo.cpu_limit(CPUS), "--user", f"{int(uid)}:{int(gid)}"]
+            "--memory-swap", MEMORY, *hostinfo.cpu_args(CPUS), "--user", f"{int(uid)}:{int(gid)}"]
     for key, value in env.items():
         argv += ["-e", f"{key}={value}"]
     argv += ["-v", f"{directory}:/work", "-w", "/work", IMAGES[bump.manager], "sh", "-c", command]

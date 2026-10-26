@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 from backend.config import settings
-from backend.core import appdeps, audit, executor, fleet, hostexec, memory, runtime, safety, vulns
+from backend.core import appdeps, audit, executor, fleet, hostexec, hostinfo, memory, runtime, safety, vulns
 from backend.core.events import Progress
 from backend.core.hostinfo import human_bytes
 from backend.core.i18n import is_en, lang, tr
@@ -394,6 +394,8 @@ class Run:
                     self.emit(tr(f"{bump.directory}: {manager.manager} podbija ", f"{bump.directory}: {manager.manager} bumps ")
                               + _names([n for n, _ in manager.packages], 4))
                     output, rc = await self.sh(appdeps.docker_command(bump.directory, manager, uid, gid))
+                    if hostinfo.cpu_limit_rejected(output, rc):     # kontener nie wystartowal — nic sie nie zmienilo
+                        output, rc = await self.sh(appdeps.docker_command(bump.directory, manager, uid, gid))
                     outputs.append(output)
                     if rc == 0:
                         changed += 1

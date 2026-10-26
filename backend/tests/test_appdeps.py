@@ -142,6 +142,19 @@ class TestCpuLimit:
         command = appdeps.docker_command("/srv/shop", appdeps.Bump("npm", [("a", "1.0.0")], {"a"}), 0, 0)
         assert "--cpus 1 " in command
 
+    def test_rejected_cpu_quota_drops_the_limit(self, monkeypatch):
+        from backend.core import hostinfo
+
+        monkeypatch.setattr(hostinfo, "_cpu_limit_rejected", False)
+        error = ('docker: Error response from daemon: failed to create task for container: ... failed to write "100000": '
+                 'write /sys/fs/cgroup/cpu,cpuacct/docker/3b06/cpu.cfs_quota_us: invalid argument.')
+        assert not hostinfo.cpu_limit_rejected("npm ERR! code ERESOLVE", 1)
+        assert not hostinfo.cpu_limit_rejected(error, 1)
+        assert "--cpus" in appdeps.docker_command("/srv/shop", appdeps.Bump("npm", [("a", "1.0.0")], {"a"}), 0, 0)
+        assert hostinfo.cpu_limit_rejected(error, 125)
+        command = appdeps.docker_command("/srv/shop", appdeps.Bump("npm", [("a", "1.0.0")], {"a"}), 0, 0)
+        assert "--cpus" not in command and "--memory 2g" in command and "--pids-limit" in command
+
 
 class TestRequirementsEdit:
 

@@ -101,6 +101,26 @@ def cpu_limit(wanted: str, proc: str | None = None) -> str:
     return str(int(value)) if value == int(value) else f"{value:g}"
 
 
+# Jadro odrzuca kwote CPU wieksza niz ma cgroup nadrzedna (VPS w LXC/OpenVZ z ulamkiem procesora):
+# "failed to write ... cpu.cfs_quota_us: invalid argument". Wtedy kontenery ida bez --cpus.
+CPU_LIMIT_ERRORS = ("cpu.cfs_quota_us", "cpu.cfs_period_us", "cpu.max", "range of cpus")
+_cpu_limit_rejected = False
+
+
+def cpu_args(wanted: str, proc: str | None = None) -> list[str]:
+    """`["--cpus", N]` dla `docker run` albo nic, gdy ten serwer juz raz odrzucil limit procesora."""
+    return [] if _cpu_limit_rejected else ["--cpus", cpu_limit(wanted, proc)]
+
+
+def cpu_limit_rejected(output: str, code: int) -> bool:
+    """Czy `docker run` padl na limicie procesora (kod 125); zapamietuje to, kolejne kontenery ida bez --cpus."""
+    global _cpu_limit_rejected
+    if code != 125 or not any(marker in (output or "").lower() for marker in CPU_LIMIT_ERRORS):
+        return False
+    _cpu_limit_rejected = True
+    return True
+
+
 def uptime_seconds(proc: str | None = None) -> float | None:
     try:
         return float(_read(f"{_proc(proc)}/uptime").split()[0])

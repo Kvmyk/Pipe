@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.41.2 (2026-10-26)
+
+### Poprawki
+
+- `/zalataj` nadal nie podbijal zaleznosci aplikacji na VPS-ach w kontenerze (LXC/OpenVZ), ktore dostaja mniej niz
+  jeden pelny procesor: jadro odrzucalo limit `--cpus 1` ("cpu.cfs_quota_us: invalid argument", kod 125), a kontener
+  menedzera pakietow w ogole nie startowal. Gdy Docker odrzuci limit procesora, Pipe od razu ponawia bez niego i do
+  restartu nie ustawia go juz w kontenerach menedzera ani warsztatu. Limity pamieci i procesow zostaja
+
 ## v0.41.1 (2026-10-26)
 
 ### Poprawki
