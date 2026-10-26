@@ -1,6 +1,6 @@
 # Wdrozenie -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
 jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
@@ -113,13 +113,14 @@ dopisac `PIPE_LANG=en` do obu plikow `.env` i zrestartowac backend oraz bota.
 ## Budowanie obrazow
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG --push backend/
+docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG -f backend/Dockerfile --push .
 docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-telegram:TAG \
     -f clients/telegram/Dockerfile --push .
 ```
 
 Argumenty obrazu backendu: `INSTALL_KUBECTL=1` (domyslnie; `0` zmniejsza obraz), `KUBECTL_VERSION=stable`,
-`DOCKER_VERSION`. `backend/.dockerignore` nie wpuszcza do obrazu `.env` ani `data/`.
+`DOCKER_VERSION`. Obraz backendu buduje sie z korzenia repozytorium (zawiera tez strone `pipe web` dla `/web wlacz`);
+`backend/Dockerfile.dockerignore` wpuszcza do niego tylko `backend/` i `clients/webui/`, bez `.env`, `data/` i testow.
 
 ## Aktualizacja
 

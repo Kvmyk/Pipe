@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 ## Model
 
@@ -213,6 +213,32 @@ Plik wyslany przez uzytkownika to tez obcy tekst -- log moze zawierac linie napi
   Pipe) zwracaja modelowi odmowe -- pytanie o TAK nie powstaje. Egzekwuje to backend, nie klient.
 - Sesja jest przypieta do tozsamosci tokenu, ktora ja zalozyla: inny token nie odczyta jej historii ani nie
   zatwierdzi cudzej operacji, nawet znajac `session_id`.
+
+## Pipe w internecie (`/web`)
+
+`/web wlacz` wystawia `pipe web` pod publicznym adresem HTTPS (`core/webpublic.py`, `core/webaccess.py`):
+
+- Caddy (`caddy:2.11-alpine`, kontener `pipe-web`) ma siec hosta, ale tylko gniazdo mostu (`/tmp/pipe-web/web.sock`)
+  i wolumen certyfikatow -- bez `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`), `no-new-privileges`,
+  limity pamieci i procesow, bez API administracyjnego. Przekazuje adres klienta naglowkiem, ktorego klient nie
+  podrobi (Caddy go nadpisuje).
+- Most w procesie Pipe nie ma tokenu backendu. Bez ciasteczka urzadzenia odpowiada tylko strona prosby o dostep,
+  jej pliki i dwa wywolania parowania; reszta to 401. Host musi byc adresem strony, Origin -- `https://` tego adresu.
+- Parowanie: prosba dostaje kod (6 znakow, bez mylacych sie liter) i sekret znany tylko stronie, ktora ja wyslala.
+  Zgode daje administrator z rozmowy (przycisk z backendu albo `/web wpusc <kod>`); kod na ekranie i w wiadomosci
+  pozwala sprawdzic, ze zatwierdzasz swoje urzadzenie. Prosba wygasa po 5 minutach, najwyzej 5 prosb na 10 minut
+  z jednego IP i 10 oczekujacych naraz. Token urzadzenia trafia raz do strony, ktora poprosila, i tylko jako
+  ciasteczko `HttpOnly; Secure; SameSite=Lax` (Lax, zeby link z Telegrama otwieral sie zalogowany; API to POST
+  z kontrola Origin). Zatwierdzony, a nieodebrany w 2 minuty token jest usuwany.
+- Urzadzenie to zwykly token klienta w `tokens.json` (nazwa `web-...`, tylko skrot SHA-256, rola admin albo viewer),
+  wiec uprawnienia egzekwuje backend jak dla kazdego innego tokenu. Wygasa po 30 dniach bez uzycia; `/web odwolaj`
+  dziala od razu, takze dla otwartej karty (strumien zdarzen sprawdza urzadzenie co 25 s). Tokeny urzadzen nie
+  zamykaja trybu bez tokenu -- CLI i Telegram bez `AGENT_TOKEN` dzialaja dalej, a strona i tak wymaga urzadzenia.
+- Wlaczenie, wylaczenie, wpuszczanie i odwolywanie -- tylko administrator; kazda decyzja trafia do audit logu
+  z kodem, urzadzeniem i IP. Tryb obserwacji odmawia `/web wlacz`.
+
+Strona w internecie to nowa droga do Pipe, ktory ma `docker.sock`. Wpuszczaj tylko urzadzenia, ktorych kod widzisz
+na wlasnym ekranie, a nieuzywane odwoluj. Do samego czytania wystarczy *Tylko podglad*.
 
 ## MCP
 

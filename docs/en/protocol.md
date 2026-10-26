@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 ## Overview
 
@@ -68,6 +68,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `prefs` | optionally `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` or `off`), `per_day` (0-50), `args: unmute <kind>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- notification settings; changes by the administrator only |
 | `install` | `args`: `skill\|plugin <source> [filter]`; then `token` + `execute: true` | `/download` without the LLM: a preview `"data": {"token", "text", "skills", "servers", "empty"}` (the repository is cloned and removed), after YES `"data": {"text"}`; the token is valid 15 min, single-use. Admin only; no MCP servers in observe mode |
 | `mcp_servers` | `args`: empty (list), `add <name> <npx ...\|uvx ...\|docker run ...\|URL> [VAR=${MCP_X}]`, `remove <name>`, `reload` (also `dodaj`/`usun`/`odswiez`) | MCP servers Pipe uses: `"data": {"text", "servers": [{"name", "status"}]}`. Changes: admin only, adding not in observe mode |
+| `web` | `args`: empty (state), `on [port] [domain]` / `wlacz`, `off` / `wylacz`, `approve <code> [viewer]` / `wpusc`, `deny <code>` / `odrzuc`, `revoke <number\|name\|all>` / `odwolaj`; inbox buttons pass the request `id` and `role` | Pipe in the browser at a public address (`core/webpublic.py`, `core/webaccess.py`): `"data": {"on", "url", "devices", "pending", "text", "can_edit"}`; `on` sends `progress` frames and adds `ok`. Everyone sees the state (devices and requests -- administrator), changes are admin only. **Without the LLM** |
 | `cleanup` | -- | free up space **without the LLM**: `progress` frames, then `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Refused: viewer, observe mode |
 | `projects` | `args`: empty or `logs` / `stop` / `start` / `remove` (with `execute: true`, otherwise a preview), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; with `args` -- `"data": {"name", "text"}`. Changes: administrator, not in observe mode |
 | `run_skill` | `name` (skill name or command), optionally `args` | streaming |
@@ -206,6 +207,8 @@ by itself; both go through one `Watcher.auto_investigate()`, and `fix_message` i
 `{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- a suggestion without the LLM (disk
 full forecast, space to reclaim, container restarts, a pending server reboot, growing RAM).
 `{"type": "notice", "title", "text"}` -- a summary of what waited during quiet hours.
+`{"type": "login", "id", "code", "device", "ip", "title", "text"}` -- someone at the `/web` page asks for access; the
+inbox buttons (*Let in*, *View only*, *Reject*) call the `web` command. Always notified, administrators only.
 
 **The inbox.** `alert`, `insight`, `digest`, `welcome`, `routine`, `investigation` and `notice` events land in the
 inbox and also carry `feed_id`, `push` (whether to notify now: level, quiet hours, the suggestion limit), `held`

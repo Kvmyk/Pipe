@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 ## Model
 
@@ -216,6 +216,33 @@ A file sent by the user is foreign text too: a log can contain a line written by
   client.
 - A session is bound to the identity of the token that created it: another token can't read its history or approve
   someone else's operation, even knowing the `session_id`.
+
+## Pipe on the internet (`/web`)
+
+`/web on` exposes `pipe web` at a public HTTPS address (`core/webpublic.py`, `core/webaccess.py`):
+
+- Caddy (`caddy:2.11-alpine`, the `pipe-web` container) uses the host network, but gets only the bridge socket
+  (`/tmp/pipe-web/web.sock`) and the certificate volume -- no `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`),
+  `no-new-privileges`, memory and process limits, no admin API. It passes the client address in a header the client
+  cannot forge (Caddy overwrites it).
+- The bridge in Pipe's process has no backend token. Without a device cookie it serves only the access-request page,
+  its files and two pairing calls; everything else is 401. Host must be the page's address, Origin -- `https://` of
+  that address.
+- Pairing: a request gets a code (6 characters, no look-alike letters) and a secret known only to the page that sent
+  it. An administrator approves it from the chat (a backend-built button or `/web approve <code>`); the code on the
+  screen and in the message lets you check that you approve your own device. A request expires after 5 minutes, at
+  most 5 requests per 10 minutes from one IP and 10 pending at once. The device token goes once to the page that asked,
+  and only as an `HttpOnly; Secure; SameSite=Lax` cookie (Lax so a link from Telegram opens signed in; the API is POST
+  with an Origin check). A token approved but not collected within 2 minutes is removed.
+- A device is an ordinary client token in `tokens.json` (name `web-...`, only the SHA-256 hash, role admin or viewer),
+  so the backend enforces permissions as for any other token. It expires after 30 days without use; `/web revoke`
+  works at once, also for an open tab (the event stream checks the device every 25 s). Device tokens do not end the
+  no-token mode -- the CLI and Telegram without `AGENT_TOKEN` keep working, and the page still requires a device.
+- Turning on and off, letting in and revoking -- administrator only; every decision goes to the audit log with the
+  code, device and IP. Observe mode refuses `/web on`.
+
+A page on the internet is a new way into Pipe, which has `docker.sock`. Let in only devices whose code you see on your
+own screen, and revoke the ones you do not use. *View only* is enough for reading.
 
 ## MCP
 

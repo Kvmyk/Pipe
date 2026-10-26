@@ -28,6 +28,7 @@
     const response = await fetch("/api/request", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, session }),
     });
+    if (response.status === 401 && config.public) { location.reload(); throw new Error("HTTP 401"); }   // urzadzenie odwolane
     if (!response.ok) {
       let message = "HTTP " + response.status;
       try { message = (await response.json()).error || message; } catch (_) { /* brak tresci */ }
@@ -976,7 +977,7 @@
       case "digest": case "welcome": return event.title || t("report");
       case "investigation": return t("investigation") + " — " + (event.title || "");
       case "approval": return t("approval") + ": " + (event.command || "");
-      case "insight": case "notice": return event.title || "";
+      case "insight": case "notice": case "login": return event.title || "";
       default: return event.type;
     }
   }
@@ -1016,6 +1017,8 @@
     const source = new EventSource("/api/events");
     source.onmessage = (message) => { try { onLiveEvent(JSON.parse(message.data)); } catch (_) { /* niepelna ramka */ } };
     source.onerror = () => setLink(false, t("reconnecting"));
+    // Pipe wystawiony publicznie: odwolane urzadzenie wraca do strony prosby o dostep
+    source.addEventListener("down", (message) => { if (config.public && message.data === '"revoked"') location.reload(); });
   }
 
   // "Uruchom z GitHuba": adres repozytorium -> zwykla wiadomosc do agenta (klonuje, rozpoznaje, uruchamia w warsztacie)
@@ -1445,7 +1448,7 @@
     ["status", "status", "c_status"], ["nowosci", "news", "c_news"], ["projekty", "projects", "c_projects"],
     ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
     ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
-    ["sprzataj", "cleanup", "c_cleanup"], ["powiadomienia", "notifications", "c_notify"], ["mcp", "mcp", "c_mcp", true], ["pobierz", "download", "c_download", true],
+    ["sprzataj", "cleanup", "c_cleanup"], ["web", "web", "c_web", true], ["powiadomienia", "notifications", "c_notify"], ["mcp", "mcp", "c_mcp", true], ["pobierz", "download", "c_download", true],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
@@ -1550,6 +1553,7 @@
     nowosci: () => openInbox(),
     projekty: () => dataMessage({ command: "projects" }, (d) => listing(d.text)),
     sprzataj: () => cleanupRun(),
+    web: (args) => run({ command: "web", args }, t("working"), showData),
     mcp: (args) => dataMessage({ command: "mcp_servers", args }, (d) => listing(d.text)),
     pobierz: (args) => dataMessage({ command: "install", args }, (d) => installBody(d)),
     powiadomienia: () => home.openSettings(),
@@ -1833,7 +1837,7 @@
   $("stage-toggle").setAttribute("aria-label", t("showPanel") + " / " + t("hidePanel"));
   splitter.title = t("resizePanel"); splitter.setAttribute("aria-label", t("resizePanel"));
   applyStage();
-  input.placeholder = t("placeholder");
+  input.placeholder = t(matchMedia("(max-width: 480px)").matches ? "placeholderShort" : "placeholder");   // telefon: jedna linia
   $("attach").title = t("attach"); $("attach").setAttribute("aria-label", t("attach"));
   $("mic").title = t("mic"); $("mic").setAttribute("aria-label", t("mic"));
   $("dropzone-text").textContent = t("dropHere");

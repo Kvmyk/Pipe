@@ -3,7 +3,7 @@
   "use strict";
   const STRINGS = {
     pl: {
-      chat: "Rozmowa", stage: "Pulpit", newChat: "Nowa rozmowa", placeholder: "Napisz, co mam zrobić…  (/ — komendy)",
+      chat: "Rozmowa", stage: "Pulpit", newChat: "Nowa rozmowa", placeholder: "Napisz, co mam zrobić…  (/ — komendy)", placeholderShort: "Napisz, co mam zrobić…",
       map: "Schemat", changes: "Zmiany", alerts: "Alerty", home: "Pulpit", mapLive: "Agent pracuje — zobacz na schemacie",
       loadingHome: "Sprawdzam stan serwera…", waitTurn: "Poczekaj, aż agent skończy.",
       s_status: "Czy wszystko działa?", s_status_sub: "procesor, pamięć, dysk, kontenery, strony",
@@ -35,7 +35,7 @@
       "kind_insight_disk-forecast": "prognoza zapełnienia dysku", "kind_insight_docker-space": "miejsce do odzyskania",
       kind_insight_restarts: "restartujące się kontenery", kind_insight_reboot: "restart serwera po aktualizacji",
       "kind_insight_memory-trend": "rosnąca pamięć",
-      c_news: "wiadomości od Pipe (skrzynka)", c_projects: "projekty w warsztacie", c_cleanup: "zwolnij miejsce na dysku (bez AI)", c_mcp: "serwery MCP: /mcp dodaj, /mcp usun", c_download: "skille i pluginy z repozytorium: /pobierz skill wlasciciel/repo", install: "Zainstaluj", c_notify: "kiedy Pipe ma powiadamiać",
+      c_news: "wiadomości od Pipe (skrzynka)", c_projects: "projekty w warsztacie", c_cleanup: "zwolnij miejsce na dysku (bez AI)", c_web: "Pipe w przeglądarce z telefonu i komputera: /web wlacz, /web wylacz", c_mcp: "serwery MCP: /mcp dodaj, /mcp usun", c_download: "skille i pluginy z repozytorium: /pobierz skill wlasciciel/repo", install: "Zainstaluj", c_notify: "kiedy Pipe ma powiadamiać",
       skills: "Skille", commands: "Komendy", runSkill: "Uruchom", showSkill: "Podgląd", runningSkill: "Uruchamiam skill",
       noSkills: "Nie ma jeszcze skilli. Po wykonaniu wieloetapowej procedury napisz: „zapisz to jako skill”.",
       noCommand: "Nie ma takiej komendy — Enter wyśle tekst do agenta.", emptyList: "(pusto)", noApprovals: "Nic nie czeka na zgodę.",
@@ -176,7 +176,7 @@
       ob_switchServer: "Zmień, gdzie działa Pipe", ob_noServer: "Pipe jeszcze nie działa",
     },
     en: {
-      chat: "Chat", stage: "Dashboard", newChat: "New chat", placeholder: "Tell me what to do…  (/ — commands)",
+      chat: "Chat", stage: "Dashboard", newChat: "New chat", placeholder: "Tell me what to do…  (/ — commands)", placeholderShort: "Tell me what to do…",
       map: "Map", changes: "Changes", alerts: "Alerts", home: "Dashboard", mapLive: "The agent is working — see it on the map",
       loadingHome: "Checking the server…", waitTurn: "Wait until the agent finishes.",
       s_status: "Is everything working?", s_status_sub: "CPU, memory, disk, containers, sites",
@@ -208,7 +208,7 @@
       "kind_insight_disk-forecast": "disk full forecast", "kind_insight_docker-space": "space to reclaim",
       kind_insight_restarts: "restarting containers", kind_insight_reboot: "server reboot after updates",
       "kind_insight_memory-trend": "growing memory use",
-      c_news: "messages from Pipe (inbox)", c_projects: "workshop projects", c_cleanup: "free up disk space (no AI)", c_mcp: "MCP servers: /mcp add, /mcp remove", c_download: "skills and plugins from a repository: /download skill owner/repo", install: "Install", c_notify: "when Pipe should notify you",
+      c_news: "messages from Pipe (inbox)", c_projects: "workshop projects", c_cleanup: "free up disk space (no AI)", c_web: "Pipe in the browser on your phone and computer: /web on, /web off", c_mcp: "MCP servers: /mcp add, /mcp remove", c_download: "skills and plugins from a repository: /download skill owner/repo", install: "Install", c_notify: "when Pipe should notify you",
       skills: "Skills", commands: "Commands", runSkill: "Run", showSkill: "Preview", runningSkill: "Running the skill",
       noSkills: "No skills yet. After a multi-step procedure write: \"save this as a skill\".",
       noCommand: "No such command — Enter sends the text to the agent.", emptyList: "(empty)", noApprovals: "Nothing is waiting for approval.",

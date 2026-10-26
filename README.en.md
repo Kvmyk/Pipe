@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.43.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.44.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -152,6 +152,9 @@ bash install.sh          # Linux and macOS
 
 `pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
 is opened on the server.
+
+Want to open it on your phone without a tunnel? Write `/web on`. Pipe gets an HTTPS address with a certificate, and you
+let each new device in once, with a button in a message from Pipe, after checking the code on its screen.
 
 Don't want to install anything on the server by hand? Install only the client, skip the address and type `pipe web`.
 The page asks what you want to do and sets Pipe up itself: on this computer (Docker) or on your server over SSH. The

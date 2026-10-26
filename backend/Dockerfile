@@ -54,11 +54,14 @@ RUN printf '%s\n' \
     > /usr/local/bin/free && chmod +x /usr/local/bin/free
 
 # Skopiuj i zainstaluj zależności Pythona
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Skopiuj kod backendu do /app/backend/ (żeby paczka "backend" była widoczna)
-COPY . ./backend/
+# Skopiuj kod backendu do /app/backend/ (żeby paczka "backend" była widoczna) i strone pipe web — `/web wlacz`
+# uruchamia jej most w procesie Pipe (backend/core/webpublic.py). Kontekst budowania to korzen repozytorium,
+# co trafia do obrazu, wybiera backend/Dockerfile.dockerignore.
+COPY backend/ ./backend/
+COPY clients/webui/ ./clients/webui/
 
 # Działa jako root w kontenerze: potrzebny dostęp do /var/run/docker.sock i /hostfs/root.
 ENV PYTHONUNBUFFERED=1

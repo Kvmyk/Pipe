@@ -1,0 +1,12 @@
+# Obraz backendu (backend/Dockerfile) budowany z korzenia repozytorium: tylko backend i strona pipe web.
+# Sekrety i dane nigdy nie trafiaja do obrazu.
+*
+!backend/
+!clients/webui/
+backend/data/
+backend/tests/
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__/
+**/*.pyc

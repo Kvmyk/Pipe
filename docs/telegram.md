@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -204,6 +204,7 @@ nazwy dzialaja w obu jezykach.
 | `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami (*Wszystko dziala* albo co wymaga uwagi), paski procesora, pamieci i dysku, liczba nowych wiadomosci i projektow |
 | `/nowosci` | Skrzynka: co Pipe napisal sam (alerty, ustalenia, podpowiedzi, raporty), z przyciskami akcji (`/news`) |
 | `/projekty` | Projekty w warsztacie: stan, adres, przyciski *Logi* i *Zatrzymaj*/*Uruchom* (`/projects`) |
+| `/web` | Pipe w przegladarce z telefonu i komputera: `/web wlacz` wystawia go pod adresem HTTPS, prosby o dostep przychodza tu z przyciskami *Wpusc* / *Tylko podglad* / *Odrzuc* (tylko administratorzy); `/web wylacz`, `/web odwolaj <nr>` |
 | `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki apt i cache npm/pip; mowi, ile zwolnil. Tylko administrator (`/cleanup`) |
 | `/powiadomienia` | Kiedy Pipe ma powiadamiac: poziom, cisza nocna, limit podpowiedzi -- przyciskami (`/notifications`) |
 | `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe (potwierdzenie przyciskami); `sprawdz` tylko pokazuje wersje |

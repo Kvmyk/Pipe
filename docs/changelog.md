@@ -1,5 +1,32 @@
 # Historia zmian -- Pipe
 
+## v0.44.0 (2026-10-26)
+
+### Pipe w przegladarce z telefonu i komputera (`/web`)
+
+- Nowa komenda `/web wlacz` (w CLI, Telegramie i `pipe web`) wystawia `pipe web` pod publicznym adresem HTTPS bez
+  tunelu SSH. Przed Pipe staje Caddy (kontener `pipe-web`) z certyfikatem Let's Encrypt na nazwie
+  `<ip-serwera>.sslip.io`, wiec domena nie jest potrzebna; z wlasna: `/web wlacz pipe.twojadomena.pl`. Port 443,
+  a gdy zajety -- 8443
+- Bez hasla i bez tajnego linku: strona pokazuje kod, a Pipe pyta w rozmowie, czy wpuscic urzadzenie (przyciski
+  *Wpusc*, *Tylko podglad*, *Odrzuc* na Telegramie, w `pipe web` i w skrzynce CLI albo `/web wpusc <kod>`). Kazde
+  urzadzenie wchodzi raz i pamieta logowanie przez 30 dni od ostatniego uzycia
+- `/web` pokazuje adres i urzadzenia, `/web odwolaj <nr|wszystkie>` odcina urzadzenie od razu (takze otwarta karte),
+  `/web wylacz` zatrzymuje Caddy i zamyka porty otwarte przez Pipe w ufw
+- Urzadzenie to zwykly token klienta z rola admin albo viewer; tokeny urzadzen nie zamykaja trybu bez `AGENT_TOKEN`,
+  wiec CLI i Telegram bez tokenu dzialaja dalej. Docker i native; nie w trybie obserwacji ani w Kubernetes
+
+### `pipe web` na telefonie
+
+- Pole wiadomosci ma 16 px na waskich ekranach (iPhone nie powieksza juz strony po dotknieciu), wysokosc strony
+  uwzglednia pasek przegladarki, a podpowiedz w polu miesci sie w jednej linii
+
+### Obraz Dockera
+
+- Obraz backendu buduje sie z korzenia repozytorium i zawiera strone `pipe web` (potrzebna dla `/web`).
+  `backend/Dockerfile.dockerignore` zastapil `backend/.dockerignore`; recznie budujacy obraz podaja
+  `-f backend/Dockerfile .` zamiast `backend/`
+
 ## v0.43.0 (2026-10-26)
 
 ### Dwa widoki: prosty i techniczny

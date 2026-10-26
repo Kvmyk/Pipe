@@ -24,6 +24,9 @@ def authorize(token: str) -> tuple[str, str] | None:
     found = tokens.match(token or "")
     if found:
         return f"token:{found[0]}", found[1]
-    if not settings.AGENT_TOKEN and not settings.AGENT_VIEWER_TOKEN and not tokens.load():
+    # Urzadzenia pipe web (web-..., core/webaccess.py) nie zamykaja trybu otwartego: CLI i Telegram bez tokenu
+    # dzialaja dalej, a do strony w internecie i tak wchodzi sie tylko z tokenem urzadzenia (pilnuje tego most).
+    clients = [t for t in tokens.load() if not str(t.get("name", "")).startswith("web-")]
+    if not settings.AGENT_TOKEN and not settings.AGENT_VIEWER_TOKEN and not clients:
         return "open", "admin"
     return None

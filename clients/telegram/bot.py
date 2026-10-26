@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -17,7 +17,7 @@ Funkcje:
   - Pipe pisze pierwszy: alerty, podpowiedzi i ustalenia z badan przychodza same, z przyciskami akcji zbudowanymi
     w backendzie (skrzynka: /nowosci); powiadamia tylko o tym, co ma `push` (poziom, cisza nocna, limit — /powiadomienia)
   - Klawiatura pod polem wiadomosci: Stan serwera (bez LLM), Co nowego, Projekty, Pomoc
-  - Komendy: /status /nowosci /projekty /sprzataj /powiadomienia /raport /zmiany /wykres /zdrowie /mapa /server
+  - Komendy: /status /nowosci /projekty /sprzataj /web /powiadomienia /raport /zmiany /wykres /zdrowie /mapa /server
     /katalogi /skille /alerty /rutyny /cele /vibe /koszt /dziennik /cofnij /incydenty /historia /pomoc, kazdy skill
     ma wlasna komende /<nazwa> (angielskie aliasy: /news /projects /report /changes ... — dzialaja w obu jezykach)
   - Poranny raport przychodzi sam (DIGEST_TIME w backendzie) razem z wykresem obciazenia
@@ -655,6 +655,24 @@ async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
         text = error or response_data(frames).get("text", "")
         await _send_html(context.bot, chat_id, format_listing("MCP", text))
+
+    await _backend_call(update, context, go())
+
+
+async def cmd_web(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/web [wlacz|wylacz|wpusc <kod>|odwolaj <nr>] -- Pipe w przegladarce pod publicznym adresem HTTPS."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = " ".join(context.args or [])
+
+    async def go() -> None:
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        frames = await _collect(context.bot, chat_id, get_client(user_id).command("web", args=args))
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        text = error or response_data(frames).get("text", "")
+        await _send_html(context.bot, chat_id, format_listing(tr("Pipe w przegladarce", "Pipe in the browser"), text))
 
     await _backend_call(update, context, go())
 
@@ -1638,6 +1656,14 @@ async def _broadcast(app: Application, event: dict) -> None:
             except Exception as exc:
                 print(f"[Pipe Telegram] Nie wyslano zgody do {user_id}: {exc}", flush=True)
         return
+    if kind == "login":
+        # Ktos przed ekranem pipe web prosi o dostep — wpuszczaja tylko administratorzy (przyciski z backendu)
+        for user_id in sorted(ALLOWED_USER_IDS):
+            try:
+                await _send_html(app.bot, user_id, format_feed_item(event), _inline(feed_buttons(event, True)))
+            except Exception as exc:
+                print(f"[Pipe Telegram] Nie wyslano prosby o dostep do {user_id}: {exc}", flush=True)
+        return
     if kind == "reminder":
         for user_id in reminder_recipients(event, ALLOWED_USER_IDS, VIEWER_USER_IDS):
             try:
@@ -1819,7 +1845,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     for polish, handler in (("nowosci", cmd_nowosci), ("projekty", cmd_projekty), ("powiadomienia", cmd_powiadomienia),
-                            ("sprzataj", cmd_sprzataj), ("mcp", cmd_mcp), ("pobierz", cmd_pobierz)):
+                            ("sprzataj", cmd_sprzataj), ("mcp", cmd_mcp), ("pobierz", cmd_pobierz), ("web", cmd_web)):
         app.add_handler(CommandHandler(command_names(polish), handler))
     # Polskie nazwy i ich angielskie aliasy (/raport i /report) dzialaja w obu jezykach.
     for polish, handler in (

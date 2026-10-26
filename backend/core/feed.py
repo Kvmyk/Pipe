@@ -38,9 +38,10 @@ KEEP_DAYS = 30
 NEW_USER_WINDOW = 86400           # nowy odbiorca widzi jako nowe tylko wiadomosci z ostatniej doby
 LEVELS = ("all", "important", "critical")
 # Zdarzenia Notifiera, ktore trafiaja do skrzynki. Przypomnienia i prosby o zgode ida prosto do odbiorcy.
-FEED_TYPES = frozenset({"alert", "insight", "digest", "welcome", "routine", "investigation", "notice"})
-# Zawsze z powiadomieniem: zaplanowany raport, powitanie i podsumowanie ciszy nocnej.
-ALWAYS_PUSH = frozenset({"digest", "welcome", "notice"})
+FEED_TYPES = frozenset({"alert", "insight", "digest", "welcome", "routine", "investigation", "notice", "login"})
+# Zawsze z powiadomieniem: zaplanowany raport, powitanie, podsumowanie ciszy nocnej i prosba o wejscie do pipe web
+# (ktos czeka przed ekranem z kodem — takze w ciszy nocnej).
+ALWAYS_PUSH = frozenset({"digest", "welcome", "notice", "login"})
 ACTION_KINDS = ("command", "message", "snooze", "mute", "dismiss")
 _QUIET = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$")
 _lock = threading.RLock()
@@ -67,7 +68,7 @@ class Prefs:
 class Item:
     id: str
     ts: float
-    type: str                   # alert | insight | digest | welcome | routine | investigation | notice
+    type: str                   # alert | insight | digest | welcome | routine | investigation | notice | login
     severity: str               # critical | warning | info | ok
     title: str
     text: str = ""              # Markdown
@@ -356,6 +357,17 @@ def from_event(event: dict[str, Any]) -> Item | None:
     elif kind == "notice":
         item.title, item.text = str(event.get("title", "")), str(event.get("text", ""))
         item.kind = "notice"
+    elif kind == "login":
+        # prosba o wejscie do pipe web wystawionego publicznie (core/webaccess.py) — decyduje administrator
+        pairing = str(event.get("id", ""))
+        item.title, item.text = str(event.get("title", "")), str(event.get("text", ""))
+        item.severity, item.kind, item.key, item.ref = "warning", "login", f"login:{pairing}", pairing
+        item.actions = [
+            action(tr("Wpusc", "Let in"), command="web", args={"args": "approve", "id": pairing}, admin=True, primary=True),
+            action(tr("Tylko podglad", "View only"), command="web", args={"args": "approve", "id": pairing, "role": "viewer"},
+                   admin=True),
+            action(tr("Odrzuc", "Reject"), command="web", args={"args": "deny", "id": pairing}, admin=True),
+        ]
     if not item.title:
         return None
     return item

@@ -51,7 +51,7 @@ jobs:
       matrix:
         include:
           - image: backend
-            context: backend
+            context: .
             dockerfile: backend/Dockerfile
           - image: telegram
             context: .

@@ -944,3 +944,24 @@ body.setup-mode #view-btn { visibility: hidden; }
 .onboard-card .status { margin-top: 14px; }
 @media (max-width: 640px) { .choice-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { #view-label { display: none; } .view-btn { padding: 0 8px; } }
+
+/* --- prosba o dostep (pair.html, /web wlacz): jedna karta posrodku, wygodna na telefonie --- */
+body.pair-page { overflow-y: auto; display: block; min-height: 100%; }
+.pair { max-width: 420px; margin: 0 auto; padding: max(48px, 12vh) 20px 32px; display: flex; flex-direction: column; gap: 14px; }
+.pair-brand { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font: 13px var(--mono); overflow-wrap: anywhere; }
+.pair-brand svg { color: var(--ink); flex: none; }
+.pair h1 { margin: 10px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.pair-lead { margin: 0; color: var(--ink-2); font-size: 15px; }
+.pair-code { margin: 6px 0; padding: 18px 12px; text-align: center; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--panel); font: 600 32px/1.2 var(--mono); letter-spacing: .12em; user-select: all; }
+.pair-hint { margin: 0; color: var(--ink-3); font-size: 13px; overflow-wrap: anywhere; }
+.pair-status { margin: 0; color: var(--ink-2); font-size: 14px; }
+.pair-status.bad { color: var(--bad); }
+.pair-btn { height: 44px; font-size: 15px; margin-top: 6px; }
+.pair-foot { margin: 18px 0 0; color: var(--ink-3); font-size: 12.5px; }
+
+/* --- telefon: pole tekstowe 16 px (iOS nie powieksza strony przy dotknieciu), wysokosc bez paska przegladarki --- */
+@supports (height: 100dvh) { body:not(.pair-page) { height: 100dvh; } }
+@media (max-width: 900px) {
+  .composer textarea, input[type="text"], input[type="url"], input[type="password"], input:not([type]) { font-size: 16px; }
+}

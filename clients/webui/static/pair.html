@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Pipe</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="pair-page">
+  <main class="pair" aria-live="polite">
+    <div class="pair-brand">
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill-rule="evenodd" d="M4 7a4 4 0 0 1 4-4h5a5 5 0 0 1 0 10H9v8.5H4zm9-1.2a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z" fill="currentColor"/></svg>
+      <span id="pair-server"></span>
+    </div>
+    <h1 id="pair-title"></h1>
+    <p class="pair-lead" id="pair-lead"></p>
+    <div class="pair-code" id="pair-code" hidden></div>
+    <p class="pair-hint" id="pair-hint" hidden></p>
+    <p class="pair-status" id="pair-status" hidden></p>
+    <button class="btn yes pair-btn" id="pair-btn" type="button"></button>
+    <p class="pair-foot" id="pair-foot"></p>
+  </main>
+  <script type="application/json" id="pipe-config">__PIPE_CONFIG__</script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/pair.js"></script>
+</body>
+</html>

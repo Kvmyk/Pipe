@@ -71,7 +71,7 @@ jobs:
       matrix:
         include:
           - image: pipe
-            context: backend
+            context: .
             dockerfile: backend/Dockerfile
           - image: pipe-telegram
             context: .

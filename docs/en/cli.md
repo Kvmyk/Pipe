@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -192,6 +192,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/status` | Server status at once, without AI: a plain-words headline, CPU, memory and disk bars, new messages, projects |
 | `/news` | The inbox: what Pipe wrote by itself, with actions -- type the number and the letter, e.g. `1a` (`/nowosci`) |
 | `/projects` | Workshop projects: state and address (`/projekty`). A new project: write e.g. *"clone https://github.com/... and run it"* |
+| `/web` | Pipe in the browser on your phone and computer at an HTTPS address: `/web on [port] [domain]`, `/web off`, `/web approve <code>` (lets a device in), `/web revoke <no>`; without arguments the state and devices (`docs/features.md`) |
 | `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded packages and npm/pip caches; admins only (`/sprzataj`) |
 | `/notifications [all\|important\|critical] [quiet 22-7\|quiet off] [daily 3]` | When Pipe should notify you; without arguments shows the current settings (`/powiadomienia`) |
 | `/update [check]` | Update Pipe itself on the server (after confirmation); `check` only shows the versions; after the backend restarts the CLI reconnects by itself (up to 3 min), no need to start it again |

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.43.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.44.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -154,6 +154,9 @@ bash install.sh          # Linux i macOS
 
 Komenda `pipe web` otwiera wersję w przeglądarce, ze schematem serwera, na którym widać, gdzie agent właśnie
 pracuje. Na serwerze nie otwiera się żaden dodatkowy port.
+
+Chcesz wchodzić z telefonu bez tunelu? Napisz `/web wlacz`. Pipe dostanie adres HTTPS z certyfikatem, a każde nowe
+urządzenie wpuszczasz raz, przyciskiem w wiadomości od Pipe, po sprawdzeniu kodu z ekranu.
 
 Nie chcesz instalować niczego na serwerze ręcznie? Zainstaluj tylko klienta, pomiń adres i wpisz `pipe web`. Strona
 zapyta, co chcesz robić, i postawi Pipe sama: na tym komputerze (Docker) albo na Twoim serwerze po SSH. Hasło zostaje

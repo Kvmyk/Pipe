@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -211,6 +211,7 @@ work in both languages.
 | `/status` | Server status at once, without AI: a plain-words headline (*All good* or what needs attention), CPU, memory and disk bars, the number of new messages and projects |
 | `/news` | The inbox: what Pipe wrote by itself (alerts, findings, suggestions, reports), with action buttons (`/nowosci`) |
 | `/projects` | Workshop projects: state, address, *Logs* and *Stop*/*Start* buttons (`/projekty`) |
+| `/web` | Pipe in the browser on your phone and computer: `/web on` exposes it at an HTTPS address, access requests arrive here with *Let in* / *View only* / *Reject* buttons (administrators only); `/web off`, `/web revoke <no>` |
 | `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded apt packages and npm/pip caches; says how much it freed. Admins only (`/sprzataj`) |
 | `/notifications` | When Pipe should notify you: level, quiet hours, suggestion limit -- with buttons (`/powiadomienia`) |
 | `/update [check]` | Update Pipe itself (confirmed with buttons); `check` only shows the versions |

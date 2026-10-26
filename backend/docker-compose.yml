@@ -4,7 +4,10 @@ services:
     # ustawiaja PIPE_VERSION z pliku VERSION i pobieraja go; gdy go nie ma, compose buduje obraz z `build`.
     # Bez PIPE_VERSION (reczne `docker compose up --build`) obraz jest budowany lokalnie z tagiem `local`.
     image: ghcr.io/kvmyk/pipe:${PIPE_VERSION:-local}
-    build: .
+    build:
+      # korzen repozytorium: obraz zawiera tez strone pipe web (clients/webui) dla /web wlacz
+      context: ..
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     pid: host
     volumes:

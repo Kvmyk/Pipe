@@ -485,8 +485,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.43.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.43.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.44.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.44.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -771,6 +771,8 @@ COMMANDS = [
     ("nowosci", "news", "co Pipe napisał sam (skrzynka) i akcje", "what Pipe wrote on its own (inbox) and actions"),
     ("projekty", "projects", "projekty w warsztacie", "workshop projects"),
     ("sprzataj", "cleanup", "zwolnij miejsce na dysku (bez AI)", "free up disk space (no AI)"),
+    ("web", "web", "Pipe w przeglądarce z telefonu i komputera: /web wlacz, /web wylacz, /web wpusc <kod>",
+     "Pipe in the browser on your phone and computer: /web on, /web off, /web approve <code>"),
     ("pobierz", "download", "skille i pluginy z repozytorium: /pobierz skill <wlasciciel/repo|URL>, /pobierz plugin <...>",
      "skills and plugins from a repository: /download skill <owner/repo|URL>, /download plugin <...>"),
     ("mcp", "mcp", "serwery MCP: /mcp dodaj <nazwa> <npx ...|url>, /mcp usun <nazwa>",
@@ -862,6 +864,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 - `/powiadomienia [wszystko|wazne|krytyczne] [cisza 22-7|cisza off] [dziennie 3]` — kiedy Pipe ma pisać sam
 - `/providerzy` — model AI: klucz, model, przełączenie (`/providerzy groq`, `/providerzy model`)
 - `/jezyk [pl|en]` — język Pipe
+- `/web [wlacz|wylacz]` — Pipe w przeglądarce z telefonu i komputera pod adresem HTTPS; `/web wpusc <kod>` — wpuść urządzenie
 - `/widok [prosty|techniczny]` — widok Pipe we wszystkich aplikacjach (prosty: rozmowa, skille, dodatki)
 - `/yolo [on|off]` — zmiany bez pytania o TAK w tej rozmowie (kopie i `/cofnij` działają dalej)
 - `/koszt`, `/aktualizuj` — koszt modelu, aktualizacja Pipe
@@ -910,6 +913,7 @@ something needs attention.
 - `/notifications [all|important|critical] [quiet 22-7|quiet off] [daily 3]` — when Pipe writes on its own
 - `/providers` — the AI model: key, model, switching (`/providers groq`, `/providers model`)
 - `/language [pl|en]` — Pipe's language
+- `/web [on|off]` — Pipe in the browser on your phone and computer at an HTTPS address; `/web approve <code>` — let a device in
 - `/view [simple|technical]` — Pipe's view in every app (simple: chat, skills, add-ons)
 - `/yolo [on|off]` — changes without asking for YES in this conversation (backups and `/undo` still work)
 - `/cost`, `/update` — model cost, updating Pipe
@@ -1568,6 +1572,16 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
 
     if name == "mcp":
         frames = await client.send_command("mcp_servers", args=args)
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        console.print(Text(error or _response_data(frames).get("text", ""), overflow="fold"),
+                      style="red" if error else None, highlight=False)
+        return True
+
+    if name == "web":
+        if args.split()[:1] and args.split()[0].lower() in ("wlacz", "włącz", "on", "start", "publiczny", "public"):
+            console.print(tr("[dim]Wystawiam Pipe pod adresem HTTPS (Caddy, certyfikat Let's Encrypt)...[/dim]",
+                             "[dim]Exposing Pipe at an HTTPS address (Caddy, Let's Encrypt certificate)...[/dim]"))
+        frames = await client.send_command("web", args=args)
         error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
         console.print(Text(error or _response_data(frames).get("text", ""), overflow="fold"),
                       style="red" if error else None, highlight=False)

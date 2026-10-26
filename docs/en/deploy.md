@@ -1,6 +1,6 @@
 # Deployment -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Pipe runs in three modes (`PIPE_RUNTIME`, auto-detected by default). The mode decides how the agent sees the managed
 machine; everything else (tools, memory, clients, protocol) is the same.
@@ -114,13 +114,15 @@ add `PIPE_LANG=en` to both `.env` files and restart the backend and the bot, or 
 ## Building images
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-backend:TAG --push backend/
+docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-backend:TAG -f backend/Dockerfile --push .
 docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-telegram:TAG \
     -f clients/telegram/Dockerfile --push .
 ```
 
 Backend image arguments: `INSTALL_KUBECTL=1` (default; `0` makes the image smaller), `KUBECTL_VERSION=stable`,
-`DOCKER_VERSION`. `backend/.dockerignore` keeps `.env` and `data/` out of the image.
+`DOCKER_VERSION`. The backend image is built from the repository root (it also holds the `pipe web` page for
+`/web on`); `backend/Dockerfile.dockerignore` lets in only `backend/` and `clients/webui/`, without `.env`, `data/`
+and tests.
 
 ## Updating
 

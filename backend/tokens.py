@@ -61,7 +61,9 @@ def _save(entries: list[dict]) -> None:
     tmp.replace(path)
 
 
-def add(name: str, role: str) -> str:
+def add(name: str, role: str, *, extra: dict | None = None) -> str:
+    """Nowy token (pokazany raz). `extra` — dodatkowe pola wpisu, np. `expires` (czas uniksowy) dla urzadzen
+    `pipe web` (core/webaccess.py)."""
     name = (name or "").strip().lower()
     if not _NAME.match(name):
         raise ValueError(tr("Nazwa: male litery, cyfry, '.', '-', '_' (do 40 znakow).",
@@ -70,9 +72,22 @@ def add(name: str, role: str) -> str:
         raise ValueError(tr(f"Rola: {' albo '.join(ROLES)}.", f"Role: {' or '.join(ROLES)}."))
     entries = [t for t in load() if t.get("name") != name]
     token = secrets.token_urlsafe(24)
-    entries.append({"name": name, "role": role, "hash": _digest(token), "created": time.strftime("%Y-%m-%d %H:%M")})
+    entry = {**(extra or {}), "name": name, "role": role, "hash": _digest(token),
+             "created": time.strftime("%Y-%m-%d %H:%M")}
+    entries.append(entry)
     _save(entries)
     return token
+
+
+def update(name: str, **fields) -> bool:
+    """Zmienia pola wpisu (bez skrotu i roli) — np. przesuniecie `expires` urzadzenia po uzyciu."""
+    entries = load()
+    for entry in entries:
+        if entry.get("name") == name:
+            entry.update({k: v for k, v in fields.items() if k not in ("hash", "role", "name")})
+            _save(entries)
+            return True
+    return False
 
 
 def revoke(name: str) -> bool:
@@ -91,6 +106,9 @@ def match(token: str) -> tuple[str, str] | None:
     digest = _digest(token)
     for entry in load():
         if hmac.compare_digest(entry["hash"], digest):
+            expires = entry.get("expires")
+            if isinstance(expires, (int, float)) and expires < time.time():
+                return None                   # urzadzenie pipe web nieuzywane dluzej niz pozwala webaccess
             return entry.get("name", "?"), entry["role"]
     return None
 

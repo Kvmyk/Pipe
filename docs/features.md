@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -726,6 +726,44 @@ ekran ponownie (kolejny klucz, inny model, usuniecie klucza). Klucze leza na ser
 (0600) i nie wracaja do przegladarki. Wybor dotyczy calego agenta: po przelaczeniu z nowego providera korzystaja tez
 Telegram, CLI, rutyny i workery; `WORKER_MODEL` i ceny z `.env` dotycza tylko providera bazowego. Kilka kluczy mozna
 tez podac od razu w `backend/.env` (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`...).
+
+## Pipe w przegladarce z telefonu i komputera (`/web`)
+
+`pipe web` dziala na Twoim komputerze przez tunel SSH. Zeby wejsc do Pipe z telefonu albo z dowolnego komputera
+bez tunelu, napisz w Telegramie, CLI albo `pipe web` jedna komende:
+
+```
+/web wlacz
+```
+
+Pipe stawia przed soba serwer HTTPS (Caddy w kontenerze `pipe-web`) i odpisuje adresem, np.
+`https://203-0-113-9.sslip.io` -- to darmowa nazwa, ktora wskazuje na IP Twojego serwera, wiec certyfikat Let's
+Encrypt powstaje sam, bez kupowania domeny. Z wlasna domena: `/web wlacz pipe.mojafirma.pl` (rekord DNS musi juz
+wskazywac na serwer). Port to 443, a gdy jest zajety (np. przez nginx) -- 8443; wlasny: `/web wlacz 9443`.
+
+**Jak sie wchodzi.** Strona nie ma hasla ani tajnego linku. Otwierasz adres, naciskasz *Popros o dostep* i widzisz
+kod, np. `K7P-4QX`. W tym samym momencie Pipe pisze do Ciebie (Telegram, `pipe web` na innym urzadzeniu, CLI):
+*"Ktos chce wejsc do Pipe przez przegladarke -- iPhone, Safari, IP ..., kod K7P-4QX"* z przyciskami *Wpusc*,
+*Tylko podglad* i *Odrzuc* (albo piszesz `/web wpusc K7P-4QX`). Sprawdzasz, czy kod sie zgadza, i naciskasz *Wpusc*
+-- strona sama sie otwiera. Kazde urzadzenie wpuszczasz raz: telefon osobno, komputer osobno. Potem pamieta
+logowanie przez 30 dni od ostatniego uzycia.
+
+- `/web` -- adres, lista urzadzen (co to za urzadzenie, pelny dostep czy podglad, kiedy ostatnio) i prosby czekajace
+  na zgode.
+- `/web odwolaj 2` albo `/web odwolaj wszystkie` -- urzadzenie traci dostep od razu, otwarta strona wraca do prosby
+  o dostep.
+- `/web wylacz` -- zatrzymuje Caddy i most, zamyka porty, ktore Pipe otworzyl w ufw. Urzadzenia zostaja na wypadek
+  ponownego wlaczenia.
+
+Urzadzenie wpuszczone przyciskiem *Tylko podglad* ma role viewer: rozmawia, czyta raporty i schemat, ale niczego
+nie zmienia. Wpuszczac moze tylko administrator. Strona na telefonie to ten sam interfejs co `pipe web` -- rozmowa
+i pulpit przelacza sie przyciskami w gornym pasku.
+
+Gdy na serwerze dziala ufw, Pipe otwiera w nim port strony (i 80, gdy strona nie jest na 443 -- tam Let's Encrypt
+sprawdza serwer przy wystawianiu certyfikatu). Zapory u dostawcy (panel chmury) Pipe nie widzi: jesli strona nie
+odpowiada, Pipe mowi, ktory port otworzyc. Dziala w trybie docker i native (potrzebny Docker -- Caddy jest
+kontenerem), nie w trybie obserwacji ani w Kubernetes (tam Ingress). Szczegoly zabezpieczen: `docs/security.md`
+(*Pipe w internecie*).
 
 ---
 

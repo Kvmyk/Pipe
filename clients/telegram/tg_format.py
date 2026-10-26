@@ -232,6 +232,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("nowosci", "Co Pipe napisal sam: alerty, podpowiedzi, raporty"),
     ("projekty", "Projekty w warsztacie: stan, logi, zatrzymanie"),
     ("sprzataj", "Zwolnij miejsce na dysku (bez AI)"),
+    ("web", "Pipe w przegladarce z telefonu i komputera (/web wlacz)"),
     ("powiadomienia", "Kiedy Pipe ma powiadamiac (poziom, cisza nocna)"),
     ("pobierz", "Skille i pluginy z repozytorium (/pobierz skill wlasciciel/repo)"),
     ("mcp", "Serwery MCP, z ktorych korzysta Pipe (/mcp dodaj, /mcp usun)"),
@@ -270,6 +271,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("news", "What Pipe wrote on its own: alerts, suggestions, reports"),
     ("projects", "Workshop projects: state, logs, stopping"),
     ("cleanup", "Free up disk space (no AI)"),
+    ("web", "Pipe in the browser on your phone and computer (/web on)"),
     ("notifications", "When Pipe should notify you (level, quiet hours)"),
     ("download", "Skills and plugins from a repository (/download skill owner/repo)"),
     ("mcp", "MCP servers Pipe uses (/mcp add, /mcp remove)"),
@@ -348,7 +350,7 @@ HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
      ("audyt", "podatnosci", "zalataj", "sprzataj", "dziennik", "cofnij", "zgody")),
     ("Pamiec i automatyzacja", "Memory and automation",
      ("server", "skille", "pobierz", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
-    ("Ustawienia", "Settings", ("powiadomienia", "mcp", "nowa", "providerzy", "jezyk", "widok", "yolo", "koszt",
+    ("Ustawienia", "Settings", ("powiadomienia", "web", "mcp", "nowa", "providerzy", "jezyk", "widok", "yolo", "koszt",
                                 "aktualizuj", "pomoc")),
 )
 # Dzialaja, ale nie ma ich w /pomoc ani w menu — to samo daja /status i /nowosci (alerty, strony, certyfikaty)
@@ -890,7 +892,7 @@ def format_approval(event: dict) -> str:
 STATUS_MARK = {"ok": "🟢", "warning": "🟠", "critical": "🔴"}
 LEVEL_MARK = {"ok": "", "warn": " ⚠️", "crit": " 🔴"}
 SEVERITY_MARK = {"critical": "🔴", "warning": "🟠", "ok": "✅", "info": "💡"}
-TYPE_MARK = {"digest": "☀️", "welcome": "👋", "investigation": "🔎", "routine": "🕒", "notice": "🌙"}
+TYPE_MARK = {"digest": "☀️", "welcome": "👋", "investigation": "🔎", "routine": "🕒", "notice": "🌙", "login": "🔑"}
 
 
 def _bar(pct: float, width: int = 10) -> str:

@@ -1,0 +1,409 @@
+"""
+Pipe w przegladarce pod publicznym adresem (`/web`): parowanie urzadzen (core/webaccess.py), wystawienie przez Caddy
+(core/webpublic.py), most pipe web w trybie publicznym (clients/webui/server.py) i komenda serwera `web`.
+"""
+
+import asyncio
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+import backend.server as server
+from backend import tokens
+from backend.config import settings
+from backend.core import feed, webaccess, webpublic
+from backend.tests.test_server_commands import exchange
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "webui"))
+import server as web  # noqa: E402
+
+IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
+
+
+@pytest.fixture(autouse=True)
+def data(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+    from backend.core import audit
+    monkeypatch.setattr(audit, "AUDIT_LOG_PATH", str(tmp_path / "audit.log"))
+    webaccess.reset()
+    yield tmp_path
+    webaccess.reset()
+
+
+class TestPairing:
+
+    def test_code_is_readable_and_typing_variants_match(self):
+        pairing, secret = webaccess.start(IPHONE, "203.0.113.5")
+        assert len(pairing.code) == 7 and pairing.code[3] == "-" and not set(pairing.code) & set("01OIL")
+        loose = pairing.code.replace("-", "").lower()
+        assert webaccess.find(loose) is pairing and webaccess.find(pairing.id) is pairing
+        assert pairing.device == "iPhone · Safari" and secret
+
+    def test_device_labels(self):
+        assert webaccess.device_label(WINDOWS) == "Windows · Chrome"
+        assert webaccess.device_label("") in ("nieznane urzadzenie", "unknown device")
+
+    def test_approval_gives_the_token_once_and_only_to_the_asking_page(self):
+        pairing, secret = webaccess.start(IPHONE, "203.0.113.5")
+        assert webaccess.collect(pairing.id, secret)["status"] == "pending"
+        webaccess.decide(pairing.code, True, role="admin", by="telegram:1")
+        assert webaccess.collect(pairing.id, "obcy-sekret") == {"status": "unknown"}
+        first = webaccess.collect(pairing.id, secret)
+        assert first["status"] == "approved" and first["role"] == "admin"
+        assert webaccess.collect(pairing.id, secret) == {"status": "collected"}
+        name, role = webaccess.device(first["token"])
+        assert name.startswith("web-iphone-safari-") and role == "admin"
+        stored = json.loads(tokens.tokens_path().read_text())
+        assert first["token"] not in json.dumps(stored)                      # tylko skrot
+        assert stored[0]["approved_by"] == "telegram:1" and stored[0]["ip"] == "203.0.113.5"
+
+    def test_viewer_role_and_denial(self):
+        viewer, secret = webaccess.start(WINDOWS, "203.0.113.6")
+        webaccess.decide(viewer.code, True, role="viewer")
+        assert webaccess.device(webaccess.collect(viewer.id, secret)["token"])[1] == "viewer"
+        denied, secret = webaccess.start(WINDOWS, "203.0.113.7")
+        webaccess.decide(denied.code, False)
+        assert webaccess.collect(denied.id, secret) == {"status": "denied"}
+        with pytest.raises(webaccess.AccessError):
+            webaccess.decide(denied.code, True)                               # decyzja raz
+
+    def test_codes_expire_and_an_uncollected_token_is_removed(self):
+        pairing, secret = webaccess.start(IPHONE, "1.2.3.4", now=1000)
+        assert webaccess.collect(pairing.id, secret, now=1000 + webaccess.PAIR_TTL + 1) == {"status": "expired"}
+        with pytest.raises(webaccess.AccessError):
+            webaccess.decide(pairing.code, True, now=1000 + webaccess.PAIR_TTL + 2)
+        late, secret = webaccess.start(IPHONE, "1.2.3.5", now=2000)
+        webaccess.decide(late.code, True, now=2000)
+        assert len(tokens.load()) == 1
+        assert webaccess.collect(late.id, secret, now=2000 + webaccess.COLLECT_TTL + 1) == {"status": "expired"}
+        assert tokens.load() == []                                            # strona nie odebrala — token znika
+
+    def test_requests_are_limited_per_address(self):
+        for _ in range(webaccess.IP_LIMIT):
+            webaccess.start(IPHONE, "198.51.100.1")
+        with pytest.raises(webaccess.AccessError):
+            webaccess.start(IPHONE, "198.51.100.1")
+        webaccess.start(IPHONE, "198.51.100.2")                               # inny adres przechodzi
+
+    def test_idle_device_expires_and_use_extends_it(self, monkeypatch):
+        pairing, secret = webaccess.start(IPHONE, "1.2.3.4", now=1_000_000)
+        webaccess.decide(pairing.code, True, now=1_000_000)
+        token = webaccess.collect(pairing.id, secret, now=1_000_000)["token"]
+        name = tokens.load()[0]["name"]
+        tokens.update(name, expires=1, seen=1)                                # dawno nieuzywane
+        assert webaccess.device(token) is None and tokens.match(token) is None
+        tokens.update(name, expires=2_000_000_000, seen=1)
+        assert webaccess.device(token)[0] == name
+        assert tokens.load()[0]["seen"] > 1                                   # uzycie przesuwa wygasniecie
+
+    def test_revoke_by_number_name_and_all(self):
+        made = []
+        for agent in (IPHONE, WINDOWS, WINDOWS):
+            pairing, secret = webaccess.start(agent, "1.2.3.4")
+            webaccess.decide(pairing.code, True)
+            made.append(webaccess.collect(pairing.id, secret)["token"])
+        assert len(webaccess.devices()) == 3
+        webaccess.revoke("1")
+        assert webaccess.device(made[0]) is None and len(webaccess.devices()) == 2
+        webaccess.revoke(webaccess.devices()[0]["name"])
+        webaccess.revoke("wszystkie")
+        assert webaccess.devices() == []
+        with pytest.raises(webaccess.AccessError):
+            webaccess.revoke("7")
+
+    def test_other_tokens_are_not_devices(self):
+        token = tokens.add("laptop-kuba", "admin")
+        assert webaccess.device(token) is None and webaccess.devices() == []
+
+
+class TestPublic:
+
+    def test_parse(self):
+        assert webpublic.parse("") == ("status", [])
+        assert webpublic.parse("wlacz 8443 pipe.example.com") == ("on", ["8443", "pipe.example.com"])
+        assert webpublic.parse("ON")[0] == "on" and webpublic.parse("wpusc K7P-4QX")[0] == "approve"
+        assert webpublic.parse("cokolwiek")[0] == "help"
+        assert webpublic.parse_on(["https://Pipe.Example.com/", "8443"]) == (8443, "pipe.example.com")
+        for bad in (["99999"], ["nie domena"], ["evil.com;rm"]):
+            with pytest.raises(ValueError):
+                webpublic.parse_on(bad)
+
+    def test_caddy_runs_only_the_site_with_little_privilege(self):
+        command = webpublic.caddy_command("1-2-3-4.sslip.io", 8443)
+        joined = " ".join(command)
+        assert "--network host" in joined and "--cap-drop ALL" in joined and "no-new-privileges" in joined
+        assert "docker.sock" not in joined and "--privileged" not in joined
+        config = next(a for a in command if a.startswith("PIPE_CADDYFILE="))
+        assert "1-2-3-4.sslip.io:8443 {" in config and "admin off" in config
+        assert "reverse_proxy unix//run/pipe-web/web.sock" in config and "flush_interval -1" in config
+        assert "X-Pipe-Client-Ip {remote_host}" in config and "tls internal" not in config
+
+    @pytest.mark.parametrize("wanted,busy,port", [(0, set(), 443), (0, {443}, 8443), (0, {443, 8443, 22}, None),
+                                                  (8443, set(), 8443), (8443, {8443}, None), (0, {80, 443}, None),
+                                                  (443, {80}, 443)])
+    def test_port_choice(self, wanted, busy, port):
+        if port is None:
+            with pytest.raises(ValueError):
+                webpublic.choose_port(wanted, busy)
+        else:
+            assert webpublic.choose_port(wanted, busy) == port
+
+    def test_ufw_rules_from_files(self, tmp_path):
+        ufw = tmp_path / "etc" / "ufw"
+        ufw.mkdir(parents=True)
+        (ufw / "ufw.conf").write_text("ENABLED=yes\n")
+        (ufw / "user.rules").write_text("### tuple ### allow tcp 22 0.0.0.0/0 any 0.0.0.0/0 in\n"
+                                        "### tuple ### allow tcp 80,443 0.0.0.0/0 any 0.0.0.0/0 Nginx%20Full - in\n"
+                                        "### tuple ### allow any 8000:8002 0.0.0.0/0 any 0.0.0.0/0 in\n"
+                                        "### tuple ### deny tcp 8443 0.0.0.0/0 any 0.0.0.0/0 in\n")
+        enabled, allowed = webpublic.ufw_rules(str(tmp_path))
+        assert enabled and allowed == {22, 80, 443, 8000, 8001, 8002}
+        (ufw / "ufw.conf").write_text("ENABLED=no\n")
+        assert webpublic.ufw_rules(str(tmp_path))[0] is False
+
+    def test_enable_and_disable(self, monkeypatch, tmp_path):
+        sock_dir = Path(tempfile.mkdtemp(prefix="pw"))
+        monkeypatch.setattr(webpublic, "SOCKET_DIR", str(sock_dir))
+        monkeypatch.setattr(webpublic.runtime, "kind", lambda: "native")
+        monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
+        monkeypatch.setattr(webpublic, "busy_ports", lambda: {22, 443})
+        monkeypatch.setattr(webpublic, "ufw_rules", lambda root="": (True, {22}))
+        calls = []
+
+        async def fake_run(*args, timeout=120):
+            calls.append(list(args))
+            if args[:2] == ("docker", "logs"):
+                return '{"level":"info","msg":"certificate obtained successfully"}', 0
+            return "ok", 0
+
+        async def ip():
+            return "203.0.113.9"
+
+        monkeypatch.setattr(webpublic, "_run", fake_run)
+        monkeypatch.setattr(webpublic, "public_ip", ip)
+        progress = []
+
+        async def emit(text):
+            progress.append(text)
+
+        async def go():
+            ok, text = await webpublic.enable(port=0, domain="", backend_socket="/nonexistent", emit=emit)
+            running = webpublic.bridge_running() and (sock_dir / "web.sock").exists()
+            state = webpublic.load_state()
+            off = await webpublic.disable(emit)
+            return ok, text, running, state, off
+
+        ok, text, running, state, off = asyncio.run(go())
+        assert ok and "https://203-0-113-9.sslip.io:8443" in text and running
+        assert (state.on, state.port, state.firewall) == (True, 8443, [80, 8443])
+        shells = [c[-1] for c in calls if c[:2] == ["sh", "-c"]]
+        assert "ufw allow 8443/tcp comment 'pipe web'" in shells and "ufw allow 80/tcp comment 'pipe web'" in shells
+        assert any(c[:3] == ["docker", "run", "-d"] for c in calls)
+        assert "ufw delete allow 8443/tcp" in [c[-1] for c in calls if c[:2] == ["sh", "-c"]]
+        assert not webpublic.load_state().on and not webpublic.bridge_running() and "nie jest juz" in off
+
+    def test_kubernetes_and_observe_are_refused(self, monkeypatch):
+        monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
+        monkeypatch.setattr(webpublic.runtime, "kind", lambda: "kubernetes")
+        assert "Ingress" in asyncio.run(webpublic.blocker())
+        monkeypatch.setattr(webpublic.runtime, "observe", lambda: True)
+        assert "PIPE_OBSERVE" in asyncio.run(webpublic.blocker())
+
+    def test_cert_failure_is_read_from_caddy_logs(self):
+        logs = '{"level":"error","msg":"could not get certificate from issuer","error":"HTTP 400 urn:ietf:params:acme:error:connection"}'
+        assert webpublic._log_verdict(logs) == ("fail", "HTTP 400 urn:ietf:params:acme:error:connection")
+        assert webpublic._log_verdict('{"level":"info","msg":"certificate obtained successfully"}')[0] == "ok"
+        assert webpublic._log_verdict('{"level":"info","msg":"serving"}')[0] == ""
+
+
+class FakeAccess:
+    hosts = {"pipe.example.com"}
+
+    def __init__(self):
+        self.devices = {"dev-token": ("web-iphone-safari-ab12", "viewer")}
+        self.logged_out = []
+
+    def device(self, token):
+        return self.devices.get(token)
+
+    def pair_start(self, user_agent, ip):
+        if ip == "198.51.100.9":
+            raise webaccess.AccessError("za duzo prob")
+        return {"id": "p1", "code": "K7P-4QX", "secret": "s", "device": user_agent, "ip": ip, "expires_in": 300}
+
+    def pair_poll(self, pairing_id, secret):
+        return {"status": "approved", "token": "dev-token", "role": "viewer"} if secret == "s" else {"status": "unknown"}
+
+    def logout(self, token):
+        self.logged_out.append(token)
+
+
+class TestPublicBridge:
+    """Most w trybie publicznym na prawdziwych gniazdach; backend to atrapa po gniezdzie Unix."""
+
+    async def _http(self, path_sock, method, path, headers=None, body=b""):
+        reader, writer = await asyncio.open_unix_connection(path_sock)
+        head = {"Host": "pipe.example.com", "Content-Length": str(len(body)), **(headers or {})}
+        writer.write((f"{method} {path} HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in head.items()) + "\r\n").encode() + body)
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.read(-1), 5)
+        writer.close()
+        top, _, payload = raw.partition(b"\r\n\r\n")
+        return int(top.split()[1]), top.decode("latin-1"), payload
+
+    def _run(self, scenario, frames=()):
+        async def go():
+            base = Path(tempfile.mkdtemp(prefix="pb"))
+            received = []
+
+            async def handle(reader, writer):
+                received.append(json.loads(await reader.readline()))
+                for frame in frames:
+                    writer.write((json.dumps(frame) + "\n").encode())
+                await writer.drain()
+                writer.close()
+
+            backend = await asyncio.start_unix_server(handle, path=str(base / "b.sock"))
+            access = FakeAccess()
+            bridge = web.WebBridge("unix:" + str(base / "b.sock"), 0, "", lang="pl", server_label="pipe.example.com",
+                                   public=access)
+            front = await asyncio.start_unix_server(bridge.handle, path=str(base / "w.sock"))
+            try:
+                return await scenario(str(base / "w.sock"), access, received)
+            finally:
+                front.close(); backend.close()
+        return asyncio.run(go())
+
+    def test_guest_sees_only_the_pairing_page(self):
+        async def scenario(sock, access, received):
+            page = await self._http(sock, "GET", "/")
+            api = await self._http(sock, "POST", "/api/request", body=b'{"command": "alerts"}')
+            events = await self._http(sock, "GET", "/api/events")
+            script = await self._http(sock, "GET", "/static/pair.js")
+            key = await self._http(sock, "GET", "/?k=cokolwiek")
+            return page, api[0], events[0], script[0], key, received
+        page, api, events, script, key, received = self._run(scenario)
+        assert page[0] == 200 and b"/static/pair.js" in page[2] and b'"public": true' in page[2]
+        assert api == 401 and events == 401 and script == 200 and received == []
+        assert b"pair.js" in key[2]                                     # klucz z adresu nic nie znaczy publicznie
+
+    def test_foreign_host_and_plain_http_origin_are_rejected(self):
+        async def scenario(sock, access, received):
+            host = await self._http(sock, "GET", "/", {"Host": "evil.example"})
+            origin = await self._http(sock, "POST", "/api/pair/start", {"Origin": "http://pipe.example.com"})
+            good = await self._http(sock, "POST", "/api/pair/start", {"Origin": "https://pipe.example.com",
+                                                                      "X-Pipe-Client-Ip": "203.0.113.5",
+                                                                      "User-Agent": "iPhone"})
+            return host[0], origin[0], good
+        host, origin, good = self._run(scenario)
+        assert host == 403 and origin == 403
+        assert good[0] == 200 and json.loads(good[2])["code"] == "K7P-4QX" and json.loads(good[2])["ip"] == "203.0.113.5"
+
+    def test_rate_limit_and_spoofed_ip(self):
+        async def scenario(sock, access, received):
+            limited = await self._http(sock, "POST", "/api/pair/start", {"X-Pipe-Client-Ip": "198.51.100.9"})
+            spoofed = await self._http(sock, "POST", "/api/pair/start", {"X-Pipe-Client-Ip": "<b>nie-ip</b>"})
+            return limited, spoofed
+        limited, spoofed = self._run(scenario)
+        assert limited[0] == 429 and b"za duzo prob" in limited[2]
+        assert json.loads(spoofed[2])["ip"] == "?"
+
+    def test_poll_sets_a_secure_device_cookie_and_requests_carry_the_device_token(self):
+        frames = [{"response": "ok", "status": "ok", "done": False}, {"response": "", "status": "ok", "done": True}]
+
+        async def scenario(sock, access, received):
+            wrong = await self._http(sock, "POST", "/api/pair/poll", body=b'{"id": "p1", "secret": "zly"}')
+            poll = await self._http(sock, "POST", "/api/pair/poll", body=b'{"id": "p1", "secret": "s"}')
+            cookie = {"Cookie": "pipe_device=dev-token"}
+            page = await self._http(sock, "GET", "/", cookie)
+            body = json.dumps({"message": "hej", "session": "abc", "token": "podmieniony"}).encode()
+            proxied = await self._http(sock, "POST", "/api/request", {**cookie, "Origin": "https://pipe.example.com"}, body)
+            logout = await self._http(sock, "POST", "/api/logout", cookie)
+            return wrong, poll, page, proxied, logout, received, access
+        wrong, poll, page, proxied, logout, received, access = self._run(scenario, frames)
+        assert "Set-Cookie" not in wrong[1] and json.loads(wrong[2]) == {"status": "unknown"}
+        assert json.loads(poll[2]) == {"status": "approved", "role": "viewer"}             # token tylko w ciasteczku
+        assert "pipe_device=dev-token; HttpOnly; Secure; SameSite=Lax" in poll[1]
+        assert page[0] == 200 and b"/static/app.js" in page[2] and b'"role": "viewer"' in page[2]
+        assert "pipe_key" not in page[1]
+        assert proxied[0] == 200
+        (request,) = received
+        assert request["token"] == "dev-token" and request["interface"] == "web:web-iphone-safari-ab12"
+        assert request["session_id"] == "web-abc"
+        assert logout[0] == 200 and access.logged_out == ["dev-token"] and "Max-Age=0" in logout[1]
+
+    def test_revoked_cookie_falls_back_to_the_pairing_page(self):
+        async def scenario(sock, access, received):
+            return await self._http(sock, "GET", "/", {"Cookie": "pipe_device=odwolany"})
+        status, head, body = self._run(scenario)
+        assert status == 200 and b"pair.js" in body and "pipe_device=; " in head and "Max-Age=0" in head
+
+    def test_pair_page_has_no_inline_scripts(self):
+        import re
+        page = (web.STATIC_DIR / "pair.html").read_text(encoding="utf-8")
+        inline = [m for m in re.findall(r"<script(?![^>]*\bsrc=)([^>]*)>", page) if "application/json" not in m]
+        assert inline == [] and "__PIPE_CONFIG__" in page
+        assert ".innerHTML" not in (web.STATIC_DIR / "pair.js").read_text(encoding="utf-8")
+
+
+class TestCommand:
+
+    @pytest.fixture
+    def agent(self, monkeypatch):
+        from backend.tests.test_server_commands import FakeAgent
+        fake = FakeAgent()
+        fake.note = lambda *a, **k: True
+        monkeypatch.setattr(server, "get_agent", lambda: fake)
+        return fake
+
+    def test_status_and_help(self, agent):
+        [[frame]] = exchange([{"command": "web"}])
+        assert frame["data"]["on"] is False and "/web wlacz" in frame["data"]["text"]
+        [[bad]] = exchange([{"command": "web", "args": "zrob cos"}])
+        assert bad["status"] == "error" and "/web wlacz" in bad["response"]
+
+    def test_devices_do_not_close_open_mode(self, agent):
+        """Bez AGENT_TOKEN CLI i Telegram lacza sie bez tokenu — pierwsze urzadzenie pipe web ich nie odcina."""
+        from backend.core import auth
+        pairing, secret = webaccess.start(IPHONE, "203.0.113.5")
+        webaccess.decide(pairing.code, True, role="viewer")
+        token = webaccess.collect(pairing.id, secret)["token"]
+        assert auth.authorize("") == ("open", "admin")
+        assert auth.authorize(token)[1] == "viewer"                    # urzadzenie ma swoja role i w trybie otwartym
+        tokens.add("laptop", "admin")
+        assert auth.authorize("") is None                              # zwykly token klienta zamyka jak dotad
+
+    def test_feed_buttons_let_the_device_in(self, agent):
+        pairing, secret = webaccess.start(IPHONE, "203.0.113.5")
+        server._publish_login({**pairing.to_event(), **webpublic.login_texts(pairing)})
+        item = next(i for i in feed.recent() if i.type == "login")
+        assert item.push and pairing.code in item.text and [a["label"] for a in item.actions] == ["Wpusc", "Tylko podglad", "Odrzuc"]
+        assert all(a["admin"] for a in item.actions)
+        [[frame]] = exchange([{"command": "feed_act", "id": item.id, "action": 1}])
+        assert "tylko podglad" in frame["data"]["text"]
+        assert webaccess.device(webaccess.collect(pairing.id, secret)["token"])[1] == "viewer"
+        assert feed.get(item.id).done
+
+    def test_typed_code_and_denial(self, agent):
+        first, _ = webaccess.start(WINDOWS, "203.0.113.5")
+        [[frame]] = exchange([{"command": "web", "args": f"wpusc {first.code.lower()}"}])
+        assert "pelny dostep" in frame["data"]["text"] and first.status == "approved"
+        second, _ = webaccess.start(WINDOWS, "203.0.113.6")
+        [[frame]] = exchange([{"command": "web", "args": f"odrzuc {second.code}"}])
+        assert second.status == "denied", frame
+        [[again]] = exchange([{"command": "web", "args": f"wpusc {second.code}"}])
+        assert again["status"] == "error"
+
+    def test_viewer_cannot_change_access(self, agent, monkeypatch):
+        monkeypatch.setattr(settings, "AGENT_VIEWER_TOKEN", "oglad")
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "admin-token")
+        pairing, _ = webaccess.start(WINDOWS, "203.0.113.5")
+        replies = exchange([{"command": "web", "args": f"wpusc {pairing.code}", "token": "oglad"},
+                            {"command": "web", "token": "oglad"}])
+        assert replies[0][0]["status"] == "error" and pairing.status == "pending"
+        assert replies[1][0]["data"]["devices"] == [] and replies[1][0]["data"]["can_edit"] is False

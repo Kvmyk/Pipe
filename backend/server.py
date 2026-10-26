@@ -235,6 +235,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _prefs(writer, request, interface, role)
         elif command == "cleanup":
             await _cleanup(writer, agent, session_id, interface, role)
+        elif command == "web":
+            await _web(writer, agent, request, session_id, interface, identity, role)
         elif command == "mcp_servers":
             await _mcp_servers(writer, request, role)
         elif command == "install":
@@ -462,7 +464,7 @@ async def _feed(writer, request: dict, interface: str) -> None:
 
 
 # Komendy, ktore moze uruchomic przycisk wiadomosci ze skrzynki — akcje buduje backend, ale i tak tylko z tej listy.
-FEED_COMMANDS = frozenset({"cleanup", "patch", "investigate", "overview", "digest", "audit", "vulns", "projects"})
+FEED_COMMANDS = frozenset({"cleanup", "patch", "investigate", "overview", "digest", "audit", "vulns", "projects", "web"})
 
 
 async def _feed_act(writer, agent, request: dict, session_id: str, interface: str, identity: str, role: str) -> None:
@@ -690,6 +692,89 @@ async def _cleanup(writer, agent, session_id: str, interface: str, role: str) ->
     except Exception:
         pass
     await _send(writer, _data(result.to_data()))
+
+
+def _publish_login(event: dict) -> None:
+    """Prosba o wejscie do pipe web (core/webaccess.py) -> skrzynka i subskrybenci (Telegram, pipe web, CLI)."""
+    get_watcher().notifier.publish(event)
+
+
+async def _web(writer, agent, request: dict, session_id: str, interface: str, identity: str, role: str) -> None:
+    """
+    /web — Pipe w przegladarce pod publicznym adresem HTTPS (core/webpublic.py) i urzadzenia, ktore moga wejsc
+    (core/webaccess.py). Stan widzi kazdy; wlaczenie, wylaczenie, wpuszczanie i odwolywanie — administrator.
+    """
+    from backend.core import webaccess, webpublic
+
+    op, rest = webpublic.parse(str(request.get("args", "") or ""))
+    if op == "help":
+        await _send(writer, _error(webpublic.help_text()))
+        return
+    if op == "status":
+        await _send(writer, _data(webpublic.status(role == "admin")))
+        return
+    if role != "admin":
+        await _send(writer, _error(tr("Dostep z przegladarki zmienia tylko administrator.",
+                                      "Only an administrator changes browser access.")))
+        return
+
+    async def emit(text: str) -> None:
+        await _send(writer, event_frame(Progress(text, source="web")))
+
+    if op == "on":
+        try:
+            port, domain = webpublic.parse_on(rest)
+        except ValueError as exc:
+            await _send(writer, _error(str(exc)))
+            return
+        ok, text = await webpublic.enable(port=port, domain=domain, backend_socket=settings.AGENT_SOCKET, emit=emit,
+                                          publish=_publish_login)
+        await audit.log_confirmed(interface, f"/web wlacz {' '.join(rest)}".strip(), 0 if ok else 1)
+        _web_note(agent, session_id, text)
+        await _send(writer, _data({**webpublic.status(True), "ok": ok, "text": text}))
+    elif op == "off":
+        text = await webpublic.disable(emit)
+        await audit.log_confirmed(interface, "/web wylacz", 0)
+        _web_note(agent, session_id, text)
+        await _send(writer, _data({**webpublic.status(True), "text": text}))
+    elif op in ("approve", "deny"):
+        ref = str(request.get("id") or (rest[0] if rest else ""))
+        words = {w.lower() for w in rest[1:]} | {str(request.get("role") or "").lower()}
+        device_role = "viewer" if words & webpublic.VIEWER_WORDS else "admin"
+        try:
+            pairing = webaccess.decide(ref, op == "approve", role=device_role, by=identity)
+        except webaccess.AccessError as exc:
+            await _send(writer, _error(str(exc)))
+            return
+        if op == "approve":
+            label = tr("Wpuszczone", "Let in") if device_role == "admin" else tr("Wpuszczone (podglad)", "Let in (view only)")
+            text = tr(f"Wpuscilem {pairing.device} (kod {pairing.code}) — "
+                      + ("pelny dostep." if device_role == "admin" else "tylko podglad."),
+                      f"Let in {pairing.device} (code {pairing.code}) — "
+                      + ("full access." if device_role == "admin" else "view only."))
+        else:
+            label = tr("Odrzucone", "Rejected")
+            text = tr(f"Odrzucilem prosbe {pairing.code} ({pairing.device}).", f"Rejected request {pairing.code} ({pairing.device}).")
+        webpublic.close_feed(pairing.id, label)
+        await audit.log_confirmed(interface, f"/web {op} {pairing.code} {pairing.device} {pairing.ip} {device_role}", 0)
+        await _send(writer, _data({"text": text, "status": pairing.status}))
+    elif op == "revoke":
+        try:
+            gone = webaccess.revoke(" ".join(rest))
+        except webaccess.AccessError as exc:
+            await _send(writer, _error(str(exc)))
+            return
+        await audit.log_confirmed(interface, f"/web odwolaj {', '.join(gone)}", 0)
+        await _send(writer, _data({**webpublic.status(True),
+                                   "text": tr("Odwolane: ", "Revoked: ") + ", ".join(gone)}))
+
+
+def _web_note(agent, session_id: str, text: str) -> None:
+    try:
+        agent.note(session_id, tr(f"Uzytkownik zmienil dostep do Pipe z przegladarki (/web):\n{text}",
+                                  f"The user changed browser access to Pipe (/web):\n{text}"))
+    except Exception:
+        pass
 
 
 async def _projects(writer, request: dict, interface: str, role: str) -> None:
@@ -1323,6 +1408,10 @@ async def main() -> None:
         mcp_task = asyncio.create_task(get_mcp_manager().reload())
         mcp_task.add_done_callback(lambda t: print(tr("[VPS Agent] MCP: ", "[VPS Agent] MCP: ")
                                                    + "; ".join(get_mcp_manager().status()), flush=True))
+
+    # Pipe wystawiony w internecie (/web wlacz) — most strony wraca po restarcie, Caddy wstaje sam
+    from backend.core import webpublic
+    await webpublic.resume(settings.AGENT_SOCKET, _publish_login)
 
     from backend.core import webhooks
     hook_server = await webhooks.start(get_watcher(), settings.WEBHOOK_HOST, settings.WEBHOOK_PORT,

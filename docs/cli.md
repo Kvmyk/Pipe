@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -193,6 +193,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami, paski procesora, pamieci i dysku, nowe wiadomosci, projekty |
 | `/nowosci` | Skrzynka: co Pipe napisal sam, z akcjami -- wpisz numer i litere, np. `1a` (`/news`) |
 | `/projekty` | Projekty w warsztacie: stan i adres (`/projects`). Nowy projekt: napisz np. *"sklonuj https://github.com/... i uruchom"* |
+| `/web` | Pipe w przegladarce z telefonu i komputera pod adresem HTTPS: `/web wlacz [port] [domena]`, `/web wylacz`, `/web wpusc <kod>` (wpuszcza urzadzenie), `/web odwolaj <nr>`; bez argumentow stan i urzadzenia (`docs/features.md`) |
 | `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki i cache npm/pip; tylko administrator (`/cleanup`) |
 | `/powiadomienia [wszystko\|wazne\|krytyczne] [cisza 22-7\|cisza off] [dziennie 3]` | Kiedy Pipe ma powiadamiac; bez argumentow pokazuje obecne ustawienia (`/notifications`) |
 | `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe na serwerze (po potwierdzeniu); `sprawdz` tylko pokazuje wersje; po restarcie backendu CLI laczy sie ponownie samo (do 3 min), bez uruchamiania od nowa |

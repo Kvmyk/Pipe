@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.43.0
+Pipe v0.44.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -745,6 +745,44 @@ the server in `DATA_DIR/llm_keys.json` (0600) and never go back to the browser. 
 after switching, Telegram, the CLI, routines and workers use the new provider too; `WORKER_MODEL` and prices from
 `.env` apply only to the base provider. You can also put several keys straight into `backend/.env`
 (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`...).
+
+## Pipe in the browser on your phone and computer (`/web`)
+
+`pipe web` runs on your computer through an SSH tunnel. To open Pipe on your phone or on any computer without a
+tunnel, write one command in Telegram, the CLI or `pipe web`:
+
+```
+/web on
+```
+
+Pipe puts an HTTPS server in front of itself (Caddy in the `pipe-web` container) and answers with an address, e.g.
+`https://203-0-113-9.sslip.io` -- a free name that points to your server's IP, so the Let's Encrypt certificate is
+issued on its own, without buying a domain. With your own domain: `/web on pipe.mycompany.com` (the DNS record must
+already point to the server). The port is 443, and when it is taken (e.g. by nginx) -- 8443; your own: `/web on 9443`.
+
+**How you get in.** The page has no password and no secret link. You open the address, press *Ask for access* and
+see a code, e.g. `K7P-4QX`. At the same moment Pipe writes to you (Telegram, `pipe web` on another device, the CLI):
+*"Someone wants to open Pipe in a browser -- iPhone, Safari, IP ..., code K7P-4QX"* with *Let in*, *View only* and
+*Reject* buttons (or you write `/web approve K7P-4QX`). You check that the code matches and press *Let in* -- the page
+opens by itself. You let each device in once: the phone separately, the computer separately. After that it stays
+signed in for 30 days after its last use.
+
+- `/web` -- the address, the device list (which device, full access or view only, when last used) and requests
+  waiting for approval.
+- `/web revoke 2` or `/web revoke all` -- the device loses access at once, an open page goes back to the access
+  request.
+- `/web off` -- stops Caddy and the bridge, closes the ports Pipe opened in ufw. Devices stay in case you turn it on
+  again.
+
+A device let in with *View only* has the viewer role: it chats, reads reports and the diagram, but changes nothing.
+Only an administrator can let devices in. The page on a phone is the same interface as `pipe web` -- chat and
+dashboard switch with the buttons in the top bar.
+
+When ufw runs on the server, Pipe opens the page's port in it (and 80 when the page is not on 443 -- Let's Encrypt
+checks the server there while issuing the certificate). Pipe cannot see the hosting provider's firewall (cloud
+panel): if the page does not respond, Pipe says which port to open. Works in docker and native mode (Docker is needed
+-- Caddy is a container), not in observe mode or Kubernetes (use an Ingress there). Security details:
+`docs/security.md` (*Pipe on the internet*).
 
 ---
 
