@@ -1047,7 +1047,7 @@ class TestAfterPatch:
         assert outcome.unchanged == ["shop_web"]
         patch = vulns.image_patch(scan)
         assert patch.command == "" and [t.name for t in patch.waiting] == ["shop_web"]
-        assert "podbij obraz bazowy (FROM) w Dockerfile" in vulns.nothing_to_patch(scan)
+        assert "zmien FROM w Dockerfile na nowsza glowna wersje" in vulns.nothing_to_patch(scan)
         newer = vulns.Scan(at=2, ecosystem="Debian:12", targets=[image_target(vuln_id="DSA-10")])
         assert vulns.image_patch(newer).command                              # inne podatnosci — nowa proba
 
@@ -1078,7 +1078,7 @@ class TestAfterPatch:
         result = patching.PartResult(part, layered=["flowers-valentines-card"], refreshed=["nginx:1.25"],
                                      outcome=vulns.PatchOutcome(unchanged=["flowers-valentines-card", "nginx:1.25"]))
         lines = patching._fixed_lines(result)
-        assert any("flowers-valentines-card" in l and "podbij obraz bazowy (FROM)" in l for l in lines)
+        assert any("flowers-valentines-card" in l and "zmien FROM w Dockerfile" in l for l in lines)
         assert any("nginx:1.25" in l and "zmien tag w compose" in l for l in lines)
         assert not any(l.startswith(("nowszy obraz", "poprawki zainstalowane")) for l in lines)
 
@@ -1168,7 +1168,7 @@ class TestReadableForPeople:
         lines = vulns.todo(scan)
         assert lines[0] == "Serwer: pakiety aktualne."
         assert lines[1].startswith("Obrazy budowane z Dockerfile (flowers-valentines-card)")
-        assert "podbij obraz bazowy (FROM) w Dockerfile" in lines[1]
+        assert "zmien FROM w Dockerfile na nowsza glowna wersje" in lines[1]
         assert lines[2].startswith("Aplikacje (/root/quiz): podatne zaleznosci") and "(npm audit fix)" in lines[2]
         nothing = vulns.nothing_to_patch(scan)
         assert nothing.startswith("Nie ma nic do zainstalowania.") and "512" not in nothing and "Serwer:" not in nothing

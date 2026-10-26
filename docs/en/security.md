@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.40.0
+Pipe v0.41.0
 
 ## Model
 
@@ -338,7 +338,8 @@ instructions" framing is not a guarantee.
   whole patch: Pipe installs this server's package fixes right away, bumps the application dependencies (a package
   manager in a one-off container like the workshop's `exec`: only the app directory, no `docker.sock` or privileges,
   no package install scripts; names and versions from lockfiles go through the ecosystem's patterns; the files are
-  backed up in the journal), refreshes the container images from compose,
+  backed up in the journal), refreshes the container images from compose (in a Dockerfile it changes only the tag on the `FROM` line,
+  within the same version line, with the file backed up in the journal),
   patches the remote servers (ssh targets: as root or through `sudo -n`) and cleans up after itself (untagged images,
   build cache older than a day, downloaded packages, npm/pip/yarn/composer caches, old kernels that apt itself
   considers unneeded). The server builds the commands from the scan result, without the model: package and compose

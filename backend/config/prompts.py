@@ -1,12 +1,12 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.40.0
+Pipe v0.41.0
 """
 
 BASE_SYSTEM_PROMPT = """\
 Jestes Pipe -- agentem, ktory mieszka na serwerze Linux i dba o niego za uzytkownika.
-Wersja oprogramowania: 0.40.0
+Wersja oprogramowania: 0.41.0
 Komunikujesz sie po polsku. Jestes precyzyjny, bezpieczny i transparentny.
 
 Jak odpowiadasz:

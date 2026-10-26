@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.40.0
+Pipe v0.41.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -500,7 +500,11 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   uruchamiajac. Jeden wynik na obraz, alert `vuln:images`. Obrazy bez systemu (distroless, scratch) sa wymienione
   jako niesprawdzone. `/zalataj obrazy` najpierw zostawia poprzedni obraz pod tagiem `pipe-rollback-*` (sprzatanie go
   nie usunie, a `/cofnij` do niego wraca), potem pobiera nowsze obrazy z rejestru pod tym samym tagiem
-  (`pull --ignore-buildable`) i przebudowuje uslugi z `build:` na aktualnym obrazie bazowym (`build --pull`). Obraz,
+  (`pull --ignore-buildable`) i przebudowuje uslugi z `build:` na aktualnym obrazie bazowym (`build --pull`). Gdy
+  `FROM` w Dockerfile takiej uslugi ma przypieta wersje, a w tej samej linii jest nowsza (`node:20.11-slim` ->
+  `node:20.20-slim`, `postgres:15.4` -> `postgres:15.19`; zmienia sie tylko ostatnia liczba, nigdy wersja glowna),
+  Pipe najpierw podbija ten tag (tagi z Docker Hub, kopia Dockerfile w dzienniku -- `/cofnij` ja przywraca). Tag
+  plywajacy (`node:20`), obraz przypiety skrotem, `FROM` ze zmienna i rejestry inne niz Docker Hub zostaja bez zmian. Obraz,
   ktory nie ma nowszej wersji (przypiety tag, obraz bazowy jeszcze nieprzebudowany), dostaje poprawki z repozytorium
   swojego systemu: kontener tymczasowy z tego obrazu instaluje je jako root, a `docker commit` zapisuje wynik pod tym
   samym tagiem z jego uzytkownikiem, ENTRYPOINT i CMD (jak `copa patch`). Potem `up -d` tylko tych uslug i weryfikacja

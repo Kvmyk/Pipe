@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.40.0
+Pipe v0.41.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -512,7 +512,11 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
   (distroless, scratch) are listed as not checked. `/patch images` first keeps the previous image under a
   `pipe-rollback-*` tag (cleanup does not remove it and `/undo` goes back to it), then pulls newer registry images
   under the same tag (`pull --ignore-buildable`) and rebuilds services with `build:` on the current base image
-  (`build --pull`). An image that has no newer version (a pinned tag, a base image not rebuilt yet) gets the fixes
+  (`build --pull`). When `FROM` in such a service's Dockerfile pins a version and the same line has a newer one
+  (`node:20.11-slim` -> `node:20.20-slim`, `postgres:15.4` -> `postgres:15.19`; only the last number moves, never the
+  major version), Pipe first bumps that tag (tags from Docker Hub, the Dockerfile backed up in the journal -- `/undo`
+  restores it). A floating tag (`node:20`), a digest-pinned image, a `FROM` with a variable and registries other than
+  Docker Hub stay as they are. An image that has no newer version (a pinned tag, a base image not rebuilt yet) gets the fixes
   from its system's repository: a temporary container from that image installs them as root and `docker commit`
   saves the result under the same tag with its user, ENTRYPOINT and CMD (like `copa patch`). Then `up -d` of just
   those services and a check of the project's containers. Containers without compose only get a hint.

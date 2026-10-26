@@ -11,7 +11,8 @@
 Czesci po kolei, kazda przez bezpiecznik (core/safety.py: wpis w dzienniku, strony przed i po):
   system  apt/apk na tym serwerze z porzadkami (przerwane dpkg, stare jadra, pobrane paczki); w trybie docker przez
           kontener pomocniczy (core/hostexec.py), bo system plikow hosta jest w kontenerze tylko do odczytu
-  images  projekty compose: poprzedni obraz zostaje pod tagiem pipe-rollback-* (dla /cofnij), `pull`, `build --pull`,
+  images  projekty compose: poprzedni obraz zostaje pod tagiem pipe-rollback-* (dla /cofnij), `FROM` w Dockerfile
+          uslug budowanych lokalnie podbity do nowszej wersji tej samej linii (core/baseimages.py), `pull`, `build --pull`,
           a obraz, ktorego to nie zmienilo, dostaje warstwe z poprawkami z repozytorium swojego systemu (ten sam tag);
           potem `up -d`, weryfikacja kontenerow projektu i komendy odwrotne
   apps    zaleznosci aplikacji: menedzer pakietow w jednorazowym kontenerze podbija wersje w plikach zaleznosci
@@ -210,6 +211,7 @@ class PartResult:
     refreshed: list[str] = field(default_factory=list)  # obrazy: nowszy obraz
     layered: list[str] = field(default_factory=list)    # obrazy: poprawki zainstalowane w obrazie
     failed: list[str] = field(default_factory=list)     # obrazy: nie udalo sie (powod w tekscie)
+    based: list[str] = field(default_factory=list)      # obrazy: podbity FROM ('node:20.11-slim → node:20.18-slim')
     stopped: bool = False        # weryfikacja nie przeszla — dalszych czesci nie robie
     outcome: Any = None          # vulns.PatchOutcome po ponownym skanie
     entries: list[str] = field(default_factory=list)    # aplikacje: wpis dziennika na kazdy katalog
@@ -437,12 +439,79 @@ class Run:
                                   log=False)
         return out.strip() if code == 0 else ""
 
+    async def _base_bumps(self, patch: vulns.ImagePatch) -> dict[str, tuple[str, list]]:
+        """
+        Dockerfile'e uslug budowanych lokalnie (z podatnymi obrazami), w ktorych `FROM` ma nowsza wersje w tej samej
+        linii: sciezka hosta -> (nowa tresc, podbicia). Odczyty: `compose config` i API tagow Docker Hub.
+        """
+        from backend.core import baseimages, websearch
+
+        found: dict[str, tuple[str, list]] = {}
+        for project in patch.projects:
+            services = sorted({str(c.get("service")) for t in project.targets if vulns.built_locally(t)
+                               for c in t.meta.get("compose") or []
+                               if c.get("project") == project.project and c.get("service") in project.services})
+            if not services:
+                continue
+            out, _, code = await executor.execute(self.host(f"{project.base} config --format json"), timeout=60)
+            try:
+                config = json.loads(out) if code == 0 else {}
+            except ValueError:
+                config = {}
+            for path in baseimages.dockerfiles(config if isinstance(config, dict) else {}, services):
+                if path in found:
+                    continue
+                try:
+                    with open(runtime.to_local(path), encoding="utf-8") as fh:
+                        text = fh.read(512 * 1024)
+                except OSError:
+                    continue
+                bumps = await asyncio.to_thread(baseimages.plan, path, text,
+                                                lambda url: websearch.get_json(url, timeout=20))
+                if bumps:
+                    found[path] = (baseimages.apply(text, bumps), bumps)
+        return found
+
+    async def _write_host(self, path: str, text: str) -> tuple[str, int]:
+        """
+        Plik hosta na nowo (ten sam plik — wlasciciel i prawa zostaja). W trybie docker host poza /root jest w kontenerze
+        tylko do odczytu: tresc idzie przez katalog danych Pipe i kontener pomocniczy (`cat > plik`).
+        """
+        import errno
+
+        local = runtime.to_local(path)
+        try:
+            with open(local, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            await audit.log_file_write(self.interface + " [zalataj]", path, 0)
+            return "", 0
+        except OSError as exc:
+            if exc.errno != errno.EROFS or not self._image:
+                await audit.log_file_write(self.interface + " [zalataj]", path, 1)
+                return str(exc), 1
+        from backend.core import attachments
+
+        tmp = memory.data_dir() / "tmp" / f"pipe-write-{secrets.token_hex(6)}"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            source = attachments.host_path(tmp)
+            if not source:
+                return tr("nie znam sciezki katalogu danych Pipe na hoscie", "Pipe's data directory host path is unknown"), 1
+            output, code = await self.sh(self.host(f"cat {shlex.quote(source)} > {shlex.quote(path)}"), timeout=60)
+            return output, code
+        finally:
+            tmp.unlink(missing_ok=True)
+
     async def _images(self, part: Part) -> PartResult:
         result = PartResult(part)
         patch: vulns.ImagePatch = part.image_patch
-        plan = safety.Plan(sites=True, inverse=list(patch.inverse), notes=[tr(
-            "poprzednie obrazy zostaja pod tagiem pipe-rollback-* — /cofnij do nich wraca",
-            "the previous images stay under a pipe-rollback-* tag — /undo goes back to them")])
+        base = await self._base_bumps(patch)
+        plan = safety.Plan(sites=True, inverse=list(patch.inverse), files=list(base), notes=[tr(
+            "poprzednie obrazy zostaja pod tagiem pipe-rollback-* — /cofnij do nich wraca"
+            + (" (i do poprzednich Dockerfile)" if base else ""),
+            "the previous images stay under a pipe-rollback-* tag — /undo goes back to them"
+            + (" (and to the previous Dockerfiles)" if base else ""))])
         for project in patch.projects:
             flags = " ".join(f"-f {shlex.quote(f)}" for f in project.files) + f" -p {shlex.quote(project.project)}"
             plan.pre.append(safety.Check(tr(f"konfiguracja compose {project.project}", f"compose config {project.project}"),
@@ -455,6 +524,16 @@ class Run:
 
         async def operation() -> tuple[str, int]:
             outputs, code, done = [], 0, set()
+            for path, (text, bumps) in base.items():
+                described = ", ".join(b.describe() for b in bumps)
+                self.emit(tr(f"podbijam obraz bazowy w {path}: {described}", f"bumping the base image in {path}: {described}"))
+                output, rc = await self._write_host(path, text)
+                if rc == 0:
+                    result.based += [b.describe() for b in bumps]
+                else:
+                    outputs.append(output)
+                    result.warnings.append(tr(f"{path}: nie udalo sie zapisac nowego FROM ({output[:200]})",
+                                              f"{path}: could not write the new FROM ({output[:200]})"))
             for project in patch.projects:
                 services = ", ".join(project.services)
                 for target in project.targets:
@@ -650,6 +729,9 @@ def _fixed_lines(result: PartResult) -> list[str]:
     if part.kind == "images":
         refreshed = [n for n in result.refreshed if not outcome or n not in outcome.unchanged]
         layered = [n for n in result.layered if not outcome or n not in outcome.unchanged]
+        if result.based:
+            lines.append(tr(f"obraz bazowy podbity w Dockerfile: {_names(result.based)}",
+                            f"base image bumped in the Dockerfile: {_names(result.based)}"))
         if refreshed:
             lines.append(tr(f"nowszy obraz: {_names(refreshed)}", f"newer image: {_names(refreshed)}"))
         if layered:
@@ -658,7 +740,9 @@ def _fixed_lines(result: PartResult) -> list[str]:
         if outcome and outcome.unchanged:
             built = {t.name for t in part.items if vulns.built_locally(t)}
             for names, why in (([n for n in outcome.unchanged if n in built],
-                                tr("podbij obraz bazowy (FROM) w Dockerfile", "bump the base image (FROM) in the Dockerfile")),
+                                tr("zmien FROM w Dockerfile na nowsza glowna wersje (w tej samej linii nowszej nie ma)",
+                                   "change FROM in the Dockerfile to a newer major version (there is no newer one in "
+                                   "the same line)")),
                                ([n for n in outcome.unchanged if n not in built],
                                 tr("zmien tag w compose na nowsza wersje", "change the tag in compose to a newer version"))):
                 if names:

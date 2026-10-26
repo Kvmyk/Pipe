@@ -1542,10 +1542,10 @@ def built_locally(target: TargetResult) -> bool:
 
 
 def _waiting_why(target: TargetResult) -> str:
-    return tr("ani przebudowa, ani poprawki z repozytorium systemu obrazu nie usunely podatnosci — podbij obraz "
-              "bazowy (FROM) w Dockerfile",
-              "neither the rebuild nor the fixes from the image system's repository removed the vulnerabilities — "
-              "bump the base image (FROM) in the Dockerfile") if built_locally(target) else \
+    return tr("ani nowszy obraz bazowy w tej samej linii, ani poprawki z repozytorium systemu obrazu nie usunely "
+              "podatnosci — zmien FROM w Dockerfile na nowsza glowna wersje",
+              "neither a newer base image in the same line nor the fixes from the image system's repository removed "
+              "the vulnerabilities — change FROM in the Dockerfile to a newer major version") if built_locally(target) else \
         tr("ani nowszy obraz pod tym tagiem, ani poprawki z repozytorium systemu obrazu nie usunely podatnosci — "
            "zmien tag w compose na nowsza wersje",
            "neither a newer image under this tag nor the fixes from the image system's repository removed the "
@@ -1671,10 +1671,10 @@ def todo(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -
         built = [t for t in patch.waiting if built_locally(t)]
         pulled = [t for t in patch.waiting if not built_locally(t)]
         if built:
-            lines.append(tr(f"Obrazy budowane z Dockerfile ({names(built)}): przebudowa i poprawki z repozytorium nie "
-                            "pomogly — podbij obraz bazowy (FROM) w Dockerfile.",
-                            f"Images built from a Dockerfile ({names(built)}): the rebuild and the repository fixes did "
-                            "not help — bump the base image (FROM) in the Dockerfile."))
+            lines.append(tr(f"Obrazy budowane z Dockerfile ({names(built)}): nowszy obraz bazowy w tej samej linii i "
+                            "poprawki z repozytorium nie pomogly — zmien FROM w Dockerfile na nowsza glowna wersje.",
+                            f"Images built from a Dockerfile ({names(built)}): a newer base image in the same line and "
+                            "the repository fixes did not help — change FROM in the Dockerfile to a newer major version."))
         if pulled:
             lines.append(tr(f"Obrazy z rejestru ({names(pulled)}): ani nowszy obraz, ani poprawki z repozytorium nie "
                             "pomogly — zmien tag w compose na nowsza wersje.",

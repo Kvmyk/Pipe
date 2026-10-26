@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.40.0
+Pipe v0.41.0
 
 ## Model
 
@@ -334,7 +334,8 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
   zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, podbija zaleznosci aplikacji (menedzer
   pakietow w jednorazowym kontenerze jak `exec` w warsztacie: tylko katalog aplikacji, bez `docker.sock` i uprawnien,
   bez skryptow instalacyjnych pakietow; nazwy i wersje z lockfile'i przechodza przez wzorce ekosystemu; kopia plikow w
-  dzienniku), odswieza obrazy kontenerow z compose,
+  dzienniku), odswieza obrazy kontenerow z compose (w Dockerfile zmienia tylko tag w linii `FROM`, w tej samej linii
+  wersji, z kopia pliku w dzienniku),
   lata zdalne serwery (cele ssh: jako root albo przez `sudo -n`) i sprzata po sobie (obrazy bez tagu, cache
   budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer, stare jadra, ktore apt sam uznaje za
   zbedne). Komendy sklada serwer z wyniku skanu, bez modelu: nazwy pakietow i projektow compose przechodza przez

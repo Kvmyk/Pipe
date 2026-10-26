@@ -1,5 +1,22 @@
 # Historia zmian -- Pipe
 
+## v0.41.0 (2026-10-26)
+
+### `/zalataj obrazy` podbija `FROM` w Dockerfile
+
+- Gdy usluga compose jest budowana z Dockerfile, ktory ma przypieta wersje obrazu bazowego, a w tej samej linii jest
+  nowsza (`node:20.11-slim` -> `node:20.20-slim`, `postgres:15.4` -> `postgres:15.19`), Pipe przed przebudowa podbija
+  ten tag. Zmienia sie tylko ostatnia liczba, nigdy wersja glowna, i tylko tag w linii `FROM`
+- Dockerfile trafia do dziennika przed zmiana, `/cofnij` przywraca go razem z poprzednim obrazem. W trybie docker
+  zapis idzie przez kontener pomocniczy (host poza `/root` jest w kontenerze tylko do odczytu)
+- Bez zmian zostaja tagi plywajace (`node:20` -- te odswieza `build --pull`), obrazy przypiete skrotem, `FROM` ze
+  zmienna i rejestry inne niz Docker Hub. Gdy w tej samej linii nowszej wersji nie ma, raport mowi, ze trzeba przejsc
+  na nowsza wersje glowna
+
+### Telegram
+
+- `/aktualizuj` wrocilo do menu `/` (od v0.39 dzialalo tylko wpisane recznie i bylo w `/pomoc`)
+
 ## v0.40.0 (2026-10-26)
 
 ### `/zalataj` podbija zaleznosci aplikacji
