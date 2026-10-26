@@ -5,7 +5,7 @@
   "use strict";
 
   function create(deps) {
-    const { el, md, t, command, onRunSkill, onSlash } = deps;
+    const { el, md, t, command, onRunSkill, onSlash, onMcp } = deps;
     const root = document.getElementById("addons");
     let loading = false;
 
@@ -50,10 +50,25 @@
       head.appendChild(el("span", "tag " + (ok ? "add" : "mute"), ok ? t("ad_connected") : t("ad_notConnected")));
       row.appendChild(head);
       const actions = el("div", "addon-actions");
-      const remove = el("button", "btn no small", t("ad_remove"));
-      remove.type = "button";
-      remove.addEventListener("click", () => { onSlash("/mcp usun " + server.name); setTimeout(() => refresh(), 1500); });
-      actions.appendChild(remove);
+      const details = el("button", "btn no small", t("ad_details"));
+      details.type = "button";
+      details.addEventListener("click", () => onMcp(server.name));
+      actions.appendChild(details);
+      row.appendChild(actions);
+      return row;
+    }
+    function catalogRow(addon) {
+      const row = el("div", "addon-row");
+      const head = el("div", "addon-head");
+      head.appendChild(el("b", "", addon.title));
+      if (addon.secrets.length && !addon.ready) head.appendChild(el("span", "tag mute", t("m_needKey")));
+      row.appendChild(head);
+      row.appendChild(el("div", "addon-desc", addon.description));
+      const actions = el("div", "addon-actions");
+      const add = el("button", "btn run small", t("m_addShort"));
+      add.type = "button";
+      add.addEventListener("click", () => onMcp(addon.name));
+      actions.appendChild(add);
       row.appendChild(actions);
       return row;
     }
@@ -77,9 +92,12 @@
     async function refresh() {
       if (loading) return;
       loading = true;
-      let skills = [], servers = [], mcpError = "";
+      let skills = [], servers = [], catalog = [], mcpError = "";
       try { skills = (await command({ command: "list_skills" })).skills || []; } catch (_) { /* pusta lista */ }
-      try { servers = (await command({ command: "mcp_servers" })).servers || []; } catch (error) { mcpError = error.message; }
+      try {
+        const mcp = await command({ command: "mcp_servers" });
+        servers = mcp.servers || []; catalog = (mcp.catalog || []).filter((a) => !a.installed);
+      } catch (error) { mcpError = error.message; }
       loading = false;
       root.textContent = "";
       root.appendChild(el("p", "lead addons-lead", t("ad_lead")));
@@ -92,7 +110,17 @@
       const appBox = section(t("ad_apps"), servers.length);
       if (servers.length) servers.forEach((server) => appBox.appendChild(serverRow(server)));
       else appBox.appendChild(el("div", "home-empty", mcpError || t("ad_noApps")));
+      const manage = el("button", "btn no small addon-manage", t("ad_manage"));
+      manage.type = "button";
+      manage.addEventListener("click", () => onMcp(""));
+      appBox.querySelector(".home-sec-head").appendChild(manage);
       root.appendChild(appBox);
+
+      if (catalog.length) {
+        const readyBox = section(t("m_catalog"), catalog.length);
+        catalog.forEach((addon) => readyBox.appendChild(catalogRow(addon)));
+        root.appendChild(readyBox);
+      }
 
       const addBox = section(t("ad_add"));
       addBox.appendChild(adder(t("ad_fromGithub"), t("ad_fromGithubPh"), [

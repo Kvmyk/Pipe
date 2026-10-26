@@ -1,0 +1,45 @@
+{
+  "name": "google",
+  "title": {"pl": "Google (Gmail, Kalendarz, Dysk)", "en": "Google (Gmail, Calendar, Drive)"},
+  "description": {
+    "pl": "Gmail (czytanie, szkice), Kalendarz (odczyt), Dysk, Dokumenty i Arkusze Google.",
+    "en": "Gmail (reading, drafts), Calendar (read), Drive, Docs and Sheets."
+  },
+  "category": "office",
+  "homepage": "https://github.com/nityeshaga/google-workspace-mcp-server",
+  "server": {
+    "command": "npx",
+    "args": ["-y", "google-workspace-mcp-server@1.4.3"],
+    "env": {
+      "GOOGLE_CLIENT_ID": "${MCP_GOOGLE_CLIENT_ID}",
+      "GOOGLE_CLIENT_SECRET": "${MCP_GOOGLE_CLIENT_SECRET}",
+      "GOOGLE_REFRESH_TOKEN": "${MCP_GOOGLE_REFRESH_TOKEN}"
+    }
+  },
+  "secrets": [
+    {
+      "name": "MCP_GOOGLE_CLIENT_ID",
+      "label": {"pl": "Client ID", "en": "Client ID"},
+      "help": {
+        "pl": "W console.cloud.google.com utworz projekt, wlacz Gmail, Calendar, Drive, Docs i Sheets API, skonfiguruj ekran zgody OAuth (dodaj siebie jako uzytkownika testowego) i utworz klienta OAuth typu Aplikacja internetowa z adresem przekierowania https://developers.google.com/oauthplayground.",
+        "en": "In console.cloud.google.com create a project, enable the Gmail, Calendar, Drive, Docs and Sheets APIs, configure the OAuth consent screen (add yourself as a test user) and create a Web application OAuth client with the redirect URI https://developers.google.com/oauthplayground."
+      },
+      "url": "https://console.cloud.google.com/apis/credentials"
+    },
+    {
+      "name": "MCP_GOOGLE_CLIENT_SECRET",
+      "label": {"pl": "Client secret", "en": "Client secret"},
+      "help": {"pl": "Sekret tego samego klienta OAuth.", "en": "The secret of the same OAuth client."},
+      "url": "https://console.cloud.google.com/apis/credentials"
+    },
+    {
+      "name": "MCP_GOOGLE_REFRESH_TOKEN",
+      "label": {"pl": "Refresh token", "en": "Refresh token"},
+      "help": {
+        "pl": "W OAuth 2.0 Playground (ikona zebatki) zaznacz \"Use your own OAuth credentials\" i wpisz Client ID oraz sekret. Wybierz zakresy: documents, spreadsheets, drive, gmail.readonly, gmail.compose, calendar.readonly. Kliknij Authorize APIs, potem Exchange authorization code for tokens i skopiuj Refresh token.",
+        "en": "In the OAuth 2.0 Playground (gear icon) tick \"Use your own OAuth credentials\" and enter the Client ID and secret. Pick the scopes: documents, spreadsheets, drive, gmail.readonly, gmail.compose, calendar.readonly. Click Authorize APIs, then Exchange authorization code for tokens and copy the Refresh token."
+      },
+      "url": "https://developers.google.com/oauthplayground"
+    }
+  ]
+}

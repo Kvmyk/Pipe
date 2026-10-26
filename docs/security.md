@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 ## Model
 
@@ -218,6 +218,14 @@ Plik wyslany przez uzytkownika to tez obcy tekst -- log moze zawierac linie napi
 
 `/web wlacz` wystawia `pipe web` pod publicznym adresem HTTPS (`core/webpublic.py`, `core/webaccess.py`):
 
+- Tunel (`/web wlacz tunel` albo sam, gdy porty 80/443 sa nieosiagalne): kontener `cloudflared` (przypieta wersja)
+  bez portow i bez sieci hosta, tylko z gniazdem mostu, `--cap-drop ALL`, `no-new-privileges`; root w kontenerze
+  tylko po to, by otworzyc gniazdo 0600. Cloudflare konczy TLS, wiec widzi ruch strony (tresc rozmowy, ciasteczko
+  urzadzenia) -- to swiadomy kompromis za dzialanie bez otwartych portow; kto tego nie chce, uzywa
+  `/web wlacz bezposrednio` z wlasna domena albo tunelu SSH. Adres klienta z naglowka `Cf-Connecting-Ip` (ustawia go
+  Cloudflare). Nowy adres tunelu po restarcie = nowa domena, wiec ciasteczka starych urzadzen nie pasuja i trzeba je
+  wpuscic jeszcze raz.
+
 - Caddy (`caddy:2.11-alpine`, kontener `pipe-web`) ma siec hosta, ale tylko gniazdo mostu (`/tmp/pipe-web/web.sock`)
   i wolumen certyfikatow -- bez `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`), `no-new-privileges`,
   limity pamieci i procesow, bez API administracyjnego. Przekazuje adres klienta naglowkiem, ktorego klient nie
@@ -254,8 +262,12 @@ po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: t
 kontenerze bez montowan, `docker.sock` i uprawnien (`--cap-drop ALL`, `no-new-privileges`, uzytkownik `nobody`, limity),
 wiec moze najwyzej korzystac z sieci i zmieniac swoja usluge (np. repozytorium na GitHubie) -- nie serwer. Inne
 programy niz `npx`/`uvx`/obraz i opcje `docker run` typu `-v`, `--network host`, `--privileged` sa odrzucane. Sekrety
-tylko jako `${MCP_*}` z `backend/.env` (model nie wskaze `${LLM_API_KEY}` ani tokenu Pipe), tekst wygladajacy na sekret
-w konfiguracji -- odmowa. Dodanie serwera: jedno TAK z podgladem (albo `/mcp dodaj` administratora). Narzedzie bez
+tylko jako `${MCP_*}` z `backend/.env` albo z `mcp_secrets.json` (0600; wpisywane w oknie `/mcp` w `pipe web` i CLI
+komenda `mcp_servers` `klucz`, tylko administrator, wartosc nigdy nie wraca do klienta i nie trafia do rozmowy ani
+audit logu -- tylko nazwa) -- model nie wskaze `${LLM_API_KEY}` ani tokenu Pipe; tekst wygladajacy na sekret
+w konfiguracji -- odmowa. Dodatki z katalogu (`backend/addons/`) przechodza ta sama walidacje; `state: true` daje
+serwerowi nazwany wolumen `pipe-mcp-state-<nazwa>` na `/state` (nigdy katalog hosta; usuwany razem z serwerem),
+a `autoApprove` w katalogu obejmuje tylko logowanie i stan logowania. Dodanie serwera: jedno TAK z podgladem (albo `/mcp dodaj` administratora). Narzedzie bez
 `readOnlyHint` -- TAK przy kazdym wywolaniu; adnotacje sa deklaracja serwera, wiec odczyty bez pytania sa bezpieczne
 tylko o tyle, o ile ufasz temu serwerowi (`askAlways: true` w konfiguracji wylacza to dla niego). Wynik traktowany jak
 tresc z internetu (YOLO wylaczone do nastepnej wiadomosci), argument z sekretem nie wychodzi. Tryb obserwacji i viewer:

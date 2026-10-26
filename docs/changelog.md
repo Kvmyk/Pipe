@@ -1,5 +1,35 @@
 # Historia zmian -- Pipe
 
+## v0.45.0 (2026-10-26)
+
+### Gotowe dodatki: Outlook, Microsoft 365 (Teams), Google, GitHub
+
+- Nowy katalog dodatkow MCP (`backend/addons/`), nic nie jest wlaczone z gory: *Outlook* (konto prywatne: poczta,
+  kalendarz, kontakty), *Microsoft 365* (konto firmowe: Outlook i Teams), *Google* (Gmail, Kalendarz, Dysk, Dokumenty,
+  Arkusze) i *GitHub*. Dodaje sie je jednym kliknieciem albo w rozmowie (*"podlacz mi Outlooka"*)
+- Outlook i Microsoft 365 nie potrzebuja kluczy: po dodaniu Pipe daje link microsoft.com/devicelogin i kod, a
+  logowanie zostaje po restarcie (wlasny wolumen dodatku, usuwany razem z nim). Google wymaga wlasnego klienta OAuth
+  i refresh tokenu -- okno prowadzi krok po kroku
+- Klucze dodatkow wpisuje sie w oknie `/mcp` w `pipe web` albo w CLI; leza w `mcp_secrets.json` (0600), nie trafiaja
+  do modelu, przegladarki ani audit logu. Nowy dodatek to jeden plik JSON (`backend/addons/README.md`)
+
+### Okno `/mcp`
+
+- `/mcp` bez argumentow otwiera okno jak w Claude Code: w CLI ramka wybierana strzalkami (Enter, Esc), w `pipe web`
+  osobny panel, na Telegramie lista z przyciskami *Dodaj*. Widac stan serwerow, co dokladnie dziala, narzedzia
+  (odczyt / pyta o zgode / bez pytania) i przyciski *Polacz ponownie*, *Wylacz*, *Usun*
+- W zakladce *Dodatki* jest sekcja *Gotowe do dodania* i przycisk *Zarzadzaj*
+
+### `/web` dziala tez u dostawcow blokujacych porty
+
+- Gdy serwer jest za NAT-em albo na wspoldzielonym adresie (np. mikr.us), gdy porty 80 i 443 sa zajete albo
+  certyfikat nie powstaje, `/web wlacz` przechodzi samo na tunel Cloudflare (`https://...trycloudflare.com`) -- bez
+  otwierania portow i bez konta. Pipe mowi, dlaczego wybral tunel i co to znaczy (ruch przez Cloudflare, adres
+  zmienia sie po restarcie -- nowy przychodzi w wiadomosci). Wymuszenie: `/web wlacz tunel` albo
+  `/web wlacz bezposrednio`
+- `pipe web` odbiera powiadomienia odpytywaniem, gdy proxy po drodze nie przepuszcza strumienia zdarzen (SSE)
+- `/web` jest w menu komend Telegrama
+
 ## v0.44.0 (2026-10-26)
 
 ### Pipe w przegladarce z telefonu i komputera (`/web`)

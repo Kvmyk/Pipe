@@ -1014,11 +1014,31 @@
     toast(eventTitle(event), eventText(event), () => (event.type === "approval" ? HANDLERS.zgody("") : openInbox()));
   }
   function connectEvents() {
+    if (config.events === "poll") { pollEvents(); return; }        // tunel Cloudflare nie przepuszcza SSE
     const source = new EventSource("/api/events");
+    let opened = false, failures = 0;
+    source.onopen = () => { opened = true; };
     source.onmessage = (message) => { try { onLiveEvent(JSON.parse(message.data)); } catch (_) { /* niepelna ramka */ } };
-    source.onerror = () => setLink(false, t("reconnecting"));
+    source.onerror = () => {
+      setLink(false, t("reconnecting"));
+      // SSE nigdy nie ruszylo (proxy je blokuje) — odpytywanie zamiast strumienia
+      if (!opened && ++failures >= 3) { source.close(); pollEvents(); }
+    };
     // Pipe wystawiony publicznie: odwolane urzadzenie wraca do strony prosby o dostep
     source.addEventListener("down", (message) => { if (config.public && message.data === '"revoked"') location.reload(); });
+  }
+  async function pollEvents() {
+    for (;;) {
+      try {
+        const response = await fetch("/api/poll", { cache: "no-store" });
+        if (response.status === 401 && config.public) { location.reload(); return; }
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        ((await response.json()).events || []).forEach((event) => onLiveEvent(event));
+      } catch (_) {
+        setLink(false, t("reconnecting"));
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
   }
 
   // "Uruchom z GitHuba": adres repozytorium -> zwykla wiadomosc do agenta (klonuje, rozpoznaje, uruchamia w warsztacie)
@@ -1554,7 +1574,7 @@
     projekty: () => dataMessage({ command: "projects" }, (d) => listing(d.text)),
     sprzataj: () => cleanupRun(),
     web: (args) => run({ command: "web", args }, t("working"), showData),
-    mcp: (args) => dataMessage({ command: "mcp_servers", args }, (d) => listing(d.text)),
+    mcp: (args) => (args ? dataMessage({ command: "mcp_servers", args }, (d) => listing(d.text)) : mcpWindow.open("")),
     pobierz: (args) => dataMessage({ command: "install", args }, (d) => installBody(d)),
     powiadomienia: () => home.openSettings(),
     aktualizuj: (args) => run({ command: "update", args }, t("working")),
@@ -1844,10 +1864,13 @@
   $("server-name").textContent = config.server || "";
 
   // Dodatki (addons.js): skille i aplikacje zewnetrzne (MCP); instalacja przez rozmowe (/pobierz, /mcp)
+  // Okno /mcp (mcp.js): serwery MCP, katalog gotowych dodatkow, klucze i szczegoly — jak /mcp w Claude Code
+  const mcpWindow = window.PipeMcp.create({ el, t, command, onChanged: () => addons.refresh() });
   const addons = window.PipeAddons.create({
     el, md, t, command,
     onRunSkill: (skill) => runSkill(skill, ""),
     onSlash: (text) => { switchPane("chat"); send(text); },
+    onMcp: (name) => mcpWindow.open(name),
   });
   // Pierwsze uruchomienie (onboard.js): co chcesz robic i — bez backendu — gdzie ma dzialac Pipe
   const onboard = window.PipeOnboard.create({ el, t, command, onView: (value) => applyView(value) });

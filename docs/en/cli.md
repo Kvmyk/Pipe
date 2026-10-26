@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -203,7 +203,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
-| `/mcp [add <name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | MCP servers Pipe uses (in an isolated container); secrets as `${MCP_...}` from `backend/.env`. Changes admin only |
+| `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Without arguments a framed window (arrows, Enter, Esc): connected servers with details and ready add-ons (Google, Outlook, Microsoft 365, GitHub); keys are entered here in a hidden field. Servers run in an isolated container. Changes admin only |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation in Pipe's language |

@@ -1,0 +1,26 @@
+{
+  "name": "microsoft365",
+  "title": {"pl": "Microsoft 365 (konto firmowe)", "en": "Microsoft 365 (work account)"},
+  "description": {
+    "pl": "Outlook i Teams z konta firmowego albo szkolnego: poczta, kalendarz, kontakty, czaty, kanaly i spotkania.",
+    "en": "Outlook and Teams of a work or school account: mail, calendar, contacts, chats, channels and meetings."
+  },
+  "category": "office",
+  "homepage": "https://github.com/Softeria/ms-365-mcp-server",
+  "server": {
+    "command": "npx",
+    "args": ["-y", "@softeria/ms-365-mcp-server@0.172.0", "--org-mode", "--preset", "outlook,teams"],
+    "env": {
+      "MS365_MCP_TOKEN_CACHE_PATH": "/state/token-cache.json",
+      "MS365_MCP_SELECTED_ACCOUNT_PATH": "/state/selected-account.json",
+      "MS365_MCP_USE_KEYTAR": "0"
+    },
+    "state": true,
+    "autoApprove": ["login", "verify-login", "list-accounts"]
+  },
+  "secrets": [],
+  "login": {
+    "pl": "Napisz do Pipe: \"zaloguj mnie do Microsoft 365\". Dostaniesz link microsoft.com/devicelogin i kod: wpisz go i zaloguj sie kontem firmowym. Niektore firmy wymagaja zgody administratora na nowe aplikacje.",
+    "en": "Write to Pipe: \"log me in to Microsoft 365\". You get a microsoft.com/devicelogin link and a code: enter it and sign in with your work account. Some organisations require admin consent for new apps."
+  }
+}

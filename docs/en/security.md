@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 ## Model
 
@@ -221,6 +221,14 @@ A file sent by the user is foreign text too: a log can contain a line written by
 
 `/web on` exposes `pipe web` at a public HTTPS address (`core/webpublic.py`, `core/webaccess.py`):
 
+- Tunnel (`/web on tunnel`, or on its own when ports 80/443 cannot be reached): a `cloudflared` container (pinned
+  version) without ports or the host network, only with the bridge socket, `--cap-drop ALL`, `no-new-privileges`; root
+  inside the container only to open the 0600 socket. Cloudflare terminates TLS, so it sees the page traffic (the chat,
+  the device cookie) -- a deliberate trade-off for working without open ports; whoever does not want it uses
+  `/web on direct` with their own domain or an SSH tunnel. The client address comes from the `Cf-Connecting-Ip` header
+  (set by Cloudflare). A new tunnel address after a restart is a new domain, so old devices' cookies do not match and
+  they have to be let in again.
+
 - Caddy (`caddy:2.11-alpine`, the `pipe-web` container) uses the host network, but gets only the bridge socket
   (`/tmp/pipe-web/web.sock`) and the certificate volume -- no `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`),
   `no-new-privileges`, memory and process limits, no admin API. It passes the client address in a header the client
@@ -258,8 +266,12 @@ access to `docker.sock` and files. Since v0.42 it is back with a different bound
 Docker image) runs in a one-off container without mounts, `docker.sock` or privileges (`--cap-drop ALL`,
 `no-new-privileges`, user `nobody`, limits), so at most it can use the network and change its own service (e.g. a
 GitHub repository) -- not the server. Programs other than `npx`/`uvx`/an image and `docker run` options such as `-v`,
-`--network host`, `--privileged` are refused. Secrets only as `${MCP_*}` from `backend/.env` (the model cannot point
-at `${LLM_API_KEY}` or a Pipe token); text that looks like a secret in the configuration -- refused. Adding a server:
+`--network host`, `--privileged` are refused. Secrets only as `${MCP_*}` from `backend/.env` or from `mcp_secrets.json` (0600; entered in the `/mcp` window in
+`pipe web` and the CLI through the `mcp_servers` `klucz` command, admin only, the value never goes back to a client and
+never reaches the chat or the audit log -- only the name) -- the model cannot point at `${LLM_API_KEY}` or a Pipe
+token; text that looks like a secret in the configuration -- refused. Catalog add-ons (`backend/addons/`) go through
+the same validation; `state: true` gives the server a named volume `pipe-mcp-state-<name>` at `/state` (never a host
+directory; removed together with the server), and catalog `autoApprove` covers only the login and the login state. Adding a server:
 one YES with a preview (or an admin's `/mcp add`). A tool without `readOnlyHint` -- a YES on every call; annotations are
 the server's own declaration, so reads without asking are only as safe as your trust in that server (`askAlways: true`
 in the configuration turns this off for it). The result is treated like internet content (YOLO off until the next

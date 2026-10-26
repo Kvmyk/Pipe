@@ -13,10 +13,14 @@ Izolacja (to zmienia sie wzgledem klienta usunietego w v0.35): serwer stdio NIGD
 obrazu: siec bridge, bez montowan, bez docker.sock, `--cap-drop ALL`, `no-new-privileges`, uzytkownik nobody,
 limity pamieci, procesow i CPU. Serwer widzi wiec tylko siec — nie pliki serwera i nie Pipe.
 
-Sekrety: wartosc w `env` / `headers` to tekst albo odwolanie `${MCP_NAZWA}` do zmiennej z backend/.env —
+Sekrety: wartosc w `env` / `headers` to tekst albo odwolanie `${MCP_NAZWA}` do zmiennej z backend/.env albo
+z DATA_DIR/mcp_secrets.json (0600, wpisywane w oknie `/mcp` w pipe web i CLI — nigdy w rozmowie z modelem) —
 tylko z prefiksem MCP_, wiec model nie skieruje klucza LLM ani tokenu Pipe do cudzego serwera. Tekst wygladajacy
 na sekret jest odrzucany (sekret wpisany w czat zostalby w historii i u providera modelu). Wartosci trafiaja do
 kontenera jako `-e NAZWA` (wartosc w srodowisku procesu `docker`, nie w argumentach).
+
+`state: true` (dodatki z katalogu, backend/addons) — serwer dostaje wlasny nazwany wolumen `/state` (np. tokeny po
+logowaniu kodem urzadzenia), nigdy katalog hosta; usuniecie serwera usuwa wolumen.
 
 Polityka: narzedzie oznaczone przez serwer `readOnlyHint` dziala bez pytania (chyba ze `askAlways`), kazde inne
 czeka na TAK z widocznymi argumentami. Narzedzia trafiaja do modelu jako `mcp__<serwer>__<narzedzie>`, w grupie
@@ -54,6 +58,8 @@ _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:@-]{0,254}$")
 _ARG = re.compile(r"^[^\x00-\x1f]{0,512}$")
+_SECRET_NAME = re.compile(r"^MCP_[A-Z0-9_]{1,60}$")
+STATE_MOUNT = "/state"
 # flagi `docker run` z .mcp.json, ktore nic nie zmieniaja w izolacji (reszta: -v, --network, --privileged... — odmowa)
 _DOCKER_FLAGS = {"-i", "--interactive", "--rm", "--init", "-t", "--tty", "-it", "-ti"}
 
@@ -183,12 +189,22 @@ def validate_server(name: str, cfg: dict[str, Any]) -> dict[str, Any]:
         raise McpConfigError(tr("autoApprove: lista wzorcow nazw narzedzi.", "autoApprove: a list of tool-name patterns."))
     clean["autoApprove"] = auto
     clean["askAlways"] = bool(cfg.get("askAlways", False))
+    if cfg.get("state"):
+        if "url" in clean:
+            raise McpConfigError(tr("state: tylko dla serwera w kontenerze.", "state: only for a server in a container."))
+        clean["state"] = True
     clean["enabled"] = bool(cfg.get("enabled", True))
     if cfg.get("description"):
         clean["description"] = " ".join(str(cfg["description"]).split())[:200]
     if cfg.get("source"):
         clean["source"] = " ".join(str(cfg["source"]).split())[:200]
+    if cfg.get("addon"):
+        clean["addon"] = str(cfg["addon"])[:24]
     return clean
+
+
+def state_volume(name: str) -> str:
+    return f"pipe-mcp-state-{name}"
 
 
 def parse_line(text: str) -> tuple[str, dict[str, Any]]:
@@ -250,13 +266,68 @@ def remove_server(name: str) -> bool:
     return True
 
 
+# ─── Sekrety wpisane w oknie /mcp (DATA_DIR/mcp_secrets.json, 0600) ─────────
+
+def secrets_path() -> Path:
+    return memory.data_dir() / "mcp_secrets.json"
+
+
+def _stored_secrets() -> dict[str, str]:
+    try:
+        raw = json.loads(secrets_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(raw, dict) else {}
+
+
+def set_secret(name: str, value: str) -> None:
+    """Zapisuje sekret dodatku. Nazwa tylko MCP_*, wartosc jedna linia — wartosc nigdy nie wraca do klienta."""
+    name, value = (name or "").strip().upper(), (value or "").strip()
+    if not _SECRET_NAME.match(name):
+        raise McpConfigError(tr("Nazwa sekretu: MCP_ i wielkie litery, cyfry, '_'.", "Secret name: MCP_ and uppercase letters, digits, '_'."))
+    if not value or len(value) > 4096 or any(c in value for c in "\r\n\x00"):
+        raise McpConfigError(tr("Wartosc sekretu: jedna linia, do 4096 znakow.", "Secret value: one line, up to 4096 characters."))
+    stored = _stored_secrets()
+    stored[name] = value
+    memory._write_atomic(secrets_path(), json.dumps(stored, indent=1) + "\n")
+    os.chmod(secrets_path(), 0o600)
+
+
+def forget_secret(name: str) -> bool:
+    stored = _stored_secrets()
+    if stored.pop((name or "").strip().upper(), None) is None:
+        return False
+    memory._write_atomic(secrets_path(), json.dumps(stored, indent=1) + "\n")
+    os.chmod(secrets_path(), 0o600)
+    return True
+
+
+def has_secret(name: str) -> bool:
+    return bool(os.environ.get(name)) or name in _stored_secrets()
+
+
+def secret_refs(cfg: dict[str, Any]) -> list[str]:
+    """Nazwy ${MCP_*}, do ktorych odwoluje sie konfiguracja serwera (env i naglowki)."""
+    found: list[str] = []
+    for values in (cfg.get("env") or {}, cfg.get("headers") or {}):
+        for value in values.values():
+            found += [ref for ref in _REF.findall(value) if ref not in found]
+    return found
+
+
 def resolve(values: dict[str, str]) -> dict[str, str]:
-    """${MCP_*} -> wartosc z srodowiska Pipe (backend/.env). Brakujaca zmienna — blad z nazwa."""
+    """${MCP_*} -> wartosc z srodowiska Pipe (backend/.env) albo z mcp_secrets.json. Brakujaca — blad z nazwa."""
+    stored = _stored_secrets()
+
     def one(match: re.Match) -> str:
         name = match.group(1)
-        if not name.startswith("MCP_") or name not in os.environ:
-            raise McpConfigError(tr(f"Brak zmiennej {name} w backend/.env.", f"Variable {name} is missing from backend/.env."))
-        return os.environ[name]
+        if name.startswith("MCP_") and os.environ.get(name):
+            return os.environ[name]
+        if name.startswith("MCP_") and name in stored:
+            return stored[name]
+        raise McpConfigError(tr(f"Brak sekretu {name} — wpisz go w oknie /mcp (pipe web albo CLI) albo w backend/.env.",
+                                f"Secret {name} is missing — enter it in the /mcp window (pipe web or the CLI) or in "
+                                f"backend/.env."))
     return {key: _REF.sub(one, value) for key, value in values.items()}
 
 
@@ -274,9 +345,40 @@ def launch(name: str, cfg: dict[str, Any]) -> tuple[str, list[str], dict[str, st
             "--memory-swap", MEMORY, "--cpus", hostinfo.cpu_limit("1"), "--user", "65534:65534",
             "-e", "HOME=/tmp", "-e", "npm_config_cache=/tmp/.npm", "-e", "UV_CACHE_DIR=/tmp/.uv",
             "-e", "npm_config_update_notifier=false"]
+    if cfg.get("state"):
+        argv += ["-v", f"{state_volume(name)}:{STATE_MOUNT}"]
     for key in env:
         argv += ["-e", key]
     return "docker", argv + [image] + program, env, container
+
+
+async def _docker(*args: str, timeout: float = 60) -> tuple[int, str]:
+    try:
+        process = await asyncio.create_subprocess_exec("docker", *args, stdout=asyncio.subprocess.DEVNULL,
+                                                       stderr=asyncio.subprocess.PIPE)
+    except OSError as exc:
+        return 127, str(exc)
+    try:
+        _, err = await asyncio.wait_for(process.communicate(), timeout)
+    except asyncio.TimeoutError:
+        process.kill()
+        return 124, "timeout"
+    return process.returncode or 0, err.decode("utf-8", errors="replace").strip()[-300:]
+
+
+async def prepare_state(name: str, image: str) -> None:
+    """Wolumen /state nalezy do uzytkownika nobody (serwer dziala jako 65534) — raz, przy kazdym starcie tanio."""
+    code, err = await _docker("run", "--rm", "--user", "0", "--network", "none", "--cap-drop", "ALL", "--cap-add", "CHOWN",
+                              "--security-opt", "no-new-privileges", "-v", f"{state_volume(name)}:{STATE_MOUNT}",
+                              "--entrypoint", "chown", image, "65534:65534", STATE_MOUNT)
+    if code != 0:
+        raise McpError(tr(f"Nie przygotowalem wolumenu {state_volume(name)}: {err}",
+                          f"Could not prepare the {state_volume(name)} volume: {err}"))
+
+
+async def remove_state(name: str) -> None:
+    """Usuwa wolumen serwera (np. zapisane logowanie) — przy usunieciu serwera."""
+    await _docker("volume", "rm", "-f", state_volume(name), timeout=60)
 
 
 async def ensure_image(image: str) -> None:
@@ -377,6 +479,8 @@ class McpManager:
         try:
             if "url" not in cfg:
                 await ensure_image(cfg.get("image") or RUNNERS[cfg["command"]])
+                if cfg.get("state"):
+                    await prepare_state(name, cfg.get("image") or RUNNERS[cfg["command"]])
             client = McpClient(self._transport(name, cfg))
         except (McpConfigError, McpError) as exc:
             state.status, state.error = "error", str(exc)

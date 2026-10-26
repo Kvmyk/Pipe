@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -109,6 +109,8 @@ from tg_format import (
     provider_choices,
     format_list,
     format_listing,
+    format_mcp,
+    mcp_buttons,
     format_pre,
     format_reminder,
     format_routine,
@@ -653,8 +655,35 @@ async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
         frames = await _collect(context.bot, chat_id, get_client(user_id).command("mcp_servers", args=args))
         error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
-        text = error or response_data(frames).get("text", "")
-        await _send_html(context.bot, chat_id, format_listing("MCP", text))
+        data = response_data(frames)
+        if error or args:
+            await _send_html(context.bot, chat_id, format_listing("MCP", error or data.get("text", "")))
+            return
+        await _send_html(context.bot, chat_id, format_mcp(data), _inline(mcp_buttons(data, _is_admin(user_id)), per_row=1))
+
+    await _backend_call(update, context, go())
+
+
+async def _handle_mcp_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """Przycisk "Dodaj" z okna /mcp: dodatek z katalogu (klucze sa juz na serwerze)."""
+    query = update.callback_query
+    user = update.effective_user
+    if not user or not _is_admin(user.id):
+        await query.answer(tr("Dodatki dodaje tylko administrator.", "Only an administrator adds add-ons."), show_alert=True)
+        return
+    await query.answer(tr("Dodaje… pierwsze uruchomienie potrafi potrwac minute.", "Adding… the first start can take a minute."))
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    name = data.split(":", 2)[2]
+
+    async def go() -> None:
+        frames = await _collect(context.bot, query.message.chat_id,
+                                get_client(user.id).command("mcp_servers", args=f"dodaj {name}"))
+        error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
+        text = error or response_data(frames).get("text", "").split("\n\nSerwery MCP")[0].split("\n\nMCP servers")[0]
+        await _send_html(context.bot, query.message.chat_id, format_listing("MCP", text))
 
     await _backend_call(update, context, go())
 
@@ -1494,6 +1523,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith("inst:"):
         await _handle_install_callback(update, context, data)
+        return
+
+    if data.startswith("mcp:add:"):
+        await _handle_mcp_callback(update, context, data)
         return
 
     if data.startswith("pf:"):

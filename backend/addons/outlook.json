@@ -1,0 +1,27 @@
+{
+  "name": "outlook",
+  "title": {"pl": "Outlook (konto prywatne)", "en": "Outlook (personal account)"},
+  "description": {
+    "pl": "Poczta, kalendarz i kontakty z konta Microsoft (outlook.com, hotmail, live): czytanie, szukanie, odpowiedzi, spotkania.",
+    "en": "Mail, calendar and contacts of a Microsoft account (outlook.com, hotmail, live): reading, searching, replies, meetings."
+  },
+  "category": "office",
+  "homepage": "https://github.com/Softeria/ms-365-mcp-server",
+  "server": {
+    "command": "npx",
+    "args": ["-y", "@softeria/ms-365-mcp-server@0.172.0", "--preset", "outlook"],
+    "env": {
+      "MS365_MCP_TENANT_ID": "consumers",
+      "MS365_MCP_TOKEN_CACHE_PATH": "/state/token-cache.json",
+      "MS365_MCP_SELECTED_ACCOUNT_PATH": "/state/selected-account.json",
+      "MS365_MCP_USE_KEYTAR": "0"
+    },
+    "state": true,
+    "autoApprove": ["login", "verify-login", "list-accounts"]
+  },
+  "secrets": [],
+  "login": {
+    "pl": "Napisz do Pipe: \"zaloguj mnie do Outlooka\". Dostaniesz link microsoft.com/devicelogin i kod: wpisz go na telefonie albo komputerze i zaloguj sie. Logowanie zostaje po restarcie.",
+    "en": "Write to Pipe: \"log me in to Outlook\". You get a microsoft.com/devicelogin link and a code: enter it on your phone or computer and sign in. The login survives restarts."
+  }
+}

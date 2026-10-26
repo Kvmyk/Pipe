@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.44.0
+Pipe v0.45.0
 """
 
 from __future__ import annotations
@@ -234,11 +234,12 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "of a connected MCP server (listed in the prompt). After enabling, call the tool you need in the next step.",
         {"groups": "Groups to enable: memory, security, schedule, fleet, web, diagram, update, mcp or mcp:<server>."}),
     "mcp_manage": (
-        "External MCP servers you use (their tools: mcp__<server>__<tool>, group mcp:<server>). list: state; add: a new "
-        "server — ALWAYS with confirmation: npx/uvx (command + args), a Docker image (image + args) or HTTP (url + "
-        "headers). A stdio server runs in an isolated container (no server files, docker.sock or privileges). Secrets "
+        "External MCP servers you use (their tools: mcp__<server>__<tool>, group mcp:<server>). list: state; catalog: "
+        "ready add-ons (Google, Outlook, Microsoft 365/Teams, GitHub...) — add them with add and just the name; add: a new "
+        "server — ALWAYS with confirmation: a catalog name or npx/uvx (command + args), a Docker image (image + args) or "
+        "HTTP (url + headers). A stdio server runs in an isolated container (no server files, docker.sock or privileges). Secrets "
         "only as ${MCP_NAME} from backend/.env — never put a token in the configuration; when the user gives a token in "
-        "the conversation, ask them to add MCP_...=... to backend/.env. remove; reload.",
+        "the conversation, ask them to enter the key in the /mcp window (pipe web or the CLI). remove; reload.",
         {"operation": "Operation.", "name": "Server name: lowercase letters, digits, '-', '_'.",
          "command": "npx or uvx (or docker with args 'run ... <image>').", "args": "Arguments, e.g. ['-y', '@package/server'].",
          "image": "Docker image of the MCP server (instead of command).", "env": "Server variables: text or ${MCP_NAME}.",

@@ -609,65 +609,134 @@ async def _install(writer, request: dict, interface: str, role: str) -> None:
                                "empty": found.empty}))
 
 
+MCP_VERBS = {"add": "dodaj", "remove": "usun", "usuń": "usun", "reload": "odswiez", "odśwież": "odswiez",
+             "key": "klucz", "secret": "klucz", "forget": "zapomnij", "enable": "wlacz", "włącz": "wlacz",
+             "disable": "wylacz", "wyłącz": "wylacz"}
+
+
+def _mcp_view(manager, role: str) -> dict:
+    """Stan dla okna /mcp: serwery ze szczegolami i katalog gotowych dodatkow (bez wartosci sekretow)."""
+    from backend.core import addons
+    from backend.core.mcp import registry
+
+    config = registry.load_config()
+    servers = []
+    for name, cfg in sorted(config.items()):
+        state = manager.servers.get(name)
+        info = state.client.server_info if state and state.client else {}
+        servers.append({
+            "name": name, "status": state.status if state else ("disabled" if not cfg.get("enabled", True) else "disconnected"),
+            "error": state.error if state else "", "description": cfg.get("description", ""),
+            "source": cfg.get("source", ""), "addon": cfg.get("addon", ""), "enabled": cfg.get("enabled", True),
+            "runs": registry.describe_server(name, cfg), "version": f"{info.get('name', '')} {info.get('version', '')}".strip(),
+            "tools": [{"name": t["name"], "read": registry.read_only(t), "ask": registry.needs_confirmation(cfg, t),
+                       "description": " ".join(str(t.get("description", "") or "").split())[:200]}
+                      for t in (state.tools if state else [])],
+            "secrets": [{"name": ref, "set": registry.has_secret(ref)} for ref in registry.secret_refs(cfg)],
+        })
+    catalog = []
+    for addon in addons.catalog():
+        try:
+            catalog.append(addon.to_data(config))
+        except registry.McpConfigError:
+            continue
+    return {"servers": servers, "catalog": catalog, "can_edit": role == "admin" and not runtime.observe()}
+
+
 async def _mcp_servers(writer, request: dict, role: str) -> None:
     """
-    Serwery MCP, z ktorych korzysta Pipe: lista; `dodaj <nazwa> <npx ...|uvx ...|docker run ...|url> [ZMIENNA=${MCP_X}]`,
-    `usun <nazwa>`, `odswiez`. Zmiany tylko administrator; wpisanie komendy jest zgoda (tresc widac w niej samej).
-    Dodanie uruchamia kontener, wiec nie w trybie obserwacji.
+    Serwery MCP, z ktorych korzysta Pipe (okno /mcp w kazdym kliencie): stan, szczegoly i katalog gotowych dodatkow
+    (core/addons.py). `dodaj <dodatek>` z katalogu albo `dodaj <nazwa> <npx ...|uvx ...|docker run ...|url>
+    [ZMIENNA=${MCP_X}]`, `usun <nazwa>`, `wlacz|wylacz <nazwa>`, `odswiez`, `klucz` (`name` = MCP_..., `key` =
+    wartosc — nigdy nie wraca), `zapomnij <MCP_...>`. Zmiany tylko administrator; wpisanie komendy jest zgoda.
+    Dodanie i wlaczenie uruchamia kontener, wiec nie w trybie obserwacji.
     """
+    from backend.core import addons
     from backend.core.mcp import registry
 
     manager = registry.get_manager()
     words = str(request.get("args", "") or "").strip()
     verb, _, rest = words.partition(" ")
-    verb = {"add": "dodaj", "remove": "usun", "usuń": "usun", "reload": "odswiez", "odśwież": "odswiez"}.get(
-        verb.lower(), verb.lower())
+    verb = MCP_VERBS.get(verb.lower(), verb.lower())
+    rest = rest.strip()
     text = ""
-    if verb in ("dodaj", "usun", "odswiez"):
+    if verb in ("dodaj", "usun", "odswiez", "klucz", "zapomnij", "wlacz", "wylacz"):
         if role != "admin":
             await _send(writer, _error(tr("Serwery MCP zmienia tylko administrator.", "Only an administrator changes MCP servers.")))
             return
-        if verb == "dodaj":
-            if runtime.observe():
-                await _send(writer, _error(tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe nie uruchamia nowych serwerow MCP.",
-                                              "Observe mode (PIPE_OBSERVE=1): Pipe starts no new MCP servers.")))
-                return
-            try:
-                name, cfg = registry.parse_line(rest)
-                created = registry.add_server(name, cfg)
-            except registry.McpConfigError as exc:
-                await _send(writer, _error(str(exc)))
-                return
-            await audit.log_file_write("mcp_servers", f"mcp_servers.json#{name}", 0)
-            await manager.reload()
-            state = manager.servers.get(name)
-            text = (tr(f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP ", f"{'Added' if created else 'Updated'} MCP server ")
-                    + (state.describe() if state else name))
-        elif verb == "usun":
-            removed = registry.remove_server(rest.strip())
-            await manager.reload()
-            text = tr(f"Usunieto serwer MCP {rest.strip()}.", f"Removed MCP server {rest.strip()}.") if removed else                 tr(f"Nie ma serwera MCP {rest.strip()!r}.", f"No MCP server {rest.strip()!r}.")
-        else:
-            await manager.reload()
+        if verb in ("dodaj", "wlacz") and runtime.observe():
+            await _send(writer, _error(tr("Tryb obserwacji (PIPE_OBSERVE=1): Pipe nie uruchamia nowych serwerow MCP.",
+                                          "Observe mode (PIPE_OBSERVE=1): Pipe starts no new MCP servers.")))
+            return
+        try:
+            if verb == "dodaj":
+                addon = addons.get(rest) if rest and " " not in rest else None
+                if addon is not None:
+                    created = addons.install(addon)
+                    name = addon.name
+                else:
+                    name, cfg = registry.parse_line(rest)
+                    created = registry.add_server(name, cfg)
+                await audit.log_file_write("mcp_servers", f"mcp_servers.json#{name}", 0)
+                await manager.reload()
+                state = manager.servers.get(name)
+                text = (tr(f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP ", f"{'Added' if created else 'Updated'} MCP server ")
+                        + (state.describe() if state else name))
+                if addon is not None and addon.text(addon.login):
+                    text += "\n\n" + addon.text(addon.login)
+            elif verb == "usun":
+                cfg = registry.load_config().get(rest.lower())
+                removed = registry.remove_server(rest)
+                if cfg and cfg.get("state"):
+                    await registry.remove_state(rest.lower())
+                await manager.reload()
+                text = tr(f"Usunieto serwer MCP {rest}.", f"Removed MCP server {rest}.") if removed else \
+                    tr(f"Nie ma serwera MCP {rest!r}.", f"No MCP server {rest!r}.")
+            elif verb in ("wlacz", "wylacz"):
+                config = registry.load_config()
+                if rest.lower() not in config:
+                    raise registry.McpConfigError(tr(f"Nie ma serwera MCP {rest!r}.", f"No MCP server {rest!r}."))
+                registry.add_server(rest.lower(), {**config[rest.lower()], "enabled": verb == "wlacz"})
+                await manager.reload()
+                text = tr(f"Serwer MCP {rest} {'wlaczony' if verb == 'wlacz' else 'wylaczony'}.",
+                          f"MCP server {rest} {'enabled' if verb == 'wlacz' else 'disabled'}.")
+            elif verb == "klucz":
+                secret = str(request.get("name") or rest).strip().upper()
+                registry.set_secret(secret, str(request.get("key") or ""))
+                await audit.log_file_write("mcp_servers", f"mcp_secrets.json#{secret}", 0)
+                used = [n for n, c in registry.load_config().items() if secret in registry.secret_refs(c)]
+                if used:
+                    await manager.reload()                      # serwer, ktory czekal na klucz, laczy sie od razu
+                text = tr(f"Zapisano {secret}.", f"Saved {secret}.")
+            elif verb == "zapomnij":
+                forgotten = registry.forget_secret(rest)
+                text = tr(f"Usunieto {rest.upper()}.", f"Removed {rest.upper()}.") if forgotten else \
+                    tr(f"Nie ma zapisanego {rest.upper()}.", f"No stored {rest.upper()}.")
+            else:
+                await manager.reload()
+        except (registry.McpConfigError, addons.AddonError) as exc:
+            await _send(writer, _error(str(exc)))
+            return
     elif verb:
-        await _send(writer, _error(tr("Uzycie: /mcp, /mcp dodaj <nazwa> <npx ...|uvx ...|docker run ...|https://...> "
-                                      "[ZMIENNA=${MCP_...}], /mcp usun <nazwa>, /mcp odswiez.",
-                                      "Usage: /mcp, /mcp add <name> <npx ...|uvx ...|docker run ...|https://...> "
-                                      "[VAR=${MCP_...}], /mcp remove <name>, /mcp reload.")))
+        await _send(writer, _error(tr("Uzycie: /mcp, /mcp dodaj <dodatek z katalogu>, /mcp dodaj <nazwa> <npx ...|uvx ...|"
+                                      "docker run ...|https://...> [ZMIENNA=${MCP_...}], /mcp usun <nazwa>, "
+                                      "/mcp wlacz|wylacz <nazwa>, /mcp odswiez.",
+                                      "Usage: /mcp, /mcp add <catalog add-on>, /mcp add <name> <npx ...|uvx ...|"
+                                      "docker run ...|https://...> [VAR=${MCP_...}], /mcp remove <name>, "
+                                      "/mcp enable|disable <name>, /mcp reload.")))
         return
+    view = _mcp_view(manager, role)
     config = registry.load_config()
     lines = [registry.describe_server(n, c) + "\n  " + (manager.servers[n].describe() if n in manager.servers
                                                         else tr("(nie polaczony)", "(not connected)"))
              for n, c in sorted(config.items())]
-    listing = "\n".join(f"- {line}" for line in lines) if lines else tr(
-        "Brak serwerow MCP. Dodaj: /mcp dodaj github npx -y @modelcontextprotocol/server-github "
-        "GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN} (token w backend/.env jako MCP_GITHUB_TOKEN=...).",
-        "No MCP servers. Add one: /mcp add github npx -y @modelcontextprotocol/server-github "
-        "GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN} (the token in backend/.env as MCP_GITHUB_TOKEN=...).")
+    listing = "\n".join(f"- {line}" for line in lines) if lines else tr("Brak serwerow MCP.", "No MCP servers.")
+    ready = [a for a in view["catalog"] if not a["installed"]]
+    if ready:
+        listing += tr("\n\nGotowe do dodania: ", "\n\nReady to add: ") + ", ".join(
+            f"{a['name']} ({a['title']})" for a in ready) + tr(" -- /mcp dodaj <nazwa>", " -- /mcp add <name>")
     text = (text + "\n\n" if text else "") + tr("Serwery MCP:\n", "MCP servers:\n") + listing
-    await _send(writer, _data({"text": text, "servers": [{"name": n, "status": manager.servers[n].status
-                                                            if n in manager.servers else "disconnected"}
-                                                           for n in sorted(config)]}))
+    await _send(writer, _data({"text": text, **view}))
 
 
 async def _cleanup(writer, agent, session_id: str, interface: str, role: str) -> None:
@@ -707,6 +776,8 @@ async def _web(writer, agent, request: dict, session_id: str, interface: str, id
     from backend.core import webaccess, webpublic
 
     op, rest = webpublic.parse(str(request.get("args", "") or ""))
+    if op == "tunnel":                       # /web tunel = /web wlacz tunel
+        op, rest = "on", ["tunel", *rest]
     if op == "help":
         await _send(writer, _error(webpublic.help_text()))
         return
@@ -723,12 +794,12 @@ async def _web(writer, agent, request: dict, session_id: str, interface: str, id
 
     if op == "on":
         try:
-            port, domain = webpublic.parse_on(rest)
+            port, domain, mode = webpublic.parse_on(rest)
         except ValueError as exc:
             await _send(writer, _error(str(exc)))
             return
-        ok, text = await webpublic.enable(port=port, domain=domain, backend_socket=settings.AGENT_SOCKET, emit=emit,
-                                          publish=_publish_login)
+        ok, text = await webpublic.enable(port=port, domain=domain, mode=mode, backend_socket=settings.AGENT_SOCKET,
+                                          emit=emit, publish=_publish_login)
         await audit.log_confirmed(interface, f"/web wlacz {' '.join(rest)}".strip(), 0 if ok else 1)
         _web_note(agent, session_id, text)
         await _send(writer, _data({**webpublic.status(True), "ok": ok, "text": text}))

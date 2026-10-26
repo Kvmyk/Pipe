@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -456,12 +456,13 @@ TOOLS: list[dict] = [
     _tool(
         "mcp_manage",
         "Zewnetrzne serwery MCP, z ktorych korzystasz (ich narzedzia: mcp__<serwer>__<narzedzie>, grupa mcp:<serwer>). "
-        "list: stan; add: nowy serwer — ZAWSZE z potwierdzeniem: npx/uvx (command + args), obraz Dockera (image + args) "
-        "albo HTTP (url + headers). Serwer stdio dziala w izolowanym kontenerze (bez plikow serwera, docker.sock i "
+        "list: stan; catalog: gotowe dodatki (Google, Outlook, Microsoft 365/Teams, GitHub...) — dodajesz je przez add z "
+        "sama nazwa; add: nowy serwer — ZAWSZE z potwierdzeniem: nazwa z katalogu albo npx/uvx (command + args), obraz "
+        "Dockera (image + args) albo HTTP (url + headers). Serwer stdio dziala w izolowanym kontenerze (bez plikow serwera, docker.sock i "
         "uprawnien). Sekrety tylko jako ${MCP_NAZWA} z backend/.env — nigdy nie wpisuj tokenu w konfiguracje; gdy "
-        "uzytkownik poda token w rozmowie, popros go o dopisanie MCP_...=... do backend/.env. remove; reload.",
+        "uzytkownik poda token w rozmowie, popros go o wpisanie klucza w oknie /mcp (pipe web albo CLI). remove; reload.",
         {
-            "operation": {"type": "string", "enum": ["list", "add", "remove", "reload"]},
+            "operation": {"type": "string", "enum": ["list", "catalog", "add", "remove", "reload"]},
             "name": {"type": "string", "description": "Nazwa serwera: male litery, cyfry, '-', '_'."},
             "command": {"type": "string", "description": "npx albo uvx (albo docker z args 'run ... <obraz>')."},
             "args": {"type": "array", "items": {"type": "string"}, "description": "Argumenty, np. ['-y', '@pakiet/serwer']."},

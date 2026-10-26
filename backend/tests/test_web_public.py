@@ -128,8 +128,11 @@ class TestPublic:
         assert webpublic.parse("wlacz 8443 pipe.example.com") == ("on", ["8443", "pipe.example.com"])
         assert webpublic.parse("ON")[0] == "on" and webpublic.parse("wpusc K7P-4QX")[0] == "approve"
         assert webpublic.parse("cokolwiek")[0] == "help"
-        assert webpublic.parse_on(["https://Pipe.Example.com/", "8443"]) == (8443, "pipe.example.com")
-        for bad in (["99999"], ["nie domena"], ["evil.com;rm"]):
+        assert webpublic.parse_on(["https://Pipe.Example.com/", "8443"]) == (8443, "pipe.example.com", "")
+        assert webpublic.parse_on(["tunel"]) == (0, "", "tunnel")
+        assert webpublic.parse_on(["bezposrednio", "9443"]) == (9443, "", "direct")
+        assert webpublic.parse("tunel")[0] == "tunnel"
+        for bad in (["99999"], ["nie domena"], ["evil.com;rm"], ["tunel", "8443"]):
             with pytest.raises(ValueError):
                 webpublic.parse_on(bad)
 
@@ -173,6 +176,7 @@ class TestPublic:
         monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
         monkeypatch.setattr(webpublic, "busy_ports", lambda: {22, 443})
         monkeypatch.setattr(webpublic, "ufw_rules", lambda root="": (True, {22}))
+        monkeypatch.setattr(webpublic, "local_ipv4", lambda proc=None: {"203.0.113.9", "127.0.0.1"})
         calls = []
 
         async def fake_run(*args, timeout=120):
@@ -207,6 +211,112 @@ class TestPublic:
         assert "ufw delete allow 8443/tcp" in [c[-1] for c in calls if c[:2] == ["sh", "-c"]]
         assert not webpublic.load_state().on and not webpublic.bridge_running() and "nie jest juz" in off
 
+    def test_tunnel_runs_without_ports_or_privileges(self):
+        command = webpublic.tunnel_command()
+        joined = " ".join(command)
+        assert "--network" not in command and "-p" not in command and "docker.sock" not in joined
+        assert "--cap-drop ALL" in joined and "no-new-privileges" in joined
+        assert command[-4:] == ["tunnel", "--no-autoupdate", "--unix-socket", "/run/pipe-web/web.sock"]
+        logs = ("INF Requesting new quick Tunnel on trycloudflare.com...\n"
+                "INF |  https://brave-lion-ab12.trycloudflare.com  |\nINF later https://second-one-cd34.trycloudflare.com")
+        assert webpublic.tunnel_host(logs) == "second-one-cd34.trycloudflare.com" and webpublic.tunnel_host("nic") == ""
+
+    def test_local_addresses_from_fib_trie(self, tmp_path):
+        net = tmp_path / "1" / "net"
+        net.mkdir(parents=True)
+        (net / "fib_trie").write_text(
+            "Main:\n  +-- 0.0.0.0/0 3 0 5\n     |-- 0.0.0.0\n        /0 universe UNICAST\n"
+            "     |-- 10.0.0.5\n        /32 host LOCAL\n     |-- 10.0.0.255\n        /32 link BROADCAST\n"
+            "     |-- 127.0.0.1\n        /32 host LOCAL\n")
+        assert webpublic.local_ipv4(str(tmp_path)) == {"10.0.0.5", "127.0.0.1"}
+
+    def _fake_env(self, monkeypatch, *, local, logs, busy=frozenset({22})):
+        sock_dir = Path(tempfile.mkdtemp(prefix="pt"))
+        monkeypatch.setattr(webpublic, "SOCKET_DIR", str(sock_dir))
+        monkeypatch.setattr(webpublic.runtime, "kind", lambda: "native")
+        monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
+        monkeypatch.setattr(webpublic, "busy_ports", lambda: set(busy))
+        monkeypatch.setattr(webpublic, "ufw_rules", lambda root="": (False, set()))
+        monkeypatch.setattr(webpublic, "local_ipv4", lambda proc=None: set(local))
+        monkeypatch.setattr(webpublic, "DIRECT_TIMEOUT", 0.5)
+        monkeypatch.setattr(webpublic, "TUNNEL_WATCH", 3600)
+        calls = []
+
+        async def fake_run(*args, timeout=120):
+            calls.append(list(args))
+            if args[:2] == ("docker", "logs"):
+                return logs(calls), 0
+            return "ok", 0
+
+        async def ip():
+            return "198.51.100.7"
+
+        async def no_tls(*a, **k):
+            return "refused"
+        monkeypatch.setattr(webpublic, "_run", fake_run)
+        monkeypatch.setattr(webpublic, "public_ip", ip)
+        monkeypatch.setattr(webpublic, "_tls_check", lambda *a: "refused")
+        return calls
+
+    def _enable(self, **kwargs):
+        progress = []
+
+        async def emit(text):
+            progress.append(text)
+
+        async def go():
+            result = await webpublic.enable(port=0, domain="", backend_socket="/nonexistent", emit=emit, **kwargs)
+            state = webpublic.load_state()
+            await webpublic.stop_bridge()
+            return result, state
+        (ok, text), state = asyncio.run(go())
+        return ok, text, state, progress
+
+    def test_shared_address_goes_straight_to_the_tunnel(self, monkeypatch):
+        """mikr.us i podobni: publiczny IPv4 nie jest adresem serwera — porty 80/443 do niego nie dojda."""
+        calls = self._fake_env(monkeypatch, local={"10.0.0.5"},
+                               logs=lambda c: "INF |  https://quiet-river-1a2b.trycloudflare.com  |")
+        ok, text, state, _ = self._enable()
+        assert ok and "https://quiet-river-1a2b.trycloudflare.com" in text and "NAT" in text and "Cloudflare" in text
+        assert (state.mode, state.host, state.port) == ("tunnel", "quiet-river-1a2b.trycloudflare.com", 443)
+        assert not any(webpublic.CADDY_IMAGE in c for c in calls)              # Caddy nawet nie startowal
+
+    def test_failed_certificate_falls_back_to_the_tunnel(self, monkeypatch):
+        def logs(calls):
+            if any(webpublic.TUNNEL_IMAGE in c for c in calls):
+                return "INF https://late-sun-9z8y.trycloudflare.com"
+            return '{"level":"error","msg":"could not get certificate from issuer","error":"timeout during connect"}'
+        calls = self._fake_env(monkeypatch, local={"198.51.100.7"}, logs=logs)
+        ok, text, state, progress = self._enable()
+        assert ok and state.mode == "tunnel" and "late-sun-9z8y" in text and "certyfikat" in text
+        assert any("Przechodze na tunel" in p for p in progress)
+        runs = [c for c in calls if c[:3] == ["docker", "run", "-d"]]
+        assert webpublic.CADDY_IMAGE in runs[0] and webpublic.TUNNEL_IMAGE in runs[1]
+
+    def test_forced_direct_does_not_switch(self, monkeypatch):
+        self._fake_env(monkeypatch, local={"10.0.0.5"}, logs=lambda c: '{"level":"error","msg":"challenge failed","error":"x"}')
+        ok, text, state, _ = self._enable(mode="direct")
+        assert not ok and state.mode == "direct" and "/web wlacz tunel" in text
+
+    def test_new_tunnel_address_is_noticed_and_sent(self, monkeypatch):
+        current = {"logs": "INF https://first-aa11.trycloudflare.com"}
+        self._fake_env(monkeypatch, local=set(), logs=lambda c: current["logs"])
+        published = []
+
+        async def go():
+            ok, _ = await webpublic.enable(port=0, domain="", backend_socket="/nonexistent", emit=lambda t: asyncio.sleep(0),
+                                           mode="tunnel", publish=published.append)
+            current["logs"] += "\nINF https://second-bb22.trycloudflare.com"
+            changed = await webpublic.refresh_tunnel(published.append)
+            again = await webpublic.refresh_tunnel(published.append)
+            hosts = webpublic._bridge.public.hosts
+            await webpublic.stop_bridge()
+            return ok, changed, again, hosts
+        ok, changed, again, hosts = asyncio.run(go())
+        assert ok and changed and not again and "second-bb22.trycloudflare.com" in hosts
+        assert webpublic.load_state().host == "second-bb22.trycloudflare.com"
+        assert published[-1]["type"] == "notice" and "second-bb22" in published[-1]["text"]
+
     def test_kubernetes_and_observe_are_refused(self, monkeypatch):
         monkeypatch.setattr(webpublic.runtime, "observe", lambda: False)
         monkeypatch.setattr(webpublic.runtime, "kind", lambda: "kubernetes")
@@ -223,6 +333,8 @@ class TestPublic:
 
 class FakeAccess:
     hosts = {"pipe.example.com"}
+    ip_header = "x-pipe-client-ip"
+    events = "sse"
 
     def __init__(self):
         self.devices = {"dev-token": ("web-iphone-safari-ab12", "viewer")}
@@ -336,6 +448,29 @@ class TestPublicBridge:
         assert request["token"] == "dev-token" and request["interface"] == "web:web-iphone-safari-ab12"
         assert request["session_id"] == "web-abc"
         assert logout[0] == 200 and access.logged_out == ["dev-token"] and "Max-Age=0" in logout[1]
+
+    def test_poll_delivers_events_and_keeps_the_subscription(self):
+        frames = [{"response": "", "status": "ok", "done": False, "event": {"type": "subscribed"}},
+                  {"response": "", "status": "ok", "done": False, "event": {"type": "reminder", "text": "kawa"}}]
+
+        async def scenario(sock, access, received):
+            cookie = {"Cookie": "pipe_device=dev-token"}
+            first = await self._http(sock, "GET", "/api/poll", cookie)
+            guest = await self._http(sock, "GET", "/api/poll")
+            return first, guest, received
+        first, guest, received = self._run(scenario, frames)
+        events = json.loads(first[2])["events"]
+        assert first[0] == 200 and [e["type"] for e in events] == ["subscribed", "reminder"]
+        assert received[0]["command"] == "subscribe" and received[0]["token"] == "dev-token"
+        assert guest[0] == 401
+
+    def test_tunnel_reads_the_cloudflare_client_address(self):
+        async def scenario(sock, access, received):
+            access.ip_header = "cf-connecting-ip"
+            spoofed = await self._http(sock, "POST", "/api/pair/start", {"Cf-Connecting-Ip": "203.0.113.77",
+                                                                         "X-Pipe-Client-Ip": "1.1.1.1"})
+            return json.loads(spoofed[2])["ip"]
+        assert self._run(scenario) == "203.0.113.77"
 
     def test_revoked_cookie_falls_back_to_the_pairing_page(self):
         async def scenario(sock, access, received):

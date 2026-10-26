@@ -25,7 +25,9 @@ from backend.core.mcp.registry import (
     config_path,
     describe_server,
     get_manager,
+    has_secret,
     load_config,
+    remove_state,
     needs_confirmation,
     remove_server,
     validate_server,
@@ -97,9 +99,25 @@ async def handle_mcp_tool(agent: Any, session: Session, tool_call: Any, args: di
 
 async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: dict[str, Any]
                             ) -> AsyncGenerator[Event, None]:
-    """list | add (zawsze z potwierdzeniem) | remove | reload."""
+    """list | catalog | add (zawsze z potwierdzeniem; sama nazwa = dodatek z katalogu) | remove | reload."""
+    from backend.core import addons
+
     operation = str(args.get("operation", "list") or "list").strip().lower()
     manager = get_manager()
+    if operation == "catalog":
+        installed = load_config()
+        lines = []
+        for addon in addons.catalog():
+            state = tr("dodany", "added") if addon.name in installed else (
+                tr("gotowy", "ready") if all(has_secret(s.name) for s in addon.secrets)
+                else tr("brak kluczy: ", "missing keys: ") + ", ".join(s.name for s in addon.secrets if not has_secret(s.name)))
+            lines.append(f"- {addon.name} ({addon.text(addon.title)}): {addon.text(addon.description)} [{state}]"
+                         + (f" {tr('Po dodaniu', 'After adding')}: {addon.text(addon.login)}" if addon.login else ""))
+        reply(session, tool_call, tr("Katalog gotowych dodatkow (add z sama nazwa):\n",
+                                     "Catalog of ready add-ons (add with just the name):\n") + "\n".join(lines)
+              + tr("\nKlucze uzytkownik wpisuje w oknie /mcp (pipe web albo CLI) — nigdy w rozmowie.",
+                   "\nThe user enters keys in the /mcp window (pipe web or the CLI) — never in the chat."))
+        return
     if operation == "list":
         lines = manager.status() or [f"{name}: " + tr("(nie polaczony)", "(not connected)") for name in load_config()]
         reply(session, tool_call, tr("Serwery MCP:\n", "MCP servers:\n") + ("\n".join(f"- {line}" for line in lines) if lines
@@ -111,7 +129,10 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
         return
     name = str(args.get("name", "") or "").strip().lower()
     if operation == "remove":
+        stateful = bool((load_config().get(name) or {}).get("state"))
         if remove_server(name):
+            if stateful:
+                await remove_state(name)
             await manager.reload()
             await audit.log_file_write(session.interface, f"mcp_servers.json#{name} (usuniety)", 0)
             yield tr(f"[PAMIEC] usunieto serwer MCP {name}", f"[PAMIEC] removed MCP server {name}")
@@ -122,6 +143,20 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
     if operation == "add":
         cfg = {k: args.get(k) for k in ("command", "args", "env", "image", "url", "headers", "askAlways", "description")
                if args.get(k) not in (None, "", [], {})}
+        addon = addons.get(name) if not any(k in cfg for k in ("command", "image", "url")) else None
+        if addon is not None:
+            missing = [s.name for s in addon.secrets if not has_secret(s.name)]
+            if missing:
+                reply(session, tool_call, tr(
+                    f"Dodatek {name} potrzebuje kluczy: {', '.join(missing)}. Popros uzytkownika, zeby wpisal je w oknie "
+                    "/mcp (pipe web albo CLI) — nie w rozmowie — i powiedz, skad je wziac: "
+                    + " ".join(addon.text(s.help) for s in addon.secrets if s.name in missing),
+                    f"Add-on {name} needs keys: {', '.join(missing)}. Ask the user to enter them in the /mcp window "
+                    "(pipe web or the CLI) — not in the chat — and say where to get them: "
+                    + " ".join(addon.text(s.help) for s in addon.secrets if s.name in missing)))
+                return
+            cfg = {**addon.server, "description": addon.text(addon.description), "source": tr("katalog Pipe", "Pipe catalog"),
+                   "addon": addon.name}
         try:
             clean = validate_server(name, cfg)
         except McpConfigError as exc:
@@ -135,7 +170,8 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
             state = manager.servers.get(name)
             return (tr(f"{'Dodano' if created else 'Zaktualizowano'} serwer MCP {name}: ",
                        f"{'Added' if created else 'Updated'} MCP server {name}: ")
-                    + (state.describe() if state else tr("brak stanu", "no state")))
+                    + (state.describe() if state else tr("brak stanu", "no state"))
+                    + (f"\n{addon.text(addon.login)}" if addon is not None and addon.login else ""))
 
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="mcp_manage", command=tr(f"dodanie serwera MCP {name}", f"adding MCP server {name}"),
@@ -148,5 +184,5 @@ async def handle_mcp_manage(agent: Any, session: Session, tool_call: Any, args: 
                  f"[POTWIERDZ] A new MCP server requires confirmation — Pipe will run in an isolated container or "
                  f"call: {as_code(describe_server(name, clean))}")
         return
-    reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, add, remove, reload.",
-                                 f"Unknown operation {operation!r}. Available: list, add, remove, reload."))
+    reply(session, tool_call, tr(f"Nieznana operacja {operation!r}. Dostepne: list, catalog, add, remove, reload.",
+                                 f"Unknown operation {operation!r}. Available: list, catalog, add, remove, reload."))

@@ -30,6 +30,8 @@ tylko prosbe o dostep (pair.html):
     POST /api/pair/start   nowa prosba: kod do pokazania, administrator zatwierdza go w rozmowie
     POST /api/pair/poll    stan prosby; po zgodzie ciasteczko urzadzenia (HttpOnly, Secure)
     POST /api/logout       odwoluje to urzadzenie
+    GET  /api/poll         zdarzenia odpytywaniem (tunel Cloudflare nie przepuszcza SSE): subskrypcja backendu zyje
+                           w tle dla kazdego urzadzenia miedzy zapytaniami, zeby nic nie przepadlo
 
 Kazde zadanie do backendu idzie z tokenem urzadzenia (rola admin albo viewer), wiec backend sam pilnuje uprawnien.
 
@@ -42,6 +44,7 @@ import asyncio
 import getpass
 import hmac
 import ipaddress
+import time
 import json
 import mimetypes
 import secrets
@@ -59,6 +62,8 @@ DEFAULT_PORT = 7400
 COOKIE = "pipe_key"
 DEVICE_COOKIE = "pipe_device"          # tryb publiczny: token urzadzenia (core/webaccess.py)
 DEVICE_MAX_AGE = 30 * 86400
+POLL_WAIT = 25                          # dlugie odpytywanie: odpowiedz najpozniej po tylu sekundach (Cloudflare tnie po 100)
+POLL_IDLE = 90                          # subskrypcja urzadzenia bez zapytan dluzej niz tyle — zamykana
 # Pola zadania, ktore przegladarka moze ustawic — reszte (token, interface) dodaje ten proces.
 ALLOWED_FIELDS = {"message", "confirm", "command", "name", "args", "id", "execute", "decision", "cancel", "claim",
                   "key", "model", "attachments", "audio", "filename", "scope", "patch_token", "action", "level", "quiet",
@@ -100,6 +105,7 @@ class WebBridge:
         # pair_poll(id, secret), logout(token). backend_host "unix:<sciezka>" — gniazdo backendu.
         self.setup = setup
         self.public = public
+        self._pollers: dict[str, dict] = {}         # token urzadzenia -> subskrypcja w tle dla /api/poll
         self._setup_lock = asyncio.Lock()
         self.backend_host = backend_host
         self.backend_port = backend_port
@@ -206,11 +212,11 @@ class WebBridge:
             return None
         return {"token": token, "interface": f"web:{found[0]}", "role": found[1]}
 
-    @staticmethod
-    def _client_ip(headers: dict[str, str]) -> str:
-        """Adres przegladarki od Caddy (naglowek ustawia proxy, nie klient); '?' gdy go brak."""
+    def _client_ip(self, headers: dict[str, str]) -> str:
+        """Adres przegladarki od proxy (Caddy albo Cloudflare ustawia naglowek, nie klient); '?' gdy go brak."""
+        header = getattr(self.public, "ip_header", "x-pipe-client-ip")
         try:
-            return str(ipaddress.ip_address(headers.get("x-pipe-client-ip", "").strip()))
+            return str(ipaddress.ip_address(headers.get(header, "").strip()))
         except ValueError:
             return "?"
 
@@ -218,6 +224,7 @@ class WebBridge:
         page = (STATIC_DIR / name).read_text(encoding="utf-8")
         config = {"lang": self.lang, "server": self.server_label, "session": str(uuid.uuid4()),
                   "setup": self.setup_mode, "canSetup": self.setup is not None, "public": self.public is not None,
+                  "events": getattr(self.public, "events", "sse"),
                   **(extra_config or {})}
         return page.replace("__PIPE_CONFIG__", json.dumps(config).replace("<", "\\u003c")).encode("utf-8")
 
@@ -249,6 +256,8 @@ class WebBridge:
             await self._proxy_request(writer, body, who)
         elif method == "GET" and path == "/api/events":
             await self._events(writer, who)
+        elif method == "GET" and path == "/api/poll":
+            await self._poll(writer, who)
         elif method == "POST" and path == "/api/logout" and self.public is not None:
             self.public.logout(who["token"])
             await self._send(writer, 200, b'{"ok": true}', "application/json", self._device_cookie("", 0))
@@ -497,6 +506,71 @@ class WebBridge:
                 await writer.drain()
         finally:
             backend.close()
+
+    # --- zdarzenia odpytywaniem (tunel bez SSE) -------------------------------
+
+    async def _pump(self, who: dict, queue: asyncio.Queue) -> None:
+        """Subskrypcja backendu w tle: zdarzenia czekaja w kolejce na nastepne /api/poll."""
+        request = {"command": "subscribe", "session_id": "web-events", "interface": who["interface"]}
+        if who["token"]:
+            request["token"] = who["token"]
+        try:
+            reader, backend = await self._connect()
+        except OSError as exc:
+            queue.put_nowait({"type": "error", "text": str(exc)})
+            return
+        try:
+            backend.write((json.dumps(request) + "\n").encode("utf-8"))
+            await backend.drain()
+            while True:
+                line = await reader.readline()
+                if not line:
+                    break
+                try:
+                    frame = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                payload = frame.get("event") or {"type": "error", "text": frame.get("response", "")}
+                if payload.get("type") == "language" or (payload.get("type") == "subscribed" and payload.get("lang_chosen")):
+                    self._adopt_language(payload.get("lang"))
+                if queue.full():
+                    queue.get_nowait()                # nikt nie odbiera — najstarsze przepada
+                queue.put_nowait(payload)
+        finally:
+            backend.close()
+
+    def _reap_pollers(self) -> None:
+        now = time.monotonic()
+        for token, poller in list(self._pollers.items()):
+            if now - poller["seen"] > POLL_IDLE or poller["task"].done():
+                poller["task"].cancel()
+                del self._pollers[token]
+
+    async def _poll(self, writer, who: dict) -> None:
+        """Zdarzenia od ostatniego zapytania; gdy nic nie ma — czeka najwyzej POLL_WAIT s na pierwsze."""
+        if self.setup_mode:
+            await self._send(writer, 200, b'{"events": [{"type": "down", "text": "setup"}]}', "application/json")
+            return
+        self._reap_pollers()
+        key = who["token"] or who["interface"]
+        poller = self._pollers.get(key)
+        if poller is None:
+            queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+            poller = {"queue": queue, "task": asyncio.ensure_future(self._pump(who, queue))}
+            self._pollers[key] = poller
+        poller["seen"] = time.monotonic()
+        queue = poller["queue"]
+        events = []
+        try:
+            events.append(await asyncio.wait_for(queue.get(), POLL_WAIT))
+            await asyncio.sleep(0.2)                  # kilka zdarzen naraz — jedna odpowiedz
+            while not queue.empty():
+                events.append(queue.get_nowait())
+        except asyncio.TimeoutError:
+            pass
+        poller["seen"] = time.monotonic()
+        body = json.dumps({"events": events}, ensure_ascii=False).encode("utf-8")
+        await self._send(writer, 200, body, "application/json; charset=utf-8", "Cache-Control: no-store\r\n")
 
     # --- start --------------------------------------------------------------
 

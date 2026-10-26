@@ -965,3 +965,59 @@ body.pair-page { overflow-y: auto; display: block; min-height: 100%; }
 @media (max-width: 900px) {
   .composer textarea, input[type="text"], input[type="url"], input[type="password"], input:not([type]) { font-size: 16px; }
 }
+
+/* --- okno /mcp (mcp.js): lista jak w Claude Code, szczegoly po wyborze --- */
+.mcp-card { width: min(620px, 100%); padding: 22px 22px 16px; }
+.mcp-head { display: flex; align-items: center; gap: 8px; margin-right: 30px; }
+.mcp-head h2 { margin: 0; overflow-wrap: anywhere; }
+.mcp-back { font-size: 22px; line-height: 1; width: 28px; height: 28px; margin-left: -6px; }
+.mcp-card > .lead { margin-top: 4px; }
+.mcp-body { min-height: 0; overflow-y: auto; margin: 12px -8px 0; padding: 0 8px 4px; }
+.mcp-section { margin: 14px 0 6px; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; font-weight: 600; color: var(--ink-3); }
+.mcp-section:first-child { margin-top: 2px; }
+.mcp-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; text-align: left;
+  border: 1px solid transparent; transition: background .12s, border-color .12s; }
+.mcp-row:hover { background: var(--sunken); }
+.mcp-row:focus-visible { outline: 0; background: var(--sunken); border-color: var(--line-strong); }
+.mcp-row:focus-visible .mcp-chev { color: var(--ink); transform: translateX(2px); }
+.mcp-name { font: 500 13.5px var(--mono); color: var(--ink); }
+.mcp-row.catalog .mcp-name { font-family: var(--sans); font-size: 14px; }
+.mcp-two { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mcp-row:not(.catalog) .mcp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-desc { font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.mcp-side { flex: none; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.mcp-chev { flex: none; color: var(--ink-3); font-size: 17px; line-height: 1; transition: transform .15s var(--ease), color .15s; }
+.mcp-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.mcp-dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.mcp-dot.bad { background: var(--bad); }
+.mcp-plus { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 5px; font-size: 14px; line-height: 1;
+  color: var(--ink-2); border: 1px dashed var(--line-strong); align-self: flex-start; margin-top: 1px; }
+.mcp-empty { padding: 10px; font-size: 13px; color: var(--ink-3); border: 1px dashed var(--line); border-radius: 8px; }
+.mcp-note { margin-top: 10px; padding: 7px 10px; font-size: 13px; border-radius: 7px; background: var(--sunken); color: var(--ink-2); overflow-wrap: anywhere; }
+.mcp-note.busy::before { content: ""; display: inline-block; vertical-align: -2px; margin-right: 8px; width: 11px; height: 11px; border-radius: 50%;
+  border: 1.6px solid var(--line-strong); border-top-color: var(--accent); animation: spin .7s linear infinite; }
+.mcp-foot { margin: 14px 2px 0; }
+.mcp-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 4px 2px 6px; font-size: 13px; }
+.mcp-facts dt { color: var(--ink-3); }
+.mcp-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+.mcp-facts dd.mono { font: 12px/1.5 var(--mono); color: var(--ink-2); }
+.mcp-facts dd.bad { color: var(--bad); }
+.mcp-status { display: flex; align-items: center; gap: 8px; }
+.mcp-link { display: inline-block; margin: 2px 2px 4px; font-size: 13px; color: var(--accent); text-decoration: none; }
+.mcp-link:hover { text-decoration: underline; }
+.mcp-secret { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.mcp-secret-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mcp-secret-head b { font-weight: 600; }
+.mcp-secret-head code { font: 11.5px var(--mono); color: var(--ink-3); flex: 1; }
+.mcp-key { display: flex; gap: 6px; margin-top: 4px; }
+.mcp-key input { flex: 1; min-width: 0; }
+.mcp-login { margin: 8px 2px; padding: 8px 10px; font-size: 13px; border-left: 2px solid var(--accent); color: var(--ink-2); }
+.mcp-tools { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.mcp-tool { padding: 7px 10px; border-top: 1px solid var(--line); }
+.mcp-tool:first-child { border-top: 0; }
+.mcp-tool-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.mcp-tool-head code { font: 12.5px var(--mono); overflow-wrap: anywhere; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.btn.danger { color: var(--bad); }
+.addon-manage { margin-left: auto; }
+@media (max-width: 560px) { .mcp-side { display: none; } .mcp-card { padding: 18px 14px 12px; } }

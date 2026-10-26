@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -760,6 +760,16 @@ Pipe puts an HTTPS server in front of itself (Caddy in the `pipe-web` container)
 issued on its own, without buying a domain. With your own domain: `/web on pipe.mycompany.com` (the DNS record must
 already point to the server). The port is 443, and when it is taken (e.g. by nginx) -- 8443; your own: `/web on 9443`.
 
+**When the provider lets no traffic in on 80/443** (mikr.us and other servers on a shared address, a home server
+behind a router, a cloud panel with blocked ports), no certificate can be issued. Pipe checks this itself: if the
+public address is not the server's own address or the certificate is not issued, it switches to a **Cloudflare
+tunnel** and answers with an address like `https://quiet-river-1a2b.trycloudflare.com`. The tunnel is a `cloudflared`
+container that connects to Cloudflare on its own -- no port to open and no account. The price: traffic passes through
+Cloudflare (it encrypts the connection to the browser), a quick tunnel has no uptime guarantee, notifications on the
+page arrive every few seconds instead of instantly, and the address changes after a server restart -- Pipe notices the
+new one and sends it in a message (devices are let in once more then). To force it: `/web on tunnel` or
+`/web on direct`.
+
 **How you get in.** The page has no password and no secret link. You open the address, press *Ask for access* and
 see a code, e.g. `K7P-4QX`. At the same moment Pipe writes to you (Telegram, `pipe web` on another device, the CLI):
 *"Someone wants to open Pipe in a browser -- iPhone, Safari, IP ..., code K7P-4QX"* with *Let in*, *View only* and
@@ -771,7 +781,7 @@ signed in for 30 days after its last use.
   waiting for approval.
 - `/web revoke 2` or `/web revoke all` -- the device loses access at once, an open page goes back to the access
   request.
-- `/web off` -- stops Caddy and the bridge, closes the ports Pipe opened in ufw. Devices stay in case you turn it on
+- `/web off` -- stops Caddy or the tunnel and the bridge, closes the ports Pipe opened in ufw. Devices stay in case you turn it on
   again.
 
 A device let in with *View only* has the viewer role: it chats, reads reports and the diagram, but changes nothing.
@@ -880,7 +890,29 @@ agent only reads and can't ask for approvals). **On the server** -- a Streamable
 
 ### Pipe as an MCP client
 
-Pipe also uses other MCP servers -- e.g. GitHub, Grafana or documentation -- like its own tools:
+Pipe also uses other MCP servers -- e.g. email, a calendar, GitHub or Grafana -- like its own tools.
+
+**The `/mcp` window.** `/mcp` without arguments opens a window (like `/mcp` in Claude Code): in the CLI a frame you move
+through with the arrows, in `pipe web` a separate panel, on Telegram a list with buttons. It shows the connected servers
+with their state and, once you pick one, what exactly runs, its tools (which ones ask first) and *Reconnect*,
+*Disable*, *Remove* buttons.
+
+**Ready add-ons** (`backend/addons/`, nothing is on by default):
+
+| Add-on | What it gives | What it needs |
+|---|---|---|
+| `outlook` | mail, calendar and contacts of a Microsoft account (outlook.com, hotmail) | nothing -- after adding write *"log me in to Outlook"*: a microsoft.com/devicelogin link and a code, the login survives restarts |
+| `microsoft365` | Outlook and Teams of a work or school account | the same code login; some organisations require admin consent |
+| `google` | Gmail (reading, drafts), Calendar (read), Drive, Docs, Sheets | your own OAuth client in Google Cloud and a refresh token -- the window walks you through it |
+| `github` | repositories, issues, pull requests, Actions | a GitHub token (fine-grained) |
+
+Keys are entered in the `/mcp` window in `pipe web` or the CLI (a hidden field). They live in
+`backend/data/mcp_secrets.json` (0600) and never reach the model or the browser; Telegram does not take keys. It also
+works in a conversation: *"connect my Outlook"* -- the agent knows the catalog (`mcp_manage catalog`) and adds the
+add-on after one YES. Add-ons with a login (`state: true`) get their own Docker volume for tokens; removing the add-on
+removes it together with the saved login. A new add-on is one JSON file -- see `backend/addons/README.md`.
+
+Your own server, outside the catalog:
 
 ```
 /mcp add github npx -y @modelcontextprotocol/server-github GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN}
@@ -894,7 +926,7 @@ Or in a conversation: *"connect the GitHub MCP server"* -- then one YES with a p
 | | |
 |---|---|
 | Where it runs | `npx`, `uvx` and a Docker image (including `docker run ...` from other apps' `.mcp.json`) -- always in a separate container: no server files, no `docker.sock`, no privileges (`--cap-drop ALL`, user `nobody`), memory and process limits. The server sees only the network. HTTP servers -- at the given address |
-| Secrets | only as `${MCP_NAME}` from `backend/.env` (e.g. `MCP_GITHUB_TOKEN=...`) -- do not type the token in the chat; it reaches the container as a variable, never in the arguments |
+| Secrets | only as `${MCP_NAME}` entered in the `/mcp` window or in `backend/.env` (e.g. `MCP_GITHUB_TOKEN=...`) -- do not type the token in the chat; it reaches the container as a variable, never in the arguments |
 | Approvals | a tool the server marks as a read -- without asking; any other -- a YES with the arguments shown |
 | Model tokens | the server's tools are the group `mcp:<name>`, loaded on demand: an ordinary conversation does not send them, a message naming the server (*"on github..."*) turns them on |
 | Result | outside content: YOLO is off for this turn; an argument with a secret does not go to the server |

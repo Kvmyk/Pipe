@@ -485,8 +485,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.44.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.44.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.45.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.45.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -775,8 +775,8 @@ COMMANDS = [
      "Pipe in the browser on your phone and computer: /web on, /web off, /web approve <code>"),
     ("pobierz", "download", "skille i pluginy z repozytorium: /pobierz skill <wlasciciel/repo|URL>, /pobierz plugin <...>",
      "skills and plugins from a repository: /download skill <owner/repo|URL>, /download plugin <...>"),
-    ("mcp", "mcp", "serwery MCP: /mcp dodaj <nazwa> <npx ...|url>, /mcp usun <nazwa>",
-     "MCP servers: /mcp add <name> <npx ...|url>, /mcp remove <name>"),
+    ("mcp", "mcp", "dodatki: Google, Outlook, Teams, GitHub i inne serwery MCP (okno z listą i kluczami)",
+     "add-ons: Google, Outlook, Teams, GitHub and other MCP servers (a window with the list and keys)"),
     ("powiadomienia", "notifications", "kiedy Pipe ma powiadamiać: /powiadomienia wazne cisza 22-7",
      "when Pipe should notify you: /notifications important quiet 22-7"),
     ("raport", "report", "raport: stan, zmiany, certyfikaty, backupy", "report: health, changes, certificates, backups"),
@@ -1571,6 +1571,10 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         return True
 
     if name == "mcp":
+        if not args and PromptSession is not None and sys.stdin.isatty():
+            import mcpwindow          # okno jak /mcp w Claude Code: lista, szczegoly, katalog, klucze
+            await mcpwindow.run(client, console, tr, _response_data)
+            return True
         frames = await client.send_command("mcp_servers", args=args)
         error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
         console.print(Text(error or _response_data(frames).get("text", ""), overflow="fold"),
@@ -1579,8 +1583,8 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
 
     if name == "web":
         if args.split()[:1] and args.split()[0].lower() in ("wlacz", "włącz", "on", "start", "publiczny", "public"):
-            console.print(tr("[dim]Wystawiam Pipe pod adresem HTTPS (Caddy, certyfikat Let's Encrypt)...[/dim]",
-                             "[dim]Exposing Pipe at an HTTPS address (Caddy, Let's Encrypt certificate)...[/dim]"))
+            console.print(tr("[dim]Wystawiam Pipe pod adresem HTTPS (bezpośrednio albo przez tunel, gdy dostawca blokuje porty)...[/dim]",
+                             "[dim]Exposing Pipe at an HTTPS address (directly, or through a tunnel when the provider blocks ports)...[/dim]"))
         frames = await client.send_command("web", args=args)
         error = next((f.get("response", "") for f in frames if f.get("status") == "error"), "")
         console.print(Text(error or _response_data(frames).get("text", ""), overflow="fold"),

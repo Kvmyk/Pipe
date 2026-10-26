@@ -1,0 +1,28 @@
+{
+  "name": "github",
+  "title": {"pl": "GitHub", "en": "GitHub"},
+  "description": {
+    "pl": "Repozytoria, issues, pull requesty i GitHub Actions: przeglad, komentarze, nowe zgloszenia.",
+    "en": "Repositories, issues, pull requests and GitHub Actions: review, comments, new issues."
+  },
+  "category": "dev",
+  "homepage": "https://github.com/github/github-mcp-server",
+  "server": {
+    "image": "ghcr.io/github/github-mcp-server",
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${MCP_GITHUB_TOKEN}",
+      "GITHUB_TOOLSETS": "context,repos,issues,pull_requests,actions"
+    }
+  },
+  "secrets": [
+    {
+      "name": "MCP_GITHUB_TOKEN",
+      "label": {"pl": "Token GitHuba", "en": "GitHub token"},
+      "help": {
+        "pl": "Utworz token (fine-grained) na github.com/settings/personal-access-tokens/new: wybierz repozytoria i nadaj uprawnienia, ktorych Pipe ma uzywac (np. Contents, Issues, Pull requests: odczyt i zapis).",
+        "en": "Create a fine-grained token at github.com/settings/personal-access-tokens/new: pick the repositories and grant what Pipe should use (e.g. Contents, Issues, Pull requests: read and write)."
+      },
+      "url": "https://github.com/settings/personal-access-tokens/new"
+    }
+  ]
+}

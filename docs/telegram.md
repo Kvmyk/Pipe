@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -215,7 +215,7 @@ nazwy dzialaja w obu jezykach.
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
-| `/mcp [dodaj <nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Serwery MCP, z ktorych korzysta Pipe (w izolowanym kontenerze). Tokenow nie wpisuj w czat -- `${MCP_...}` z `backend/.env`. Zmiany tylko administrator |
+| `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Podlaczone serwery MCP ze stanem i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub) z przyciskiem *Dodaj* (administratorzy). Kluczy nie wpisuj w czat -- okno `/mcp` w `pipe web` albo w CLI |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |

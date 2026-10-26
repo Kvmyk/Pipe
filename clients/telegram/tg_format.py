@@ -235,7 +235,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("web", "Pipe w przegladarce z telefonu i komputera (/web wlacz)"),
     ("powiadomienia", "Kiedy Pipe ma powiadamiac (poziom, cisza nocna)"),
     ("pobierz", "Skille i pluginy z repozytorium (/pobierz skill wlasciciel/repo)"),
-    ("mcp", "Serwery MCP, z ktorych korzysta Pipe (/mcp dodaj, /mcp usun)"),
+    ("mcp", "Dodatki: Google, Outlook, Teams, GitHub i inne serwery MCP"),
     ("aktualizuj", "Zaktualizuj Pipe (/aktualizuj sprawdz - tylko wersja)"),
     ("raport", "Poranny raport: stan, zmiany, certyfikaty, backupy"),
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
@@ -274,7 +274,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("web", "Pipe in the browser on your phone and computer (/web on)"),
     ("notifications", "When Pipe should notify you (level, quiet hours)"),
     ("download", "Skills and plugins from a repository (/download skill owner/repo)"),
-    ("mcp", "MCP servers Pipe uses (/mcp add, /mcp remove)"),
+    ("mcp", "Add-ons: Google, Outlook, Teams, GitHub and other MCP servers"),
     ("update", "Update Pipe (/update check - version only)"),
     ("report", "Morning report: health, changes, certificates, backups"),
     ("changes", "What changed on the server (/changes 3d)"),
@@ -364,10 +364,10 @@ TECH_COMMANDS: frozenset[str] = frozenset({"projekty", "raport", "zmiany", "wykr
 
 # Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
 MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
-                                  "pobierz", "mcp", "powiadomienia", "aktualizuj", "nowa", "pomoc")
+                                  "pobierz", "mcp", "web", "powiadomienia", "aktualizuj", "nowa", "pomoc")
 
 MENU_COMMANDS_SIMPLE: tuple[str, ...] = ("status", "nowosci", "skille", "pobierz", "mcp", "przypomnienia", "cofnij",
-                                         "powiadomienia", "widok", "nowa", "pomoc")
+                                         "web", "powiadomienia", "widok", "nowa", "pomoc")
 
 # Klawiatura pod polem wiadomosci — cztery najczestsze sprawy jednym dotknieciem, bez znajomosci komend.
 KEYBOARD: tuple[tuple[tuple[str, str], ...], ...] = (
@@ -920,6 +920,44 @@ def format_overview(data: dict) -> str:
         lines.append(tr(f"📬 Nowe wiadomosci od Pipe: <b>{int(data['unread'])}</b> — /nowosci",
                         f"📬 New messages from Pipe: <b>{int(data['unread'])}</b> — /news"))
     return "\n".join(lines)
+
+
+def format_mcp(data: dict) -> str:
+    """Okno /mcp na Telegramie: podlaczone serwery ze stanem i gotowe dodatki z katalogu (przyciski — mcp_buttons)."""
+    lines = [tr("🧩 <b>Serwery MCP</b> — dodatki, przez ktore Pipe korzysta z innych aplikacji",
+                "🧩 <b>MCP servers</b> — add-ons that let Pipe use other apps")]
+    servers = data.get("servers") or []
+    if servers:
+        lines.append("")
+    for server in servers:
+        status = server.get("status")
+        mark = {"connected": "🟢", "error": "🔴"}.get(status, "⚪")
+        state = tr(f"polaczony · {len(server.get('tools') or [])} narzedzi", f"connected · {len(server.get('tools') or [])} tools") \
+            if status == "connected" else {"error": tr("blad", "error"), "disabled": tr("wylaczony", "disabled")}.get(
+                status, tr("niepolaczony", "not connected"))
+        lines.append(f"{mark} <code>{html.escape(str(server.get('name', '')))}</code> — {html.escape(state)}")
+        if status == "error" and server.get("error"):
+            lines.append(f"   <i>{html.escape(str(server['error'])[:200])}</i>")
+    if not servers:
+        lines.append(tr("\nNic jeszcze nie jest podlaczone.", "\nNothing is connected yet."))
+    ready = [a for a in data.get("catalog") or [] if not a.get("installed")]
+    if ready:
+        lines.append(tr("\n<b>Gotowe do dodania</b>", "\n<b>Ready to add</b>"))
+        for addon in ready:
+            note = ""
+            if addon.get("secrets") and not addon.get("ready"):
+                note = tr(" <i>(klucz wpiszesz w pipe web albo w CLI: /mcp)</i>", " <i>(enter the key in pipe web or the CLI: /mcp)</i>")
+            lines.append(f"➕ <b>{html.escape(str(addon.get('title', '')))}</b> — "
+                         f"{html.escape(str(addon.get('description', '')))}{note}")
+    return "\n".join(lines)
+
+
+def mcp_buttons(data: dict, admin: bool) -> list[tuple[str, str]]:
+    """Przyciski "Dodaj" dla dodatkow gotowych do wlaczenia (klucze juz sa); tylko dla administratora."""
+    if not admin or not data.get("can_edit"):
+        return []
+    return [(tr("➕ ", "➕ ") + str(a.get("title", ""))[:36], f"mcp:add:{a['name']}")
+            for a in data.get("catalog") or [] if not a.get("installed") and a.get("ready")]
 
 
 def format_feed_item(item: dict, limit: int = 2500) -> str:

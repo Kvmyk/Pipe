@@ -1,9 +1,19 @@
 """
 `/web wlacz` — `pipe web` z serwera pod publicznym adresem HTTPS, jedna komenda z CLI, Telegrama albo `pipe web`.
+Dwie drogi, wybierane same:
 
-    przegladarka --HTTPS--> Caddy (kontener pipe-web, siec hosta, certyfikat Let's Encrypt)
-                 --gniazdo /tmp/pipe-web/web.sock--> most pipe web (clients/webui/server.py) w procesie Pipe
-                 --gniazdo backendu (AGENT_SOCKET)--> backend/server.py
+    bezposrednio: przegladarka --HTTPS--> Caddy (kontener pipe-web, siec hosta, certyfikat Let's Encrypt)
+    tunel:        przegladarka --HTTPS--> Cloudflare <--polaczenie wychodzace-- cloudflared (kontener pipe-web)
+                  --gniazdo /tmp/pipe-web/web.sock--> most pipe web (clients/webui/server.py) w procesie Pipe
+                  --gniazdo backendu (AGENT_SOCKET)--> backend/server.py
+
+- Bezposrednio, gdy serwer ma wlasny publiczny IPv4 (nie jest za NAT-em ani na wspoldzielonym adresie) i 80 albo 443
+  jest wolny. Tunel, gdy nie (mikr.us, serwer w domu, dostawca blokujacy porty) albo gdy certyfikat nie powstal —
+  wtedy Pipe przelacza sie sam i mowi o tym. Wymuszenie: `/web wlacz tunel` albo `/web wlacz bezposrednio`.
+- Tunel: szybki tunel Cloudflare bez konta (`https://<losowe>.trycloudflare.com`). Nie potrzebuje zadnego otwartego
+  portu, ale Cloudflare widzi ruch (konczy TLS), nie ma gwarancji dzialania, nie przepuszcza SSE (strona odbiera
+  zdarzenia odpytywaniem, `/api/poll`), a adres zmienia sie po restarcie kontenera — `watch_tunnel()` zauwaza nowy
+  i wysyla go w wiadomosci od Pipe.
 
 - Adres: podana domena albo `<ip-z-myslnikami>.sslip.io` (publiczna nazwa wskazujaca na IP serwera), port 443,
   a gdy zajety (np. nginx) — 8443. Certyfikat wystawia Caddy sam: na 443 wyzwaniem TLS-ALPN, na innym porcie
@@ -41,8 +51,13 @@ CADDY_IMAGE = "caddy:2.11-alpine"
 LABEL = "pipe.web"
 SOCKET_DIR = "/tmp/pipe-web"
 SOCKET_NAME = "web.sock"
+TUNNEL_IMAGE = "cloudflare/cloudflared:2026.10.4"
 DEFAULT_PORTS = (443, 8443)
 READY_TIMEOUT = 120
+DIRECT_TIMEOUT = 75                 # proba bezposrednio przed przejsciem na tunel (bledy ACME widac w logach szybciej)
+TUNNEL_TIMEOUT = 60
+TUNNEL_WATCH = 20
+_TUNNEL_URL = re.compile(r"https://([a-z0-9-]+\.trycloudflare\.com)")
 IP_SERVICES = ("https://api.ipify.org?format=json", "https://api64.ipify.org?format=json")
 _DOMAIN = re.compile(r"^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 _CERT_OK = ("certificate obtained successfully",)
@@ -53,6 +68,7 @@ OPS = {
     "devices": "status",
     "wlacz": "on", "włącz": "on", "on": "on", "start": "on", "publiczny": "on", "public": "on",
     "wylacz": "off", "wyłącz": "off", "off": "off", "stop": "off",
+    "tunel": "tunnel", "tunnel": "tunnel",
     "wpusc": "approve", "wpuść": "approve", "approve": "approve", "allow": "approve",
     "odrzuc": "deny", "odrzuć": "deny", "deny": "deny", "reject": "deny",
     "odwolaj": "revoke", "odwołaj": "revoke", "revoke": "revoke", "wyloguj": "revoke", "logout": "revoke",
@@ -70,6 +86,7 @@ class State:
     since: str = ""
     firewall: list[int] = field(default_factory=list)    # porty otwarte przez Pipe w ufw (zamykane przy wylaczeniu)
     tls: str = ""                                        # "" = Let's Encrypt, "internal" = wlasne CA Caddy (testy)
+    mode: str = "direct"                                 # direct (Caddy) | tunnel (cloudflared)
 
     @property
     def url(self) -> str:
@@ -101,11 +118,17 @@ def parse(args: str) -> tuple[str, list[str]]:
     return OPS.get(words[0].lower(), "help"), words[1:]
 
 
-def parse_on(words: list[str]) -> tuple[int, str]:
-    """`/web wlacz [port] [domena]` w dowolnej kolejnosci. Rzuca ValueError."""
-    port, domain = 0, ""
+DIRECT_WORDS = {"bezposrednio", "bezpośrednio", "direct", "caddy"}
+TUNNEL_WORDS = {"tunel", "tunnel", "cloudflare"}
+
+
+def parse_on(words: list[str]) -> tuple[int, str, str]:
+    """`/web wlacz [tunel|bezposrednio] [port] [domena]` w dowolnej kolejnosci -> (port, domena, tryb). ValueError."""
+    port, domain, mode = 0, "", ""
     for word in words:
-        if word.isdigit():
+        if word.lower() in TUNNEL_WORDS | DIRECT_WORDS:
+            mode = "tunnel" if word.lower() in TUNNEL_WORDS else "direct"
+        elif word.isdigit():
             port = int(word)
             if not 1 <= port <= 65535:
                 raise ValueError(tr(f"Port {word} jest poza zakresem 1-65535.", f"Port {word} is outside 1-65535."))
@@ -116,7 +139,9 @@ def parse_on(words: list[str]) -> tuple[int, str]:
             if not _DOMAIN.match(candidate):
                 raise ValueError(tr(f"{word!r} nie wyglada na domene ani port.", f"{word!r} does not look like a domain or a port."))
             domain = candidate
-    return port, domain
+    if mode == "tunnel" and (port or domain):
+        raise ValueError(tr("Tunel sam dostaje adres — bez portu i domeny.", "The tunnel gets its own address — no port or domain."))
+    return port, domain, mode
 
 
 def sslip_host(ip: str) -> str:
@@ -138,6 +163,21 @@ def caddyfile(host: str, port: int, *, internal: bool = False) -> str:
     )
 
 
+def tunnel_command() -> list[str]:
+    """`docker run` cloudflared: szybki tunel do gniazda mostu. Tylko polaczenia wychodzace (siec bridge), bez portow;
+    root w kontenerze tylko po to, by otworzyc gniazdo 0600 nalezace do roota — bez zadnych uprawnien."""
+    return ["docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped", "--label", f"{LABEL}=tunnel",
+            "--user", "0:0", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m",
+            "--pids-limit", "200", "-v", f"{SOCKET_DIR}:/run/pipe-web", TUNNEL_IMAGE,
+            "tunnel", "--no-autoupdate", "--unix-socket", f"/run/pipe-web/{SOCKET_NAME}"]
+
+
+def tunnel_host(logs: str) -> str:
+    """Ostatni adres szybkiego tunelu z logow cloudflared ('' — jeszcze go nie ma)."""
+    found = _TUNNEL_URL.findall(logs or "")
+    return found[-1] if found else ""
+
+
 def caddy_command(host: str, port: int, *, internal: bool = False) -> list[str]:
     """`docker run` kontenera z Caddy: siec hosta (port publiczny i wyzwania ACME), tylko gniazdo mostu i wolumen
     certyfikatow, bez uprawnien poza otwarciem portu < 1024."""
@@ -155,6 +195,20 @@ def caddy_command(host: str, port: int, *, internal: bool = False) -> list[str]:
 def busy_ports() -> set[int]:
     from backend.core import hostinfo
     return {s.port for s in hostinfo.sockets() if s.proto.startswith("tcp")}
+
+
+def local_ipv4(proc: str | None = None) -> set[str]:
+    """Adresy IPv4 interfejsow hosta (z /proc/1/net/fib_trie — siec hosta, takze z kontenera z pid: host)."""
+    from backend.core import hostinfo
+    text = hostinfo._read(f"{hostinfo._proc(proc)}/1/net/fib_trie")
+    found, last = set(), ""
+    for line in text.splitlines():
+        match = re.search(r"[|+]-- (\d+\.\d+\.\d+\.\d+)$", line.rstrip())
+        if match:
+            last = match.group(1)
+        elif "/32 host LOCAL" in line and last:
+            found.add(last)
+    return found
 
 
 def choose_port(wanted: int, busy: set[int]) -> int:
@@ -334,6 +388,16 @@ class _Access:
             hosts.add(self.state.host)
         return hosts
 
+    @property
+    def ip_header(self) -> str:
+        # adres przegladarki: Caddy ustawia X-Pipe-Client-Ip, Cloudflare — Cf-Connecting-Ip (obu klient nie podrobi)
+        return "cf-connecting-ip" if self.state.mode == "tunnel" else "x-pipe-client-ip"
+
+    @property
+    def events(self) -> str:
+        # szybki tunel Cloudflare nie przepuszcza SSE — strona odbiera zdarzenia odpytywaniem
+        return "poll" if self.state.mode == "tunnel" else "sse"
+
     def device(self, token: str) -> tuple[str, str] | None:
         return webaccess.device(token)
 
@@ -367,6 +431,8 @@ def login_texts(pairing: webaccess.Pairing) -> dict[str, str]:
 
 _bridge: Any = None
 _server: asyncio.AbstractServer | None = None
+_watcher: asyncio.Task | None = None
+_state: State | None = None               # stan, ktory widzi most (adres tunelu zmienia sie w miejscu)
 
 
 def socket_path() -> str:
@@ -374,8 +440,8 @@ def socket_path() -> str:
 
 
 async def start_bridge(state: State, backend_socket: str, publish: Callable[[dict], None] | None = None) -> None:
-    """Uruchamia most pipe web na gniezdzie dla Caddy (ponownie — z nowym adresem)."""
-    global _bridge, _server
+    """Uruchamia most pipe web na gniezdzie dla Caddy albo cloudflared (ponownie — z nowym adresem)."""
+    global _bridge, _server, _state
     from backend.core.i18n import lang
     from clients.webui.server import READ_LIMIT, WebBridge
 
@@ -385,6 +451,7 @@ async def start_bridge(state: State, backend_socket: str, publish: Callable[[dic
     path = socket_path()
     if os.path.exists(path):
         os.unlink(path)
+    _state = state
     _bridge = WebBridge("unix:" + backend_socket, 0, "", lang=lang(), server_label=state.host,
                         public=_Access(state, publish))
     _server = await asyncio.start_unix_server(_bridge.handle, path=path, limit=READ_LIMIT)
@@ -392,7 +459,10 @@ async def start_bridge(state: State, backend_socket: str, publish: Callable[[dic
 
 
 async def stop_bridge() -> None:
-    global _bridge, _server
+    global _bridge, _server, _watcher
+    if _watcher is not None:
+        _watcher.cancel()
+        _watcher = None
     if _server is not None:
         _server.close()
         _server = None
@@ -407,13 +477,52 @@ def bridge_running() -> bool:
     return _server is not None
 
 
+async def refresh_tunnel(publish: Callable[[dict], None] | None = None) -> bool:
+    """Adres tunelu z logow cloudflared; nowy (restart kontenera) — zapis, most i wiadomosc. Zwraca, czy sie zmienil."""
+    if _state is None or _state.mode != "tunnel":
+        return False
+    logs, code = await _run("docker", "logs", "--tail", "300", CONTAINER, timeout=20)
+    host = tunnel_host(logs) if code == 0 else ""
+    if not host or host == _state.host:
+        return False
+    _state.host = host
+    save_state(_state)
+    if _bridge is not None:
+        _bridge.server_label = host
+    if publish is not None:
+        publish({"type": "notice", "title": tr("Pipe w przegladarce ma nowy adres", "Pipe in the browser has a new address"),
+                 "text": tr(f"Tunel uruchomil sie ponownie i dostal nowy adres: {_state.url}\nZapamietane urzadzenia "
+                            "wchodza pod nowy adres po zgodzie jeszcze raz.",
+                            f"The tunnel restarted and got a new address: {_state.url}\nRemembered devices need to be "
+                            "approved once more at the new address.")})
+    return True
+
+
+async def watch_tunnel(publish: Callable[[dict], None] | None = None, every: float = TUNNEL_WATCH) -> None:
+    """Pilnuje adresu szybkiego tunelu (zmienia sie po restarcie serwera albo kontenera)."""
+    while True:
+        try:
+            await refresh_tunnel(publish)
+        except Exception as exc:          # nie zatrzymuje strony
+            print(f"[VPS Agent] pipe web tunel: {exc}", flush=True)
+        await asyncio.sleep(every)
+
+
+def _watch(publish: Callable[[dict], None] | None) -> None:
+    global _watcher
+    if _state is not None and _state.mode == "tunnel":
+        _watcher = asyncio.create_task(watch_tunnel(publish))
+
+
 async def resume(backend_socket: str, publish: Callable[[dict], None] | None = None) -> None:
-    """Start serwera: wlaczona strona wraca (Caddy wstaje sam dzieki --restart)."""
+    """Start serwera: wlaczona strona wraca (Caddy i cloudflared wstaja same dzieki --restart)."""
     state = load_state()
     if not state.on:
         return
     try:
         await start_bridge(state, backend_socket, publish)
+        await refresh_tunnel(publish)
+        _watch(publish)
         print(f"[VPS Agent] pipe web    : {state.url}", flush=True)
     except Exception as exc:
         print(f"[VPS Agent] pipe web: {exc}", flush=True)
@@ -421,25 +530,48 @@ async def resume(backend_socket: str, publish: Callable[[dict], None] | None = N
 
 # ─── Wlacz / wylacz ─────────────────────────────────────────────────────────
 
-async def enable(*, port: int, domain: str, backend_socket: str, emit: Emit,
+async def enable(*, port: int, domain: str, backend_socket: str, emit: Emit, mode: str = "",
                  publish: Callable[[dict], None] | None = None, internal_tls: bool = False) -> tuple[bool, str]:
-    """Wystawia strone. (udalo sie, tekst dla uzytkownika)."""
+    """Wystawia strone bezposrednio albo przez tunel (`mode` puste — wybor sam). (udalo sie, tekst dla uzytkownika)."""
     reason = await blocker()
     if reason:
         return False, reason
     previous = load_state()
-    await _run("docker", "rm", "-f", CONTAINER, timeout=60)        # nasz poprzedni Caddy nie blokuje portu
+    await stop_bridge()
+    await _run("docker", "rm", "-f", CONTAINER, timeout=60)        # nasz poprzedni Caddy/tunel nie blokuje portu
     if previous.on:
         await asyncio.sleep(1)
+    if mode == "tunnel":
+        return await _enable_tunnel(previous, backend_socket, emit, publish, [])
 
     await emit(tr("Sprawdzam adres serwera i wolne porty…", "Checking the server address and free ports…"))
+    busy = busy_ports() - ({previous.port} if previous.on and previous.mode == "direct" else set())
+    ip = await public_ip()
+    why = ""
+    if not domain and mode != "direct":
+        if not ip:
+            why = tr("nie ustalilem publicznego adresu IP serwera", "I could not find the server's public IP")
+        elif ip not in local_ipv4():
+            why = tr(f"serwer jest za NAT-em albo na wspoldzielonym adresie ({ip} nie jest jego wlasnym adresem), "
+                     "wiec porty 80/443 z internetu do niego nie dochodza",
+                     f"the server is behind NAT or on a shared address ({ip} is not its own address), so ports "
+                     "80/443 from the internet do not reach it")
+        elif {80, 443} <= busy and not port:
+            why = tr("porty 80 i 443 sa zajete, a certyfikat potrzebuje jednego z nich",
+                     "ports 80 and 443 are taken and the certificate needs one of them")
+    if why:
+        return await _enable_tunnel(previous, backend_socket, emit, publish,
+                                    [tr(f"Wybralem tunel, bo {why}.", f"I chose the tunnel because {why}.")])
     try:
-        busy = busy_ports() - ({previous.port} if previous.on else set())
         port = choose_port(port, busy)
     except ValueError as exc:
         return False, str(exc)
+    if not domain and not ip:
+        return False, tr("Nie ustalilem publicznego adresu IP serwera. Podaj domene, ktora na niego wskazuje: "
+                         "/web wlacz pipe.twojadomena.pl, albo uzyj tunelu: /web wlacz tunel",
+                         "I could not find the server's public IP. Give a domain that points to it: "
+                         "/web on pipe.yourdomain.com, or use the tunnel: /web on tunnel")
     notes: list[str] = []
-    ip = await public_ip()
     if domain:
         host = domain
         if ip and ip not in await resolves_to(domain):
@@ -447,15 +579,10 @@ async def enable(*, port: int, domain: str, backend_socket: str, emit: Emit,
                             "rekord DNS bedzie gotowy.",
                             f"Note: {domain} does not point to {ip} (yet) — the certificate will be issued once "
                             "the DNS record is in place."))
-    elif ip:
-        host = sslip_host(ip)
     else:
-        return False, tr("Nie ustalilem publicznego adresu IP serwera (brak internetu albo serwer za NAT-em). "
-                         "Podaj domene, ktora na niego wskazuje: /web wlacz pipe.twojadomena.pl",
-                         "I could not find the server's public IP (no internet, or the server is behind NAT). "
-                         "Give a domain that points to it: /web on pipe.yourdomain.com")
+        host = sslip_host(ip)
     state = State(on=True, host=host, port=port, since=time.strftime("%Y-%m-%d %H:%M"),
-                  firewall=[p for p in previous.firewall], tls="internal" if internal_tls else "")
+                  firewall=[p for p in previous.firewall], tls="internal" if internal_tls else "", mode="direct")
 
     enabled, allowed = ufw_rules()
     if enabled:
@@ -479,18 +606,71 @@ async def enable(*, port: int, domain: str, backend_socket: str, emit: Emit,
         return False, tr(f"Nie uruchomilem Caddy: {output[:400]}", f"Could not start Caddy: {output[:400]}")
     save_state(state)
 
-    ready, detail = await wait_ready(state, emit, started)
-    lines = [tr(f"Pipe jest pod adresem {state.url}", f"Pipe is at {state.url}")]
-    if not ready:
-        lines = [tr(f"Strona {state.url} jeszcze nie dziala: {detail}", f"The page {state.url} is not working yet: {detail}"),
-                 tr("Najczestsza przyczyna: zapora u dostawcy serwera (panel chmury) blokuje port "
-                    f"{port}" + ("" if port == 443 else " albo 80") + ". Otworz go i sprawdz /web za chwile — "
-                    "Caddy probuje sam dalej. /web wylacz wylacza wszystko.",
-                    "Most common cause: the hosting provider's firewall (cloud panel) blocks port "
-                    f"{port}" + ("" if port == 443 else " or 80") + ". Open it and check /web in a moment — "
-                    "Caddy keeps trying on its own. /web off turns everything off.")]
-    lines.append(how_to_enter())
-    return ready, "\n\n".join(lines + notes)
+    ready, detail = await wait_ready(state, emit, started, timeout=READY_TIMEOUT if mode == "direct" else DIRECT_TIMEOUT)
+    if ready:
+        return True, "\n\n".join([tr(f"Pipe jest pod adresem {state.url}", f"Pipe is at {state.url}"), how_to_enter()]
+                                  + notes)
+    if mode == "direct":
+        return False, "\n\n".join([
+            tr(f"Strona {state.url} jeszcze nie dziala: {detail}", f"The page {state.url} is not working yet: {detail}"),
+            tr(f"Zapora u dostawcy (panel chmury) blokuje pewnie port {port}" + ("" if port == 443 else " albo 80")
+               + ". Otworz go i sprawdz /web za chwile albo uzyj tunelu: /web wlacz tunel.",
+               f"The provider's firewall (cloud panel) probably blocks port {port}" + ("" if port == 443 else " or 80")
+               + ". Open it and check /web in a moment, or use the tunnel: /web on tunnel."), how_to_enter()] + notes)
+    # bezposrednio sie nie da (dostawca blokuje porty) — tunel, bez zostawiania zepsutej strony
+    await emit(tr("Certyfikat nie powstal — dostawca serwera blokuje pewnie porty 80/443. Przechodze na tunel…",
+                  "No certificate — the hosting provider probably blocks ports 80/443. Switching to the tunnel…"))
+    await stop_bridge()
+    await _run("docker", "rm", "-f", CONTAINER, timeout=60)
+    for opened in state.firewall:
+        if opened not in previous.firewall:
+            await _host_shell(f"ufw delete allow {opened}/tcp")
+    return await _enable_tunnel(State(firewall=previous.firewall), backend_socket, emit, publish, [tr(
+        f"Wybralem tunel, bo certyfikat dla {state.url} nie powstal ({detail[:160]}) — z internetu nie da sie "
+        "dojsc do portow 80/443 tego serwera.",
+        f"I chose the tunnel because the certificate for {state.url} was not issued ({detail[:160]}) — ports 80/443 "
+        "of this server cannot be reached from the internet.")])
+
+
+async def _enable_tunnel(previous: State, backend_socket: str, emit: Emit, publish: Callable[[dict], None] | None,
+                         notes: list[str]) -> tuple[bool, str]:
+    """Szybki tunel Cloudflare: kontener cloudflared do gniazda mostu, adres z jego logow."""
+    await emit(tr("Uruchamiam tunel (Cloudflare) — nie potrzebuje zadnego otwartego portu…",
+                  "Starting the tunnel (Cloudflare) — it needs no open port…"))
+    state = State(on=True, host="", port=443, since=time.strftime("%Y-%m-%d %H:%M"),
+                  firewall=list(previous.firewall), mode="tunnel")
+    await start_bridge(state, backend_socket, publish)
+    await _run("docker", "pull", "-q", TUNNEL_IMAGE, timeout=300)
+    output, code = await _run(*tunnel_command(), timeout=120)
+    if code != 0:
+        await stop_bridge()
+        return False, tr(f"Nie uruchomilem tunelu: {output[:400]}", f"Could not start the tunnel: {output[:400]}")
+    deadline = time.monotonic() + TUNNEL_TIMEOUT
+    while time.monotonic() < deadline and not state.host:
+        logs, _ = await _run("docker", "logs", CONTAINER, timeout=20)
+        state.host = tunnel_host(logs)
+        if not state.host:
+            await asyncio.sleep(2)
+    if not state.host:
+        await stop_bridge()
+        await _run("docker", "rm", "-f", CONTAINER, timeout=60)
+        return False, tr("Tunel nie dostal adresu od Cloudflare w ciagu minuty (serwer bez dostepu do internetu albo "
+                         "Cloudflare chwilowo odmawia). Sprobuj /web wlacz tunel za chwile.",
+                         "The tunnel got no address from Cloudflare within a minute (no internet on the server, or "
+                         "Cloudflare refuses for now). Try /web on tunnel in a moment.")
+    if _bridge is not None:
+        _bridge.server_label = state.host
+    save_state(state)
+    _watch(publish)
+    lines = [tr(f"Pipe jest pod adresem {state.url}", f"Pipe is at {state.url}")] + notes + [
+        tr("To szybki tunel Cloudflare: dziala bez otwierania portow, ale ruch przechodzi przez Cloudflare (to on "
+           "szyfruje polaczenie z przegladarka), a adres zmienia sie po restarcie serwera — wtedy Pipe sam przysle "
+           "nowy. Powiadomienia na stronie przychodza co kilka sekund zamiast od razu.",
+           "This is a Cloudflare quick tunnel: it works without opening ports, but traffic passes through Cloudflare "
+           "(it encrypts the connection to the browser), and the address changes after a server restart — Pipe then "
+           "sends the new one. Notifications on the page arrive every few seconds instead of instantly."),
+        how_to_enter()]
+    return True, "\n\n".join(lines)
 
 
 def how_to_enter() -> str:
@@ -504,7 +684,7 @@ def how_to_enter() -> str:
 
 async def disable(emit: Emit) -> str:
     state = load_state()
-    await stop_bridge()
+    await stop_bridge()          # takze pilnowanie adresu tunelu
     output, code = await _run("docker", "rm", "-f", CONTAINER, timeout=60)
     lines = [tr("Strona nie jest juz dostepna z internetu.", "The page is no longer reachable from the internet.")]
     if code != 0 and "No such container" not in output:
@@ -533,7 +713,8 @@ def status(can_edit: bool) -> dict[str, Any]:
     pending = [{"code": p.code, "device": p.device, "ip": p.ip} for p in webaccess.pending()] if can_edit else []
     lines = []
     if state.on:
-        lines.append(tr(f"Pipe w przegladarce: {state.url} (od {state.since})", f"Pipe in the browser: {state.url} (since {state.since})"))
+        lines.append(tr(f"Pipe w przegladarce: {state.url} (od {state.since})", f"Pipe in the browser: {state.url} (since {state.since})")
+                     + (tr(" — przez tunel Cloudflare", " — through a Cloudflare tunnel") if state.mode == "tunnel" else ""))
         if not bridge_running():
             lines.append(tr("Most strony nie dziala — /web wlacz uruchomi go ponownie.",
                             "The page bridge is not running — /web on starts it again."))
@@ -554,15 +735,18 @@ def status(can_edit: bool) -> dict[str, Any]:
     for entry in pending:
         lines.append(tr(f"Czeka na zgode: {entry['device']}, IP {entry['ip']}, kod {entry['code']} — /web wpusc {entry['code']}",
                         f"Waiting for approval: {entry['device']}, IP {entry['ip']}, code {entry['code']} — /web approve {entry['code']}"))
-    return {"on": state.on, "url": state.url if state.on else "", "devices": devices, "pending": pending,
+    return {"on": state.on, "url": state.url if state.on else "", "mode": state.mode if state.on else "",
+            "devices": devices, "pending": pending,
             "text": "\n".join(lines), "can_edit": can_edit}
 
 
 def help_text() -> str:
-    return tr("/web — stan i urzadzenia; /web wlacz [port] [domena] — wystaw Pipe pod adresem HTTPS; /web wylacz; "
-              "/web wpusc <kod> [podglad]; /web odrzuc <kod>; /web odwolaj <numer|wszystkie>.",
-              "/web — state and devices; /web on [port] [domain] — expose Pipe at an HTTPS address; /web off; "
-              "/web approve <code> [viewer]; /web deny <code>; /web revoke <number|all>.")
+    return tr("/web — stan i urzadzenia; /web wlacz — wystaw Pipe pod adresem HTTPS (sam wybierze: bezposrednio albo "
+              "tunel); /web wlacz tunel | bezposrednio [port] [domena]; /web wylacz; /web wpusc <kod> [podglad]; "
+              "/web odrzuc <kod>; /web odwolaj <numer|wszystkie>.",
+              "/web — state and devices; /web on — expose Pipe at an HTTPS address (picks direct or tunnel itself); "
+              "/web on tunnel | direct [port] [domain]; /web off; /web approve <code> [viewer]; /web deny <code>; "
+              "/web revoke <number|all>.")
 
 
 def close_feed(pairing_id: str, label: str) -> None:

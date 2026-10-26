@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -741,6 +741,16 @@ Pipe stawia przed soba serwer HTTPS (Caddy w kontenerze `pipe-web`) i odpisuje a
 Encrypt powstaje sam, bez kupowania domeny. Z wlasna domena: `/web wlacz pipe.mojafirma.pl` (rekord DNS musi juz
 wskazywac na serwer). Port to 443, a gdy jest zajety (np. przez nginx) -- 8443; wlasny: `/web wlacz 9443`.
 
+**Gdy dostawca nie wpuszcza ruchu na 80/443** (mikr.us i inne serwery na wspoldzielonym adresie, serwer w domu za
+routerem, panel chmury z zablokowanymi portami), certyfikatu nie da sie wystawic. Pipe sprawdza to sam: jesli
+publiczny adres nie jest adresem serwera albo certyfikat nie powstaje, przechodzi na **tunel Cloudflare** i odpisuje
+adresem w rodzaju `https://quiet-river-1a2b.trycloudflare.com`. Tunel to kontener `cloudflared`, ktory sam laczy sie
+z Cloudflare -- nie trzeba otwierac zadnego portu ani zakladac konta. Cena: ruch przechodzi przez Cloudflare (to on
+szyfruje polaczenie z przegladarka), szybki tunel nie ma gwarancji dzialania, powiadomienia na stronie przychodza co
+kilka sekund zamiast od razu, a adres zmienia sie po restarcie serwera -- Pipe zauwaza nowy i przysyla go w
+wiadomosci (urzadzenia wpuszcza sie wtedy jeszcze raz). Wymuszenie: `/web wlacz tunel` albo
+`/web wlacz bezposrednio`.
+
 **Jak sie wchodzi.** Strona nie ma hasla ani tajnego linku. Otwierasz adres, naciskasz *Popros o dostep* i widzisz
 kod, np. `K7P-4QX`. W tym samym momencie Pipe pisze do Ciebie (Telegram, `pipe web` na innym urzadzeniu, CLI):
 *"Ktos chce wejsc do Pipe przez przegladarke -- iPhone, Safari, IP ..., kod K7P-4QX"* z przyciskami *Wpusc*,
@@ -752,7 +762,7 @@ logowanie przez 30 dni od ostatniego uzycia.
   na zgode.
 - `/web odwolaj 2` albo `/web odwolaj wszystkie` -- urzadzenie traci dostep od razu, otwarta strona wraca do prosby
   o dostep.
-- `/web wylacz` -- zatrzymuje Caddy i most, zamyka porty, ktore Pipe otworzyl w ufw. Urzadzenia zostaja na wypadek
+- `/web wylacz` -- zatrzymuje Caddy albo tunel i most, zamyka porty, ktore Pipe otworzyl w ufw. Urzadzenia zostaja na wypadek
   ponownego wlaczenia.
 
 Urzadzenie wpuszczone przyciskiem *Tylko podglad* ma role viewer: rozmawia, czyta raporty i schemat, ale niczego
@@ -860,7 +870,28 @@ agent tylko czyta, nie moze prosic o zgody). **Na serwerze** -- endpoint Streama
 
 ### Pipe jako klient MCP
 
-Pipe korzysta tez z cudzych serwerow MCP -- np. GitHuba, Grafany albo dokumentacji -- jak z wlasnych narzedzi:
+Pipe korzysta tez z cudzych serwerow MCP -- np. poczty, kalendarza, GitHuba albo Grafany -- jak z wlasnych narzedzi.
+
+**Okno `/mcp`.** `/mcp` bez argumentow otwiera okno (jak `/mcp` w Claude Code): w CLI ramka wybierana strzalkami,
+w `pipe web` osobny panel, na Telegramie lista z przyciskami. Widac w nim podlaczone serwery ze stanem, a po wybraniu
+-- co dokladnie dziala, jakie ma narzedzia (ktore pytaja o zgode) i przyciski *Polacz ponownie*, *Wylacz*, *Usun*.
+
+**Gotowe dodatki** (`backend/addons/`, nic nie jest wlaczone z gory):
+
+| Dodatek | Co daje | Czego potrzebuje |
+|---|---|---|
+| `outlook` | poczta, kalendarz i kontakty konta Microsoft (outlook.com, hotmail) | nic -- po dodaniu napisz *"zaloguj mnie do Outlooka"*: link microsoft.com/devicelogin i kod, logowanie zostaje po restarcie |
+| `microsoft365` | Outlook i Teams konta firmowego albo szkolnego | to samo logowanie kodem; niektore firmy wymagaja zgody administratora |
+| `google` | Gmail (czytanie, szkice), Kalendarz (odczyt), Dysk, Dokumenty, Arkusze | wlasny klient OAuth w Google Cloud i refresh token -- okno prowadzi krok po kroku |
+| `github` | repozytoria, issues, pull requesty, Actions | token GitHuba (fine-grained) |
+
+Klucze wpisuje sie w oknie `/mcp` w `pipe web` albo w CLI (ukryte pole). Leza w `backend/data/mcp_secrets.json` (0600)
+i nie trafiaja do modelu ani do przegladarki; Telegram kluczy nie przyjmuje. W rozmowie tez dziala: *"podlacz mi
+Outlooka"* -- agent zna katalog (`mcp_manage catalog`) i dodaje dodatek po jednym TAK. Dodatki z logowaniem
+(`state: true`) dostaja wlasny wolumen Dockera na tokeny; usuniecie dodatku usuwa go razem z zapisanym logowaniem.
+Nowy dodatek to jeden plik JSON -- opis w `backend/addons/README.md`.
+
+Wlasny serwer, spoza katalogu:
 
 ```
 /mcp dodaj github npx -y @modelcontextprotocol/server-github GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_TOKEN}
@@ -874,7 +905,7 @@ Albo w rozmowie: *"podlacz serwer MCP GitHuba"* -- wtedy jedno TAK z podgladem t
 | | |
 |---|---|
 | Gdzie dziala | `npx`, `uvx` i obraz Dockera (takze `docker run ...` z `.mcp.json` innych aplikacji) -- zawsze w osobnym kontenerze: bez plikow serwera, bez `docker.sock`, bez uprawnien (`--cap-drop ALL`, uzytkownik `nobody`), z limitem pamieci i procesow. Serwer widzi tylko siec. Serwery HTTP -- pod podanym adresem |
-| Sekrety | tylko jako `${MCP_NAZWA}` z `backend/.env` (np. `MCP_GITHUB_TOKEN=...`) -- nie wpisuj tokenu w czat; trafia do kontenera jako zmienna, nigdy w argumentach |
+| Sekrety | tylko jako `${MCP_NAZWA}` -- wpisane w oknie `/mcp` albo w `backend/.env` (np. `MCP_GITHUB_TOKEN=...`); nie wpisuj tokenu w czat; trafia do kontenera jako zmienna, nigdy w argumentach |
 | Zgody | narzedzie oznaczone przez serwer jako odczyt -- bez pytania; kazde inne -- TAK z widocznymi argumentami |
 | Tokeny modelu | narzedzia serwera to grupa `mcp:<nazwa>` ladowana na zadanie: zwykla rozmowa ich nie wysyla, wiadomosc z nazwa serwera (*"na githubie..."*) je wlacza |
 | Wynik | tresc z zewnatrz: w tej turze YOLO jest wylaczone; argument z sekretem nie wychodzi do serwera |

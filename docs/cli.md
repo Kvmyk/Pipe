@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.44.0
+Pipe v0.45.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -204,7 +204,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
-| `/mcp [dodaj <nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Serwery MCP, z ktorych korzysta Pipe (w izolowanym kontenerze); sekrety jako `${MCP_...}` z `backend/.env`. Zmiany tylko administrator |
+| `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Bez argumentow okno w ramce (strzalki, Enter, Esc): podlaczone serwery ze szczegolami i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub); klucze wpisuje sie tu ukrytym polem. Serwery dzialaja w izolowanym kontenerze. Zmiany tylko administrator |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
