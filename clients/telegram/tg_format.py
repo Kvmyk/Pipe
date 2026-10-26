@@ -262,6 +262,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("providerzy", "Providerzy LLM i model (/providerzy groq, /providerzy model)"),
     ("yolo", "Zmiany bez pytania o TAK (/yolo on, /yolo off)"),
     ("jezyk", "Jezyk Pipe (/jezyk en albo /jezyk pl)"),
+    ("widok", "Widok: prosty (rozmowa, skille, dodatki) albo techniczny (serwer)"),
     ("pomoc", "Lista komend"),
 )
 BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
@@ -299,6 +300,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("providers", "LLM providers and model (/providers groq, /providers model)"),
     ("yolo", "Changes without asking for YES (/yolo on, /yolo off)"),
     ("language", "Pipe's language (/language pl or /language en)"),
+    ("view", "View: simple (chat, skills, add-ons) or technical (the server)"),
     ("help", "List of commands"),
 )
 # Angielskie nazwy komend -> polskie (handlery sa rejestrowane pod obiema nazwami w obu jezykach).
@@ -309,7 +311,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "history": "historia", "help": "pomoc", "incidents": "incydenty", "reminders": "przypomnienia",
     "update": "aktualizuj", "language": "jezyk", "providers": "providerzy", "patch": "zalataj", "vulns": "podatnosci",
     "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
-    "cleanup": "sprzataj", "download": "pobierz",
+    "cleanup": "sprzataj", "download": "pobierz", "view": "widok",
 }
 
 
@@ -346,16 +348,24 @@ HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
      ("audyt", "podatnosci", "zalataj", "sprzataj", "dziennik", "cofnij", "zgody")),
     ("Pamiec i automatyzacja", "Memory and automation",
      ("server", "skille", "pobierz", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
-    ("Ustawienia", "Settings", ("powiadomienia", "mcp", "nowa", "providerzy", "jezyk", "yolo", "koszt", "aktualizuj",
-                                "pomoc")),
+    ("Ustawienia", "Settings", ("powiadomienia", "mcp", "nowa", "providerzy", "jezyk", "widok", "yolo", "koszt",
+                                "aktualizuj", "pomoc")),
 )
 # Dzialaja, ale nie ma ich w /pomoc ani w menu — to samo daja /status i /nowosci (alerty, strony, certyfikaty)
 # oraz /dziennik (zmiany).
 HIDDEN_COMMANDS: frozenset[str] = frozenset({"alerty", "zdrowie", "historia"})
+# Widok prosty (/widok prosty, wspolny dla CLI, pipe web i Telegrama): tych komend nie ma w /pomoc ani w menu,
+# ale dzialaja po wpisaniu — ta sama lista co TECH_COMMANDS w clients/cli/cli.py.
+TECH_COMMANDS: frozenset[str] = frozenset({"projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj",
+                                           "sprzataj", "mapa", "mermaid", "server", "katalogi", "incydenty", "rutyny",
+                                           "cele", "dziennik", "zgody", "yolo", "aktualizuj"})
 
 # Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
 MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
                                   "pobierz", "mcp", "powiadomienia", "aktualizuj", "nowa", "pomoc")
+
+MENU_COMMANDS_SIMPLE: tuple[str, ...] = ("status", "nowosci", "skille", "pobierz", "mcp", "przypomnienia", "cofnij",
+                                         "powiadomienia", "widok", "nowa", "pomoc")
 
 # Klawiatura pod polem wiadomosci — cztery najczestsze sprawy jednym dotknieciem, bez znajomosci komend.
 KEYBOARD: tuple[tuple[tuple[str, str], ...], ...] = (
@@ -368,14 +378,25 @@ KEYBOARD_EN: tuple[tuple[tuple[str, str], ...], ...] = (
 )
 
 
-def keyboard_rows() -> list[list[str]]:
-    """Etykiety przyciskow klawiatury w jezyku bota."""
-    return [[label for label, _ in row] for row in tr(KEYBOARD, KEYBOARD_EN)]
+KEYBOARD_SIMPLE: tuple[tuple[tuple[str, str], ...], ...] = (
+    (("✅ Czy wszystko dziala", "status"), ("📬 Co nowego", "nowosci")),
+    (("🧠 Skille", "skille"), ("❓ Pomoc", "pomoc")),
+)
+KEYBOARD_SIMPLE_EN: tuple[tuple[tuple[str, str], ...], ...] = (
+    (("✅ Is everything OK", "status"), ("📬 What's new", "nowosci")),
+    (("🧠 Skills", "skille"), ("❓ Help", "pomoc")),
+)
+
+
+def keyboard_rows(view: str = "tech") -> list[list[str]]:
+    """Etykiety przyciskow klawiatury w jezyku bota i widoku."""
+    layout = tr(KEYBOARD_SIMPLE, KEYBOARD_SIMPLE_EN) if view == "simple" else tr(KEYBOARD, KEYBOARD_EN)
+    return [[label for label, _ in row] for row in layout]
 
 
 def keyboard_command(text: str) -> str:
-    """Tekst przycisku klawiatury (w dowolnym jezyku) -> komenda; inny tekst -> ''."""
-    for layout in (KEYBOARD, KEYBOARD_EN):
+    """Tekst przycisku klawiatury (w dowolnym jezyku i widoku) -> komenda; inny tekst -> ''."""
+    for layout in (KEYBOARD, KEYBOARD_EN, KEYBOARD_SIMPLE, KEYBOARD_SIMPLE_EN):
         for row in layout:
             for label, command in row:
                 if text.strip() == label:
@@ -383,9 +404,11 @@ def keyboard_command(text: str) -> str:
     return ""
 
 
-def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
+def _grouped_commands(view: str = "tech") -> list[tuple[str, list[tuple[str, str]]]]:
     """[(tytul grupy, [(komenda w jezyku bota, opis)])] — kolejnosc z HELP_GROUPS, reszta w "Inne"."""
     by_polish = {COMMAND_ALIASES.get(name, name): (name, desc) for name, desc in builtin_commands()}
+    if view == "simple":
+        by_polish = {key: item for key, item in by_polish.items() if key not in TECH_COMMANDS}
     groups, used = [], set()
     for title_pl, title_en, names in HELP_GROUPS:
         items = [by_polish[n] for n in names if n in by_polish]
@@ -398,10 +421,11 @@ def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
     return groups
 
 
-def build_menu(skills: list[dict]) -> list[tuple[str, str]]:
-    """Menu '/' Telegrama: najczestsze komendy (MENU_COMMANDS), potem skille z komenda. Pozostale — /pomoc."""
+def build_menu(skills: list[dict], view: str = "tech") -> list[tuple[str, str]]:
+    """Menu '/' Telegrama: najczestsze komendy widoku (MENU_COMMANDS*), potem skille z komenda. Pozostale — /pomoc."""
     by_polish = {COMMAND_ALIASES.get(name, name): (name, desc) for name, desc in builtin_commands()}
-    menu = [by_polish[name] for name in MENU_COMMANDS if name in by_polish]
+    names = MENU_COMMANDS_SIMPLE if view == "simple" else MENU_COMMANDS
+    menu = [by_polish[name] for name in names if name in by_polish]
     for skill in skills:
         if skill.get("command"):
             description = " ".join((skill.get("description") or "").split()) or "Skill"
@@ -432,11 +456,11 @@ def format_skill_list(skills: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_help(skills: list[dict]) -> str:
-    """Pomoc (/pomoc) jako HTML Telegrama."""
+def format_help(skills: list[dict], view: str = "tech") -> str:
+    """Pomoc (/pomoc) jako HTML Telegrama — w widoku prostym bez komend technicznych."""
     lines = [tr("Nie musisz znac komend — mozesz po prostu napisac, co mam zrobic.",
                 "You don't need the commands — you can just write what I should do.")]
-    for title, items in _grouped_commands():
+    for title, items in _grouped_commands(view):
         lines.append(f"\n<b>{html.escape(title)}</b>")
         lines += [f"/{command} — {html.escape(description)}" for command, description in items]
     with_command = [s for s in skills if s.get("command")]
@@ -447,7 +471,36 @@ def format_help(skills: list[dict]) -> str:
                     "(podpis to pytanie).",
                     "\nYou can also record a voice note or send a screenshot, a log or a config file "
                     "(the caption is the question)."))
+    lines.append(tr("Wiecej o serwerze (schemat, podatnosci, zdalne serwery): /widok techniczny",
+                    "More about the server (diagram, vulnerabilities, remote servers): /view technical")
+                 if view == "simple" else
+                 tr("Prosciej, bez spraw serwera: /widok prosty", "Simpler, without server matters: /view simple"))
     return "\n".join(lines)
+
+
+VIEW_QUESTION = (
+    "<b>Co chcesz robic z Pipe?</b>\n\nNapisz w paru slowach (np. <i>\"przypomnienia i maile\"</i> albo "
+    "<i>\"pilnowac serwera ze sklepem\"</i>) albo wybierz przycisk. Widok zmienisz zawsze komenda /widok.\n\n"
+    "<b>Prosty</b> — rozmowa, przypomnienia, skille i dodatki do aplikacji zewnetrznych.\n"
+    "<b>Techniczny</b> — to samo plus serwer: schemat, podatnosci, kontenery, zdalne serwery.",
+    "<b>What do you want to do with Pipe?</b>\n\nWrite it in a few words (e.g. <i>\"reminders and emails\"</i> or "
+    "<i>\"keep an eye on the shop server\"</i>) or pick a button. You can always change the view with /view.\n\n"
+    "<b>Simple</b> — chat, reminders, skills and add-ons for external apps.\n"
+    "<b>Technical</b> — the same plus the server: diagram, vulnerabilities, containers, remote servers.",
+)
+
+
+def view_question() -> str:
+    """Pytanie przy pierwszym uruchomieniu (widoku nikt jeszcze nie wybral)."""
+    return tr(*VIEW_QUESTION)
+
+
+def view_buttons(current: str = "") -> list[tuple[str, str]]:
+    """Przyciski wyboru widoku (callback `view:<widok>`); obecny oznaczony."""
+    def mark(view: str) -> str:
+        return "✓ " if view == current else ""
+    return [(mark("simple") + tr("Prosty", "Simple"), "view:simple"),
+            (mark("tech") + tr("Techniczny", "Technical"), "view:tech")]
 
 
 def format_providers(data: dict, *, admin: bool) -> str:

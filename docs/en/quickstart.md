@@ -1,6 +1,6 @@
 # Quick start -- step by step
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 ## Try it without a server
 
@@ -25,6 +25,10 @@ change and checks whether the server was really fixed (details: `sandbox/README.
 
 1. **On the server** -- the agent backend running
 2. **On your laptop** -- Python 3.11+ and SSH access
+
+A shorter way: install the client (step 2, you can skip the server address) and type `pipe web`. The page asks what
+you want to do and sets Pipe up itself on this computer (Docker) or on your server (address and an SSH password or
+key). Steps 1 and 3 then happen on their own.
 
 ---
 

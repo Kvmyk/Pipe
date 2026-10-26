@@ -1,5 +1,34 @@
 # Historia zmian -- Pipe
 
+## v0.43.0 (2026-10-26)
+
+### Dwa widoki: prosty i techniczny
+
+- Przy pierwszym uruchomieniu Pipe pyta, co chcesz robic. Odpowiedz kilkoma slowami (*"przypomnienia i maile"*,
+  *"pilnowac serwera ze sklepem"*) albo wybor widoku; slowa rozpoznaje bez modelu, wiec dziala to przed dodaniem klucza
+- Widok prosty: rozmowa zwyklymi slowami, przypomnienia, pliki, skille i dodatki do aplikacji (MCP). Agent pisze bez
+  zargonu i sam dobiera sposob wykonania. Komendy serwera znikaja z podpowiedzi, `/pomoc` i menu, ale dzialaja po wpisaniu
+- Widok techniczny: to samo plus schemat serwera, dziennik zmian, podatnosci, kontenery i zdalne serwery; obowiazuje,
+  dopoki nikt nie wybierze, wiec istniejace instalacje wygladaja jak dotad
+- Jeden widok dla calego agenta, jak jezyk: `/widok prosty|techniczny` (`/view`) w CLI, `pipe web` (przycisk
+  w naglowku) i na Telegramie (przyciski, pytanie przy pierwszym `/start`, inne menu i klawiatura w widoku prostym).
+  Zmiana w jednym kanale przelacza pozostale; zmienia tylko administrator
+- `pipe web`: nowa zakladka *Dodatki* -- skille (uruchom, podglad), podlaczone serwery MCP i dodawanie nowych z GitHuba
+
+### `pipe web` stawia Pipe sam
+
+- `pipe web` bez `--host` otwiera kreator: najpierw widok, potem *Gdzie ma dzialac Pipe?*. *Na tym komputerze* --
+  Docker z tego repozytorium (na Windows i macOS Pipe pracuje we wlasnym kontenerze Docker Desktop,
+  `backend/docker-compose.desktop.yml`). *Na moim serwerze* -- adres i haslo albo klucz SSH; aplikacja klonuje
+  repozytorium do `/opt/pipe` i uruchamia instalator bez pytan, postep widac na stronie
+- Haslo zostaje w procesie `pipe web`: nie trafia na dysk, do backendu ani do modelu. Po pierwszym logowaniu Pipe dodaje
+  na serwerze wlasny klucz (`~/.pipe/keys`) i dalej laczy sie nim; nowy klucz hosta zapisuje z odciskiem, zmieniony
+  przerywa instalacje
+- Polaczenie zapisuje sie w `~/.pipe/app.json`: kolejne `pipe web` i zwykle `pipe` bez `--host` lacza sie same.
+  Kreator wraca z `pipe web --setup` albo po kliknieciu adresu serwera w naglowku
+- Instalatory klienta (`install.sh`, `install.ps1`) nie wymagaja juz adresu serwera; klient potrzebuje `paramiko`
+  (jest w `clients/cli/requirements.txt`)
+
 ## v0.42.1 (2026-10-26)
 
 ### Poprawki

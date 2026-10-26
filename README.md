@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.42.1-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.43.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -154,6 +154,12 @@ bash install.sh          # Linux i macOS
 
 Komenda `pipe web` otwiera wersję w przeglądarce, ze schematem serwera, na którym widać, gdzie agent właśnie
 pracuje. Na serwerze nie otwiera się żaden dodatkowy port.
+
+Nie chcesz instalować niczego na serwerze ręcznie? Zainstaluj tylko klienta, pomiń adres i wpisz `pipe web`. Strona
+zapyta, co chcesz robić, i postawi Pipe sama: na tym komputerze (Docker) albo na Twoim serwerze po SSH. Hasło zostaje
+na Twoim komputerze. Do wyboru są dwa widoki: prosty (rozmowa, przypomnienia, skille, dodatki do aplikacji) i techniczny
+(do tego schemat serwera, zmiany, podatności). Zmienisz go w każdej chwili przez `/widok`, także w terminalu
+i na Telegramie.
 
 Telegram (polecany, bo tam przychodzą alerty): uzupełnij `clients/telegram/.env` (token bota i swój identyfikator)
 i uruchom instalator jeszcze raz. Szczegóły: [docs/telegram.md](./docs/telegram.md).

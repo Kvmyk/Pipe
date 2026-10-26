@@ -1,0 +1,20 @@
+# Pipe na komputerze z Docker Desktop (Windows, macOS) — `pipe web` -> "Na tym komputerze".
+#
+#   (recznie: docker compose -f docker-compose.yml -f docker-compose.desktop.yml up -d vps-agent)
+#
+# Docker Desktop trzyma kontenery w maszynie wirtualnej: "/" i /proc tamtej maszyny to nie Twoj komputer,
+# a /root i /etc/localtime nie istnieja na macOS. Dlatego bez systemu plikow hosta: Pipe pracuje we wlasnym
+# kontenerze (PIPE_RUNTIME=native — komendy agenta dzialaja w nim, nie na Twoim komputerze), a docker.sock
+# zostaje, zeby projekty z warsztatu i serwery MCP mogly uruchamiac kontenery. Na Linuksie `pipe web` uzywa
+# samego docker-compose.yml (Pipe zarzadza wtedy tym komputerem).
+# Wymaga docker compose >= 2.24.4 (znaczniki !reset / !override).
+services:
+  vps-agent:
+    pid: !reset null
+    hostname: pipe          # na pulpicie zamiast losowego identyfikatora kontenera
+    environment:
+      - PIPE_RUNTIME=native
+    volumes: !override
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock

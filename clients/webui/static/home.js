@@ -31,7 +31,7 @@
   function create(deps) {
     const { el, md, t, fmt, command, toast, onAction, onAsk } = deps;
     const root = document.getElementById("home");
-    let overview = null, feed = { items: [], unread: 0 }, canEdit = true, loading = false, timer = 0;
+    let overview = null, feed = { items: [], unread: 0 }, canEdit = true, loading = false, timer = 0, view = "tech";
     const expanded = new Set();
 
     function icon(name, size, cls) {
@@ -285,9 +285,9 @@
       const scroll = root.scrollTop;
       root.textContent = "";
       root.appendChild(hero());
-      root.appendChild(gauges());
+      if (view !== "simple") root.appendChild(gauges());      // widok prosty: bez wykresow i warsztatu
       root.appendChild(inbox());
-      root.appendChild(projects());
+      if (view !== "simple") root.appendChild(projects());
       root.appendChild(usage());
       root.scrollTop = scroll;
     }
@@ -377,8 +377,9 @@
       pending = setTimeout(() => refresh(true), event.type === "alert" ? 300 : 800);
     }
     function setCanEdit(value) { canEdit = value; }
+    function setView(value) { if (value !== view) { view = value; render(); } }
 
-    return { refresh, onEvent, markSeen, openSettings, setCanEdit, get unread() { return feed.unread || 0; } };
+    return { refresh, onEvent, markSeen, openSettings, setCanEdit, setView, get unread() { return feed.unread || 0; } };
   }
 
   window.PipeHome = { create };

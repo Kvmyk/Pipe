@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 ## Overview
 
@@ -86,6 +86,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `provider_set` | `name`, `key` (optional), `model` (optional) | like `providers` -- saves the key (after checking it with the provider) and the model, switches the agent, sets `chosen`. Admin only |
 | `provider_forget` | `name` | like `providers` -- removes a key added from the interface; a provider without a key stops being active. Admin only |
 | `yolo` | `args`: `on` \| `off` (optional; also `wlacz`/`wylacz`, `tak`/`nie`) | `"data": {"yolo": bool, "can_edit": bool, "text"}` -- without `args` the state, with `args` turns YOLO mode **of this session** on/off: operations that need confirmation run right away (through the safety fuse and the journal; instead of `[POTWIERDZ]` the stream carries a `progress` event "YOLO — ..."). Admin only; doesn't survive a backend restart |
+| `view` | `args`: `simple` \| `technical` (optional; also `prosty`, `techniczny` or a plain-words description, e.g. *"reminders and emails"*) | `"data": {"view": "simple" \| "tech", "chosen": bool, "views", "can_edit": bool, "text"}` -- without `args` the state, with `args` sets the view of the whole agent (`DATA_DIR/view.json`, `core/views.py`); subscribers get a `view` event. An unknown description -> an error naming both views. Admin only |
 | `language` | `args`: `pl` \| `en` (optional; also `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- without `args` the state, with `args` switches the language of the whole agent (prompts, tool descriptions, reports, messages) without a restart and saves the choice in `DATA_DIR/language.json`; subscribers get a `language` event. Admin only |
 | `reminders` | `cancel`: id (optional), `claim`: true (optional) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [reminder events], "cancelled"}` -- `claim` picks up reminders that fired while nobody was subscribed (CLI) |
 | `history` | -- | `"data": {"entries": ["audit log line", ...]}` (the last 15) |
@@ -149,16 +150,16 @@ Frames with diagrams are hundreds of KB, so the client must read lines with a la
 
 ### Watcher events (`subscribe`)
 
-After `{"command": "subscribe"}` the server sends `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool}}`
-(`lang_chosen` -- the language was chosen with the `language` command, and the client should adopt it), and then,
-without `done`:
+After `{"command": "subscribe"}` the server sends `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
+"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- the language was chosen with the `language` command,
+and the client should adopt it; `view_chosen` -- the same for the view), and then, without `done`:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
 ```
 
 (Pipe's language was changed from any channel, so the client switches its messages; the event doesn't go into the
-`alerts` history)
+`alerts` history; likewise `{"type": "view", "view": "simple"}` after a view change)
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {

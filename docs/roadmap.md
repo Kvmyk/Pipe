@@ -14,8 +14,8 @@ Nowych funkcji nie dodajemy, dopoki Pipe nie ma uzytkownikow spoza autora. Prior
 
 Wyjatki: zmiana, o ktora prosi wiecej niz jedna osoba korzystajaca z Pipe na prawdziwym serwerze, oraz zmiany
 z punktu 1 -- dlatego ponizsze lacenie podatnosci wchodzi mimo zamrozenia. Decyzja autora byla tez przebudowa
-z v0.39 (Pipe pisze pierwszy, warsztat, narzedzia na zadanie, pulpit w `pipe web`) -- kolejne funkcje znow tylko
-wedlug punktow wyzej.
+z v0.39 (Pipe pisze pierwszy, warsztat, narzedzia na zadanie, pulpit w `pipe web`) oraz widoki prosty i techniczny
+z kreatorem pierwszego uruchomienia w `pipe web` (2026-10-26) -- kolejne funkcje znow tylko wedlug punktow wyzej.
 
 ## Dalej: podatnosci i latki
 

@@ -40,6 +40,8 @@ import time
 import uuid
 from pathlib import Path
 
+import appsetup          # clients/cli/appsetup.py — pierwsze uruchomienie `pipe web` (lokalnie albo na serwerze)
+
 
 def _initial_lang() -> str:
     """Jezyk CLI: --lang pl|en (ma pierwszenstwo) albo zmienna PIPE_LANG; domyslnie polski."""
@@ -156,12 +158,14 @@ class SSHTunnel:
         local_port: int = DEFAULT_LOCAL_PORT,
         remote_port: int = DEFAULT_LOCAL_PORT,  # port TCP na serwerze
         identity_file: str | None = None,
+        batch: bool = False,
     ) -> None:
         self.host = host
         self.ssh_port = ssh_port
         self.local_port = local_port
         self.remote_port = remote_port
         self.identity_file = identity_file
+        self.batch = batch          # bez pytania o haslo (polaczenie zapisane w `pipe web` — wlasny klucz Pipe)
         self._process: subprocess.Popen | None = None
 
     def start(self) -> None:
@@ -187,7 +191,7 @@ class SSHTunnel:
 
         if self.identity_file:
             cmd.extend(["-i", self.identity_file])
-        if BRIDGE_MODE:
+        if BRIDGE_MODE or self.batch:
             # Most MCP: stdin niesie JSON-RPC klienta — ssh nie moze go czytac ani pytac o haslo
             cmd[1:1] = ["-n", "-o", "BatchMode=yes"]
 
@@ -196,7 +200,7 @@ class SSHTunnel:
         # NIE przekierowujemy stdin — SSH może zapytać o hasło w terminalu
         self._process = subprocess.Popen(
             cmd,
-            stdin=subprocess.DEVNULL if BRIDGE_MODE else None,   # dziedzicz stdin (haslo), chyba ze most MCP
+            stdin=subprocess.DEVNULL if BRIDGE_MODE or self.batch else None,   # dziedzicz stdin (haslo), chyba ze most MCP
             stdout=subprocess.DEVNULL,
             stderr=None,         # dziedzicz stderr (pokazuje prompt hasła)
         )
@@ -481,8 +485,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.42.1[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.42.1[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.43.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.43.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -758,7 +762,7 @@ COMMAND_ALIASES = {
     "reminders": "przypomnienia", "update": "aktualizuj", "language": "jezyk", "lang": "jezyk", "język": "jezyk",
     "providers": "providerzy", "provider": "providerzy", "file": "plik", "attach": "plik", "patch": "zalataj", "vulns": "podatnosci",
     "new": "nowa", "news": "nowosci", "inbox": "nowosci", "projects": "projekty", "notifications": "powiadomienia",
-    "cleanup": "sprzataj", "download": "pobierz",
+    "cleanup": "sprzataj", "download": "pobierz", "view": "widok",
 }
 
 # Podpowiedzi po wpisaniu "/": (nazwa polska, nazwa angielska, opis polski, opis angielski).
@@ -807,6 +811,8 @@ COMMANDS = [
      "send a file or screenshot: /file <path> [question], in a message @path"),
     ("yolo", "yolo", "zmiany bez pytania o TAK: /yolo on, /yolo off", "changes without asking for YES: /yolo on, /yolo off"),
     ("jezyk", "language", "język Pipe: /jezyk en albo /jezyk pl", "Pipe's language: /language pl or /language en"),
+    ("widok", "view", "widok: /widok prosty (rozmowa, skille, dodatki) albo /widok techniczny (serwer, schemat)",
+     "view: /view simple (chat, skills, add-ons) or /view technical (the server, the diagram)"),
     ("pomoc", "help", "lista komend", "list of commands"),
     ("exit", "exit", "wyjście", "quit"),
 ]
@@ -814,6 +820,12 @@ COMMANDS = [
 # Komendy, ktore dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo daja /status i /nowosci
 # (alerty, strony i certyfikaty) oraz /dziennik (zmiany). Podpowiedz pojawia sie tylko po wpisaniu pelnej nazwy.
 HIDDEN_COMMANDS = frozenset({"alerty", "zdrowie", "historia"})
+# Widok prosty (/widok prosty, wspolny dla CLI, pipe web i Telegrama): tych komend nie ma w podpowiedziach ani
+# w /pomoc, ale dzialaja po wpisaniu — tak samo w clients/webui/static/app.js i clients/telegram/tg_format.py.
+TECH_COMMANDS = frozenset({"projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj", "sprzataj",
+                           "mapa", "mermaid", "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody",
+                           "yolo", "aktualizuj"})
+_view: str = "tech"      # widok z backendu (komenda `view`), odczytany po polaczeniu
 
 HELP_TEXT = """Nie musisz znać komend — napisz, co mam zrobić, np. „czemu sklep działa wolno?”, „postaw mi tę aplikację
 z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam pisze, gdy coś wymaga uwagi.
@@ -850,6 +862,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 - `/powiadomienia [wszystko|wazne|krytyczne] [cisza 22-7|cisza off] [dziennie 3]` — kiedy Pipe ma pisać sam
 - `/providerzy` — model AI: klucz, model, przełączenie (`/providerzy groq`, `/providerzy model`)
 - `/jezyk [pl|en]` — język Pipe
+- `/widok [prosty|techniczny]` — widok Pipe we wszystkich aplikacjach (prosty: rozmowa, skille, dodatki)
 - `/yolo [on|off]` — zmiany bez pytania o TAK w tej rozmowie (kopie i `/cofnij` działają dalej)
 - `/koszt`, `/aktualizuj` — koszt modelu, aktualizacja Pipe
 
@@ -897,6 +910,7 @@ something needs attention.
 - `/notifications [all|important|critical] [quiet 22-7|quiet off] [daily 3]` — when Pipe writes on its own
 - `/providers` — the AI model: key, model, switching (`/providers groq`, `/providers model`)
 - `/language [pl|en]` — Pipe's language
+- `/view [simple|technical]` — Pipe's view in every app (simple: chat, skills, add-ons)
 - `/yolo [on|off]` — changes without asking for YES in this conversation (backups and `/undo` still work)
 - `/cost`, `/update` — model cost, updating Pipe
 
@@ -907,6 +921,32 @@ something needs attention.
 - `/help` — this list, `/exit` — quit
 
 Tab completes commands and paths. You can add hints to a skill command: `/renew_certificate only for example.com`."""
+
+HELP_SIMPLE = """Nie musisz znać komend — napisz zwykłymi słowami, w czym pomóc, np. „przypomnij mi jutro o 9 o fakturze”,
+„streść ten plik” albo „podłącz mi kalendarz”. Możesz też wysłać plik: `/plik <ścieżka>` albo `@ścieżka`.
+
+- `/status` — czy wszystko działa, od razu i bez AI
+- `/nowosci` — co Pipe napisał sam (z akcjami: wpisz np. `1a`)
+- `/skille` — gotowe umiejętności, każda z własną komendą
+- `/pobierz skill <właściciel/repo>` — nowe umiejętności z GitHuba; `/mcp` — dodatki do aplikacji zewnętrznych
+- `/przypomnienia` — Twoje przypomnienia
+- `/cofnij` — cofnij ostatnią zmianę
+- `/powiadomienia`, `/providerzy`, `/jezyk`, `/koszt` — ustawienia
+- `/widok techniczny` — więcej o serwerze: schemat, podatności, zdalne serwery
+- `/nowa` — nowa rozmowa, `/exit` — wyjście"""
+
+HELP_SIMPLE_EN = """You don't need the commands — write in plain words what to help with, e.g. "remind me tomorrow at 9 about
+the invoice", "summarise this file" or "connect my calendar". You can also send a file: `/file <path>` or `@path`.
+
+- `/status` — is everything working, instant and without AI
+- `/news` — what Pipe wrote on its own (with actions: type e.g. `1a`)
+- `/skills` — ready-made skills, each with its own command
+- `/download skill <owner/repo>` — new skills from GitHub; `/mcp` — add-ons for external apps
+- `/reminders` — your reminders
+- `/undo` — undo the last change
+- `/notifications`, `/providers`, `/language`, `/cost` — settings
+- `/view technical` — more about the server: the diagram, vulnerabilities, remote servers
+- `/new` — new conversation, `/exit` — quit"""
 
 
 def _severity(value) -> str:
@@ -963,7 +1003,8 @@ def _slash_options(text: str, skills: list[dict] | None = None) -> list[tuple[st
     options = []
     for name_pl, name_en, desc_pl, desc_en in COMMANDS:
         aliases = [alias for alias, target in COMMAND_ALIASES.items() if target == name_pl]
-        if name_pl in HIDDEN_COMMANDS and query not in (name_pl, name_en, *aliases):
+        hidden = name_pl in HIDDEN_COMMANDS or (_view == "simple" and name_pl in TECH_COMMANDS)
+        if hidden and query not in (name_pl, name_en, *aliases):
             continue
         if match(name_pl, name_en, *aliases):
             options.append((tr(name_pl, name_en), tr(desc_pl, desc_en)))
@@ -1374,6 +1415,55 @@ async def _sync_language(client: "RemoteClient") -> None:
         _set_lang(data["lang"])
 
 
+VIEW_QUESTION = ("Co chcesz robić z Pipe? Opisz w paru słowach albo wybierz:\n"
+                 "  [bold]1[/bold] — codzienne sprawy: rozmowa, przypomnienia, skille, dodatki do aplikacji (widok prosty)\n"
+                 "  [bold]2[/bold] — serwer: schemat, podatności, kontenery, zdalne serwery (widok techniczny)",
+                 "What do you want to do with Pipe? Describe it in a few words or pick:\n"
+                 "  [bold]1[/bold] — everyday things: chat, reminders, skills, add-ons for apps (simple view)\n"
+                 "  [bold]2[/bold] — the server: diagram, vulnerabilities, containers, remote servers (technical view)")
+
+
+async def _view_command(client: "RemoteClient", args: str) -> None:
+    """/widok [prosty|techniczny|opis] — widok wspolny dla CLI, pipe web i Telegrama."""
+    global _view
+    try:
+        data = _response_data(await client.send_command("view", args=args))
+    except RuntimeError as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+        return
+    _view = data.get("view") or _view
+    console.print(escape(data.get("text", "")))
+
+
+async def _sync_view(client: "RemoteClient") -> None:
+    """
+    Po polaczeniu: widok z backendu. Nikt go jeszcze nie wybral (pierwsze uruchomienie) — pytamy, co uzytkownik chce
+    robic; odpowiedz zwyklymi slowami backend zamienia na widok (core/views.py). Pusty Enter zostawia techniczny.
+    """
+    global _view
+    try:
+        data = _response_data(await client.send_command("view"))
+    except Exception:
+        return          # starszy backend nie zna tej komendy
+    _view = data.get("view") or "tech"
+    if data.get("chosen") or not data.get("can_edit") or BRIDGE_MODE or not sys.stdin.isatty():
+        return
+    console.print(tr(*VIEW_QUESTION))
+    for _ in range(2):
+        try:
+            answer = console.input("[bold]> [/bold]").strip() or "2"
+        except (EOFError, KeyboardInterrupt):
+            return
+        try:
+            data = _response_data(await client.send_command("view", args=answer))
+        except RuntimeError as exc:
+            console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+            continue
+        _view = data.get("view") or _view
+        console.print(f"[dim]{escape(data.get('text', ''))}[/dim]\n")
+        return
+
+
 async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
     """
     Komendy /server, /skille, /pomoc i skille. Zwraca False, gdy to nie jest
@@ -1398,7 +1488,11 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         return True
 
     if name in ("pomoc", "help"):
-        console.print(Markdown(tr(HELP_TEXT, HELP_TEXT_EN)))
+        console.print(Markdown(tr(HELP_SIMPLE, HELP_SIMPLE_EN) if _view == "simple" else tr(HELP_TEXT, HELP_TEXT_EN)))
+        return True
+
+    if name == "widok":
+        await _view_command(client, args)
         return True
 
     if name == "jezyk":
@@ -1821,10 +1915,64 @@ async def _show_due_reminders(client: "RemoteClient", quiet: bool = False) -> No
                             border_style="dim", box=box.SQUARE))
 
 
-async def run_web(client: "RemoteClient", host: str) -> None:
+class AppSetup:
+    """
+    `pipe web` bez --host: pierwsze uruchomienie (lokalnie albo na serwerze, appsetup.py) i zapisane polaczenie.
+    Most strony (clients/webui/server.py) wola state() i run() z osobnego watku.
+    """
+
+    def __init__(self) -> None:
+        self.tunnel: SSHTunnel | None = None
+
+    def state(self, lang: str = "pl") -> dict:
+        saved = appsetup.saved_connection()
+        return {"local": appsetup.local_problem(lang), "paramiko": appsetup.has_paramiko(),
+                "saved": appsetup.label(saved, lang) if saved else ""}
+
+    def run(self, request: dict, progress, lang: str = "pl") -> tuple[str, int, str, str]:
+        if request.get("kind") == "local":
+            conn = appsetup.start_local(progress, lang)
+        else:
+            conn = appsetup.deploy_server(request, progress, lang)
+        target = self.open(conn, progress, lang)
+        appsetup.remember(conn)
+        return target
+
+    def open(self, conn: dict, progress=None, lang: str = "pl") -> tuple[str, int, str, str]:
+        """(host, port, token, etykieta) dzialajacego backendu; lokalny w razie potrzeby uruchamia, do serwera tunel."""
+        progress = progress or (lambda line: None)
+        if conn.get("kind") == "local":
+            if not appsetup.port_open():
+                appsetup.start_local(progress, lang)
+            return "127.0.0.1", appsetup.BACKEND_PORT, appsetup.local_token(), appsetup.label(conn, lang)
+        self.close()
+        tunnel = SSHTunnel(host=appsetup.ssh_target(conn), ssh_port=int(conn.get("ssh_port") or DEFAULT_SSH_PORT),
+                           local_port=_free_port(), identity_file=conn.get("key") or None, batch=True)
+        progress(tr(f"Zestawiam tunel SSH do {appsetup.ssh_target(conn)}…",
+                    f"Setting up the SSH tunnel to {appsetup.ssh_target(conn)}…"))
+        tunnel.start()
+        try:
+            ready = tunnel.wait_ready(timeout=30.0)
+        except RuntimeError as exc:
+            tunnel.stop()
+            raise appsetup.SetupError(str(exc)) from None
+        if not ready:
+            tunnel.stop()
+            raise appsetup.SetupError(tr("Tunel SSH nie odpowiada (30 s).", "The SSH tunnel does not respond (30 s)."))
+        self.tunnel = tunnel
+        return "127.0.0.1", tunnel.local_port, str(conn.get("token") or ""), appsetup.label(conn, lang)
+
+    def close(self) -> None:
+        if self.tunnel is not None:
+            self.tunnel.stop()
+            self.tunnel = None
+
+
+async def run_web(client: "RemoteClient | None", host: str, setup: AppSetup | None = None) -> None:
     """
     `pipe web`: interfejs w przegladarce. Ten proces serwuje strone na 127.0.0.1 i mostkuje ja na
     backend przez ten sam tunel co CLI — token zostaje tutaj, na serwerze nie otwiera sie zaden port.
+    Bez klienta (pierwsze uruchomienie) strona pyta, co uzytkownik chce robic, i stawia Pipe (AppSetup).
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "webui"))
     try:
@@ -1832,6 +1980,22 @@ async def run_web(client: "RemoteClient", host: str) -> None:
     except ImportError as exc:
         console.print(tr(f"[red]Nie znaleziono interfejsu webowego (clients/webui): {exc}[/red]",
                          f"[red]Web interface not found (clients/webui): {exc}[/red]"))
+        return
+    if client is None:
+        bridge = web_server.WebBridge(None, 0, "", lang=LANG, port=web_server.free_port(WEB_PORT), setup=setup)
+        console.print(Panel.fit(
+            tr("[bold]Pipe Web[/bold] — pierwsze uruchomienie\n\n"
+               "[dim]Na stronie wybierzesz, co chcesz robić i gdzie ma działać Pipe: na tym komputerze albo na\n"
+               "Twoim serwerze. Dane logowania do serwera zostają na tym komputerze. Ctrl+C kończy.[/dim]",
+               "[bold]Pipe Web[/bold] — first run\n\n"
+               "[dim]On the page you pick what you want to do and where Pipe should run: on this computer or on\n"
+               "your server. Server credentials stay on this computer. Ctrl+C to quit.[/dim]"),
+            border_style="dim", box=box.SQUARE, padding=(1, 2)))
+        console.print(tr("Otwórz w przeglądarce (kliknij):", "Open in your browser (click):"))
+        console.print(f"[bold underline][link={bridge.url}]{bridge.url}[/link][/bold underline]",
+                      soft_wrap=True, highlight=False)
+        console.print()
+        await bridge.serve(open_browser=WEB_OPEN_BROWSER)
         return
     try:
         await client.connect()
@@ -1841,7 +2005,7 @@ async def run_web(client: "RemoteClient", host: str) -> None:
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
         return
     bridge = web_server.WebBridge(client.host, client.port, client.token, lang=LANG, server_label=host,
-                                  port=web_server.free_port(WEB_PORT))
+                                  port=web_server.free_port(WEB_PORT), setup=setup)
     console.print(Panel.fit(
         tr(f"[bold]Pipe Web[/bold] — połączono z [bold]{escape(host)}[/bold]\n\n"
            "[dim]Adres poniżej zawiera jednorazowy klucz dostępu i działa tylko na tym komputerze.\n"
@@ -1931,6 +2095,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
     await _sync_language(client)
     await _sync_yolo(client)
     _print_banner(host)
+    await _sync_view(client)
     await _first_run_welcome(client, host)
     # na dzien dobry: stan serwera i ile nowych wiadomosci od Pipe (bez modelu, od razu)
     try:
@@ -2096,6 +2261,33 @@ def connect_config(app: str, bridge: list[str], token: str = "") -> str:
     return body + "\n" + hint + footer
 
 
+def _run_saved(args, runner, saved: dict | None, session_id: str) -> None:
+    """Polaczenie zapisane w `pipe web` (~/.pipe/app.json) — dla CLI i strony; bez niego strona zaczyna od konfiguracji."""
+    setup = AppSetup()
+    target = None
+    if saved:
+        console.print(tr(f"[dim]Łączę z Pipe: {escape(appsetup.label(saved, LANG))}…[/dim]",
+                         f"[dim]Connecting to Pipe: {escape(appsetup.label(saved, LANG))}…[/dim]"))
+        try:
+            target = setup.open(saved, lambda line: console.print(f"[dim]{escape(line)}[/dim]"), LANG)
+        except (appsetup.SetupError, RuntimeError, OSError) as exc:
+            console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+            if runner is not run_web:
+                setup.close()
+                sys.exit(1)
+    try:
+        if target is None:
+            asyncio.run(run_web(None, "", setup=setup))
+            return
+        host, port, token, label = target
+        client = RemoteClient(session_id=session_id, host=host, port=port, token=args.token or token)
+        asyncio.run(run_web(client, label, setup=setup) if runner is run_web else runner(client, label))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        setup.close()
+
+
 def main() -> None:
     """Punkt wejścia CLI."""
     parser = argparse.ArgumentParser(
@@ -2133,6 +2325,11 @@ Examples:
     parser.add_argument("--web-port", type=int, default=int(os.getenv("PIPE_WEB_PORT", "7400")), metavar="PORT",
                         help=tr("pipe web: port strony na 127.0.0.1 (domyślnie 7400)",
                                 "pipe web: port of the page on 127.0.0.1 (default 7400)"))
+    parser.add_argument("--setup", action="store_true",
+                        help=tr("pipe web: zacznij od pierwszego uruchomienia (gdzie ma działać Pipe), "
+                                "nawet gdy połączenie jest zapisane",
+                                "pipe web: start with the first run (where Pipe should run) even when a connection "
+                                "is saved"))
     parser.add_argument("--no-browser", action="store_true",
                         help=tr("pipe web: nie otwieraj przeglądarki, tylko wypisz adres",
                                 "pipe web: do not open the browser, just print the address"))
@@ -2298,14 +2495,23 @@ Examples:
             pass
         return
 
+    # ─── Bez --host: zapisane polaczenie albo pierwsze uruchomienie w pipe web ──
+    if not args.host:
+        saved = None if args.setup else appsetup.saved_connection()
+        if args.mode == "web" or saved:
+            _run_saved(args, runner, saved, session_id)
+            return
+
     # ─── Tryb SSH tunel ────────────────────────────────────────────────────
     if not args.host:
         console.print(tr(
             "[red]Brak adresu serwera.[/red]\n\n"
-            "Podaj --host user@twoj-serwer lub ustaw zmienną VPS_HOST.\n\n"
+            "Podaj --host user@twoj-serwer lub ustaw zmienną VPS_HOST — albo uruchom [bold]pipe web[/bold], "
+            "a aplikacja sama postawi Pipe na tym komputerze albo na Twoim serwerze.\n\n"
             "[dim]Przykład: python cli.py --host root@serwer.example.com[/dim]",
             "[red]No server address.[/red]\n\n"
-            "Pass --host user@your-server or set the VPS_HOST variable.\n\n"
+            "Pass --host user@your-server or set the VPS_HOST variable — or run [bold]pipe web[/bold] and the app "
+            "will set Pipe up on this computer or on your server.\n\n"
             "[dim]Example: python cli.py --host root@server.example.com[/dim]"
         ))
         sys.exit(1)

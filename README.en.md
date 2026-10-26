@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.42.1-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.43.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -152,6 +152,11 @@ bash install.sh          # Linux and macOS
 
 `pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
 is opened on the server.
+
+Don't want to install anything on the server by hand? Install only the client, skip the address and type `pipe web`.
+The page asks what you want to do and sets Pipe up itself: on this computer (Docker) or on your server over SSH. The
+password stays on your computer. There are two views: simple (chat, reminders, skills, add-ons for apps) and technical
+(plus the server map, changes, vulnerabilities). Change it any time with `/view`, also in the terminal and on Telegram.
 
 Telegram (recommended, alerts arrive there): fill in `clients/telegram/.env` (bot token and your user id) and run the
 installer again. Language: `PIPE_LANG=en` in `backend/.env` and `clients/telegram/.env`, `pipe --lang en` in the CLI,

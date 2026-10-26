@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -83,7 +83,14 @@ pipe web                  # zestawia tunel jak zwykle i otwiera http://127.0.0.1
 pipe web --no-browser     # tylko wypisz adres
 pipe web --web-port 8080  # inny port (albo zmienna PIPE_WEB_PORT)
 pipe web --lang en
+pipe web --setup          # kreator od nowa: gdzie ma dzialac Pipe
 ```
+
+Bez `--host` i bez zapisanego polaczenia `pipe web` zaczyna od kreatora: co chcesz robic (widok prosty albo
+techniczny) i gdzie ma dzialac Pipe -- na tym komputerze (Docker) albo na Twoim serwerze (adres i haslo albo klucz SSH;
+strona sama klonuje repozytorium i uruchamia instalator). Haslo zostaje na tym komputerze. Polaczenie trafia do
+`~/.pipe/app.json` i od tej pory `pipe web` oraz `pipe` bez `--host` lacza sie same. Opis: `docs/features.md`
+(Widoki).
 
 Ten sam proces co CLI: tunel SSH (albo `--kube`, `--no-tunnel`), a zamiast REPL-a -- lokalna strona. Token backendu
 zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w adresie. Strona dziala wylacznie na
@@ -202,6 +209,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
 | `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez dodatkowego pytania: pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow z compose (nowszy obraz albo poprawki zainstalowane w obrazie) i zdalne serwery, potem sprzata stare obrazy i cache. Kroki widac na zywo, na koncu co zalatane, co bez zmian i dlaczego. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
+| `/widok [prosty\|techniczny\|opis]` | Widok Pipe (`/view`), wspolny dla CLI, weba i Telegrama: prosty chowa komendy serwera w podpowiedziach i `/pomoc`, agent pisze zwyklymi slowami. Bez argumentu pokazuje obecny; opis zwyklymi slowami tez dziala. Przy pierwszym polaczeniu CLI pyta o niego samo. Tylko administrator |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
 | `/plik <sciezka> [pytanie]` | Wyslij agentowi plik z tego komputera (log, konfiguracja, zrzut ekranu; do 10 MB). W zwyklej wiadomosci wystarczy `@sciezka`, np. `co tu nie gra? @nginx.conf`; Tab podpowiada sciezki. Alias: `/file` |

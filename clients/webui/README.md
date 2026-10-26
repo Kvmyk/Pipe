@@ -24,8 +24,20 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 - Strona jest dostepna tylko z tego komputera, z kluczem z adresu (potem ciasteczko HttpOnly);
   zadania z obcym naglowkiem `Host` albo `Origin` sa odrzucane.
 
+## Pierwsze uruchomienie
+
+`pipe web` bez `--host` i bez zapisanego polaczenia (albo z `--setup`) otwiera kreator: *Co chcesz robic z Pipe?*
+(kilka slow albo wybor widoku prostego lub technicznego), potem *Gdzie ma dzialac Pipe?* -- na tym komputerze (Docker)
+albo na Twoim serwerze (adres, port, uzytkownik i haslo, plik klucza albo klucze z `~/.ssh`). Most (`server.py`,
+`POST /api/setup`) wola `clients/cli/appsetup.py` i pokazuje postep linia po linii; po sukcesie przelacza sie na nowy
+backend, a strona odswieza sie sama. Haslo idzie tylko do tego procesu i nie jest zapisywane. Klikniecie adresu serwera
+w naglowku otwiera drugi krok ponownie (zmiana miejsca).
+
 ## Co jest na stronie
 
+- **Widok** -- przycisk w naglowku przelacza widok prosty (rozmowa, *Pulpit* bez wykresow, *Dodatki*) i techniczny
+  (do tego *Schemat* i *Zmiany*). Wybor jest wspolny z CLI i Telegramem (`/widok`).
+- **Dodatki** -- skille (uruchom, podglad), podlaczone serwery MCP i dodawanie nowych z GitHuba (`/pobierz`, `/mcp dodaj`).
 - **Pulpit** (pierwsza zakladka) -- bez modelu: naglowek *Wszystko dziala* albo co wymaga uwagi, pierscienie
   procesora, pamieci i dysku z przebiegiem z ostatniej doby, skrzynka *Od Pipe* (alerty, ustalenia, podpowiedzi
   i raporty z przyciskami akcji; dzwonek w gornym pasku liczy nowe i otwiera ustawienia powiadomien), karty projektow
@@ -51,6 +63,8 @@ przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH-
 | `server.py` | lokalny serwer HTTP i most do backendu |
 | `static/app.js` | czat, potwierdzenia, os czasu, zakladki |
 | `static/home.js` | pulpit: stan serwera, skrzynka z akcjami, projekty, ustawienia powiadomien |
+| `static/onboard.js` | pierwsze uruchomienie: widok, miejsce (lokalnie / serwer), postep instalacji |
+| `static/addons.js` | zakladka Dodatki: skille i serwery MCP |
 | `static/graph.js` | schemat: uklad, kamera, przejscia miedzy poziomami, animacje |
 | `static/md.js` | bezpieczny renderer Markdowna (bez `innerHTML`) |
 | `static/i18n.js` | teksty pl / en |

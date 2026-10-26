@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -227,6 +227,7 @@ work in both languages.
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation. Viewers can use it too |
 | `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without buttons or questions (admin): this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images and remote servers, then cleans up old images and caches. One message shows the steps live, at the end a short result: what was patched, what stayed unchanged and why, how much space was freed. The *Patch* button on a vulnerability alert patches what the alert is about. Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
+| `/view [simple\|technical\|description]` | Pipe's view (`/widok`): without an argument *Simple* / *Technical* buttons. Simple changes the `/` menu, `/help` and the keyboard (status, news, skills, help), and the agent writes in plain words; shared with the CLI and `pipe web`. On the first `/start` the bot asks what you want to do -- a button or a few words. Admin only |
 | `/language [pl\|en]` | Pipe's language: switches agent instructions, reports, bot messages and the `/` menu without a restart, shared with the CLI and `pipe web`; admin only |
 | `/providers [id [model]]` | LLM providers: buttons for providers that have a key (the active one too, to change its model), then the provider's models as paged buttons; the current one is marked, "Keep ..." keeps it. `/providers groq llama` picks a model by name fragment, `/providers model` changes the model of the current provider. The bot never takes API keys (they would stay in the chat history); add them in `pipe web` or the CLI. Admin only |
 | `/yolo [on\|off]` | YOLO mode: changes in this conversation run without YES/NO buttons (the safety fuse, the journal and `/undo` still work; forbidden operations are refused). Off by default, admin only, forgotten when the backend restarts |

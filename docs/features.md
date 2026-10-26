@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -726,6 +726,42 @@ ekran ponownie (kolejny klucz, inny model, usuniecie klucza). Klucze leza na ser
 (0600) i nie wracaja do przegladarki. Wybor dotyczy calego agenta: po przelaczeniu z nowego providera korzystaja tez
 Telegram, CLI, rutyny i workery; `WORKER_MODEL` i ceny z `.env` dotycza tylko providera bazowego. Kilka kluczy mozna
 tez podac od razu w `backend/.env` (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`...).
+
+---
+
+## Widoki: prosty i techniczny
+
+Pipe ma dwa widoki, jak jedna aplikacja do dwoch rzeczy. **Prosty** jest dla osob nietechnicznych: rozmowa zwyklymi
+slowami, przypomnienia, pliki, skille i dodatki do aplikacji zewnetrznych (serwery MCP: GitHub, kalendarz, poczta).
+Agent sam wybiera sposob wykonania zadania, nie kaze wpisywac komend i pyta o zgode prostym pytaniem tak/nie.
+**Techniczny** ma to samo i do tego serwer: schemat na zywo, dziennik zmian z cofaniem, podatnosci i latanie, kontenery,
+zdalne serwery.
+
+Przy pierwszym uruchomieniu Pipe pyta, co chcesz robic. Mozna odpowiedziec kilkoma slowami (*"przypomnienia i maile"*,
+*"pilnowac serwera ze sklepem"*) albo wybrac widok. Widok jest wspolny dla calego agenta, tak jak jezyk: `/widok prosty`,
+`/widok techniczny` (`/view`) w CLI, w `pipe web` (takze przycisk w naglowku) i na Telegramie (przyciski). Zmiana
+w jednym kanale przelacza pozostale. Zapis w `DATA_DIR/view.json`, zmienia tylko administrator. Dopoki nikt nie
+wybral, obowiazuje widok techniczny, czyli to, co Pipe pokazywal dotad.
+
+| Gdzie | Widok prosty | Widok techniczny |
+|-------|--------------|------------------|
+| `pipe web` | zakladki *Pulpit* (bez wykresow i projektow) i *Dodatki*, podpowiedzi na co dzien | *Pulpit*, *Schemat*, *Zmiany*, *Dodatki* |
+| CLI | `/pomoc` i podpowiedzi `/` bez komend serwera | wszystkie komendy |
+| Telegram | menu `/`, `/pomoc` i klawiatura: stan, nowosci, skille, pomoc | menu i klawiatura jak dotad |
+| Agent | blok *WIDOK PROSTY* w prompcie: zwykle slowa, bez zargonu | bez zmian |
+
+Komendy serwera (`/zalataj`, `/mapa`, `/audyt` i inne) dzialaja w obu widokach po wpisaniu, widok prosty tylko ich
+nie podsuwa. Zakladka *Dodatki* w `pipe web` zbiera skille (uruchomienie, podglad), podlaczone serwery MCP i dodawanie
+nowych z GitHuba (`/pobierz`, `/mcp dodaj`).
+
+**Pierwsze uruchomienie bez serwera.** `pipe web` bez `--host` i bez zapisanego polaczenia otwiera kreator: najpierw
+widok, potem miejsce. *Na tym komputerze* uruchamia backend w Dockerze z tego repozytorium (na Linuksie Pipe zarzadza
+tym komputerem, na Windows i macOS pracuje we wlasnym kontenerze Docker Desktop, `backend/docker-compose.desktop.yml`).
+*Na moim serwerze* laczy sie przez SSH z adresem i haslem albo kluczem, klonuje repozytorium do `/opt/pipe`
+i uruchamia `install-server.sh` bez pytan (bez modelu; klucz API dodajesz potem na stronie). Haslo zostaje w procesie
+`pipe web`: nie trafia na dysk, do backendu ani do modelu. Po hasle Pipe dopisuje na serwerze wlasny klucz
+(`~/.pipe/keys`) i kolejne polaczenia ida juz nim. Polaczenie zapisuje sie w `~/.pipe/app.json`, wiec nastepne `pipe web`
+i zwykle `pipe` lacza sie same. Kreator wraca z `pipe web --setup` albo po kliknieciu adresu serwera w naglowku.
 
 ---
 

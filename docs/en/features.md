@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -745,6 +745,43 @@ the server in `DATA_DIR/llm_keys.json` (0600) and never go back to the browser. 
 after switching, Telegram, the CLI, routines and workers use the new provider too; `WORKER_MODEL` and prices from
 `.env` apply only to the base provider. You can also put several keys straight into `backend/.env`
 (`OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`...).
+
+---
+
+## Views: simple and technical
+
+Pipe has two views, like one app for two jobs. **Simple** is for non-technical people: chat in plain words, reminders,
+files, skills and add-ons for external apps (MCP servers: GitHub, a calendar, email). The agent picks how to do the
+task itself, doesn't ask you to type commands and asks for approval with a plain yes/no question. **Technical** has
+the same plus the server: the live map, the change journal with undo, vulnerabilities and patching, containers,
+remote servers.
+
+On the first run Pipe asks what you want to do. You can answer in a few words (*"reminders and emails"*, *"keep an eye
+on the shop server"*) or pick a view. The view is shared by the whole agent, like the language: `/view simple`,
+`/view technical` (`/widok`) in the CLI, in `pipe web` (also a button in the header) and on Telegram (buttons).
+Changing it in one channel switches the others. It is saved in `DATA_DIR/view.json` and only an admin changes it.
+Until someone chooses, the technical view applies, which is what Pipe showed so far.
+
+| Where | Simple view | Technical view |
+|-------|-------------|----------------|
+| `pipe web` | *Dashboard* (without charts and projects) and *Add-ons* tabs, everyday suggestions | *Dashboard*, *Map*, *Changes*, *Add-ons* |
+| CLI | `/help` and `/` suggestions without server commands | all commands |
+| Telegram | `/` menu, `/help` and keyboard: status, news, skills, help | menu and keyboard as before |
+| Agent | a *SIMPLE VIEW* block in the prompt: plain words, no jargon | unchanged |
+
+Server commands (`/patch`, `/map`, `/audit` and others) work in both views when typed; the simple view only doesn't
+suggest them. The *Add-ons* tab in `pipe web` gathers skills (run, preview), connected MCP servers and adding new ones
+from GitHub (`/download`, `/mcp add`).
+
+**First run without a server.** `pipe web` without `--host` and without a saved connection opens a wizard: first the
+view, then the place. *On this computer* starts the backend in Docker from this repository (on Linux Pipe manages this
+computer, on Windows and macOS it works in its own Docker Desktop container, `backend/docker-compose.desktop.yml`).
+*On my server* connects over SSH with an address and a password or key, clones the repository into `/opt/pipe` and
+runs `install-server.sh` without questions (without a model; you add the API key on the page afterwards). The
+password stays in the `pipe web` process: it doesn't go to disk, to the backend or to the model. After a password
+login Pipe adds its own key on the server (`~/.pipe/keys`) and uses it from then on. The connection is saved in
+`~/.pipe/app.json`, so the next `pipe web` and plain `pipe` connect on their own. The wizard comes back with
+`pipe web --setup` or by clicking the server address in the header.
 
 ---
 

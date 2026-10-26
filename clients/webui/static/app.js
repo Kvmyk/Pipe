@@ -16,6 +16,12 @@
     sessionStorage.removeItem("pipe-session"); sessionStorage.removeItem("pipe-language-note");
   } catch (_) { /* tryb prywatny */ }
   if (location.search.includes("k=")) window.history.replaceState(null, "", location.pathname);   // klucz jest juz w ciasteczku
+  // Widok Pipe (komenda `view`, wspolny dla CLI, pipe web i Telegrama): "simple" — rozmowa, skille i dodatki;
+  // "tech" — do tego serwer: schemat, zmiany, podatnosci. Tych komend nie ma w podpowiedziach widoku prostego
+  // (dzialaja po wpisaniu) — ta sama lista co TECH_COMMANDS w clients/cli/cli.py i clients/telegram/tg_format.py.
+  const TECH_COMMANDS = ["projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj", "sprzataj", "mapa", "mermaid",
+    "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody", "yolo", "aktualizuj"];
+  let view = "tech", viewCanEdit = false;
 
   // ---------------------------------------------------------------- most
   async function request(payload, onFrame) {
@@ -71,6 +77,14 @@
 
   // Pusty ekran rozmowy: powitanie i zadania zwyklymi slowami. Czesc dziala bez modelu (natychmiast, bez kosztu) —
   // oznaczone "bez AI"; reszta to zwykla wiadomosc do agenta.
+  const SIMPLE_SUGGESTIONS = [
+    { key: "s_ok", icon: "check", free: true, run: () => statusMessage() },
+    { key: "s_can", icon: "info", run: () => send(t("s_canMsg")), quiet: true },
+    { key: "s_remind", icon: "clock", quiet: true, run: () => { input.value = t("s_remindPrefill"); autosize(); input.focus(); } },
+    { key: "s_file", icon: "copy", quiet: true, run: () => $("file-input").click() },
+    { key: "s_write", icon: "code", quiet: true, run: () => { input.value = t("s_writePrefill"); autosize(); input.focus(); } },
+    { key: "s_addons", icon: "box", quiet: true, run: () => switchTab("addons") },
+  ];
   const SUGGESTIONS = [
     { key: "s_status", icon: "check", free: true, run: () => statusMessage() },
     { key: "s_changes", icon: "clock", free: true, run: () => dataMessage({ command: "changes" }, (d) => listing(d.text)) },
@@ -85,9 +99,9 @@
     mark.setAttribute("class", "logo"); mark.setAttribute("width", "28"); mark.setAttribute("height", "28");
     box.appendChild(mark);
     box.appendChild(el("h1", "", t("welcomeTitle")));
-    box.appendChild(el("p", "", t("welcomeText")));
+    box.appendChild(el("p", "", t(view === "simple" ? "welcomeTextSimple" : "welcomeText")));
     const grid = el("div", "suggest");
-    SUGGESTIONS.forEach((item) => {
+    (view === "simple" ? SIMPLE_SUGGESTIONS : SUGGESTIONS).forEach((item) => {
       const card = el("button", "suggest-card");
       card.type = "button";
       const head = el("span", "suggest-head");
@@ -96,7 +110,7 @@
       card.appendChild(head);
       card.appendChild(el("span", "suggest-sub", t(item.key + "_sub")));
       if (item.free) card.appendChild(el("span", "suggest-free", t("s_free")));
-      card.addEventListener("click", () => { if (busy) return; add("user", t(item.key)); item.run(); });
+      card.addEventListener("click", () => { if (busy) return; if (!item.quiet) add("user", t(item.key)); item.run(); });
       grid.appendChild(card);
     });
     box.appendChild(grid);
@@ -344,7 +358,7 @@
     no.addEventListener("click", () => ask.remove());
     yes.addEventListener("click", async () => {
       ask.remove();
-      try { const result = await command({ command: "install", token: d.token, execute: true }); box.appendChild(md(result.text || "")); loadSkills(); }
+      try { const result = await command({ command: "install", token: d.token, execute: true }); box.appendChild(md(result.text || "")); loadSkills(); addons.refresh(); }
       catch (error) { box.appendChild(el("div", "meta", error.message)); }
     });
     return box;
@@ -986,6 +1000,10 @@
       if (event.lang !== window.PipeI18n.lang) toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
       return;
     }
+    if (event.type === "view") {          // widok zmieniony z innego kanalu albo karty
+      if (event.view !== view) { applyView(event.view); toast(t("viewChanged"), t("view_" + view)); }
+      return;
+    }
     const key = eventKey(event);
     if (seenEvents.has(key)) return;
     seenEvents.add(key);
@@ -1433,11 +1451,12 @@
     ["rutyny", "routines", "c_routines"], ["przypomnienia", "reminders", "c_reminders", true], ["cele", "targets", "c_targets"],
     ["nowa", "new", "c_new"], ["vibe", "vibe", "c_vibe", true], ["dziennik", "journal", "c_journal"], ["cofnij", "undo", "c_undo", true],
     ["zgody", "approvals", "c_approvals"], ["koszt", "cost", "c_cost"],
-    ["historia", "history", "c_history"], ["providerzy", "providers", "c_provider", true], ["yolo", "yolo", "c_yolo", true], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
+    ["historia", "history", "c_history"], ["providerzy", "providers", "c_provider", true], ["yolo", "yolo", "c_yolo", true], ["jezyk", "language", "c_language", true],
+    ["widok", "view", "c_view", true], ["dodatki", "addons", "c_addons"], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
   // Dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo pokazuje pulpit (/status, skrzynka) i /dziennik.
   const HIDDEN = ["alerty", "zdrowie", "historia"];
-  const listed = (entry) => !HIDDEN.includes(entry[0]);
+  const listed = (entry) => !HIDDEN.includes(entry[0]) && !(view === "simple" && TECH_COMMANDS.includes(entry[0]));
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
   const ALIASES = { provider: "providerzy" };      // stara nazwa z wczesniejszych wersji
@@ -1471,6 +1490,42 @@
     openProvider(found, model || "");
   }
 
+  // Widok: zakladki, pulpit, podpowiedzi i powitanie; stan na backendzie (wspolny dla wszystkich aplikacji)
+  function tabsFor(value) { return value === "simple" ? ["home", "addons"] : ["home", "map", "changes", "addons"]; }
+  function applyView(value) {
+    view = value === "simple" ? "simple" : "tech";
+    document.body.dataset.view = view;
+    $("view-label").textContent = t("view_" + view);
+    $("view-btn").title = t("viewSwitch_" + view);
+    home.setView(view);
+    if (!tabsFor(view).includes(currentTab)) switchTab("home", true);
+    const first = messages.querySelector(".welcome");
+    if (first) { first.remove(); welcome(); }
+  }
+  async function setView(args, quiet) {
+    try {
+      const data = await command({ command: "view", args });
+      applyView(data.view);
+      if (quiet) toast(t("viewChanged"), data.text); else add("agent", md(data.text || ""));
+    } catch (error) {
+      if (quiet) toast(t("errorPrefix"), error.message); else add("agent error", md(t("errorPrefix") + ": " + error.message));
+    }
+  }
+  // Start: widok z backendu; nikt go jeszcze nie wybral — pytanie "co chcesz robic?" (przed ekranem providera)
+  async function loadView() {
+    let data;
+    try { data = await command({ command: "view" }); } catch (_) { applyView("tech"); return; }   // starszy backend
+    viewCanEdit = !!data.can_edit;
+    applyView(data.view);
+    $("view-btn").hidden = false;
+    if (!data.chosen && data.can_edit) await onboard.open({ mode: "first" });
+  }
+  $("view-btn").addEventListener("click", () => {
+    if (busy) { toast(t("working"), t("waitTurn")); return; }
+    if (!viewCanEdit) { toast(t("viewChanged"), t("viewViewer")); return; }
+    setView(view === "simple" ? "tech" : "simple", true);
+  });
+
   // YOLO: zmiany w tej rozmowie bez pytania o TAK — stan zyje w sesji backendu, tu tylko znacznik
   const yoloChip = $("yolo-chip");
   function showYolo(on) { yoloChip.hidden = !on; yoloChip.title = t("yoloChip"); }
@@ -1488,6 +1543,8 @@
 
   const HANDLERS = {
     jezyk: (args) => setLanguage(args),
+    widok: (args) => (args ? setView(args) : onboard.open({ mode: "first", view })),
+    dodatki: () => switchTab("addons"),
     yolo: (args) => setYolo(args),
     status: () => statusMessage(),
     nowosci: () => openInbox(),
@@ -1552,7 +1609,7 @@
     pomoc: () => add("agent", listing(COMMANDS.filter(listed).map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
       + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
   };
-  const PANEL_ONLY = ["mapa", "alerty", "nowosci", "dziennik", "cofnij", "providerzy", "powiadomienia"];
+  const PANEL_ONLY = ["mapa", "alerty", "nowosci", "dziennik", "cofnij", "providerzy", "powiadomienia", "dodatki"];
 
   // Zwraca true, gdy tekst byl komenda (wbudowana albo skillem); false — idzie do agenta jako zwykla wiadomosc.
   async function slash(text) {
@@ -1722,10 +1779,10 @@
   window.addEventListener("resize", () => { if (stageWidth) applyStage(); });
 
   // Zakladki panelu: Pulpit (domyslnie — stan, skrzynka, projekty), Schemat (agent na zywo), Zmiany (dziennik z /cofnij).
-  const TABS = ["home", "map", "changes"];
+  const TABS = ["home", "map", "changes", "addons"];
   let currentTab = "home";
   function switchTab(name, quiet) {
-    if (!TABS.includes(name)) name = "home";
+    if (!tabsFor(view).includes(name)) name = "home";
     if (stageHidden && wide.matches && !quiet) setStageHidden(false);   // komenda albo powiadomienie otwiera schowany panel
     TABS.forEach((tab) => { $("tab-" + tab).hidden = tab !== name; $("st-" + tab).classList.toggle("on", tab === name); });
     currentTab = name;
@@ -1733,6 +1790,7 @@
     if (name === "changes") { unseenChanges = 0; badge("changes-badge", 0); loadChanges(); }
     if (name === "home") home.refresh(true);
     if (name === "map") { $("map-live").hidden = true; requestAnimationFrame(() => graph.fit(0)); }
+    if (name === "addons") addons.refresh();
     if (!quiet) switchPane("stage");
   }
   function switchPane(name) {
@@ -1763,6 +1821,7 @@
   $("tab-chat").textContent = t("chat"); $("tab-stage").textContent = t("stage"); $("new-chat-label").textContent = t("newChat");
   $("timeline-head").textContent = t("activity");
   $("st-home-label").textContent = t("home"); $("st-map-label").textContent = t("map"); $("st-changes-label").textContent = t("changes");
+  $("st-addons-label").textContent = t("addons");
   $("map-live").title = t("mapLive");
   $("inbox-btn").title = t("h_inbox"); $("inbox-btn").setAttribute("aria-label", t("h_inbox"));
   $("inbox-btn").addEventListener("click", openInbox);
@@ -1780,17 +1839,46 @@
   $("dropzone-text").textContent = t("dropHere");
   $("server-name").textContent = config.server || "";
 
-  welcome();
-  if (languageNote) add("agent", md(languageNote));
-  loadSkills();
-  loadGraph(false);
-  let savedTab = "home";
-  try { savedTab = localStorage.getItem("pipe-tab") || "home"; } catch (_) { /* tryb prywatny */ }
-  switchTab(savedTab, true);
-  home.refresh(false);
-  loadChanges();                         // zakladka gotowa przed pierwszym otwarciem — bez pustej listy na chwile
-  loadProviders(true);
-  loadYolo();
-  connectEvents();
-  input.focus();
+  // Dodatki (addons.js): skille i aplikacje zewnetrzne (MCP); instalacja przez rozmowe (/pobierz, /mcp)
+  const addons = window.PipeAddons.create({
+    el, md, t, command,
+    onRunSkill: (skill) => runSkill(skill, ""),
+    onSlash: (text) => { switchPane("chat"); send(text); },
+  });
+  // Pierwsze uruchomienie (onboard.js): co chcesz robic i — bez backendu — gdzie ma dzialac Pipe
+  const onboard = window.PipeOnboard.create({ el, t, command, onView: (value) => applyView(value) });
+  if (config.canSetup) {
+    const serverPill = $("server-pill");
+    serverPill.classList.add("can-switch"); serverPill.setAttribute("role", "button"); serverPill.tabIndex = 0;
+    serverPill.title = t("ob_switchServer");
+    const reconnect = () => { if (!busy) onboard.open({ mode: "where", view }); };
+    serverPill.addEventListener("click", reconnect);
+    serverPill.addEventListener("keydown", (event) => { if (event.key === "Enter") reconnect(); });
+  }
+  $("view-btn").setAttribute("aria-label", t("viewSwitch_tech"));
+
+  if (config.setup) {
+    // Pipe jeszcze nigdzie nie dziala: tylko kreator; po udanej instalacji strona odswieza sie z nowym backendem.
+    document.body.classList.add("setup-mode");
+    $("server-name").textContent = t("ob_noServer");
+    setLink(false, t("ob_noServer"));
+    onboard.open({ mode: "setup", closable: false });
+  } else {
+    welcome();
+    if (languageNote) add("agent", md(languageNote));
+    loadSkills();
+    loadGraph(false);
+    let savedTab = "home";
+    try { savedTab = localStorage.getItem("pipe-tab") || "home"; } catch (_) { /* tryb prywatny */ }
+    switchTab(savedTab, true);
+    home.refresh(false);
+    loadChanges();                         // zakladka gotowa przed pierwszym otwarciem — bez pustej listy na chwile
+    loadView().then(() => {
+      if (tabsFor(view).includes(savedTab)) switchTab(savedTab, true);
+      loadProviders(true);                 // ekran providera dopiero po pytaniu o widok
+    });
+    loadYolo();
+    connectEvents();
+    input.focus();
+  }
 })();

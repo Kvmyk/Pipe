@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -83,7 +83,14 @@ pipe web                  # sets up the tunnel as usual and opens http://127.0.0
 pipe web --no-browser     # only print the address
 pipe web --web-port 8080  # another port (or the PIPE_WEB_PORT variable)
 pipe web --lang en
+pipe web --setup          # the wizard again: where Pipe should run
 ```
+
+Without `--host` and without a saved connection `pipe web` starts with a wizard: what you want to do (the simple or
+technical view) and where Pipe should run -- on this computer (Docker) or on your server (address and an SSH password
+or key; the page clones the repository and runs the installer itself). The password stays on this computer. The
+connection goes to `~/.pipe/app.json`, and from then on `pipe web` and `pipe` without `--host` connect on their own.
+Description: `docs/en/features.md` (Views).
 
 The same process as the CLI: an SSH tunnel (or `--kube`, `--no-tunnel`), and a local page instead of the REPL. The
 backend token stays in the `pipe web` process; the browser only gets a one-time key in the address. The page listens
@@ -201,6 +208,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation in Pipe's language |
 | `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without another question: this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images from compose (a newer image or the fixes installed inside the image) and remote servers, then cleans up old images and caches. The steps show live, at the end what was patched, what stayed unchanged and why. Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
+| `/view [simple\|technical\|description]` | Pipe's view (`/widok`), shared by the CLI, web and Telegram: simple hides server commands from suggestions and `/help`, and the agent writes in plain words. Without an argument shows the current one; a plain-words description works too. On the first connection the CLI asks for it on its own. Admin only |
 | `/language [pl\|en]` | Pipe's language: without an argument shows the current one, with an argument switches the whole agent (shared by the CLI, web and Telegram; admin only) |
 | `/providers [id [model]]` | LLM providers: a list, then picking a provider and a model from the list the provider returns (current one preselected, Enter keeps it; a name fragment narrows the list). The API key is typed without echo. `/providers groq` goes straight to Groq's models, `/providers groq llama` picks a model by name fragment, `/providers model` only changes the model of the current provider, `/providers forget <id>` removes a key added from the interface. The choice applies to the whole agent; changing it is admin only |
 | `/file <path> [question]` | Send the agent a file from this computer (a log, a config, a screenshot; up to 10 MB). In a normal message `@path` is enough, for example `what's wrong here? @nginx.conf`; Tab completes paths |

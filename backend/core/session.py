@@ -93,7 +93,7 @@ class Session:
         """
         from backend.config import settings
         from backend.core.i18n import prompt, tr
-        from backend.core import runtime
+        from backend.core import runtime, views
         from backend.core.memory import prompt_context
         from backend.core.watch import prompt_alerts
 
@@ -107,6 +107,7 @@ class Session:
             + prompt_alerts()
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
             + (prompt("OBSERVE_BLOCK") if runtime.observe() else "")
+            + (prompt("SIMPLE_VIEW_BLOCK") if views.is_simple() else "")
             + (prompt("YOLO_BLOCK") if self.yolo_now else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -121,6 +121,8 @@ from tg_format import (
     to_plain_text,
     to_telegram_html,
     tr,
+    view_buttons,
+    view_question,
 )
 
 # --- Konfiguracja ---
@@ -416,9 +418,13 @@ async def _backend_call(update: Update, context: ContextTypes.DEFAULT_TYPE, coro
 
 # --- Handlery komend ---
 
+# Widok Pipe (/widok, wspolny dla wszystkich kanalow): ze zdarzen `subscribed` / `view` backendu.
+_view_state: dict = {"view": "tech", "chosen": True}
+
+
 def _reply_keyboard() -> ReplyKeyboardMarkup:
     """Cztery najczestsze sprawy pod polem wiadomosci — bez znajomosci komend."""
-    return ReplyKeyboardMarkup(keyboard_rows(), resize_keyboard=True, is_persistent=True,
+    return ReplyKeyboardMarkup(keyboard_rows(_view_state["view"]), resize_keyboard=True, is_persistent=True,
                                input_field_placeholder=tr("Napisz, co mam zrobic…", "Tell me what to do…"))
 
 
@@ -448,7 +454,69 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<i>\"write a script that backs up the database every night\"</i>. You can also record a voice note.\n\n"
         "Buttons under the message field: server status, what's new, projects, help."
     )
+    user_id = update.effective_user.id
+    try:
+        state = await get_client(user_id).data("view")
+        _view_state.update(view=state.get("view") or "tech", chosen=bool(state.get("chosen")))
+    except Exception:
+        pass                    # starszy backend bez widokow
+    if _view_state["view"] == "simple":
+        welcome = tr(
+            "<b>Czesc, tu Pipe.</b>\n\n"
+            "Pisz do mnie normalnie, np. <i>\"przypomnij mi jutro o 9 o fakturze\"</i>, <i>\"streszcz ten plik\"</i> "
+            "albo <i>\"podlacz mi kalendarz\"</i>. Mozesz tez nagrac glosowke albo wyslac zdjecie.\n\n"
+            "Przyciski pod polem wiadomosci: czy wszystko dziala, co nowego, skille, pomoc.",
+            "<b>Hi, this is Pipe.</b>\n\n"
+            "Just write to me, e.g. <i>\"remind me tomorrow at 9 about the invoice\"</i>, <i>\"summarise this file\"</i> "
+            "or <i>\"connect my calendar\"</i>. You can also record a voice note or send a photo.\n\n"
+            "Buttons under the message field: is everything OK, what's new, skills, help.")
     await update.message.reply_text(welcome, parse_mode=ParseMode.HTML, reply_markup=_reply_keyboard())
+    if not _view_state["chosen"] and _is_admin(user_id):
+        # Pierwsze uruchomienie: co uzytkownik chce robic — przycisk albo kilka slow w nastepnej wiadomosci.
+        context.user_data["view_ask"] = True
+        await update.message.reply_text(view_question(), parse_mode=ParseMode.HTML, reply_markup=_inline(view_buttons()))
+
+
+async def _set_view(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, value: str) -> bool:
+    """Ustawia widok (nazwa albo opis zwyklymi slowami); False, gdy backend nie wie, ktory wybrac."""
+    try:
+        data = await get_client(user_id).data("view", args=value)
+    except RuntimeError as exc:
+        await _send_html(context.bot, chat_id, html.escape(str(exc)), _inline(view_buttons()))
+        return False
+    await _view_changed(context.application, data.get("view"))
+    await context.bot.send_message(chat_id, html.escape(data.get("text", "")), parse_mode=ParseMode.HTML,
+                                   reply_markup=_reply_keyboard())
+    return True
+
+
+async def _view_changed(app: Application, value) -> None:
+    """Zdarzenie `view` z backendu (zmiana z dowolnego kanalu): menu '/' i pomoc w nowym widoku."""
+    view = "simple" if value == "simple" else "tech"
+    if _view_state.get("view") == view and _view_state.get("chosen"):
+        return
+    _view_state.update(view=view, chosen=True)
+    for user_id in ALLOWED_USER_IDS | VIEWER_USER_IDS:
+        await refresh_menu(app.bot, user_id)
+
+
+async def cmd_widok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/widok [prosty|techniczny|opis] -- widok Pipe wspolny dla CLI, pipe web i Telegrama."""
+    user_id = await _guard(update)
+    if not user_id:
+        return
+    args = " ".join(context.args or []).strip()
+    chat_id = update.effective_chat.id
+
+    async def go() -> None:
+        if args:
+            await _set_view(context, chat_id, user_id, args)
+            return
+        data = await get_client(user_id).data("view")
+        markup = _inline(view_buttons(data.get("view", ""))) if data.get("can_edit") else None
+        await _send_html(context.bot, chat_id, html.escape(data.get("text", "")), markup)
+
+    await _backend_call(update, context, go())
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1256,10 +1324,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Przycisk klawiatury (Stan serwera, Co nowego, Projekty, Pomoc) — ta sama droga co komenda, bez LLM
     button = keyboard_command(text)
     if button:
-        handler = {"status": cmd_status, "nowosci": cmd_nowosci, "projekty": cmd_projekty, "pomoc": cmd_pomoc}.get(button)
+        handler = {"status": cmd_status, "nowosci": cmd_nowosci, "projekty": cmd_projekty, "pomoc": cmd_pomoc,
+                   "skille": cmd_skille}.get(button)
         if handler is not None:
             await handler(update, context)
             return
+
+    # Odpowiedz na pytanie z /start "co chcesz robic?" — kilka slow wybiera widok, zamiast trafic do agenta
+    if context.user_data.pop("view_ask", False) and _is_admin(user_id):
+        if await _set_view(context, update.effective_chat.id, user_id, text):
+            return
+        context.user_data["view_ask"] = True
+        return
 
     # Rate limiting: max 1 wiadomosc na sekunde od uzytkownika
     now = time.monotonic()
@@ -1406,6 +1482,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _handle_prefs_callback(update, context, data)
         return
 
+    if data.startswith("view:"):
+        if not user or not _is_admin(user.id):
+            await query.answer(tr("Widok zmienia tylko administrator.", "Only an administrator can change the view."),
+                               show_alert=True)
+            return
+        await query.answer()
+        context.user_data.pop("view_ask", None)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await _backend_call(update, context, _set_view(context, query.message.chat_id, user.id, data.split(":", 1)[1]))
+        return
+
     if data.startswith("investigate:"):
         if not user or not _is_allowed(user.id):
             await query.answer()
@@ -1502,7 +1592,7 @@ async def cmd_pomoc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         skills = await get_client(user_id).list_skills()
     except Exception:
         skills = []
-    await _send_html(context.bot, update.effective_chat.id, format_help(skills))
+    await _send_html(context.bot, update.effective_chat.id, format_help(skills, _view_state["view"]))
 
 
 async def handle_other_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1637,8 +1727,14 @@ async def alerts_loop(app: Application) -> None:
                     backoff = 2.0
                     if event.get("lang_chosen"):      # jezyk wybrany komenda /jezyk obowiazuje tez bota
                         await _language_changed(app, event.get("lang"))
+                    if "view" in event:
+                        _view_state["chosen"] = bool(event.get("view_chosen"))
+                        if event.get("view_chosen"):
+                            await _view_changed(app, event.get("view"))
                 elif event.get("type") == "language":
                     await _language_changed(app, event.get("lang"))
+                elif event.get("type") == "view":
+                    await _view_changed(app, event.get("view"))
                 elif event and (ALERTS_ENABLED or event.get("type") not in WATCH_EVENT_TYPES):
                     try:
                         await _broadcast(app, event)
@@ -1668,7 +1764,7 @@ async def refresh_menu(bot, user_id: int) -> None:
     nie globalny -- inaczej opisy skilli widzialby kazdy, kto otworzy bota.
     """
     try:
-        menu = build_menu(await get_client(user_id).list_skills())
+        menu = build_menu(await get_client(user_id).list_skills(), _view_state["view"])
         if _menu_cache.get(user_id) == menu:
             return
         await bot.set_my_commands([BotCommand(c, d) for c, d in menu], scope=BotCommandScopeChat(user_id))
@@ -1733,7 +1829,7 @@ def main() -> None:
         ("server", cmd_server), ("katalogi", cmd_katalogi), ("skille", cmd_skille), ("alerty", cmd_alerty),
         ("cele", cmd_cele), ("rutyny", cmd_rutyny), ("vibe", cmd_vibe), ("nowa", cmd_nowa), ("pomoc", cmd_pomoc),
         ("incydenty", cmd_incydenty), ("przypomnienia", cmd_przypomnienia), ("aktualizuj", cmd_aktualizuj),
-        ("jezyk", cmd_jezyk), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj), ("podatnosci", cmd_podatnosci),
+        ("jezyk", cmd_jezyk), ("widok", cmd_widok), ("providerzy", cmd_providerzy), ("yolo", cmd_yolo), ("zalataj", cmd_zalataj), ("podatnosci", cmd_podatnosci),
     ):
         app.add_handler(CommandHandler(command_names(polish), handler))
     app.add_handler(CallbackQueryHandler(handle_callback))

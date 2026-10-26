@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -220,6 +220,7 @@ nazwy dzialaja w obu jezykach.
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
 | `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez przyciskow i pytan (administrator): pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow i zdalne serwery, potem sprzata stare obrazy i cache. Jedna wiadomosc z krokami na zywo, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca zwolnione. Przycisk *Zalataj* przy alercie o podatnosciach lata to, czego alert dotyczy. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
+| `/widok [prosty\|techniczny\|opis]` | Widok Pipe (`/view`): bez argumentu przyciski *Prosty* / *Techniczny*. Prosty zmienia menu `/`, `/pomoc` i klawiature (stan, nowosci, skille, pomoc), a agent pisze zwyklymi slowami; wspolny z CLI i `pipe web`. Przy pierwszym `/start` bot pyta, co chcesz robic -- przycisk albo kilka slow. Tylko administrator |
 | `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |
 | `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez przyciskow TAK/NIE (bezpiecznik, dziennik i `/cofnij` dzialaja dalej; zakazane -- odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu |

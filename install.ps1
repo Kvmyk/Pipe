@@ -11,18 +11,14 @@ param(
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $CliPath = Join-Path $ScriptDir "clients\cli\cli.py"
 
-# Zapytaj o adres serwera jesli nie podano
+# Zapytaj o adres serwera jesli nie podano. Pusty = bez serwera: `pipe web` zapyta, co chcesz robic,
+# i postawi Pipe sam (lokalnie albo na serwerze).
 if (-not $VpsHost) {
-    $VpsHost = Read-Host "Podaj adres serwera (np. root@serwer.example.com)"
-}
-
-if (-not $VpsHost) {
-    Write-Host "BLAD: adres serwera jest wymagany." -ForegroundColor Red
-    exit 1
+    $VpsHost = Read-Host "Podaj adres serwera (np. root@serwer.example.com) albo Enter, zeby skonfigurowac w aplikacji"
 }
 
 # Zapytaj o port SSH (czesc dostawcow serwerow nie uzywa portu 22)
-if ($SshPort -eq "22") {
+if ($VpsHost -and $SshPort -eq "22") {
     $inputPort = Read-Host "Podaj port SSH (znajdziesz w panelu dostawcy serwera) [domyslnie: 22]"
     if ($inputPort) { $SshPort = $inputPort }
 }
@@ -39,8 +35,11 @@ $RequirementsPath = Join-Path $ScriptDir "clients\cli\requirements.txt"
 python -m pip install -r $RequirementsPath --quiet
 
 # Zbuduj argumenty dla funkcji 'pipe'
-$PipeArgs = "--host `"$VpsHost`""
-if ($SshPort -ne "22") {
+$PipeArgs = ""
+if ($VpsHost) {
+    $PipeArgs = "--host `"$VpsHost`""
+}
+if ($VpsHost -and $SshPort -ne "22") {
     $PipeArgs += " --ssh-port $SshPort"
 }
 if ($SshKey) {
@@ -95,8 +94,13 @@ if ($ProfileContent -and ($ProfileContent -split "`r?`n" | Where-Object { $_ -ma
 
 Write-Host ""
 Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host " Gotowe! Skrot 'pipe' bedzie laczyc sie z:      " -ForegroundColor Cyan
-Write-Host "   $VpsHost" -ForegroundColor White
+if ($VpsHost) {
+    Write-Host " Gotowe! Skrot 'pipe' bedzie laczyc sie z:      " -ForegroundColor Cyan
+    Write-Host "   $VpsHost" -ForegroundColor White
+} else {
+    Write-Host " Gotowe! Wpisz 'pipe web' - strona zapyta, co chcesz robic," -ForegroundColor Cyan
+    Write-Host " i postawi Pipe na tym komputerze albo na Twoim serwerze." -ForegroundColor Cyan
+}
 Write-Host ""
 Write-Host " Aby zastosowac teraz (bez restartu terminala): " -ForegroundColor Cyan
 Write-Host "   . `$PROFILE" -ForegroundColor Yellow

@@ -382,6 +382,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _providers(writer, command, request, interface, role)
         elif command == "language":
             await _language(writer, args, interface, role)
+        elif command == "view":
+            await _view(writer, args, interface, role)
         elif command == "yolo":
             await _yolo(writer, agent, args, session_id, interface, identity, role)
         elif command == "usage":
@@ -914,6 +916,53 @@ async def _language(writer, args: str, interface: str, role: str) -> None:
                                        "From now on we speak English — the agent's instructions, reports and messages."))))
 
 
+async def _view(writer, args: str, interface: str, role: str) -> None:
+    """
+    Widok Pipe (/widok w CLI, pipe web i na Telegramie, core/views.py), bez LLM. Bez argumentu — stan; z argumentem
+    (prosty / techniczny albo opis zwyklymi slowami: "chce ogarniac maile") — przelaczenie. Wybor jest wspolny dla
+    calego agenta, wiec subskrybenci dostaja zdarzenie `view`.
+    """
+    from backend.core import views
+
+    def state(text: str) -> dict:
+        return {"view": views.current(), "chosen": views.chosen(), "views": list(views.VIEWS),
+                "can_edit": role == "admin", "text": text}
+
+    if not args:
+        await _send(writer, _data(state(tr("Widok prosty: rozmowa, skille i dodatki. Zmiana: /widok techniczny",
+                                           "Simple view: chat, skills and add-ons. Change: /view technical")
+                                        if views.is_simple() else
+                                        tr("Widok techniczny: serwer, schemat, podatnosci i zdalne cele. "
+                                           "Zmiana: /widok prosty",
+                                           "Technical view: the server, the diagram, vulnerabilities and remote "
+                                           "targets. Change: /view simple"))))
+        return
+    if role != "admin":
+        await _send(writer, _error(tr("Widok moze zmieniac tylko administrator.",
+                                      "Only an administrator can change the view.")))
+        return
+    try:
+        target = views.set_view(args)
+    except ValueError:
+        await _send(writer, _error(tr("Nie wiem, ktory widok wybrac. Napisz /widok prosty (rozmowa, skille, dodatki) "
+                                      "albo /widok techniczny (serwer, schemat, podatnosci).",
+                                      "I can't tell which view to pick. Type /view simple (chat, skills, add-ons) "
+                                      "or /view technical (the server, the diagram, vulnerabilities).")))
+        return
+    await audit.log_file_write(interface, f"{views.STORE} (view={target})", 0)
+    print(f"[server] Widok: {target} (zmienil {interface})", flush=True)
+    get_watcher().notifier.publish({"type": "view", "view": target}, transient=True)
+    await _send(writer, _data(state(
+        tr("Ustawiono widok prosty: rozmowa, skille i dodatki do aplikacji. Pisze zwyklymi slowami. "
+           "Wiecej o serwerze: /widok techniczny",
+           "Simple view set: chat, skills and add-ons for apps. I write in plain words. "
+           "More about the server: /view technical") if target == "simple" else
+        tr("Ustawiono widok techniczny: serwer, schemat, podatnosci, zdalne cele i wszystko z widoku prostego. "
+           "Prosciej: /widok prosty",
+           "Technical view set: the server, the diagram, vulnerabilities, remote targets and everything from the "
+           "simple view. Simpler: /view simple"))))
+
+
 YOLO_ON = ("on", "wlacz", "włącz", "tak", "yes", "1", "true")
 YOLO_OFF = ("off", "wylacz", "wyłącz", "nie", "no", "0", "false")
 
@@ -1090,9 +1139,12 @@ async def _send_infra_diagram(writer, title: str) -> None:
 
 async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     """Przesyla zdarzenia czuwania (alerty, raporty rutyn) do rozlaczenia klienta."""
+    from backend.core import views
+
     notifier = get_watcher().notifier
     queue = notifier.subscribe()
-    await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed", "lang": lang(), "lang_chosen": i18n.chosen()}})
+    await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed", "lang": lang(), "lang_chosen": i18n.chosen(),
+                                                                     "view": views.current(), "view_chosen": views.chosen()}})
     get_watcher().reminders_changed()      # przypomnienia, ktore odpalily, gdy nikt nie sluchal
     closed = asyncio.ensure_future(reader.read(1))
     try:

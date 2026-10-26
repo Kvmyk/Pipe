@@ -27,6 +27,10 @@
     <button class="icon stage-toggle" id="stage-toggle" type="button" aria-label="panel" aria-pressed="true" aria-controls="stage-pane">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path class="fill" d="M14 5h6v14h-6z" fill="currentColor" opacity=".35"/></svg>
     </button>
+    <button class="ghost view-btn" id="view-btn" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span id="view-label"></span>
+    </button>
     <button class="icon lang" id="lang" aria-label="language"></button>
     <button class="icon" id="theme" aria-label="theme">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
@@ -72,6 +76,7 @@
         <button role="tab" data-tab="home" class="on" id="st-home"><span id="st-home-label"></span><b class="badge warn" id="home-badge" hidden>0</b></button>
         <button role="tab" data-tab="map" id="st-map"><span id="st-map-label"></span><i class="live-dot" id="map-live" hidden></i></button>
         <button role="tab" data-tab="changes" id="st-changes"><span id="st-changes-label"></span><b class="badge" id="changes-badge" hidden>0</b></button>
+        <button role="tab" data-tab="addons" id="st-addons"><span id="st-addons-label"></span></button>
         <div class="spacer"></div>
         <button class="icon stage-hide" id="stage-hide" type="button" aria-label="hide panel">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14M8.5 10l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -110,6 +115,8 @@
       </div>
 
       <div class="tab-body" id="tab-changes" hidden><div class="list" id="changes"></div></div>
+
+      <div class="tab-body" id="tab-addons" hidden><div class="addons" id="addons"></div></div>
     </section>
   </main>
 
@@ -128,6 +135,7 @@
     </div>
   </div>
 
+  <div class="sheet" id="onboard" hidden><div class="sheet-card onboard-card" role="dialog" aria-modal="true"></div></div>
   <div class="sheet" id="notify" hidden><div class="sheet-card small-card" role="dialog" aria-modal="true"></div></div>
   <div class="sheet" id="ask" hidden><div class="sheet-card small-card" role="dialog" aria-modal="true"></div></div>
 
@@ -142,6 +150,8 @@
   <script src="/static/graph.js"></script>
   <script src="/static/vulns.js"></script>
   <script src="/static/home.js"></script>
+  <script src="/static/addons.js"></script>
+  <script src="/static/onboard.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

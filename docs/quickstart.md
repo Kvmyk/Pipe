@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 ## Wyprobuj bez serwera
 
@@ -24,6 +24,10 @@ proponowana zmiane i sprawdza, czy serwer naprawde zostal naprawiony (szczegoly:
 
 1. **Na serwerze** -- uruchomiony backend agenta
 2. **Na laptopie** -- Python 3.11+ i dostep do SSH
+
+Krotsza droga: zainstaluj klienta (krok 2, adres serwera mozesz pominac) i wpisz `pipe web`. Strona zapyta, co chcesz
+robic, i sama postawi Pipe na tym komputerze (Docker) albo na Twoim serwerze (adres i haslo albo klucz SSH). Wtedy
+krok 1 i 3 dzieja sie same.
 
 ---
 

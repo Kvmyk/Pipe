@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.42.1
+Pipe v0.43.0
 
 ## Opis
 
@@ -86,6 +86,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `provider_set` | `name`, `key` (opcjonalnie), `model` (opcjonalnie) | jak `providers` -- zapisuje klucz (po sprawdzeniu u providera) i model, przelacza agenta, ustawia `chosen`. Tylko administrator |
 | `provider_forget` | `name` | jak `providers` -- usuwa klucz dodany z interfejsu; provider bez klucza przestaje byc aktywny. Tylko administrator |
 | `yolo` | `args`: `on` \| `off` (opcjonalnie; takze `wlacz`/`wylacz`, `tak`/`nie`) | `"data": {"yolo": bool, "can_edit": bool, "text"}` -- bez `args` stan, z `args` wlacza/wylacza tryb YOLO **tej sesji**: operacje wymagajace potwierdzenia wykonuja sie od razu (przez bezpiecznik i dziennik; w strumieniu zamiast `[POTWIERDZ]` przychodzi zdarzenie `progress` „YOLO — ...”). Zmiana tylko dla administratora; nie przetrwa restartu backendu |
+| `view` | `args`: `prosty` \| `techniczny` (opcjonalnie; takze `simple`, `technical` albo opis zwyklymi slowami, np. *"przypomnienia i maile"*) | `"data": {"view": "simple" \| "tech", "chosen": bool, "views", "can_edit": bool, "text"}` -- bez `args` stan, z `args` ustawia widok calego agenta (`DATA_DIR/view.json`, `core/views.py`); subskrybenci dostaja zdarzenie `view`. Nieznany opis -> blad z oboma nazwami. Zmiana tylko dla administratora |
 | `language` | `args`: `pl` \| `en` (opcjonalnie; takze `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- bez `args` stan, z `args` przelacza jezyk calego agenta (prompty, opisy narzedzi, raporty, komunikaty) bez restartu i zapisuje wybor w `DATA_DIR/language.json`; subskrybenci dostaja zdarzenie `language`. Zmiana tylko dla administratora |
 | `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
 | `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
@@ -147,14 +148,16 @@ asyncio (`open_connection(..., limit=32 * 1024 * 1024)`).
 
 ### Zdarzenia czuwania (`subscribe`)
 
-Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool}}`
-(`lang_chosen` -- jezyk wybrano komenda `language`, klient powinien go przejac), a potem, bez `done`:
+Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
+"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- jezyk wybrano komenda `language`, klient powinien go
+przejac; `view_chosen` -- tak samo dla widoku), a potem, bez `done`:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
 ```
 
-(jezyk Pipe zmieniony z dowolnego kanalu -- klient przelacza swoje komunikaty; zdarzenie nie trafia do historii `alerts`)
+(jezyk Pipe zmieniony z dowolnego kanalu -- klient przelacza swoje komunikaty; zdarzenie nie trafia do historii `alerts`;
+tak samo `{"type": "view", "view": "simple"}` po zmianie widoku)
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {

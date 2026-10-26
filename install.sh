@@ -16,15 +16,11 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # ─── Zapytaj o adres serwera ─────────────────────────────────────────────────
+# Pusty adres = bez serwera: `pipe web` zapyta, co chcesz robic, i postawi Pipe sam (lokalnie albo na serwerze).
 VPS_HOST="${1:-}"
 if [ -z "$VPS_HOST" ]; then
-    printf "${CYAN}Podaj adres serwera (np. root@serwer.example.com): ${NC}"
+    printf "${CYAN}Podaj adres serwera (np. root@serwer.example.com) albo Enter, zeby skonfigurowac w aplikacji: ${NC}"
     read -r VPS_HOST
-fi
-
-if [ -z "$VPS_HOST" ]; then
-    echo -e "${RED}❌ Błąd: adres serwera jest wymagany.${NC}"
-    exit 1
 fi
 
 SSH_PORT="${2:-22}"
@@ -43,8 +39,11 @@ echo -e "${CYAN}📦 Instaluję zależności CLI...${NC}"
 $PYTHON -m pip install -r "$SCRIPT_DIR/clients/cli/requirements.txt" --quiet
 
 # ─── Buduj alias ─────────────────────────────────────────────────────────────
-PIPE_ARGS="--host \"$VPS_HOST\""
-if [ "$SSH_PORT" != "22" ]; then
+PIPE_ARGS=""
+if [ -n "$VPS_HOST" ]; then
+    PIPE_ARGS="--host \"$VPS_HOST\""
+fi
+if [ -n "$VPS_HOST" ] && [ "$SSH_PORT" != "22" ]; then
     PIPE_ARGS="$PIPE_ARGS --ssh-port $SSH_PORT"
 fi
 if [ -n "$SSH_KEY" ]; then
@@ -83,8 +82,13 @@ printf '%s\n' "$ALIAS_BLOCK" >> "$RC_FILE"
 
 echo ""
 echo -e "${CYAN}════════════════════════════════════════════════════${NC}"
-echo -e "${CYAN} Gotowe! Załaduj profil i wpisz 'pipe' aby połączyć się z:${NC}"
-echo -e "${NC}   $VPS_HOST${NC}"
+if [ -n "$VPS_HOST" ]; then
+    echo -e "${CYAN} Gotowe! Załaduj profil i wpisz 'pipe' aby połączyć się z:${NC}"
+    echo -e "${NC}   $VPS_HOST${NC}"
+else
+    echo -e "${CYAN} Gotowe! Załaduj profil i wpisz 'pipe web' — strona zapyta, co chcesz robić,${NC}"
+    echo -e "${CYAN} i postawi Pipe na tym komputerze albo na Twoim serwerze.${NC}"
+fi
 echo ""
 echo -e "${CYAN} Aby zastosować teraz (w bieżącym terminalu):${NC}"
 echo -e "${YELLOW}   source $RC_FILE${NC}"
