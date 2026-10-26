@@ -355,7 +355,7 @@ HIDDEN_COMMANDS: frozenset[str] = frozenset({"alerty", "zdrowie", "historia"})
 
 # Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
 MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
-                                  "powiadomienia", "aktualizuj", "nowa", "pomoc")
+                                  "pobierz", "mcp", "powiadomienia", "aktualizuj", "nowa", "pomoc")
 
 # Klawiatura pod polem wiadomosci — cztery najczestsze sprawy jednym dotknieciem, bez znajomosci komend.
 KEYBOARD: tuple[tuple[tuple[str, str], ...], ...] = (

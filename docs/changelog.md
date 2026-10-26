@@ -1,5 +1,11 @@
 # Historia zmian -- Pipe
 
+## v0.42.1 (2026-10-26)
+
+### Poprawki
+
+- Telegram: `/mcp` i `/pobierz` pokazuja sie w menu `/` (w v0.42.0 dzialaly tylko wpisane recznie i byly w `/pomoc`)
+
 ## v0.42.0 (2026-10-26)
 
 ### Pipe dla innych agentow: `pipe connect`
