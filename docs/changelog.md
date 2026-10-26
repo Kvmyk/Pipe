@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.41.1 (2026-10-26)
+
+### Poprawki
+
+- `/zalataj` na serwerze z jednym procesorem nie podbijal zaleznosci aplikacji: kontener menedzera pakietow mial
+  limit 2 procesorow, a Docker odrzuca limit wiekszy niz liczba procesorow serwera ("range of CPUs is from 0.01 to
+  1.00"). Limit nie przekracza juz procesorow serwera -- takze w kontenerach warsztatu (`PROJECT_CPUS`)
+- Wynik `/zalataj` nie podpowiada `/cofnij`, gdy podbicie zaleznosci nic nie zmienilo
+
 ## v0.41.0 (2026-10-26)
 
 ### `/zalataj obrazy` podbija `FROM` w Dockerfile

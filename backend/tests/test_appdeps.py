@@ -129,6 +129,20 @@ class TestPlan:
         assert "docker.sock" not in command and "--privileged" not in command and "no-new-privileges" in command
 
 
+class TestCpuLimit:
+
+    def test_small_server_gets_at_most_its_cpus(self, tmp_path, monkeypatch):
+        from backend.core import hostinfo
+
+        proc = tmp_path / "proc"
+        proc.mkdir()
+        (proc / "cpuinfo").write_text("processor : 0\nmodel name : x\n")
+        monkeypatch.setenv("HOST_PROC", str(proc))
+        assert hostinfo.cpu_limit("2") == "1" and hostinfo.cpu_limit("0.5") == "0.5" and hostinfo.cpu_limit("x") == "1"
+        command = appdeps.docker_command("/srv/shop", appdeps.Bump("npm", [("a", "1.0.0")], {"a"}), 0, 0)
+        assert "--cpus 1 " in command
+
+
 class TestRequirementsEdit:
 
     def test_only_the_version_after_the_pin_changes(self, tmp_path):

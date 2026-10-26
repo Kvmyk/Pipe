@@ -87,6 +87,20 @@ def cpu_count(proc: str | None = None) -> int:
     return count or os.cpu_count() or 1
 
 
+def cpu_limit(wanted: str, proc: str | None = None) -> str:
+    """
+    `docker run --cpus`: zadany limit, ale nie wiecej niz procesorow serwera — Docker odrzuca wiekszy
+    ("range of CPUs is from 0.01 to 1.00") i kontener w ogole nie startuje.
+    """
+    available = min(cpu_count(proc), os.cpu_count() or cpu_count(proc))
+    try:
+        value = float(wanted)
+    except (TypeError, ValueError):
+        value = 1.0
+    value = min(max(value, 0.1), float(available))
+    return str(int(value)) if value == int(value) else f"{value:g}"
+
+
 def uptime_seconds(proc: str | None = None) -> float | None:
     try:
         return float(_read(f"{_proc(proc)}/uptime").split()[0])

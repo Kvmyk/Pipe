@@ -35,11 +35,11 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.core import runtime
+from backend.core import hostinfo, runtime
 from backend.core.i18n import tr
 
 MEMORY = "2g"                # menedzery pakietow potrafia potrzebowac wiecej niz domyslny 1g warsztatu
-CPUS = "2"
+CPUS = "2"                   # najwyzej tyle — na mniejszym serwerze tyle, ile ma (hostinfo.cpu_limit)
 PIDS = 512
 
 NODE_IMAGE = "node:22-bookworm-slim"
@@ -324,7 +324,7 @@ def docker_command(directory: str, bump: Bump, uid: int, gid: int) -> str:
     env = {"HOME": "/tmp", "CI": "1", "npm_config_update_notifier": "false", **env}
     argv = ["docker", "run", "--rm", "--init", "--label", "pipe.appdeps=1", "--network", "bridge", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", str(PIDS), "--memory", MEMORY,
-            "--memory-swap", MEMORY, "--cpus", CPUS, "--user", f"{int(uid)}:{int(gid)}"]
+            "--memory-swap", MEMORY, "--cpus", hostinfo.cpu_limit(CPUS), "--user", f"{int(uid)}:{int(gid)}"]
     for key, value in env.items():
         argv += ["-e", f"{key}={value}"]
     argv += ["-v", f"{directory}:/work", "-w", "/work", IMAGES[bump.manager], "sh", "-c", command]

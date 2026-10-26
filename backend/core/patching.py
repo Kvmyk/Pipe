@@ -722,7 +722,7 @@ def _fixed_lines(result: PartResult) -> list[str]:
                             "zaleznosci i ponownym wdrozeniu aplikacji",
                             f"no compose project: {_names(result.undeployed)} — the new versions take effect after the "
                             "dependencies are installed and the app is redeployed"))
-        if result.entries:
+        if result.entries and ((outcome and outcome.fixed) or result.redeployed or result.exit_code == 0):
             lines.append(tr("cofniecie: /cofnij " + ", /cofnij ".join(result.entries),
                             "undo: /undo " + ", /undo ".join(result.entries)))
         return lines
