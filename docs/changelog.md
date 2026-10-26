@@ -1,5 +1,14 @@
 # Historia zmian -- Pipe
 
+## v0.47.1 (2026-10-26)
+
+### `/aktualizuj` w menu Telegrama w kazdym widoku
+
+- `/aktualizuj` znikalo z menu komend Telegrama (i z podpowiedzi CLI oraz `pipe web`) w widoku prostym, bo bylo
+  na liscie komend technicznych. Aktualizacja Pipe dotyczy kazdego, wiec komenda jest teraz w menu obu widokow
+- Komendy dla wszystkich (`/status`, `/nowosci`, `/cofnij`, `/web`, `/mcp`, `/powiadomienia`, `/aktualizuj`, `/nowa`,
+  `/pomoc`) sa na wspolnej liscie, a test pilnuje, zeby zadna nie wypadla z menu ktoregos widoku
+
 ## v0.47.0 (2026-10-26)
 
 ### `pipe web` na telefonie

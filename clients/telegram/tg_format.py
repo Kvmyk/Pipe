@@ -360,14 +360,17 @@ HIDDEN_COMMANDS: frozenset[str] = frozenset({"alerty", "zdrowie", "historia"})
 # ale dzialaja po wpisaniu — ta sama lista co TECH_COMMANDS w clients/cli/cli.py.
 TECH_COMMANDS: frozenset[str] = frozenset({"projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj",
                                            "sprzataj", "mapa", "mermaid", "server", "katalogi", "incydenty", "rutyny",
-                                           "cele", "dziennik", "zgody", "yolo", "aktualizuj"})
+                                           "cele", "dziennik", "zgody", "yolo"})
 
 # Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
 MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
                                   "pobierz", "mcp", "web", "powiadomienia", "aktualizuj", "nowa", "pomoc")
 
 MENU_COMMANDS_SIMPLE: tuple[str, ...] = ("status", "nowosci", "skille", "pobierz", "mcp", "przypomnienia", "cofnij",
-                                         "web", "powiadomienia", "widok", "nowa", "pomoc")
+                                         "web", "powiadomienia", "widok", "aktualizuj", "nowa", "pomoc")
+# Komendy dla kazdego, niezaleznie od widoku: musza byc w obu menu i nigdy w TECH_COMMANDS (test_telegram_format
+# tego pilnuje — /aktualizuj znikalo z menu widoku prostego)
+EVERYONE_COMMANDS: tuple[str, ...] = ("status", "nowosci", "cofnij", "web", "mcp", "powiadomienia", "aktualizuj", "nowa", "pomoc")
 
 # Klawiatura pod polem wiadomosci — cztery najczestsze sprawy jednym dotknieciem, bez znajomosci komend.
 KEYBOARD: tuple[tuple[tuple[str, str], ...], ...] = (

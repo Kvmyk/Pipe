@@ -20,7 +20,7 @@
   // "tech" — do tego serwer: schemat, zmiany, podatnosci. Tych komend nie ma w podpowiedziach widoku prostego
   // (dzialaja po wpisaniu) — ta sama lista co TECH_COMMANDS w clients/cli/cli.py i clients/telegram/tg_format.py.
   const TECH_COMMANDS = ["projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj", "sprzataj", "mapa", "mermaid",
-    "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody", "yolo", "aktualizuj"];
+    "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody", "yolo"];
   let view = "tech", viewCanEdit = false;
 
   // ---------------------------------------------------------------- most

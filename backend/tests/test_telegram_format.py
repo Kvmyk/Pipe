@@ -355,3 +355,12 @@ class TestProgressSummary:
         text = progress_text(["a <b>", "b"], done=True)
         assert "Wykonane kroki: 2" in text and "<blockquote expandable>" in text and "a &lt;b&gt;" in text
         assert_valid_telegram_html(text.replace("<blockquote expandable>", "<blockquote>"))
+
+
+def test_commands_for_everyone_are_in_both_menus():
+    """/aktualizuj, /web, /mcp... sa dla kazdego — nie moga zniknac z menu widoku prostego ani technicznego."""
+    from tg_format import EVERYONE_COMMANDS, MENU_COMMANDS, MENU_COMMANDS_SIMPLE, TECH_COMMANDS
+    assert set(EVERYONE_COMMANDS) <= set(MENU_COMMANDS)
+    assert set(EVERYONE_COMMANDS) <= set(MENU_COMMANDS_SIMPLE)
+    assert not set(EVERYONE_COMMANDS) & set(TECH_COMMANDS)
+    assert set(MENU_COMMANDS_SIMPLE).isdisjoint(TECH_COMMANDS)

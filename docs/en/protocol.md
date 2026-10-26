@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.47.0
+Pipe v0.47.1
 
 ## Overview
 
