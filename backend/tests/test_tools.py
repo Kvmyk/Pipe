@@ -10,7 +10,7 @@ def test_tools_list_contains_expected_functions():
     assert "change_directory" in tool_names
     assert "git_command" in tool_names
     assert "system_stats" in tool_names
-    assert "docker_manage" in tool_names
+    assert "docker_manage" not in tool_names     # docker przez execute_command (v0.40)
 
 def test_execute_command_tool_structure():
     cmd_tool = next(t for t in TOOLS if t["function"]["name"] == "execute_command")

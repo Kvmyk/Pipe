@@ -220,8 +220,13 @@ def finish(entry: Entry, status: str, exit_code: int | None = None, verify: str 
 
 # ─── Przywracanie ───────────────────────────────────────────────────────────
 
-def restore_files(entry: Entry) -> list[str]:
-    """Przywraca pliki z kopii. Zwraca opis kazdego kroku."""
+def restore_files(entry: Entry, read_only: list[FileBackup] | None = None) -> list[str]:
+    """
+    Przywraca pliki z kopii. Zwraca opis kazdego kroku. `read_only` — tu trafiaja kopie, ktorych nie dalo sie zapisac,
+    bo system plikow jest tylko do odczytu (tryb docker: host poza /root) — rollback() przywraca je na hoscie.
+    """
+    import errno
+
     directory = _entry_dir(entry.id)
     report = []
     for backup in entry.files:
@@ -251,8 +256,45 @@ def restore_files(entry: Entry) -> list[str]:
             os.replace(tmp, backup.local)
             report.append(f"{backup.label}: przywrocono")
         except OSError as exc:
+            if read_only is not None and exc.errno == errno.EROFS and backup.label.startswith("/"):
+                read_only.append(backup)
+                continue
             report.append(tr(f"{backup.label}: BLAD przywracania ({exc.strerror or exc})",
                              f"{backup.label}: RESTORE ERROR ({exc.strerror or exc})"))
+    return report
+
+
+async def restore_on_host(entry: Entry, backups: list[FileBackup]) -> list[str]:
+    """
+    Tryb docker: plik hosta poza /root jest w kontenerze tylko do odczytu, wiec kopia wraca przez kontener pomocniczy
+    (core/hostexec.py) — `install` z kopii w katalogu danych Pipe (jego sciezka na hoscie z mountinfo) na miejsce.
+    """
+    import shlex
+
+    from backend.core import attachments, executor, hostexec
+
+    reason = await hostexec.blocker()
+    image = await hostexec.image() if not reason else ""
+    report = []
+    for backup in backups:
+        source = attachments.host_path(_entry_dir(entry.id) / backup.blob) if backup.existed else ""
+        if reason or not image or (backup.existed and not source):
+            why = reason or tr("nie znam sciezki kopii na hoscie", "the backup's host path is unknown")
+            report.append(tr(f"{backup.label}: BLAD przywracania (tylko do odczytu; {why})",
+                             f"{backup.label}: RESTORE ERROR (read-only; {why})"))
+            continue
+        target = shlex.quote(backup.label)
+        if backup.existed:
+            owner = f"-o {int(backup.uid)} -g {int(backup.gid if backup.gid is not None else backup.uid)} " \
+                if backup.uid is not None else ""
+            mode = f"-m {backup.mode & 0o7777:o} " if backup.mode is not None else ""
+            command = f"install {owner}{mode}{shlex.quote(source)} {target}"
+        else:
+            command = f"rm -f {target}"
+        out, err, code = await executor.execute(hostexec.wrap(command, image), timeout=120)
+        report.append(f"{backup.label}: przywrocono" if code == 0 else
+                      tr(f"{backup.label}: BLAD przywracania ({(err or out).strip()[:200]})",
+                         f"{backup.label}: RESTORE ERROR ({(err or out).strip()[:200]})"))
     return report
 
 
@@ -311,7 +353,10 @@ async def rollback(entry: Entry, interface: str) -> str:
                   f"Entry #{entry.id} cannot be undone (status: {entry.status}).")
     redo = await begin(interface, "cofnij", f"cofniecie #{entry.id}",
                        files=[(f.local, f.label) for f in entry.files if not f.skipped], undo_of=entry.id)
-    lines = restore_files(entry)
+    read_only: list[FileBackup] = []
+    lines = restore_files(entry, read_only)
+    if read_only:
+        lines += await restore_on_host(entry, read_only)
     if entry.crontab is not None:
         path = _entry_dir(entry.id) / "crontab.txt"
         path.write_text(entry.crontab, encoding="utf-8")

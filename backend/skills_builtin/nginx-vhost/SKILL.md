@@ -11,7 +11,7 @@ e-mail do Let's Encrypt. Nie zgaduj — dopytaj.
 ## 1. Sprawdz warunki (tylko odczyty)
 - DNS: server_history operation=checks albo `getent ahosts DOMENA` — domena musi wskazywac na ten serwer.
 - Czy aplikacja odpowiada lokalnie: `curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:PORT/`.
-- Gdzie dziala nginx: na hoscie (`ls /etc/nginx/sites-enabled`) czy w kontenerze (docker_manage ps).
+- Gdzie dziala nginx: na hoscie (`ls /etc/nginx/sites-enabled`) czy w kontenerze (`docker ps`).
 - Czy porty 80 i 443 sa publiczne (network_info ports).
 - W trybie docker (SRODOWISKO) /etc hosta jest tylko do odczytu — kroki 2-4 podaj uzytkownikowi
   jako komendy do wykonania w powloce serwera, zamiast uruchamiac je sam.

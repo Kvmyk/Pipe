@@ -11,7 +11,7 @@ an e-mail for Let's Encrypt. Do not guess — ask.
 ## 1. Check the preconditions (reads only)
 - DNS: server_history operation=checks or `getent ahosts DOMAIN` — the domain must point at this server.
 - Does the app respond locally: `curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:PORT/`.
-- Where nginx runs: on the host (`ls /etc/nginx/sites-enabled`) or in a container (docker_manage ps).
+- Where nginx runs: on the host (`ls /etc/nginx/sites-enabled`) or in a container (`docker ps`).
 - Are ports 80 and 443 public (network_info ports).
 - In docker mode (ENVIRONMENT) the host's /etc is read-only — give steps 2-4 to the user
   as commands to run in the server shell instead of running them yourself.

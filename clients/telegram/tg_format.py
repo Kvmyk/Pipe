@@ -240,7 +240,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
     ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
     ("podatnosci", "Znane podatnosci z opisami"),
-    ("zalataj", "Zalataj od razu (/zalataj obrazy, /zalataj serwer, /zalataj serwery)"),
+    ("zalataj", "Zalataj od razu (/zalataj obrazy, /zalataj serwer, /zalataj aplikacje, /zalataj serwery)"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
     ("server", "Pokaz SERVER.md (/server aktualizuj - zbadaj serwer ponownie)"),
     ("katalogi", "Mapa repozytoriow i katalogow (DIRECTORY)"),
@@ -275,7 +275,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("health", "Certificates, sites, DNS and backups"),
     ("audit", "Security audit with a score and fixes"),
     ("vulns", "Known vulnerabilities with descriptions"),
-    ("patch", "Patch right away (/patch images, /patch server, /patch servers)"),
+    ("patch", "Patch right away (/patch images, /patch server, /patch apps, /patch servers)"),
     ("map", "Server infrastructure diagram (image)"),
     ("server", "Show SERVER.md (/server update - explore the server again)"),
     ("directory", "Map of repositories and directories (DIRECTORY)"),
@@ -337,14 +337,18 @@ def parse_command(text: str) -> tuple[str, str]:
 # Pomoc i menu "/" w grupach wedlug zadan (polskie nazwy; angielskie przez COMMAND_ALIASES). Komenda spoza grup
 # trafia do "Inne", wiec nowa komenda nie zniknie z pomocy.
 HELP_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("Na co dzien", "Every day", ("status", "nowosci", "projekty", "raport", "zmiany", "mapa", "wykres", "zdrowie", "alerty")),
+    ("Na co dzien", "Every day", ("status", "nowosci", "projekty", "raport", "zmiany", "mapa", "wykres")),
     ("Bezpieczenstwo i zmiany", "Security and changes",
      ("audyt", "podatnosci", "zalataj", "sprzataj", "dziennik", "cofnij", "zgody")),
     ("Pamiec i automatyzacja", "Memory and automation",
      ("server", "skille", "rutyny", "przypomnienia", "incydenty", "katalogi", "cele", "vibe")),
-    ("Ustawienia", "Settings", ("powiadomienia", "nowa", "providerzy", "jezyk", "yolo", "koszt", "historia", "aktualizuj",
+    ("Ustawienia", "Settings", ("powiadomienia", "nowa", "providerzy", "jezyk", "yolo", "koszt", "aktualizuj",
                                 "pomoc")),
 )
+# Dzialaja, ale nie ma ich w /pomoc ani w menu — to samo daja /status i /nowosci (alerty, strony, certyfikaty)
+# oraz /dziennik (zmiany).
+HIDDEN_COMMANDS: frozenset[str] = frozenset({"alerty", "zdrowie", "historia"})
+
 # Menu "/" Telegrama: tylko to, czego uzywa sie co dzien (reszta dziala, jest w /pomoc). Mniej znaczy czytelniej.
 MENU_COMMANDS: tuple[str, ...] = ("status", "nowosci", "projekty", "raport", "audyt", "zalataj", "cofnij", "sprzataj",
                                   "powiadomienia", "nowa", "pomoc")
@@ -384,7 +388,7 @@ def _grouped_commands() -> list[tuple[str, list[tuple[str, str]]]]:
         used.update(n for n in names if n in by_polish)
         if items:
             groups.append((tr(title_pl, title_en), items))
-    rest = [item for key, item in by_polish.items() if key not in used]
+    rest = [item for key, item in by_polish.items() if key not in used and key not in HIDDEN_COMMANDS]
     if rest:
         groups.append((tr("Inne", "Other"), rest))
     return groups

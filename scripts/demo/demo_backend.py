@@ -119,7 +119,7 @@ async def chunked(writer, text: str, pause: float = 0.0) -> None:
 
 async def investigate(writer) -> None:
     await asyncio.sleep(0.8)
-    await tool(writer, "t1", "docker_manage", {"operation": "logs", "target": "shop-app"},
+    await tool(writer, "t1", "execute_command", {"command": "docker logs --tail 200 shop-app"},
                [L("logi kontenera shop-app", "shop-app container logs")], 1.4)
     await tool(writer, "t2", "execute_command", {"command": "tail -n 80 /var/log/nginx/error.log"}, [], 1.2)
     await tool(writer, "t3", "web_search", {"query": "nginx upstream timed out 110 reading response header"},

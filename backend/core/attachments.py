@@ -266,6 +266,11 @@ def describe_path(local: Path) -> str:
     return tr(f"{local} (katalog danych Pipe w kontenerze)", f"{local} (Pipe's data directory in the container)")
 
 
+def host_path(local: Path) -> str | None:
+    """Sciezka pliku z katalogu danych Pipe na hoscie (tryb docker; None, gdy nie da sie jej ustalic)."""
+    return _host_path(local.resolve())
+
+
 def _host_path(local: Path) -> str | None:
     root = runtime.host_root()
     if not root:

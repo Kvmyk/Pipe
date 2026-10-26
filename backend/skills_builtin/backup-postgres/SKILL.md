@@ -6,7 +6,7 @@ description: Codzienny backup bazy PostgreSQL (pg_dump) z rotacja 7 dni, wpisem 
 # Backup PostgreSQL
 
 ## 1. Rozpoznanie (odczyty)
-- Gdzie jest baza: kontener (docker_manage ps — obraz postgres) czy usluga hosta (`systemctl status postgresql`).
+- Gdzie jest baza: kontener (`docker ps` — obraz postgres) czy usluga hosta (`systemctl status postgresql`).
 - Nazwa bazy i uzytkownik: z pliku compose/.env aplikacji (DIRECTORY) — NIE przepisuj hasel do skilla ani SERVER.md.
 - Wolne miejsce na docelowy katalog (domyslnie /var/backups/pg) i rozmiar bazy:
   `docker exec KONTENER psql -U USER -d BAZA -Atc "select pg_size_pretty(pg_database_size(current_database()))"`.

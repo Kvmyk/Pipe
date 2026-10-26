@@ -9,7 +9,6 @@ from .audit import handle_security_audit, handle_security_patch
 from .command import handle_execute_command
 from .file_ops import handle_read_file, handle_write_file
 from .git import handle_git_command
-from .docker import handle_docker_manage
 from .memory import handle_directory, handle_server_md, handle_skill_manage, handle_vibe
 from .diagram import handle_diagram
 from .history import handle_server_history
@@ -32,7 +31,6 @@ __all__ = [
     "handle_read_file",
     "handle_write_file",
     "handle_git_command",
-    "handle_docker_manage",
     "handle_change_directory",
     "handle_system_stats",
     "handle_network_info",

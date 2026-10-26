@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -46,8 +46,8 @@ events to every user in `TELEGRAM_ALLOWED_USER_IDS`:
   ones. Each with a short note on what it risks. The **Patch** button (admins only) installs the fixes for what the
   alert is about right away, and the alert says what it will not patch (fixes only in Ubuntu Pro, containers without
   compose, Pipe's own containers). A known vulnerability does not come back, also after Pipe restarts.
-- **I investigated the alert** -- a worker's report for an alert from Alertmanager, Grafana, Uptime Kuma or GitHub
-  (webhooks).
+- **Findings for an outside alert** -- the same for an alert from Alertmanager, Grafana, Uptime Kuma or GitHub
+  (webhooks, `WEBHOOK_INVESTIGATE`), also with a **Fix it** button.
 - An alert that comes back has a **Previously:** line: what was found and what helped last time.
 - **APPROVAL** -- an external agent (for example Claude Code over MCP) wants to make a change: the command verbatim,
   the safety-fuse plan and *Approve* / *Reject* buttons (admins only). It expires after 30 minutes.
@@ -217,14 +217,14 @@ work in both languages.
 | `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history as a photo |
-| `/health` | TLS certificates, site responses, DNS and backup freshness |
+| `/health` | TLS certificates, site responses, DNS and backup freshness (not in the menu or `/help` -- `/status` shows problems) |
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval; *Approve*/*Reject* buttons for admins, with the safety-fuse plan |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then an *Undo* button. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation. Viewers can use it too |
-| `/patch [images\|server\|servers\|<target>]` | Patches right away, without buttons or questions (admin): this server's packages, container images and remote servers, then cleans up old images and caches. One message shows the steps live, at the end a short result: what was patched, what stayed unchanged and why, how much space was freed. The *Patch* button on a vulnerability alert patches what the alert is about. Works without the LLM |
+| `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without buttons or questions (admin): this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images and remote servers, then cleans up old images and caches. One message shows the steps live, at the end a short result: what was patched, what stayed unchanged and why, how much space was freed. The *Patch* button on a vulnerability alert patches what the alert is about. Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
 | `/language [pl\|en]` | Pipe's language: switches agent instructions, reports, bot messages and the `/` menu without a restart, shared with the CLI and `pipe web`; admin only |
 | `/providers [id [model]]` | LLM providers: buttons for providers that have a key (the active one too, to change its model), then the provider's models as paged buttons; the current one is marked, "Keep ..." keeps it. `/providers groq llama` picks a model by name fragment, `/providers model` changes the model of the current provider. The bot never takes API keys (they would stay in the chat history); add them in `pipe web` or the CLI. Admin only |
@@ -234,14 +234,14 @@ work in both languages.
 | `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
 | `/directory` | Map of repositories and directories (DIRECTORY) |
 | `/skills` | List of saved skills with their commands |
-| `/alerts` | Active watcher alerts and recent events |
+| `/alerts` | Active watcher alerts and recent events (not in the menu or `/help` -- messages are in `/news`) |
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; they arrive on time to the person who set them |
 | `/targets` | Remote servers, containers and clusters |
 | `/new` | New conversation from a clean slate (the bot has one conversation per user); the server notes, directories, skills, style and alerts stay |
 | `/vibe` | What the agent knows about your conversation style; `/vibe reset` clears it |
 | `/<skill>` | Runs a skill, for example `/renew_certificate`. You can add hints: `/renew_certificate only for example.com` |
-| `/history` | Latest audit-log entries (no LLM) |
+| `/history` | Latest audit-log entries, no LLM (not in the menu or `/help` -- `/journal` shows changes) |
 | `/help` | Command list |
 
 The bot sets the suggestion menu shown after typing `/` at startup and refreshes it after every message, so a new

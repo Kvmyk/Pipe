@@ -481,8 +481,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.39.0[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.39.0[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.40.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.40.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -776,8 +776,8 @@ COMMANDS = [
     ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
     ("podatnosci", "vulns", "znane podatności z opisami: pakiety, obrazy, serwery, aplikacje",
      "known vulnerabilities with descriptions: packages, images, servers, apps"),
-    ("zalataj", "patch", "załataj od razu wszystko; /zalataj obrazy, /zalataj serwer, /zalataj serwery",
-     "patch everything right away; /patch images, /patch server, /patch servers"),
+    ("zalataj", "patch", "załataj od razu wszystko; /zalataj obrazy, /zalataj serwer, /zalataj aplikacje, /zalataj serwery",
+     "patch everything right away; /patch images, /patch server, /patch apps, /patch servers"),
     ("mapa", "map", "diagram infrastruktury", "infrastructure diagram"),
     ("mermaid", "mermaid", "kod ostatniego diagramu", "source of the last diagram"),
     ("server", "server", "notatki o serwerze (SERVER.md); /server aktualizuj", "server notes (SERVER.md); /server update"),
@@ -807,6 +807,10 @@ COMMANDS = [
     ("exit", "exit", "wyjście", "quit"),
 ]
 
+# Komendy, ktore dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo daja /status i /nowosci
+# (alerty, strony i certyfikaty) oraz /dziennik (zmiany). Podpowiedz pojawia sie tylko po wpisaniu pelnej nazwy.
+HIDDEN_COMMANDS = frozenset({"alerty", "zdrowie", "historia"})
+
 HELP_TEXT = """Nie musisz znać komend — napisz, co mam zrobić, np. „czemu sklep działa wolno?”, „postaw mi tę aplikację
 z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam pisze, gdy coś wymaga uwagi.
 
@@ -817,10 +821,8 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 - `/projekty` — projekty w warsztacie (sklonowane repozytoria, Twoje skrypty)
 - `/raport` — stan, zmiany od wczoraj, certyfikaty, backupy (przychodzi też sam co rano)
 - `/zmiany [24h|3d]` — co się zmieniło na serwerze
-- `/alerty` — aktywne alerty
 - `/mapa` — schemat serwera (`/mermaid` — jego kod)
 - `/wykres [load|ram|dysk] [24h|7d]` — wykres z historii
-- `/zdrowie` — certyfikaty, strony, DNS, backupy
 
 **Bezpieczeństwo i zmiany**
 
@@ -845,7 +847,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 - `/providerzy` — model AI: klucz, model, przełączenie (`/providerzy groq`, `/providerzy model`)
 - `/jezyk [pl|en]` — język Pipe
 - `/yolo [on|off]` — zmiany bez pytania o TAK w tej rozmowie (kopie i `/cofnij` działają dalej)
-- `/koszt`, `/historia`, `/aktualizuj` — koszt modelu, audit log, aktualizacja Pipe
+- `/koszt`, `/aktualizuj` — koszt modelu, aktualizacja Pipe
 
 **W tej rozmowie**
 
@@ -866,10 +868,8 @@ something needs attention.
 - `/projects` — workshop projects (cloned repositories, your scripts)
 - `/report` — health, changes since yesterday, certificates, backups (also arrives every morning)
 - `/changes [24h|3d]` — what changed on the server
-- `/alerts` — active alerts
 - `/map` — diagram of the server (`/mermaid` — its source)
 - `/chart [load|ram|disk] [24h|7d]` — chart from the history
-- `/health` — certificates, sites, DNS, backups
 
 **Security and changes**
 
@@ -894,7 +894,7 @@ something needs attention.
 - `/providers` — the AI model: key, model, switching (`/providers groq`, `/providers model`)
 - `/language [pl|en]` — Pipe's language
 - `/yolo [on|off]` — changes without asking for YES in this conversation (backups and `/undo` still work)
-- `/cost`, `/history`, `/update` — model cost, audit log, updating Pipe
+- `/cost`, `/update` — model cost, updating Pipe
 
 **In this conversation**
 
@@ -959,6 +959,8 @@ def _slash_options(text: str, skills: list[dict] | None = None) -> list[tuple[st
     options = []
     for name_pl, name_en, desc_pl, desc_en in COMMANDS:
         aliases = [alias for alias, target in COMMAND_ALIASES.items() if target == name_pl]
+        if name_pl in HIDDEN_COMMANDS and query not in (name_pl, name_en, *aliases):
+            continue
         if match(name_pl, name_en, *aliases):
             options.append((tr(name_pl, name_en), tr(desc_pl, desc_en)))
     for skill in _skills if skills is None else skills:

@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -88,8 +88,8 @@ logow"*, a Pipe poprowadzi to do konca sam. Projekty leza w jednym katalogu host
 Czuwanie, podpowiedzi, raporty, `/status`, `/zmiany`, `/audyt`, `/sprzataj` i pulpit dzialaja bez modelu
 jezykowego -- zero tokenow. Gdy rozmowa juz idzie do modelu, Pipe wysyla mniej:
 
-- **Narzedzia na zadanie** (`TOOLS_MODE=lazy`). Opisy 29 narzedzi to ~6 tys. tokenow przy kazdym kroku agenta.
-  Rozmowa zaczyna od podstawowych (~2,4 tys.), a reszta wlacza sie sama, gdy wiadomosc jej potrzebuje
+- **Narzedzia na zadanie** (`TOOLS_MODE=lazy`). Opisy 28 narzedzi to ~6 tys. tokenow przy kazdym kroku agenta.
+  Rozmowa zaczyna od podstawowych (~2,1 tys.), a reszta wlacza sie sama, gdy wiadomosc jej potrzebuje
   (*"przypomnij jutro"* -> przypomnienia, *"czy serwer jest bezpieczny"* -> audyt) albo gdy model poprosi
   (`load_tools`). Wlaczona grupa zostaje do konca rozmowy, wiec cache promptu u providera dziala dalej.
   `TOOLS_MODE=all` -- wszystkie zawsze.
@@ -514,8 +514,25 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
   z podkatalogami (np. `backend/`, `frontend/`), bez `node_modules`, `vendor` i katalogow budowania. Czyta
   `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements*.txt` (tylko `==`), `poetry.lock`, `Pipfile.lock`,
   `uv.lock`, `go.mod`, `Cargo.lock`, `composer.lock`, `Gemfile.lock`. Wynik jest w `/audyt` z wersja, ktora usuwa
-  podatnosci; alert `vuln:apps` tylko dla aktywnie wykorzystywanych i krytycznych. `/zalataj` tego nie zmienia:
-  zmiana wersji to zmiana w kodzie aplikacji (raport mowi, jak; agent zrobi to na prosbe w rozmowie).
+  podatnosci; alert `vuln:apps` tylko dla aktywnie wykorzystywanych i krytycznych, z przyciskiem *Zalataj*.
+- **Latki zaleznosci aplikacji** (`/zalataj`, samo to: `/zalataj aplikacje`). Pipe podbija podatne pakiety w plikach
+  zaleznosci menedzerem danego jezyka, uruchomionym w jednorazowym kontenerze (tylko katalog aplikacji, bez
+  `docker.sock` i uprawnien, jako wlasciciel katalogu, bez skryptow instalacyjnych pakietow):
+
+  | Plik | Co robi Pipe |
+  |------|--------------|
+  | `package-lock.json` | zaleznosci z `package.json`: `npm install <pakiet>@<wersja> --package-lock-only` (dokladne przypiecie zostaje dokladne); przechodnie: `npm audit fix --package-lock-only` |
+  | `yarn.lock` (yarn 2+), `pnpm-lock.yaml` | `yarn up` / `pnpm update` tylko w pliku blokady |
+  | `requirements*.txt` | nowa wersja po `==` w tej samej linii (plik z `--hash` zostaje -- hashe by nie pasowaly) |
+  | `poetry.lock`, `uv.lock` | `poetry update --lock`, `uv lock --upgrade-package` |
+  | `go.mod`, `Cargo.lock` | `go get <modul>@v<wersja>` + `go mod tidy`, `cargo update -p --precise` |
+  | `composer.lock`, `Gemfile.lock` | `composer update --no-install --no-scripts --no-plugins`, `bundle lock --update` |
+
+  Kopia zmienianych plikow trafia do dziennika (jeden wpis na aplikacje), a gdy z katalogu buduje sie projekt compose,
+  Pipe robi `build` i `up -d` z weryfikacja kontenerow -- `/cofnij` przywraca pliki i przebudowuje projekt. Czego
+  menedzer nie podbil (ograniczenie wersji w `package.json`, `pyproject.toml`, `composer.json`...), pokazuje wynik i
+  `/podatnosci`; Pipe nie probuje tego znowu przez dobe. Recznie zostaja: yarn 1 (nie umie zmienic samego
+  `yarn.lock`), `Pipfile.lock` i wersja samego Go.
 - **`/podatnosci`** pokazuje wszystko w jednym miejscu: pakiet pogrubiony, wersja i wersja z poprawka,
   pod nim podatnosci z waga i krotkim wyjasnieniem w jezyku Pipe -- co atakujacy moze zrobic i kiedy to grozi.
   Wyjasnienia pisze model (`WORKER_MODEL`) na podstawie opisu z OSV, raz na podatnosc, i Pipe je zapamietuje;
@@ -585,8 +602,9 @@ WEBHOOK_TOKEN=$(openssl rand -hex 24)
 | Wszystko inne | `/hook/generic` | `{"title", "message", "severity", "status": "firing|resolved", "name"}` |
 
 Alert trafia do czuwania (znika po `resolved`) i na Telegram z przyciskiem *Zbadaj*. Z `WEBHOOK_INVESTIGATE=1`
-nowy alert od razu bada worker (tylko odczyty: uslugi, kontenery, logi, zasoby, ostatnie zmiany) i raport
-przychodzi chwile po alercie -- ten sam alert najwyzej raz na godzine, 10 badan dziennie.
+nowy alert od razu bada worker (tylko odczyty: uslugi, kontenery, logi, zasoby, zmiany z ostatniej doby), tak samo
+jak problemy wykryte przez Pipe: ustalenia przychodza chwile po alercie z przyciskiem *Napraw* -- ten sam alert
+najwyzej raz na 6 h, 10 badan z webhookow dziennie (osobno od `AUTO_INVESTIGATE_DAILY`).
 
 W Dockerze port jest publikowany tylko na `127.0.0.1:7380`; nadawcy spoza serwera -- przez odwrotne proxy z TLS.
 

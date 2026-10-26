@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.39.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.40.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -103,8 +103,8 @@ serwera, więc na hoście nie przybywa Node.js ani Pythona. O zgodę pyta, zanim
 też da się cofnąć.
 
 **Oszczędza tokeny.** Alerty, podpowiedzi, raport poranny, `/status` i `/sprzataj` w ogóle nie używają modelu.
-Gdy rozmowa trafia do modelu, Pipe wysyła mu tylko te narzędzia, których rozmowa potrzebuje (ok. 2,4 tys. tokenów
-zamiast 6,2 tys. przy każdym kroku) i skraca stare wyniki komend. `/koszt` pokazuje, ile w ten sposób nie poszło.
+Gdy rozmowa trafia do modelu, Pipe wysyła mu tylko te narzędzia, których rozmowa potrzebuje (ok. 2,1 tys. tokenów
+zamiast 6 tys. przy każdym kroku) i skraca stare wyniki komend. `/koszt` pokazuje, ile w ten sposób nie poszło.
 
 **Zmienia ostrożnie.** Przed każdą zatwierdzoną zmianą robi kopię plików. Konfigurację sprawdza przed
 przeładowaniem (`nginx -t`, `sshd -t`, `docker compose config`), a po zmianie upewnia się, że usługa działa i strony

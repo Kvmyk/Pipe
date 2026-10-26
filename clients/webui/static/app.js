@@ -751,7 +751,7 @@
     mark.className = "mark " + (event.phase === "start" || item.lingering ? "run" : event.phase === "wait" ? "wait" : event.ok === true ? "ok" : event.ok === false ? "fail" : "skip");
     const what = item.row.children[2];
     what.textContent = "";
-    what.appendChild(["execute_command", "remote_exec", "git_command", "docker_manage"].includes(event.tool) ? el("code", "", event.label) : document.createTextNode(event.label));
+    what.appendChild(["execute_command", "remote_exec", "git_command"].includes(event.tool) ? el("code", "", event.label) : document.createTextNode(event.label));
     what.title = event.label;
     item.row.children[3].textContent = event.nodes.map((id) => graph.label(id)).slice(0, 2).join(", ");
     const steps = item.row.children[4];
@@ -1419,6 +1419,9 @@
     ["zgody", "approvals", "c_approvals"], ["koszt", "cost", "c_cost"],
     ["historia", "history", "c_history"], ["providerzy", "providers", "c_provider", true], ["yolo", "yolo", "c_yolo", true], ["jezyk", "language", "c_language", true], ["aktualizuj", "update", "c_update", true], ["pomoc", "help", "c_help"],
   ];
+  // Dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo pokazuje pulpit (/status, skrzynka) i /dziennik.
+  const HIDDEN = ["alerty", "zdrowie", "historia"];
+  const listed = (entry) => !HIDDEN.includes(entry[0]);
   const english = window.PipeI18n.lang === "en";
   const shown = (entry) => (english ? entry[1] : entry[0]);
   const ALIASES = { provider: "providerzy" };      // stara nazwa z wczesniejszych wersji
@@ -1528,7 +1531,7 @@
     dziennik: () => switchTab("changes"),
     cofnij: () => switchTab("changes"),
     providerzy: (args) => providersCommand(args),
-    pomoc: () => add("agent", listing(COMMANDS.map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
+    pomoc: () => add("agent", listing(COMMANDS.filter(listed).map((entry) => "- /" + shown(entry) + " — " + t(entry[2])).join("\n")
       + (skills.some((s) => s.command) ? "\n" + t("skills") + ":\n" + skills.filter((s) => s.command).map((s) => "- /" + s.command + " — " + s.description).join("\n") : ""), t("commands"))),
   };
   const PANEL_ONLY = ["mapa", "alerty", "nowosci", "dziennik", "cofnij", "providerzy", "powiadomienia"];
@@ -1553,7 +1556,7 @@
   function paletteOptions(query) {
     const q = query.toLowerCase();
     const match = (...names) => !q || names.some((n) => n && n.toLowerCase().startsWith(q)) || (q.length > 1 && names.some((n) => n && n.toLowerCase().includes(q)));
-    const commands = COMMANDS.filter((entry) => match(entry[0], entry[1]))
+    const commands = COMMANDS.filter((entry) => (listed(entry) || q === entry[0] || q === entry[1]) && match(entry[0], entry[1]))
       .map((entry) => ({ group: "commands", name: shown(entry), desc: t(entry[2]), args: !!entry[3] }));
     const owned = skills.filter((s) => s.command && match(s.command, s.name))
       .map((s) => ({ group: "skills", name: s.command, desc: s.description, args: true }));

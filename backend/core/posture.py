@@ -61,7 +61,7 @@ class Finding:
     fix: str = ""
     command: str = ""        # dokladna komenda poprawki (pusta = poprawka reczna)
     host_only: bool = False  # w trybie docker do wykonania na hoscie (execute_command z host: true)
-    patch: str = ""          # poprawke instaluje /zalataj z tym zakresem (system | images | servers) — klienci pokazuja to zamiast komendy
+    patch: str = ""          # poprawke instaluje /zalataj z tym zakresem (system | images | servers | apps) — klienci pokazuja to zamiast komendy
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -122,9 +122,9 @@ class Audit:
 
 
 def patch_command(scope: str) -> str:
-    """Komenda klienta dla zakresu latki: /zalataj, /zalataj serwer, /zalataj obrazy, /zalataj serwery."""
+    """Komenda klienta dla zakresu latki: /zalataj, /zalataj serwer, /zalataj obrazy, /zalataj aplikacje, /zalataj serwery."""
     words = {"urgent": tr(" pilne", " urgent"), "images": tr(" obrazy", " images"), "system": tr(" serwer", " server"),
-             "servers": tr(" serwery", " servers")}
+             "servers": tr(" serwery", " servers"), "apps": tr(" aplikacje", " apps")}
     return tr("/zalataj", "/patch") + words.get(scope, "")
 
 
@@ -596,8 +596,8 @@ def _server_vuln_findings(audit: Audit, scan: Any) -> None:
 
 
 def _app_vuln_findings(audit: Audit, scan: Any) -> None:
-    """Zaleznosci aplikacji: jedna pozycja, bez komendy — zmiana wersji to zmiana w kodzie aplikacji."""
-    from backend.core import vulns
+    """Zaleznosci aplikacji: jedna pozycja; to, co umie podbic core/appdeps.py, naprawia /zalataj aplikacje."""
+    from backend.core import appdeps, vulns
 
     apps = [t for t in scan.of_kind("app") if t.items]
     if not apps:
@@ -607,14 +607,19 @@ def _app_vuln_findings(audit: Audit, scan: Any) -> None:
         return
     kev = any(t.kev for t in apps)
     critical = any(v.severity == "critical" for t in apps for p in t.items for v in p.fixable)
+    patchable = runtime.kind() != "kubernetes" and bool(appdeps.plan(scan, vulns.held_packages()))
     detail = "; ".join(f"{t.label()}: " + _names([p.name for p in vulns.sort_items(t.items)], 3) for t in apps[:4])
     audit.findings.append(Finding(
         "vuln-apps", "high" if kev else "medium" if critical else "low",
         tr(f"Podatnosci z poprawka w zaleznosciach aplikacji: {len(apps)}",
            f"Fixable vulnerabilities in application dependencies: {len(apps)}"),
         detail,
-        tr(f"zmiana w kodzie: podbij je do wersji z poprawka ({vulns.app_tools(apps)}) i wdroz aplikacje",
-           f"a code change: bump them to the fixed version ({vulns.app_tools(apps)}) and deploy the app")))
+        tr("Pipe podbije je w plikach zaleznosci (izolowany kontener, kopia w dzienniku) i przebuduje projekt compose"
+           if patchable else f"podbij je do wersji z poprawka ({vulns.app_tools(apps)}) i wdroz aplikacje",
+           "Pipe bumps them in the dependency files (isolated container, backup in the journal) and rebuilds the "
+           "compose project" if patchable else
+           f"bump them to the fixed version ({vulns.app_tools(apps)}) and deploy the app"),
+        "", False, "apps" if patchable else ""))
 
 
 def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:

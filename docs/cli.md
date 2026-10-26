@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -177,14 +177,14 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
-| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow (bez podpowiedzi i bez `/pomoc` -- problemy pokazuje `/status`) |
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
-| `/zalataj [obrazy\|serwer\|serwery\|<cel>]` | Lata od razu, bez dodatkowego pytania: pakiety tego serwera, obrazy kontenerow z compose (nowszy obraz albo poprawki zainstalowane w obrazie) i zdalne serwery, potem sprzata stare obrazy i cache. Kroki widac na zywo, na koncu co zalatane, co bez zmian i dlaczego. Dziala bez LLM |
+| `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez dodatkowego pytania: pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow z compose (nowszy obraz albo poprawki zainstalowane w obrazie) i zdalne serwery, potem sprzata stare obrazy i cache. Kroki widac na zywo, na koncu co zalatane, co bez zmian i dlaczego. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
@@ -196,13 +196,13 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
 | `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
-| `/alerty` | Aktywne alerty czuwania (nowe pokazuja sie same nad promptem i w `/nowosci`) |
+| `/alerty` | Aktywne alerty czuwania (bez podpowiedzi i bez `/pomoc` -- nowe pokazuja sie same nad promptem i w `/nowosci`) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |
 | `/cele` | Zdalne serwery, kontenery i klastry |
 | `/nowa` | Nowa rozmowa od czystej karty; notatki o serwerze, katalogi, skille, styl i alerty zostaja |
 | `/vibe` | Notatka o Twoim stylu rozmowy; `/vibe reset` czysci |
-| `/historia` | Ostatnie wpisy audit logu |
+| `/historia` | Ostatnie wpisy audit logu (bez podpowiedzi i bez `/pomoc` -- zmiany pokazuje `/dziennik`) |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazowkami |
 | `/pomoc` | Lista komend |
 | `/exit` | Wyjscie |

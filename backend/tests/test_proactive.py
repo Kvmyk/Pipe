@@ -336,7 +336,7 @@ class TestAutoInvestigate:
         started = []
         watcher = Watcher(FakeAgent())
 
-        async def fake(alert):
+        async def fake(alert, *, external=False):
             started.append(alert.key)
 
         monkeypatch.setattr(watcher, "auto_investigate", fake)

@@ -347,19 +347,16 @@ def locate(tool: str, args: dict[str, Any], cwd: str = "/") -> list[str]:
     elif tool == "delegate":
         nodes = [f"t:{str(task.get('target', '')).strip().lower()}" for task in args.get("tasks") or []
                  if isinstance(task, dict)]
-    elif tool == "docker_manage":
-        target = str(args.get("target", "") or "").strip()
-        names = {c.name for c in (infra.containers or [])} if infra else set()
-        nodes = [f"c:{target}"] if target in names else _nodes_for_command(target, cwd, infra) if target else []
-        if not nodes and str(args.get("operation", "")).startswith("compose"):
-            nodes = [n for n in [_project_for_path(runtime.to_host(target) if target.startswith("/") else cwd, infra)] if n]
     elif tool in ("read_file", "write_file", "change_directory"):
         path = str(args.get("path", "") or "")
         host_path = runtime.to_host(path if path.startswith("/") else os.path.join(cwd, path))
         nodes = [n for n in [_node_for_path(host_path, infra)] if n]
-    elif tool in ("execute_command", "git_command"):
-        command = str(args.get("command", "") or "")
-        nodes = _nodes_for_command(("git " + command) if tool == "git_command" else command, cwd, infra)
+    elif tool == "execute_command":
+        nodes = _nodes_for_command(str(args.get("command", "") or ""), cwd, infra)
+    elif tool == "git_command":
+        repo = str(args.get("repo_path", "") or "").strip()
+        repo_cwd = runtime.to_host(repo if repo.startswith("/") else os.path.join(cwd, repo)) if repo else cwd
+        nodes = _nodes_for_command("git " + str(args.get("subcommand", "") or ""), repo_cwd, infra)
     elif tool in ("web_search", "web_fetch", "software_info"):
         nodes = ["internet"]
     elif tool == "project":
@@ -378,10 +375,9 @@ _LABELS = {
     "read_file": ("czyta {path}", "reads {path}"),
     "write_file": ("zapisuje {path}", "writes {path}"),
     "change_directory": ("przechodzi do {path}", "moves to {path}"),
-    "git_command": ("git {command}", "git {command}"),
+    "git_command": ("git {subcommand}", "git {subcommand}"),
     "system_stats": ("sprawdza zasoby serwera", "checks server resources"),
-    "docker_manage": ("docker {operation} {target}", "docker {operation} {target}"),
-    "network_info": ("sprawdza siec ({type})", "checks the network ({type})"),
+    "network_info": ("sprawdza siec ({check_type})", "checks the network ({check_type})"),
     "cron_manage": ("cron: {operation}", "cron: {operation}"),
     "diagram": ("rysuje diagram", "draws a diagram"),
     "server_md": ("notatki o serwerze ({operation})", "server notes ({operation})"),

@@ -1,12 +1,12 @@
 """
 System prompts agenta -- niemodyfikowalne przez uzytkownika.
 
-Pipe v0.39.0
+Pipe v0.40.0
 """
 
 BASE_SYSTEM_PROMPT = """\
 Jestes Pipe -- agentem, ktory mieszka na serwerze Linux i dba o niego za uzytkownika.
-Wersja oprogramowania: 0.39.0
+Wersja oprogramowania: 0.40.0
 Komunikujesz sie po polsku. Jestes precyzyjny, bezpieczny i transparentny.
 
 Jak odpowiadasz:
@@ -23,8 +23,8 @@ Zasady:
 - Kazda komenda przechodzi przez klasyfikator bezpieczenstwa: odczyty wykonuja sie od razu,
   zmiany stanu czekaja na potwierdzenie uzytkownika, operacje z listy FORBIDDEN sa odrzucane.
   Nie probuj obchodzic klasyfikatora (np. rozbijajac komende albo kodujac ja inaczej).
-- Wolisz specjalizowane narzedzia (system_stats, docker_manage, network_info, git_command, read_file)
-  od execute_command -- sa szybsze i opisuja hosta, a nie kontener.
+- Wolisz specjalizowane narzedzia (system_stats, network_info, git_command, read_file)
+  od execute_command -- sa szybsze i opisuja hosta, a nie kontener. Docker: execute_command (docker ps, docker logs).
 - Znaczniki [ZREDAGOWANO: ...] w wynikach narzedzi to sekrety ukryte przed Toba. Nie prosz o nie
   i NIGDY nie przepisuj pliku, ktory je zawiera (write_file) -- zniszczylbys prawdziwe wartosci.
   Zmieniaj taki plik punktowo (np. sed -i na jednej linii).
@@ -221,8 +221,8 @@ RUN_SKILL_EXTRA = "\nDodatkowe wskazowki uzytkownika: {args}"
 
 # Wspolna instrukcja: skan ma opisac HOST, a nie miejsce, w ktorym dziala agent.
 SCAN_SERVER_SOURCES = (
-    "Zbieraj dane o HOSCIE zgodnie z sekcja SRODOWISKO: system_stats; docker_manage (ps -a, images, "
-    "compose ls); network_info check_type=listeners (porty hosta); pliki hosta: /etc/os-release, "
+    "Zbieraj dane o HOSCIE zgodnie z sekcja SRODOWISKO: system_stats; execute_command: docker ps -a, "
+    "docker images; network_info check_type=listeners (porty hosta); pliki hosta: /etc/os-release, "
     "/etc/hostname, /etc/hosts, wlaczone uslugi (ls /etc/systemd/system/*.wants), /etc/nginx, /etc/caddy, "
     "/etc/crontab, /etc/cron.d, /opt, /srv, /root, /home; dyski: df -h. "
     "Uruchom tez directory operation=scan -- odkryje repozytoria git i projekty compose; "

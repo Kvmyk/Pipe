@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 ## Model
 
@@ -231,7 +231,8 @@ token (`Authorization: Bearer`), `Origin` validation (403) and 2026-07-28 header
 - The webhook server is off by default; without `WEBHOOK_TOKEN` it doesn't start. It listens on `127.0.0.1` (in
   Docker the port is published only on localhost); senders outside the server go through a reverse proxy with TLS.
 - The alert content comes from outside: it reaches the model as data, and the automatic investigation is done by a
-  worker that only reads. Investigation limit: once an hour per alert, 10 a day.
+  worker that only reads. Investigation limit: once in 6 h per alert, 10 a day. *Fix it* sends the findings
+  to the agent as an ordinary message -- the changes still go through the classifier and confirmation.
 
 ## Change journal and undo
 
@@ -334,7 +335,10 @@ instructions" framing is not a guarantee.
   There are no file backups or automatic restore here (the safety fuse writes a journal entry and checks the sites). If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
   `docker.sock` mount from `docker-compose.yml`.
 - **`/patch` does not ask about every command.** An administrator typing `/patch` (or pressing *Patch*) approves the
-  whole patch: Pipe installs this server's package fixes right away, refreshes the container images from compose,
+  whole patch: Pipe installs this server's package fixes right away, bumps the application dependencies (a package
+  manager in a one-off container like the workshop's `exec`: only the app directory, no `docker.sock` or privileges,
+  no package install scripts; names and versions from lockfiles go through the ecosystem's patterns; the files are
+  backed up in the journal), refreshes the container images from compose,
   patches the remote servers (ssh targets: as root or through `sudo -n`) and cleans up after itself (untagged images,
   build cache older than a day, downloaded packages, npm/pip/yarn/composer caches, old kernels that apt itself
   considers unneeded). The server builds the commands from the scan result, without the model: package and compose

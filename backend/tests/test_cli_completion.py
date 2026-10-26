@@ -22,8 +22,15 @@ def test_slash_lists_every_command_and_skill(monkeypatch):
     monkeypatch.setattr(cli, "LANG", "pl")
     options = names("/")
     assert options[:3] == ["status", "nowosci", "projekty"]       # najczestsze sprawy na gorze
-    assert len(options) == len(cli.COMMANDS) + 1
+    assert len(options) == len(cli.COMMANDS) - len(cli.HIDDEN_COMMANDS) + 1
     assert "odnow_certyfikat" in options
+
+
+def test_hidden_commands_only_on_full_name(monkeypatch):
+    monkeypatch.setattr(cli, "LANG", "pl")
+    assert "alerty" not in names("/") and "alerty" not in names("/al")
+    assert names("/alerty") == ["alerty"] and "historia" in names("/history")
+    assert all(f"/{name}" not in cli.HELP_TEXT for name in cli.HIDDEN_COMMANDS)
 
 
 def test_prefix_narrows_and_exact_match_goes_first(monkeypatch):

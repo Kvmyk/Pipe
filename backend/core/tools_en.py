@@ -5,7 +5,7 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.39.0
+Pipe v0.40.0
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ _CONFIRM = ("Optional. true forces a confirmation prompt even for an operation t
 TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "execute_command": (
         "Runs a shell command on the server in the working directory. Reads run immediately, state-changing commands "
-        "wait for the user's confirmation, forbidden ones are rejected. Limit output (tail -n, head, grep). Prefer the "
-        "specialised tools for known areas.",
+        "wait for the user's confirmation, forbidden ones are rejected. Limit output (tail -n, head, grep). Docker too: "
+        "docker ps -a, docker logs --tail 200 <container>, docker inspect, docker images (restart, stop, rm -- with "
+        "confirmation). Prefer the specialised tools for known areas.",
         {"command": "Shell command to run on the server.", "requires_confirmation": _CONFIRM,
          "host": "Docker mode only: true runs the command on the host (like root in the server shell, through a helper "
                  "container, with the host's tools), e.g. apt-get, systemctl, sed -i in /etc, ufw, docker compose build/pull/up -d "
@@ -48,13 +49,6 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "Host state straight from the host's /proc: uptime, load average vs number of cores, RAM, swap, usage of all "
         "disks. stat_type=processes adds the heaviest processes.",
         {"stat_type": "Scope of data (summary by default)."}),
-    "docker_manage": (
-        "Docker containers and images on the host. Reads: ps, logs, inspect, stats, top, images, compose-ps, "
-        "compose-logs, networks, volumes, df. Changes (restart, stop, start, rm, rmi, prune) require confirmation.",
-        {"operation": "Docker operation.",
-         "target": "Container/image (for compose-logs: project name). Not needed for ps, images.",
-         "options": "Extra flags, e.g. '--tail 50' for logs, '-a' for ps.",
-         "requires_confirmation": _CONFIRM}),
     "network_info": (
         "Host network diagnostics: listening ports (public ones marked), connections, ping, curl, DNS.",
         {"check_type": "ports/listeners -- host ports, connections -- TCP connections, ping/curl/dns -- test a target.",
@@ -94,11 +88,13 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "security_patch": (
         "Patches known vulnerabilities that have a fix, exactly like the /patch command: this server's packages "
         "(apt/apk with cleanup: old kernels, downloaded packages), container images from compose (a newer image and, "
-        "where there is none, the fixes installed inside the image; the previous image stays for /undo) and remote "
-        "servers (ssh targets), then removes old images and caches and rescans. The user approves the whole patch ONCE, "
-        "not every command — do not assemble it from execute_command. Application dependencies are a code change; this "
-        "tool does not do that.",
+        "where there is none, the fixes installed inside the image; the previous image stays for /undo), application "
+        "dependencies (a package manager in an isolated container bumps the versions in the dependency files, backed up "
+        "in the journal, then the compose project is rebuilt) and remote servers (ssh targets), then removes old images "
+        "and caches and rescans. The user approves the whole patch ONCE, not every command — do not assemble it from "
+        "execute_command or write_file.",
         {"scope": "'' or 'all' — everything; 'images' — container images only; 'system' — this server's packages only; "
+                  "'apps' — application dependencies only; "
                   "'servers' — remote servers only; a remote server name — only that one; 'urgent' — this server's "
                   "urgent packages."}),
     "journal": (

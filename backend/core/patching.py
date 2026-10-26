@@ -14,6 +14,8 @@ Czesci po kolei, kazda przez bezpiecznik (core/safety.py: wpis w dzienniku, stro
   images  projekty compose: poprzedni obraz zostaje pod tagiem pipe-rollback-* (dla /cofnij), `pull`, `build --pull`,
           a obraz, ktorego to nie zmienilo, dostaje warstwe z poprawkami z repozytorium swojego systemu (ten sam tag);
           potem `up -d`, weryfikacja kontenerow projektu i komendy odwrotne
+  apps    zaleznosci aplikacji: menedzer pakietow w jednorazowym kontenerze podbija wersje w plikach zaleznosci
+          (core/appdeps.py; kopia plikow w dzienniku), potem `build` + `up -d` projektu compose z tego katalogu
   server  apt/apk na zdalnym serwerze przez ssh (root albo sudo -n)
 Potem sprzatanie (obrazy bez tagu, cache budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer)
 ze zwolnionym miejscem i nowy skan: co zalatane, co bez zmian (i dlaczego), co zostalo.
@@ -34,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 from backend.config import settings
-from backend.core import audit, executor, fleet, hostexec, memory, runtime, safety, vulns
+from backend.core import appdeps, audit, executor, fleet, hostexec, memory, runtime, safety, vulns
 from backend.core.events import Progress
 from backend.core.hostinfo import human_bytes
 from backend.core.i18n import is_en, lang, tr
@@ -55,6 +57,8 @@ SCOPE_WORDS = {
     "serwer": "system", "server": "system", "system": "system", "pakiety": "system", "packages": "system",
     "serwery": "servers", "servers": "servers", "zdalne": "servers", "remote": "servers",
     "pilne": "urgent", "urgent": "urgent",
+    "aplikacje": "apps", "apps": "apps", "applications": "apps", "zaleznosci": "apps", "zależności": "apps",
+    "dependencies": "apps", "deps": "apps",
 }
 
 
@@ -67,10 +71,10 @@ def parse_scope(text: str) -> str:
 
 
 def scope_help() -> str:
-    return tr("Uzycie: /zalataj (wszystko), /zalataj obrazy, /zalataj serwer (pakiety tego serwera), /zalataj serwery "
-              "(zdalne), /zalataj <nazwa zdalnego serwera>, /zalataj pilne.",
-              "Usage: /patch (everything), /patch images, /patch server (this server's packages), /patch servers "
-              "(remote), /patch <remote server name>, /patch urgent.")
+    return tr("Uzycie: /zalataj (wszystko), /zalataj obrazy, /zalataj serwer (pakiety tego serwera), /zalataj aplikacje "
+              "(zaleznosci aplikacji), /zalataj serwery (zdalne), /zalataj <nazwa zdalnego serwera>, /zalataj pilne.",
+              "Usage: /patch (everything), /patch images, /patch server (this server's packages), /patch apps "
+              "(application dependencies), /patch servers (remote), /patch <remote server name>, /patch urgent.")
 
 
 # ─── Plan ───────────────────────────────────────────────────────────────────
@@ -82,9 +86,9 @@ def _names(names: list[str], limit: int = NAMES_SHOWN) -> str:
 
 @dataclass
 class Part:
-    kind: str                                   # system | images | server
-    name: str                                   # 'system', 'images', nazwa zdalnego serwera
-    items: list = field(default_factory=list)   # PackageVulns (system, server) albo TargetResult (images)
+    kind: str                                   # system | apps | images | server
+    name: str                                   # 'system', 'apps', 'images', nazwa zdalnego serwera
+    items: list = field(default_factory=list)   # PackageVulns (system, server), appdeps.AppBump (apps), TargetResult (images)
     image_patch: Any = None                     # vulns.ImagePatch (images)
     target: Any = None                          # targets.Target (server)
     found: Any = None                           # vulns.TargetResult (server)
@@ -94,12 +98,17 @@ class Part:
             return tr("ten serwer", "this server")
         if self.kind == "images":
             return tr("obrazy", "images")
+        if self.kind == "apps":
+            return tr("zaleznosci aplikacji", "application dependencies")
         return tr(f"serwer {self.name}", f"server {self.name}")
 
     def what(self) -> str:
         """'12 pakietow (openssl, curl, ...)' / '2 obrazy (nginx:1.25, shop-web)'."""
         if self.kind == "images":
             return f"{vulns.n_images(len(self.items))} ({_names([t.name for t in self.items], 4)})"
+        if self.kind == "apps":
+            count = sum(len(b.items) for b in self.items)
+            return f"{vulns.n_packages(count)} ({_names([os.path.basename(b.directory) or b.directory for b in self.items], 4)})"
         return f"{vulns.n_packages(len(self.items))} ({_names([p.name for p in vulns.sort_items(self.items)], 4)})"
 
     def describe(self) -> str:
@@ -133,6 +142,10 @@ def plan(scan: Any, scope: str, *, skip_projects: frozenset[str] | set[str] = fr
         items = vulns.select(scan, "urgent" if scope == "urgent" else "all", now)
         if items and vulns.host_steps(scan.ecosystem, items, scan.kernel_meta):
             local.append(Part("system", "system", items))
+    if scope in ("all", "apps"):
+        bumps = appdeps.plan(scan, vulns.held_packages(now))
+        if bumps:
+            local.append(Part("apps", "apps", bumps))
     if scope in ("all", "images"):
         patch = vulns.image_patch(scan, skip_projects=skip_projects, now=now)
         if patch.projects:
@@ -199,6 +212,9 @@ class PartResult:
     failed: list[str] = field(default_factory=list)     # obrazy: nie udalo sie (powod w tekscie)
     stopped: bool = False        # weryfikacja nie przeszla — dalszych czesci nie robie
     outcome: Any = None          # vulns.PatchOutcome po ponownym skanie
+    entries: list[str] = field(default_factory=list)    # aplikacje: wpis dziennika na kazdy katalog
+    redeployed: list[str] = field(default_factory=list) # aplikacje: przebudowane projekty compose
+    undeployed: list[str] = field(default_factory=list) # aplikacje: katalogi bez projektu compose (wdrozenie reczne)
 
 
 @dataclass
@@ -337,6 +353,83 @@ class Run:
         await self._fused(plan, operation, tr(f"latki na {part.name}: {vulns.n_packages(len(part.items))}",
                                               f"patches on {part.name}: {vulns.n_packages(len(part.items))}"),
                           result, sites=False)
+        return result
+
+    async def _apps(self, part: Part) -> PartResult:
+        """
+        Kazdy katalog aplikacji osobno (osobny wpis dziennika — /cofnij jednej aplikacji nie rusza innych): menedzer
+        w kontenerze podbija pliki zaleznosci, potem projekt compose z tego katalogu: `build` + `up -d`.
+        """
+        from backend.core import infra
+
+        result = PartResult(part)
+        self.emit(tr(f"Zaleznosci aplikacji: {part.what()}", f"Application dependencies: {part.what()}"))
+        try:
+            containers = await infra.docker_containers() or []
+        except Exception:
+            containers = []
+        own = await hostexec.own_project() if runtime.kind() == "docker" else ""
+        for bump in part.items:
+            sub = PartResult(part)
+            projects = app_projects(bump.directory, containers, skip={own} if own else set())
+            plan = safety.Plan(files=bump.files, sites=bool(projects), notes=[tr(
+                "pliki zaleznosci sa w kopii — /cofnij je przywraca" + (" i przebudowuje projekt" if projects else ""),
+                "the dependency files are backed up — /undo restores them" + (" and rebuilds the project" if projects else ""))])
+            for project in projects:
+                flags = " ".join(f"-f {shlex.quote(f)}" for f in project.files) + f" -p {shlex.quote(project.project)}"
+                plan.pre.append(safety.Check(tr(f"konfiguracja compose {project.project}", f"compose config {project.project}"),
+                                             "shell", f"{project.base} config -q"))
+                plan.post.append(safety.Check(tr(f"kontenery projektu {project.project} dzialaja",
+                                                 f"containers of project {project.project} are running"),
+                                              "compose", target=flags, retries=12, delay=5))
+                plan.inverse += [project.command("build"), project.command("up -d")]
+            plan = self._plan(plan)
+            uid, gid = appdeps.owner(bump.directory)
+
+            async def operation(bump=bump, projects=projects, sub=sub) -> tuple[str, int]:
+                outputs, changed = [], 0
+                for manager in bump.bumps:
+                    self.emit(tr(f"{bump.directory}: {manager.manager} podbija ", f"{bump.directory}: {manager.manager} bumps ")
+                              + _names([n for n, _ in manager.packages], 4))
+                    output, rc = await self.sh(appdeps.docker_command(bump.directory, manager, uid, gid))
+                    outputs.append(output)
+                    if rc == 0:
+                        changed += 1
+                    else:
+                        sub.warnings.append(tr(f"{bump.directory}: {manager.manager} zakonczyl sie bledem (kod {rc})",
+                                               f"{bump.directory}: {manager.manager} failed (exit code {rc})"))
+                if not changed:
+                    return "\n".join(o for o in outputs if o), 1
+                code = 0
+                for project in projects:
+                    self.emit(tr(f"przebudowuje i uruchamiam od nowa: {project.project}",
+                                 f"rebuilding and restarting: {project.project}"))
+                    for sub_command in ("build", "up -d"):
+                        output, rc = await self.sh(self.host(project.command(sub_command)))
+                        outputs.append(output)
+                        code = code or rc
+                        if rc != 0:
+                            break
+                    if code == 0:
+                        sub.redeployed.append(project.project)
+                if not projects:
+                    sub.undeployed.append(bump.directory)
+                return "\n".join(o for o in outputs if o), code
+            await self._fused(plan, operation, tr(f"zaleznosci aplikacji {bump.directory}: {vulns.n_packages(len(bump.items))}",
+                                                  f"app dependencies {bump.directory}: {vulns.n_packages(len(bump.items))}"),
+                              sub, sites=bool(projects))
+            result.entries += [sub.entry_id] if sub.entry_id else []
+            result.exit_code = result.exit_code or sub.exit_code
+            result.fuse += [f"{os.path.basename(bump.directory) or bump.directory}: {line}" for line in sub.fuse]
+            result.output = "\n".join(o for o in (result.output, sub.output) if o)
+            result.warnings += sub.warnings
+            result.redeployed += sub.redeployed
+            result.undeployed += sub.undeployed
+            if sub.stopped:
+                result.stopped = True
+                break
+        result.entry_id = result.entries[0] if result.entries else ""
+        result.output = _tail(result.output)
         return result
 
     async def _inspect(self, ref: str, template: str) -> str:
@@ -487,17 +580,17 @@ class Run:
             await _deliver(watcher, self.interface, done)
 
     async def _execute(self, watcher: Any) -> Done:
-        if runtime.kind() == "docker" and any(p.kind in ("system", "images") for p in self.job.parts):
+        if runtime.kind() == "docker" and any(p.kind in ("system", "images", "apps") for p in self.job.parts):
             self._image = await hostexec.image()
         results: list[PartResult] = []
         for part in self.job.parts:
-            runner = {"system": self._system, "images": self._images, "server": self._server}[part.kind]
+            runner = {"system": self._system, "apps": self._apps, "images": self._images, "server": self._server}[part.kind]
             result = await runner(part)
             results.append(result)
             if result.stopped:
                 break
         # sprzatanie tego serwera po latce na nim (zdalne serwery sprzataja swoje kroki apt)
-        freed = await self._cleanup() if any(r.part.kind in ("system", "images") for r in results) else 0
+        freed = await self._cleanup() if any(r.part.kind in ("system", "images", "apps") for r in results) else 0
         finished = time.time()
         self.emit(tr("Sprawdzam, co zostalo do zalatania...", "Checking what is left to patch..."))
         left = None
@@ -511,7 +604,8 @@ class Run:
             # tylko udane czesci: po bledzie (apt, compose, siec) nastepne /zalataj ma probowac od razu, a nie za dobe
             for result in results:
                 if result.exit_code == 0:
-                    scope = {"system": "all", "images": "images"}.get(result.part.kind, f"server:{result.part.name}")
+                    scope = {"system": "all", "images": "images", "apps": "apps"}.get(result.part.kind,
+                                                                                     f"server:{result.part.name}")
                     result.outcome = await asyncio.to_thread(vulns.record_outcome, scope, result.part.items, left)
         return summary(self.job, results, left, freed, len(results) < len(self.job.parts))
 
@@ -530,6 +624,29 @@ def _fixed_lines(result: PartResult) -> list[str]:
     lines = []
     outcome = result.outcome
     part = result.part
+    if part.kind == "apps":
+        if outcome and outcome.fixed:
+            lines.append(tr(f"podbite: {len(outcome.fixed)} ({_names(outcome.fixed)})",
+                            f"bumped: {len(outcome.fixed)} ({_names(outcome.fixed)})"))
+        if outcome and outcome.unchanged:
+            lines.append(tr(f"bez zmian: {len(outcome.unchanged)} ({_names(outcome.unchanged)}) — ograniczenie wersji w "
+                            "manifescie (package.json, pyproject.toml, composer.json...) na to nie pozwala; zmien je recznie "
+                            "(nie sprobuje znowu przez dobe)",
+                            f"unchanged: {len(outcome.unchanged)} ({_names(outcome.unchanged)}) — the version constraint "
+                            "in the manifest (package.json, pyproject.toml, composer.json...) does not allow it; change it "
+                            "by hand (I will not try again for a day)"))
+        if result.redeployed:
+            lines.append(tr(f"przebudowane i uruchomione od nowa: {_names(result.redeployed)}",
+                            f"rebuilt and restarted: {_names(result.redeployed)}"))
+        if result.undeployed:
+            lines.append(tr(f"bez projektu compose: {_names(result.undeployed)} — nowe wersje zadzialaja po zainstalowaniu "
+                            "zaleznosci i ponownym wdrozeniu aplikacji",
+                            f"no compose project: {_names(result.undeployed)} — the new versions take effect after the "
+                            "dependencies are installed and the app is redeployed"))
+        if result.entries:
+            lines.append(tr("cofniecie: /cofnij " + ", /cofnij ".join(result.entries),
+                            "undo: /undo " + ", /undo ".join(result.entries)))
+        return lines
     if part.kind == "images":
         refreshed = [n for n in result.refreshed if not outcome or n not in outcome.unchanged]
         layered = [n for n in result.layered if not outcome or n not in outcome.unchanged]
@@ -610,7 +727,7 @@ def summary(job: Job, results: list[PartResult], left: Any, freed: int, stopped:
     fixed = [n for r in results if r.outcome for n in r.outcome.fixed]
     unchanged = [n for r in results if r.outcome for n in r.outcome.unchanged]
     code = next((r.exit_code for r in failed), 0)
-    entries = [r.entry_id for r in results if r.entry_id]
+    entries = list(dict.fromkeys(e for r in results for e in [r.entry_id, *r.entries] if e))
     short = (tr(f"zalatane: {len(fixed)}", f"patched: {len(fixed)}") +
              (tr(f", bez zmian: {len(unchanged)}", f", unchanged: {len(unchanged)}") if unchanged else "")
              + (tr(f", zwolnione {human_bytes(freed)}", f", freed {human_bytes(freed)}") if freed > 0 else ""))
@@ -624,7 +741,7 @@ def summary(job: Job, results: list[PartResult], left: Any, freed: int, stopped:
 
 
 # Linie "co z tym zrobic", ktore zostaja po latce do zrobienia recznie (aplikacje, tagi, kontenery bez compose...)
-_REMAINING = ("Aplikacje", "Applications", "Obrazy budowane", "Images built", "Obrazy z rejestru", "Registry images",
+_REMAINING = ("Aplikacje", "Aplikacja ", "Applications", "Application ", "Obrazy budowane", "Images built", "Obrazy z rejestru", "Registry images",
               "Kontenery bez compose", "Containers without compose")
 
 
@@ -641,6 +758,28 @@ async def _deliver(watcher: Any, interface: str, done: Done) -> None:
         return
     if watcher is not None:
         watcher.reminders_changed()
+
+
+def app_projects(directory: str, containers: list[Any], skip: set[str] | frozenset[str] = frozenset()) -> list[vulns.ComposeProject]:
+    """
+    Projekty compose budowane z katalogu aplikacji: katalog roboczy projektu to ten katalog albo jego rodzic
+    (aplikacja w backend/ projektu). Bez projektu samego Pipe (`up -d` zatrzymaloby latanie).
+    """
+    found: dict[str, vulns.ComposeProject] = {}
+    for container in containers:
+        project, workdir = str(getattr(container, "project", "") or ""), str(getattr(container, "workdir", "") or "")
+        files = [str(f) for f in getattr(container, "compose_files", None) or []]
+        if not project or project in skip or not workdir or not files:
+            continue
+        if not (directory == workdir or directory.startswith(workdir.rstrip("/") + "/")):
+            continue
+        if not vulns._COMPOSE_NAME.match(project) or not all(vulns._HOST_PATH.match(f) for f in files):
+            continue
+        entry = found.setdefault(project, vulns.ComposeProject(project, files))
+        service = str(getattr(container, "service", "") or "")
+        if service and vulns._COMPOSE_NAME.match(service) and service not in entry.services:
+            entry.services.append(service)
+    return list(found.values())
 
 
 _current: Run | None = None

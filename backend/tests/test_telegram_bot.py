@@ -394,7 +394,8 @@ def test_vuln_alert_patch_button_patches_right_away(monkeypatch):
 
 def test_zalataj_passes_the_word_to_the_backend(monkeypatch):
     assert bot._patch_scope(["Obrazy"]) == "obrazy" and bot._patch_scope([]) == "" and bot._patch_scope(["web2"]) == "web2"
-    assert bot.PATCH_SCOPES == {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers"}
+    assert bot.PATCH_SCOPES == {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers",
+                                "vuln:apps": "apps"}
 
 
 def test_vulns_report_is_rendered_without_html_from_the_internet(monkeypatch):

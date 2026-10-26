@@ -181,12 +181,12 @@ class TestWebhookServer:
         investigated = []
 
         async def scenario():
-            watcher = watch.Watcher()
+            watcher = watch.Watcher(agent=object())
 
-            async def fake_investigate(alert):
-                investigated.append(alert.key)
+            async def fake_investigate(alert, *, external=False):
+                investigated.append((alert.key, external))
 
-            watcher.investigate_external = fake_investigate
+            watcher.auto_investigate = fake_investigate
             queue = watcher.notifier.subscribe()
             server = await webhooks.start(watcher, "127.0.0.1", 0, "", True)
             assert server is None                                      # bez portu — wylaczone
@@ -215,7 +215,7 @@ class TestWebhookServer:
         assert [status for status, _ in results] == [200, 401, 202, 404, 405, 400, 200]
         assert list(active) == ["hook:alertmanager:highlatency-shop-443"]
         assert [e["state"] for e in events] == ["new", "resolved"]
-        assert investigated == ["hook:alertmanager:highlatency-shop-443"]
+        assert investigated == [("hook:alertmanager:highlatency-shop-443", True)]
 
     def test_body_limit(self, monkeypatch):
         monkeypatch.setattr(webhooks, "MAX_BODY", 10)
@@ -229,30 +229,37 @@ class TestWebhookServer:
 
         assert run(scenario())[0] == 413
 
-    def test_investigation_rate_limit(self):
-        server = webhooks.WebhookServer(watch.Watcher(), "tok")
-        assert server._may_investigate("a", now=1000)
-        assert not server._may_investigate("a", now=2000)          # ten sam alert w ciagu godziny
-        assert server._may_investigate("a", now=5000)
-        for i in range(8):
-            server._may_investigate(f"k{i}", now=5000)
-        assert not server._may_investigate("nowy", now=5000)        # limit dzienny
+    def test_investigation_rate_limit(self, monkeypatch):
+        monkeypatch.setattr(watch.settings, "AUTO_INVESTIGATE_DAILY", 1)
+        watcher = watch.Watcher(agent=object())
 
-    def test_investigate_external_publishes_report(self, monkeypatch):
+        def hook(key, severity="warning"):
+            return watch.Alert("1", key, severity, "t", "d", "now")
+
+        assert watcher._should_investigate(hook("hook:generic:a"), external=True)        # kazdy poziom, kazdy klucz
+        assert not watcher._should_investigate(hook("hook:generic:a"), external=True)    # ten sam alert — raz na 6 h
+        for i in range(watch.EXTERNAL_INVESTIGATIONS_DAILY - 1):
+            assert watcher._should_investigate(hook(f"hook:generic:k{i}"), external=True)
+        assert not watcher._should_investigate(hook("hook:generic:nowy"), external=True)  # limit dzienny
+        # webhooki nie zjadaja badan problemow, ktore Pipe wykrywa sam (osobny licznik)
+        assert watcher._should_investigate(hook("disk:/", "critical"))
+
+    def test_external_alert_investigation_publishes_findings(self, monkeypatch):
         from backend.core import workers
 
         async def fake_worker(agent, parent, name, target, task, progress=None, **kwargs):
-            assert "Wysokie opoznienia" in task and target.kind == "local"
+            assert "Wysokie opoznienia" in task and "Zewnetrzny monitoring" in task and target.kind == "local"
             return workers.WorkerResult(name, "local", report="USTALENIA: php-fpm ma max_children=5")
 
         monkeypatch.setattr(workers, "run_worker", fake_worker)
         watcher = watch.Watcher(agent=object())
         queue = watcher.notifier.subscribe()
         incidents.opened(alert(key="hook:alertmanager:x"))
-        run(watcher.investigate_external(watch.Alert("1", "hook:alertmanager:x", "critical",
-                                                     "Wysokie opoznienia", "p95", "t")))
+        run(watcher.auto_investigate(watch.Alert("1", "hook:alertmanager:x", "critical",
+                                                 "Wysokie opoznienia", "p95", "t"), external=True))
         event = queue.get_nowait()
         assert event["type"] == "investigation" and "max_children" in event["report"]
+        assert "max_children" in event["fix_message"]                  # przycisk Napraw, jak przy alertach Pipe
         assert "max_children" in json.loads(incidents.incidents_path().read_text())["open"]["hook:alertmanager:x"]["diagnosis"]
 
 

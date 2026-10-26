@@ -29,5 +29,7 @@ Zostalo, tylko jesli ktos o to poprosi:
   obrazow kontenerow, bo tylko tam jest prawdziwy powrot.
 - Nowsze obrazy dla kontenerow bez compose (dzis tylko podpowiedz: `docker run` trzeba powtorzyc z tymi samymi
   opcjami -- odtworzenie przez API Dockera musi zachowac anonimowe wolumeny i nadpisane w `docker run` ustawienia
-  obrazu) i latki zaleznosci aplikacji (dzis tylko raport -- zmiana wersji to zmiana w kodzie aplikacji).
+  obrazu).
+- Zaleznosci aplikacji poza zakresem wersji z manifestu (np. przechodnia przypieta przez inna paczke) -- dzis zostaja
+  w raporcie do zmiany recznej; mozliwe `overrides` (npm) / `resolutions` (yarn).
 - Obrazy kontenerow na zdalnych serwerach (dzis tylko ich pakiety systemu).

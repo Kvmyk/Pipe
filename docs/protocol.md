@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 ## Opis
 
@@ -102,7 +102,7 @@ Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
 | `vulns` | -- | `"data": {"text", "view"}` -- raport podatnosci w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, zdalne serwery, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
-| `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | lata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobe; `freed` -- bajty zwolnione przy sprzataniu; `report` -- stan po latce jak `view` z `vulns`). Nic do zalatania: `"data": {"nothing": true, "text", ...}`. Komendy sklada serwer z biezacego skanu. Latanie dziala w tle: drugie `patch` w trakcie dostaje ten sam postep i wynik, a po rozlaczeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podglad sprzed v0.38) sa ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
+| `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `apps`/`aplikacje`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | lata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobe; `freed` -- bajty zwolnione przy sprzataniu; `report` -- stan po latce jak `view` z `vulns`). Nic do zalatania: `"data": {"nothing": true, "text", ...}`. Komendy sklada serwer z biezacego skanu. Latanie dziala w tle: drugie `patch` w trakcie dostaje ten sam postep i wynik, a po rozlaczeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podglad sprzed v0.38) sa ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
@@ -192,8 +192,9 @@ pole `report` zawiera raport workera.
   "attachment": {"name": "wykres-load.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
-`{"type": "investigation", "key", "title", "report", "auto"?, "alert_id"?, "severity"?}` -- raport workera, ktory sam
-zbadal alert z webhooka (`WEBHOOK_INVESTIGATE=1`) albo krytyczny alert czuwania (`AUTO_INVESTIGATE`, `auto: true`).
+`{"type": "investigation", "key", "title", "report", "auto", "alert_id", "severity", "fix_message"}` -- ustalenia
+workera, ktory sam zbadal krytyczny alert czuwania (`AUTO_INVESTIGATE`) albo alert z webhooka (`WEBHOOK_INVESTIGATE=1`);
+obie drogi to jedno `Watcher.auto_investigate()`, a `fix_message` to tresc przycisku *Napraw*.
 `history` w alercie -- ostatnie wystapienie tego samego problemu (pamiec incydentow).
 
 `{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- podpowiedz bez LLM (prognoza

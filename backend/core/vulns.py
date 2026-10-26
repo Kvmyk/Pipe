@@ -1051,10 +1051,18 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
             if target.name in waiting else (manual[0] if manual else "")
         groups.append(group_view("image", target.name, containers, target.items, explain,
                                  patchable=target.name in patchable_images, note=note_text))
+    from backend.core import appdeps
+    held_apps = held_packages()
     for target in sorted((t for t in result.of_kind("app") if t.items), key=target_rank):
-        groups.append(group_view("app", target.name, target.ecosystem or "", target.items, explain, note=tr(
-            "Zaleznosc w kodzie aplikacji: podbij wersje w lockfile i wdroz aplikacje.",
-            "A dependency in the application code: bump the version in the lockfile and deploy the app.")))
+        bump = appdeps.plan_target(target, held_apps)
+        waiting_keys = {p.key for p in target.items if appdeps.app_key(target, p) in held_apps}
+        note_text = tr("Zalataj podbije je w plikach zaleznosci (" + ", ".join(b.manager for b in bump.bumps) + ").",
+                       "Patch bumps them in the dependency files (" + ", ".join(b.manager for b in bump.bumps) + ").") \
+            if bump.items else "; ".join(bump.manual) or tr(
+                "Podbij wersje w pliku zaleznosci recznie i wdroz aplikacje.",
+                "Bump the version in the dependency file by hand and deploy the app.")
+        groups.append(group_view("app", target.name, target.ecosystem or "", target.items, explain,
+                                 held=waiting_keys, patchable=bool(bump.items), note=note_text))
     all_items = result.items + [p for t in result.targets for p in t.items]
     notes = []
     if result.ecosystem is None:
@@ -1078,6 +1086,9 @@ def report_view(result: Scan | None, explain: dict[str, str], note: str = "") ->
         actions.append({"scope": "all", "count": parts.total, "label": parts.describe()})
     if parts.images and parts.total > parts.images:
         actions.append({"scope": "images", "count": parts.images, "label": n_images(parts.images)})
+    if parts.apps and parts.total > parts.apps:
+        actions.append({"scope": "apps", "count": parts.apps,
+                        "label": tr(f"zaleznosci aplikacji: {parts.apps}", f"app dependencies: {parts.apps}")})
     servers = servers_with_items(result)
     return {"at": result.at, "system": plain(result.system, 120), "supported": result.ecosystem is not None,
             "checked": result.checked, "todo": todo(result), "groups": groups, "actions": actions, "notes": notes,
@@ -1206,10 +1217,12 @@ def apps_alert(result: Scan, explain: dict[str, str]) -> str:
     footer = [tr(f"… i {more} kolejnych aplikacji", f"… and {more} more applications")] if more > 0 else []
     tools = app_tools([t for t, _ in apps])
     return sections_markdown(sections, explain, footer=footer + [
-        tr(f"To zaleznosci w kodzie aplikacji, wiec /zalataj ich nie zmienia: podbij je do wersji po strzalce ({tools}) "
-           "i wdroz aplikacje. Moge to zrobic, jesli poprosisz w rozmowie.",
-           f"These are dependencies in the application code, so /patch does not change them: bump them to the version "
-           f"after the arrow ({tools}) and deploy the app. I can do it if you ask in the chat.")])
+        tr("Przycisk Zalataj (albo /zalataj aplikacje) podbije je do wersji po strzalce w plikach zaleznosci "
+           f"(w izolowanym kontenerze: {tools}) i przebuduje projekt compose aplikacji; kopia plikow jest w dzienniku "
+           "(/cofnij).",
+           "The Patch button (or /patch apps) bumps them to the version after the arrow in the dependency files "
+           f"(in an isolated container: {tools}) and rebuilds the app's compose project; the files are backed up in "
+           "the journal (/undo).")])
 
 
 def explanations(lang: str) -> dict[str, str]:
@@ -1678,15 +1691,53 @@ def todo(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset()) -
     elif any(t.ecosystem for t in result.of_kind("image")):
         lines.append(tr("Obrazy kontenerow: bez podatnosci z poprawka.", "Container images: no vulnerabilities with a fix."))
 
+    lines += app_todo(result)
+    return lines
+
+
+def app_todo(result: Scan, now: float | None = None) -> list[str]:
+    """
+    Linie o zaleznosciach aplikacji: co podbije /zalataj (core/appdeps.py), czego ostatnia proba nie zmienila
+    (ograniczenie wersji w manifescie) i czego Pipe nie umie podbic (yarn 1, Pipfile, wersja Go).
+    Linie zaczynajace sie od "Aplikacje"/"Aplikacja" zostaja po latce (patching._REMAINING).
+    """
+    from backend.core import appdeps
+
     apps = sorted((t for t in result.of_kind("app") if t.items), key=target_rank)
-    if apps:
-        names = ", ".join(plain(t.name, 60) for t in apps[:4]) + (
-            tr(f" i {len(apps) - 4} innych", f" and {len(apps) - 4} more") if len(apps) > 4 else "")
-        lines.append(tr(f"Aplikacje ({names}): podatne zaleznosci — to zmiana w kodzie, wiec /zalataj ich nie zmienia; "
-                        f"podbij je do wersji z poprawka ({app_tools(apps)}) i wdroz aplikacje albo popros mnie o to "
-                        "w rozmowie.",
-                        f"Applications ({names}): vulnerable dependencies — a code change, so /patch does not touch them; "
-                        f"bump them to the fixed version ({app_tools(apps)}) and deploy the app, or ask me in the chat."))
+    if not apps:
+        return []
+    held = held_packages(now)
+    planned = [appdeps.plan_target(t, held) for t in apps]
+    names = lambda targets: ", ".join(plain(t.name, 60) for t in targets[:4]) + (  # noqa: E731
+        tr(f" i {len(targets) - 4} innych", f" and {len(targets) - 4} more") if len(targets) > 4 else "")
+    lines: list[str] = []
+    ready = [b for b in planned if b.items]
+    if ready:
+        count = sum(len(b.items) for b in ready)
+        lines.append(tr(f"Zaleznosci aplikacji ({names([b.target for b in ready])}): {n_packages(count)} z poprawka — "
+                        "podbije je /zalataj w plikach zaleznosci i przebuduje projekt compose (same aplikacje: "
+                        "/zalataj aplikacje).",
+                        f"Application dependencies ({names([b.target for b in ready])}): {n_packages(count)} with a fix — "
+                        "/patch bumps them in the dependency files and rebuilds the compose project (apps only: "
+                        "/patch apps)."))
+    waiting = [t for t in apps if any(appdeps.app_key(t, p) in held for p in t.items)]
+    if waiting:
+        lines.append(tr(f"Aplikacje ({names(waiting)}): ostatnie podbicie nie zmienilo czesci zaleznosci — ograniczenie "
+                        "wersji w manifescie (package.json, pyproject.toml, composer.json...) na to nie pozwala; zmien je "
+                        "recznie (nie sprobuje znowu przez dobe).",
+                        f"Applications ({names(waiting)}): the last bump did not change some dependencies — the version "
+                        "constraint in the manifest (package.json, pyproject.toml, composer.json...) does not allow it; "
+                        "change it by hand (I will not try again for a day)."))
+    for bump in planned:
+        for reason in bump.manual:
+            lines.append(tr(f"Aplikacja {plain(bump.directory, 60)}: {reason}.",
+                            f"Application {plain(bump.directory, 60)}: {reason}."))
+    rest = [t for t, b in zip(apps, planned) if not b.items and not b.manual and t not in waiting]
+    if rest:
+        lines.append(tr(f"Aplikacje ({names(rest)}): podatne zaleznosci bez wersji, ktora mozna podbic automatycznie — "
+                        f"podbij je recznie ({app_tools(rest)}) i wdroz aplikacje.",
+                        f"Applications ({names(rest)}): vulnerable dependencies without a version I can bump "
+                        f"automatically — bump them by hand ({app_tools(rest)}) and deploy the app."))
     return lines
 
 
@@ -1765,10 +1816,11 @@ class PatchParts:
     images: int = 0             # obrazy kontenerow z compose
     servers: int = 0            # zdalne serwery z czyms do zalatania
     server_packages: int = 0
+    apps: int = 0               # zaleznosci aplikacji, ktore podbije /zalataj (core/appdeps.py)
 
     @property
     def total(self) -> int:
-        return self.system + self.images + self.server_packages
+        return self.system + self.images + self.server_packages + self.apps
 
     def describe(self) -> str:
         parts = []
@@ -1780,14 +1832,19 @@ class PatchParts:
             parts.append(tr(f"{n_servers(self.servers)} zdalnych ({n_packages(self.server_packages)})" if self.servers > 1
                             else f"serwer zdalny ({n_packages(self.server_packages)})",
                             f"{n_servers(self.servers)} remote ({n_packages(self.server_packages)})"))
+        if self.apps:
+            parts.append(tr(f"zaleznosci aplikacji: {self.apps}", f"app dependencies: {self.apps}"))
         return ", ".join(parts)
 
 
 def patch_parts(result: Scan, skip_projects: frozenset[str] | set[str] = frozenset(), now: float | None = None) -> PatchParts:
+    from backend.core import appdeps
+
     servers = [select_server(t, now) for t in result.of_kind("server")]
     return PatchParts(system=len(select(result, "all", now)) if result.ecosystem else 0,
                       images=len(image_patch(result, skip_projects=skip_projects, now=now).refreshable),
-                      servers=sum(1 for s in servers if s), server_packages=sum(len(s) for s in servers))
+                      servers=sum(1 for s in servers if s), server_packages=sum(len(s) for s in servers),
+                      apps=sum(len(b.items) for b in appdeps.plan(result, held_packages(now))))
 
 
 # ─── Pamiec skanu ───────────────────────────────────────────────────────────
@@ -1887,6 +1944,22 @@ def record_outcome(scope: str, before: list[Any], after: Scan, now: float | None
 
 
 def _record(state: dict[str, Any], outcome: PatchOutcome, scope: str, before: list[Any], after: Scan, now: float) -> None:
+    if scope == "apps":
+        # before: appdeps.AppBump — pakiet, ktory po podbiciu ma ten sam klucz (nazwa|wersja), sie nie zmienil
+        current = {t.name: {p.key for p in t.items} for t in after.of_kind("app")}
+        held = state.get("held") if isinstance(state.get("held"), dict) else {}
+        for bump in before:
+            if bump.directory not in current:
+                continue                            # aplikacji nie bylo w skanie — nic nie wiadomo
+            for item in bump.items:
+                if item.key in current[bump.directory]:
+                    outcome.unchanged.append(item.name)
+                    held[f"app:{bump.directory}|{item.key}"] = {"at": now}
+                else:
+                    outcome.fixed.append(item.name)
+        state["held"] = {k: v for k, v in held.items() if now - float(v.get("at", 0)) < HOLD_FOR}
+        outcome.left = sum(len(t.items) for t in after.of_kind("app"))
+        return
     if scope == "images":
         current = {t.name: t for t in after.of_kind("image")}
         stale = state.get("stale_images") if isinstance(state.get("stale_images"), dict) else {}

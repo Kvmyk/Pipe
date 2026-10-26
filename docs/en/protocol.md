@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 ## Overview
 
@@ -196,9 +196,9 @@ field contains the worker's report.
   "attachment": {"name": "load-chart.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
-`{"type": "investigation", "key", "title", "report", "auto"?, "alert_id"?, "severity"?}` -- the report of a worker that
-investigated a webhook alert (`WEBHOOK_INVESTIGATE=1`) or a critical watcher alert (`AUTO_INVESTIGATE`, `auto: true`)
-by itself. `history` in an alert -- the last occurrence of the same problem (incident memory).
+`{"type": "investigation", "key", "title", "report", "auto", "alert_id", "severity", "fix_message"}` -- the findings
+of a worker that investigated a critical watcher alert (`AUTO_INVESTIGATE`) or a webhook alert (`WEBHOOK_INVESTIGATE=1`)
+by itself; both go through one `Watcher.auto_investigate()`, and `fix_message` is the text of the *Fix it* button. `history` in an alert -- the last occurrence of the same problem (incident memory).
 
 `{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- a suggestion without the LLM (disk
 full forecast, space to reclaim, container restarts, a pending server reboot, growing RAM).

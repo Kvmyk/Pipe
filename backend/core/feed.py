@@ -299,7 +299,7 @@ def _sections_text(sections: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
-PATCH_SCOPES = {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers"}
+PATCH_SCOPES = {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers", "vuln:apps": "apps"}
 
 
 def from_event(event: dict[str, Any]) -> Item | None:

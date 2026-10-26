@@ -412,7 +412,7 @@ class TestApps:
         result, _ = vulns.scan(containers=containers)
         [app] = result.of_kind("app")
         assert app.name == "/srv/quiz/web" and [p.name for p in app.items] == ["shell-quote"]
-        assert any(line.startswith("Aplikacje (/srv/quiz/web)") for line in vulns.todo(result))
+        assert any(line.startswith("Zaleznosci aplikacji (/srv/quiz/web)") for line in vulns.todo(result))
 
     def test_nested_roots_are_walked_once_but_deep_ones_stay(self):
         roots = ["/srv/shop", "/srv/shop/backend", "/root", "/root/TeamBIT/Quiz", "/srv/shop"]
@@ -475,7 +475,8 @@ class TestNotifications:
         images = vulns.images_alert(scan, {})
         assert "### Obraz redis:7 (cache) — kontener bez compose, tego nie odswieze sam" in images
         apps = vulns.apps_alert(scan, {})
-        assert "(npm audit fix)" in apps and "pip" not in apps and "composer" not in apps
+        assert "kontenerze: npm audit fix)" in apps and "pip" not in apps and "composer" not in apps
+        assert "/zalataj aplikacje" in apps and "nie zmienia" not in apps
 
     def test_most_dangerous_first_when_the_message_is_full(self):
         sections = vulns.report_sections(notification_scan())

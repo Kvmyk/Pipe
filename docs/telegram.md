@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -45,7 +45,8 @@ zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
   wykorzystywane. Przy kazdej krotko, co grozi. Przycisk **Zalataj** (tylko administratorzy) od razu instaluje
   poprawki tego, czego dotyczy alert, a alert mowi, czego nie zalata (poprawki tylko z Ubuntu Pro, kontenery bez
   compose, kontenery samego Pipe). Znana podatnosc nie wraca, takze po restarcie Pipe.
-- **Zbadalem alert** -- raport workera dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba (webhooki).
+- **Ustalenia dla alertu z zewnatrz** -- to samo dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba
+  (webhooki, `WEBHOOK_INVESTIGATE`), takze z przyciskiem **Napraw**.
 - Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
 - **ZGODA** -- zewnetrzny agent (np. Claude Code przez MCP) chce wykonac zmiane: komenda doslownie, plan
   bezpiecznika i przyciski *Zatwierdz* / *Odrzuc* (tylko administratorzy). Wygasa po 30 minutach.
@@ -209,14 +210,14 @@ nazwy dzialaja w obu jezykach.
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
-| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow |
+| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow (nie ma jej w menu ani w `/pomoc` -- problemy pokazuje `/status`) |
 | `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
 | `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
 | `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
 | `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
 | `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
 | `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
-| `/zalataj [obrazy\|serwer\|serwery\|<cel>]` | Lata od razu, bez przyciskow i pytan (administrator): pakiety tego serwera, obrazy kontenerow i zdalne serwery, potem sprzata stare obrazy i cache. Jedna wiadomosc z krokami na zywo, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca zwolnione. Przycisk *Zalataj* przy alercie o podatnosciach lata to, czego alert dotyczy. Dziala bez LLM |
+| `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez przyciskow i pytan (administrator): pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow i zdalne serwery, potem sprzata stare obrazy i cache. Jedna wiadomosc z krokami na zywo, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca zwolnione. Przycisk *Zalataj* przy alercie o podatnosciach lata to, czego alert dotyczy. Dziala bez LLM |
 | `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
 | `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
 | `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |
@@ -226,14 +227,14 @@ nazwy dzialaja w obu jezykach.
 | `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
 | `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
 | `/skille` | Lista zapisanych skilli z ich komendami |
-| `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia |
+| `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia (nie ma jej w menu ani w `/pomoc` -- wiadomosci sa w `/nowosci`) |
 | `/rutyny` | Zadania wykonywane wedlug harmonogramu |
 | `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia -- przychodza same o czasie do osoby, ktora je ustawila |
 | `/cele` | Zdalne serwery, kontenery i klastry |
 | `/nowa` | Nowa rozmowa od czystej karty (bot ma jedna rozmowe na uzytkownika); notatki o serwerze, katalogi, skille, styl i alerty zostaja |
 | `/vibe` | Co agent wie o Twoim stylu rozmowy; `/vibe reset` czysci |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |
-| `/historia` | Ostatnie wpisy z audit logu (bez LLM) |
+| `/historia` | Ostatnie wpisy z audit logu, bez LLM (nie ma jej w menu ani w `/pomoc` -- zmiany pokazuje `/dziennik`) |
 | `/pomoc` | Lista komend |
 
 Menu podpowiedzi po wpisaniu `/` bot ustawia sam przy starcie i odswieza po kazdej wiadomosci -- nowy skill

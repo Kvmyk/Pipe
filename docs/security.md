@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 ## Model
 
@@ -228,7 +228,8 @@ po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: t
 - Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
   (w Dockerze port publikowany tylko na localhost) -- nadawcy spoza serwera przez odwrotne proxy z TLS.
 - Tresc alertu pochodzi z zewnatrz: trafia do modelu jako dane, a automatyczne badanie robi worker, ktory
-  wykonuje wylacznie odczyty. Limit badan: raz na godzine na alert, 10 dziennie.
+  wykonuje wylacznie odczyty. Limit badan: raz na 6 h na alert, 10 dziennie. *Napraw* wysyla ustalenia
+  agentowi jako zwykla wiadomosc -- zmiany i tak przechodza przez klasyfikator i potwierdzenie.
 
 ## Dziennik zmian i cofanie
 
@@ -330,7 +331,10 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
   i automatycznego przywracania tu nie ma (bezpiecznik zapisuje wpis w dzienniku i sprawdza strony). Jesli nie potrzebujesz zarzadzania kontenerami,
   zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
 - **`/zalataj` nie pyta o kazda komende.** Wpisanie `/zalataj` (albo przycisk *Zalataj*) przez administratora jest
-  zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, odswieza obrazy kontenerow z compose,
+  zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, podbija zaleznosci aplikacji (menedzer
+  pakietow w jednorazowym kontenerze jak `exec` w warsztacie: tylko katalog aplikacji, bez `docker.sock` i uprawnien,
+  bez skryptow instalacyjnych pakietow; nazwy i wersje z lockfile'i przechodza przez wzorce ekosystemu; kopia plikow w
+  dzienniku), odswieza obrazy kontenerow z compose,
   lata zdalne serwery (cele ssh: jako root albo przez `sudo -n`) i sprzata po sobie (obrazy bez tagu, cache
   budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer, stare jadra, ktore apt sam uznaje za
   zbedne). Komendy sklada serwer z wyniku skanu, bez modelu: nazwy pakietow i projektow compose przechodza przez

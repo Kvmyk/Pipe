@@ -76,7 +76,7 @@ Dla kazdego wektora opisz lancuch: zrodlo → co model moze zrobic → jaka kont
 ## 4. Uprawnienia srodowiska (blast radius)
 
 Oceń, co daje przejecie procesu agenta (RCE w kontenerze), niezaleznie od klasyfikatora:
-- `docker-compose.yml`: `/var/run/docker.sock` = root na hoscie (`docker run -v /:/host --privileged`). Czy `docker_manage` lub `execute_command` pozwala na `run`/`exec`/`cp` bez potwierdzenia?
+- `docker-compose.yml`: `/var/run/docker.sock` = root na hoscie (`docker run -v /:/host --privileged`). Czy `execute_command` pozwala na `run`/`exec`/`cp` bez potwierdzenia?
 - `pid: host` — widocznosc i sygnaly do procesow hosta (`kill`), `/proc/<pid>/environ` i `/proc/<pid>/root` procesow hosta (sekrety innych uslug, obejscie read-only `/hostfs`!). Sprawdz, czy klasyfikator i `validate_workspace_access` blokuja `/proc/*/root`, `/hostproc/*/root`, `/hostproc/*/environ`, `/hostproc/*/cwd`.
 - `/:/hostfs:ro` — odczyt `/etc/shadow`, kluczy TLS, `.env` innych aplikacji, `backend/.env` samego agenta (klucz API, `AGENT_TOKEN`, token bota), ktore potem trafiaja do providera LLM.
 - `/root:/hostfs/root` rw — zapis `~/.bashrc`, `~/.profile`, `~/.ssh/authorized_keys` (czy blokada `/hostfs/root/.ssh` dziala tez dla `execute_command`, nie tylko dla `write_file`?), `~/.config/systemd/user`, crontab w `/var/spool/cron` (ro?) — czyli trwaly backdoor na hoscie wykonany przez roota przy nastepnym logowaniu.

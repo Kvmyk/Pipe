@@ -25,7 +25,7 @@ from typing import Any, Iterable
 CORE = "core"
 GROUPS: dict[str, tuple[str, ...]] = {
     CORE: ("execute_command", "read_file", "write_file", "change_directory", "git_command", "system_stats",
-           "docker_manage", "network_info", "server_history", "project", "load_tools"),
+           "network_info", "server_history", "project", "load_tools"),
     "memory": ("server_md", "directory", "skill_manage", "vibe"),
     "security": ("security_audit", "security_patch", "journal"),
     "schedule": ("reminder", "routine_manage", "cron_manage"),

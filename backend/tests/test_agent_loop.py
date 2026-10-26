@@ -118,6 +118,15 @@ class TestLoop:
         assert_history_valid(agent._sessions["s"].messages)
         assert "Nieznane narzedzie" in agent._sessions["s"].messages[2]["content"]
 
+    def test_removed_tool_points_to_its_replacement(self):
+        agent, client = make_agent([
+            completion(tool_calls=[("c1", "docker_manage", {"operation": "ps"})]),
+            completion("ok"),
+        ])
+        run(agent.chat("s", "x"))
+        assert_history_valid(agent._sessions["s"].messages)
+        assert "docker ps" in agent._sessions["s"].messages[2]["content"]
+
     def test_iteration_limit(self, monkeypatch):
         monkeypatch.setattr(settings, "AGENT_MAX_ITERATIONS", 2)
         loop = [completion(tool_calls=[(f"c{i}", "execute_command", {"command": "pwd"})]) for i in range(5)]

@@ -6,7 +6,7 @@ description: Daily PostgreSQL backup (pg_dump) with 7-day rotation, a [backup] e
 # PostgreSQL backup
 
 ## 1. Discovery (reads)
-- Where the database runs: a container (docker_manage ps — postgres image) or a host service (`systemctl status postgresql`).
+- Where the database runs: a container (`docker ps` — postgres image) or a host service (`systemctl status postgresql`).
 - Database name and user: from the app's compose/.env file (DIRECTORY) — do NOT copy passwords into the skill or SERVER.md.
 - Free space in the destination directory (default /var/backups/pg) and the database size:
   `docker exec CONTAINER psql -U USER -d DB -Atc "select pg_size_pretty(pg_database_size(current_database()))"`.

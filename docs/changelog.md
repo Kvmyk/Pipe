@@ -1,5 +1,33 @@
 # Historia zmian -- Pipe
 
+## v0.40.0 (2026-10-26)
+
+### `/zalataj` podbija zaleznosci aplikacji
+
+- `/zalataj` (i przycisk *Zalataj* przy alercie `vuln:apps`) podbija podatne pakiety w plikach zaleznosci aplikacji;
+  same aplikacje: `/zalataj aplikacje` (`/patch apps`). Obslugiwane: npm, yarn 2+, pnpm, `requirements*.txt`, poetry,
+  uv, Go, Cargo, Composer i Bundler
+- Menedzer pakietow dziala w jednorazowym kontenerze: widzi tylko katalog aplikacji, bez `docker.sock` i uprawnien,
+  jako wlasciciel katalogu i bez skryptow instalacyjnych pakietow. Dokladnie przypieta wersja w `package.json`
+  zostaje dokladna
+- Pliki zaleznosci trafiaja do dziennika (jeden wpis na aplikacje), a projekt compose budowany z tego katalogu jest
+  przebudowany i uruchomiony od nowa z weryfikacja kontenerow. `/cofnij` przywraca pliki i przebudowuje projekt
+- Czego menedzer nie podbil (ograniczenie wersji w manifescie), wynik i `/podatnosci` kaza zmienic recznie; Pipe nie
+  probuje tego znowu przez dobe. Recznie zostaja yarn 1, `Pipfile.lock` i wersja samego Go
+- W trybie docker `/cofnij` przywraca tez pliki hosta spoza `/root` (w kontenerze sa tylko do odczytu) przez kontener
+  pomocniczy
+
+### Mniej narzedzi, jedna droga badania alertow
+
+- Narzedzie `docker_manage` zniknelo: agent robi to samo przez `execute_command` (`docker ps`, `docker logs`), z tym
+  samym klasyfikatorem i potwierdzeniami. Podstawowe narzedzia to teraz ok. 2,1 tys. tokenow przy kazdym kroku
+- Alerty z webhookow (`WEBHOOK_INVESTIGATE=1`) bada ta sama droga co problemy wykryte przez Pipe: ustalenia przychodza
+  z przyciskiem *Napraw* i zmianami z ostatniej doby. Ten sam alert najwyzej raz na 6 h, 10 badan z webhookow dziennie
+  (osobno od `AUTO_INVESTIGATE_DAILY`)
+- `/alerty`, `/zdrowie` i `/historia` zniknely z menu, pomocy i podpowiedzi (to samo pokazuja `/status`, `/nowosci`
+  i `/dziennik`); wpisane recznie dzialaja dalej
+- Schemat w `pipe web` znow podswietla operacje gita, a os czasu pokazuje rodzaj sprawdzenia sieci
+
 ## v0.39.0 (2026-10-26)
 
 ### Pipe pisze pierwszy

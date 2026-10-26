@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -176,14 +176,14 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history (PNG in `~/.pipe/diagrams/`) |
-| `/health` | TLS certificates, site responses, DNS and backup freshness |
+| `/health` | TLS certificates, site responses, DNS and backup freshness (not suggested or in `/help` -- `/status` shows problems) |
 | `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
 | `/journal` | Approved changes with backups (what, when, whether it can be undone) |
 | `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
 | `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation in Pipe's language |
-| `/patch [images\|server\|servers\|<target>]` | Patches right away, without another question: this server's packages, container images from compose (a newer image or the fixes installed inside the image) and remote servers, then cleans up old images and caches. The steps show live, at the end what was patched, what stayed unchanged and why. Works without the LLM |
+| `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without another question: this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images from compose (a newer image or the fixes installed inside the image) and remote servers, then cleans up old images and caches. The steps show live, at the end what was patched, what stayed unchanged and why. Works without the LLM |
 | `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
 | `/language [pl\|en]` | Pipe's language: without an argument shows the current one, with an argument switches the whole agent (shared by the CLI, web and Telegram; admin only) |
 | `/providers [id [model]]` | LLM providers: a list, then picking a provider and a model from the list the provider returns (current one preselected, Enter keeps it; a name fragment narrows the list). The API key is typed without echo. `/providers groq` goes straight to Groq's models, `/providers groq llama` picks a model by name fragment, `/providers model` only changes the model of the current provider, `/providers forget <id>` removes a key added from the interface. The choice applies to the whole agent; changing it is admin only |
@@ -195,13 +195,13 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
 | `/directory` | Map of repositories and directories (DIRECTORY) |
 | `/skills` | List of saved skills with their commands |
-| `/alerts` | Active watcher alerts (new ones show up by themselves above the prompt and in `/news`) |
+| `/alerts` | Active watcher alerts (not suggested or in `/help` -- new ones show up by themselves above the prompt and in `/news`) |
 | `/routines` | Tasks run on a schedule |
 | `/reminders [cancel <id>]` | One-off reminders; the CLI prints them above the prompt by itself (it checks every 10 s), including the result of `/update`; those set from the CLI also go to Telegram and `pipe web` |
 | `/targets` | Remote servers, containers and clusters |
 | `/new` | New conversation from a clean slate; the server notes, directories, skills, style and alerts stay |
 | `/vibe` | Note about your conversation style; `/vibe reset` clears it |
-| `/history` | Latest audit-log entries |
+| `/history` | Latest audit-log entries (not suggested or in `/help` -- `/journal` shows changes) |
 | `/<skill>` | Runs a skill, for example `/renew_certificate` or `/renew-certificate`, optionally with hints |
 | `/help` | Command list |
 | `/exit` | Quit |

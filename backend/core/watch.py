@@ -64,6 +64,9 @@ SITE_FAILURES_BEFORE_ALERT = 2
 # (port, konta: ich przyczyna to decyzja czlowieka, nie stan serwera).
 AUTO_INVESTIGATE_SCOPES = frozenset({"disk", "memory", "load", "container", "site", "backup", "dns"})
 AUTO_INVESTIGATE_COOLDOWN = 6 * 3600
+# Alerty z webhookow (WEBHOOK_INVESTIGATE=1) bada ta sama droga, z wlasnym limitem dziennym — glosny Alertmanager
+# nie zje badan problemow, ktore Pipe wykrywa sam.
+EXTERNAL_INVESTIGATIONS_DAILY = 10
 
 
 @dataclass
@@ -235,7 +238,7 @@ class Watcher:
         self._auth = AuthWatch()
         self.notifier.on_publish = self._to_feed
         self._investigated: dict[str, float] = {}       # klucz alertu -> kiedy Pipe sam go badal
-        self._investigations: dict[str, int] = {}       # dzien -> ile badan (AUTO_INVESTIGATE_DAILY)
+        self._investigations: dict[str, int] = {}       # "<dzien>:<auto|external>" -> ile badan dzis
 
     # --- skrzynka (Pipe pisze pierwszy) -------------------------------------
 
@@ -348,50 +351,63 @@ class Watcher:
             print(tr(f"[Czuwanie] Log SSH: {exc}", f"[Watcher] SSH log: {exc}"), flush=True)
         return findings
 
-    def _publish(self, events: list[Alert], *, investigate: bool = False) -> list[Alert]:
+    def _publish(self, events: list[Alert], *, investigate: bool = False, external: bool = False) -> list[Alert]:
         for alert in events:
             if alert.state in ("new", "resolved"):
                 self._track_incident(alert)
             self.notifier.publish(alert.to_event())
-            if investigate and self._should_investigate(alert):
+            if investigate and self._should_investigate(alert, external=external):
                 try:
-                    asyncio.get_running_loop().create_task(self._safe(self.auto_investigate(alert), "badanie"))
+                    asyncio.get_running_loop().create_task(
+                        self._safe(self.auto_investigate(alert, external=external), "badanie"))
                 except RuntimeError:          # bez petli zdarzen (testy synchroniczne) — bez badania
                     pass
         return events
 
     # --- Pipe sam bada przyczyne -------------------------------------------
 
-    def _should_investigate(self, alert: Alert) -> bool:
-        """Krytyczny problem (albo kazdy przy AUTO_INVESTIGATE=all): Pipe bada go od razu — w limicie dziennym."""
-        mode = settings.AUTO_INVESTIGATE
-        if mode in ("off", "0", "no", "nie", "false") or self.agent is None:
+    def _should_investigate(self, alert: Alert, *, external: bool = False) -> bool:
+        """
+        Krytyczny problem (albo kazdy przy AUTO_INVESTIGATE=all): Pipe bada go od razu — w limicie dziennym.
+        `external` — alert z webhooka: o badaniu zdecydowal juz WEBHOOK_INVESTIGATE, zostaja limity.
+        """
+        if self.agent is None or not getattr(self.agent, "llm_enabled", lambda: True)():
             return False
-        if not getattr(self.agent, "llm_enabled", lambda: True)():
+        if alert.state not in ("new", "event"):
             return False
-        if alert.state not in ("new", "event") or alert.key.split(":", 1)[0] not in AUTO_INVESTIGATE_SCOPES:
-            return False
-        if mode != "all" and alert.severity != "critical":
-            return False
+        if not external:
+            mode = settings.AUTO_INVESTIGATE
+            if mode in ("off", "0", "no", "nie", "false"):
+                return False
+            if alert.key.split(":", 1)[0] not in AUTO_INVESTIGATE_SCOPES:
+                return False
+            if mode != "all" and alert.severity != "critical":
+                return False
         now = time.time()
         if now - self._investigated.get(alert.key, 0) < AUTO_INVESTIGATE_COOLDOWN:
             return False
-        day = datetime.now().strftime("%Y-%m-%d")
-        if self._investigations.get(day, 0) >= max(0, settings.AUTO_INVESTIGATE_DAILY):
+        counter = datetime.now().strftime("%Y-%m-%d") + (":external" if external else ":auto")
+        limit = EXTERNAL_INVESTIGATIONS_DAILY if external else settings.AUTO_INVESTIGATE_DAILY
+        if self._investigations.get(counter, 0) >= max(0, limit):
             return False
-        self._investigations = {day: self._investigations.get(day, 0) + 1}
+        self._investigations = {k: v for k, v in self._investigations.items() if k[:10] == counter[:10]}
+        self._investigations[counter] = self._investigations.get(counter, 0) + 1
         self._investigated[alert.key] = now
         return True
 
-    async def auto_investigate(self, alert: Alert) -> dict[str, Any] | None:
-        """Worker (tylko odczyty) bada problem; ustalenia ida do skrzynki z przyciskiem Napraw i do pamieci incydentow."""
+    async def auto_investigate(self, alert: Alert, *, external: bool = False) -> dict[str, Any] | None:
+        """
+        Worker (tylko odczyty) bada problem; ustalenia ida do skrzynki z przyciskiem Napraw i do pamieci incydentow.
+        `external` — alert z monitoringu z zewnatrz (webhook): inny opis zadania, reszta ta sama.
+        """
         from backend.core import incidents, workers
         from backend.core.session import Session
 
         target = targets.get_target("local")
         if target is None or self.agent is None:
             return None
-        task = prompt("AUTO_INVESTIGATE_TASK").format(title=alert.title, detail=alert.detail or "-")
+        task = prompt("EXTERNAL_ALERT_TASK" if external else "AUTO_INVESTIGATE_TASK").format(
+            title=alert.title, detail=alert.detail or "-")
         task += incidents.context_for(alert.key)
         try:
             from backend.core.handlers.history import changes_text
@@ -399,7 +415,8 @@ class Watcher:
                        "\n\nChanges on the server in the last 24 h (Pipe snapshots):\n") + await changes_text(24)
         except Exception:
             pass
-        parent = Session(session_id=f"auto:{alert.key}", interface="auto-investigate", learns_vibe=False)
+        parent = Session(session_id=("hook:" if external else "auto:") + alert.key,
+                         interface="webhook" if external else "auto-investigate", learns_vibe=False)
         try:
             result = await asyncio.wait_for(workers.run_worker(self.agent, parent, "zbadaj", target, task),
                                             timeout=settings.WORKER_TIMEOUT)
@@ -471,8 +488,11 @@ class Watcher:
 
     # --- alerty z zewnatrz (webhooki) --------------------------------------
 
-    def external(self, alerts: list[Any]) -> list[Alert]:
-        """Alerty z webhookow: firing -> aktywny alert (bez rozwiazywania innych), resolved -> zamkniecie."""
+    def external(self, alerts: list[Any], *, investigate: bool = False) -> list[Alert]:
+        """
+        Alerty z webhookow: firing -> aktywny alert (bez rozwiazywania innych), resolved -> zamkniecie.
+        `investigate` (WEBHOOK_INVESTIGATE) — nowy alert bada worker, jak problemy wykryte przez Pipe.
+        """
         firing = [Finding(a.key, a.severity, a.title, a.detail) for a in alerts if a.firing]
         events = self.apply(firing, frozenset())
         for alert in alerts:
@@ -480,30 +500,7 @@ class Watcher:
                 resolved = self.active.pop(alert.key)
                 resolved.state = "resolved"
                 events.append(resolved)
-        return self._publish(events)
-
-    async def investigate_external(self, alert: Alert) -> None:
-        """Worker (tylko odczyty) bada alert z zewnatrz; raport idzie do subskrybentow i pamieci incydentow."""
-        from backend.core import incidents, workers
-        from backend.core.session import Session
-
-        if self.agent is None or not getattr(self.agent, "llm_enabled", lambda: True)():
-            return                                   # bez modelu alert i tak dociera; badania nie ma komu zrobic
-        target = targets.get_target("local")
-        task = prompt("EXTERNAL_ALERT_TASK").format(title=alert.title, detail=alert.detail or "-")
-        task += incidents.context_for(alert.key)
-        parent = Session(session_id=f"hook:{alert.key}", interface="webhook", learns_vibe=False)
-        try:
-            result = await asyncio.wait_for(
-                workers.run_worker(self.agent, parent, "zbadaj-alert", target, task), timeout=settings.WORKER_TIMEOUT)
-            report = result.render()
-        except asyncio.TimeoutError:
-            report = tr(f"Badanie przekroczylo {settings.WORKER_TIMEOUT} s.",
-                        f"The investigation exceeded {settings.WORKER_TIMEOUT} s.")
-        except Exception as exc:
-            report = tr(f"Badanie nie powiodlo sie: {exc}", f"The investigation failed: {exc}")
-        incidents.note_investigation(alert.key, report)
-        self.notifier.publish({"type": "investigation", "key": alert.key, "title": alert.title, "report": report})
+        return self._publish(events, investigate=investigate, external=True)
 
     # --- migawki, sprawdzenia bez konfiguracji, raport ---------------------
 

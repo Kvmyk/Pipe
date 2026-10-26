@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -33,7 +33,8 @@ TOOLS: list[dict] = [
         "execute_command",
         "Wykonuje komende shell na serwerze w katalogu roboczym. Odczyty wykonuja sie od razu, komendy "
         "zmieniajace stan czekaja na potwierdzenie uzytkownika, zakazane sa odrzucane. Ogranicz output "
-        "(tail -n, head, grep). Dla znanych obszarow wolisz specjalizowane narzedzia.",
+        "(tail -n, head, grep). Docker tez tak: docker ps -a, docker logs --tail 200 <kontener>, docker inspect, "
+        "docker images (restart, stop, rm -- z potwierdzeniem). Dla znanych obszarow wolisz specjalizowane narzedzia.",
         {
             "command": {"type": "string", "description": "Komenda shell do wykonania na serwerze."},
             "requires_confirmation": _CONFIRM_FLAG,
@@ -93,24 +94,6 @@ TOOLS: list[dict] = [
                 "description": "Zakres danych (domyslnie summary).",
             }
         },
-    ),
-    _tool(
-        "docker_manage",
-        "Kontenery i obrazy Docker na hoscie. Odczyty: ps, logs, inspect, stats, top, images, compose-ps, "
-        "compose-logs, networks, volumes, df. Zmiany (restart, stop, start, rm, rmi, prune) wymagaja potwierdzenia.",
-        {
-            "operation": {
-                "type": "string",
-                "enum": ["ps", "logs", "inspect", "stats", "top", "restart", "stop", "start", "rm", "rmi",
-                         "images", "prune", "compose-ps", "compose-logs", "networks", "volumes", "df"],
-                "description": "Operacja Docker.",
-            },
-            "target": {"type": "string",
-                       "description": "Kontener/obraz (dla compose-logs: nazwa projektu). Niepotrzebne dla ps, images."},
-            "options": {"type": "string", "description": "Dodatkowe flagi, np. '--tail 50' dla logs, '-a' dla ps."},
-            "requires_confirmation": _CONFIRM_FLAG,
-        },
-        ["operation"],
     ),
     _tool(
         "network_info",
@@ -218,12 +201,14 @@ TOOLS: list[dict] = [
         "security_patch",
         "Lata znane podatnosci z poprawka tak samo jak komenda /zalataj: pakiety tego serwera (apt/apk z porzadkami: "
         "stare jadra, pobrane paczki), obrazy kontenerow z compose (nowszy obraz, a gdy go nie ma — poprawki "
-        "zainstalowane w obrazie; poprzedni obraz zostaje dla /cofnij) i zdalne serwery (cele ssh), potem sprzata "
-        "stare obrazy i cache i skanuje od nowa. Uzytkownik zatwierdza RAZ cala latke, nie kazda komende — nie sklada "
-        "jej z execute_command. Zaleznosci aplikacji to zmiana w kodzie, tego narzedzie nie robi.",
+        "zainstalowane w obrazie; poprzedni obraz zostaje dla /cofnij), zaleznosci aplikacji (menedzer pakietow w "
+        "izolowanym kontenerze podbija wersje w plikach zaleznosci, kopia w dzienniku, potem przebudowa projektu compose) "
+        "i zdalne serwery (cele ssh), potem sprzata stare obrazy i cache i skanuje od nowa. Uzytkownik zatwierdza RAZ "
+        "cala latke, nie kazda komende — nie sklada jej z execute_command ani write_file.",
         {
             "scope": {"type": "string", "description": (
                 "'' albo 'all' — wszystko; 'images' — tylko obrazy kontenerow; 'system' — tylko pakiety tego serwera; "
+                "'apps' — tylko zaleznosci aplikacji; "
                 "'servers' — tylko zdalne serwery; nazwa zdalnego serwera — tylko on; 'urgent' — pilne pakiety tego "
                 "serwera.")},
         },

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -253,7 +253,7 @@ def _confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 
 # Alert o podatnosciach -> zakres latki (zaleznosci aplikacji nie maja latki — to zmiana w kodzie).
-PATCH_SCOPES = {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers"}
+PATCH_SCOPES = {"vuln:system": "system", "vuln:images": "images", "vuln:servers": "servers", "vuln:apps": "apps"}
 
 
 def _patch_scope(args: list[str] | None) -> str:

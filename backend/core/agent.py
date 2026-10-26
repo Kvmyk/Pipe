@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -41,6 +41,12 @@ import backend.core.handlers as handlers_module
 MAX_TOOL_RESULT_CHARS = 24_000
 # Historia sesji — starsze tury sa odcinane na granicy wiadomosci uzytkownika.
 MAX_HISTORY_MESSAGES = 120
+# Narzedzia usuniete w nowszych wersjach — model moze je jeszcze wolac z przyzwyczajenia albo ze starej rozmowy.
+REMOVED_TOOLS: dict[str, tuple[str, str]] = {
+    "docker_manage": ("execute_command, np. docker ps -a albo docker logs --tail 200 <kontener>",
+                      "execute_command, e.g. docker ps -a or docker logs --tail 200 <container>"),
+}
+
 # Wyniki narzedzi sprzed CONTEXT_KEEP_TURNS tur ida do modelu skrocone do poczatku (observation masking —
 # JetBrains, "The Complexity Trap", NeurIPS 2025: polowa kosztu przy tej samej skutecznosci). Historia w sesji
 # zostaje pelna — skracana jest tylko kopia wysylana do providera.
@@ -518,9 +524,11 @@ class VPSAgent:
             handler = (lambda s, tc, a: found(self, s, tc, a)) if found else None
 
         if handler is None:
+            hint = REMOVED_TOOLS.get(tool_call.function.name)
             session.messages.append({"role": "tool", "tool_call_id": tool_call.id,
                                      "content": tr(f"Nieznane narzedzie: {tool_call.function.name}",
-                                                   f"Unknown tool: {tool_call.function.name}")})
+                                                   f"Unknown tool: {tool_call.function.name}")
+                                     + (tr(f". Zamiast niego: {hint[0]}", f". Use instead: {hint[1]}") if hint else "")})
             return
         if dispatch is None:
             # narzedzie spoza listy (model znal je z opisu load_tools albo promptu) — od teraz z pelnym opisem

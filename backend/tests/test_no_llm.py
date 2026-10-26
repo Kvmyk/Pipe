@@ -96,8 +96,7 @@ class TestWatcher:
 
         watcher = Watcher(agent=Agent())
         alert = Alert(id="1", key="ext:x", severity="warning", title="t", detail="d", since="now")
-        asyncio.run(watcher.investigate_external(alert))
-        assert not [e for e in watcher.notifier.history if e.get("type") == "investigation"]
+        assert not watcher._should_investigate(alert, external=True)
 
 
 class TestWizard:

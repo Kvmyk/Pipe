@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -298,7 +298,6 @@ You should see:
 | `change_directory` | Working directory | No |
 | `git_command` | Git operations | Modifying ones: yes |
 | `system_stats` | CPU/RAM/disks/processes from the host's `/proc` | No |
-| `docker_manage` | Containers, images, compose | Modifying ones: yes |
 | `network_info` | Host ports, connections, ping, curl, DNS | No |
 | `cron_manage` | Host cron (editing only in native mode) | Modifying ones: yes |
 | `diagram` | Infrastructure map / your own Mermaid diagram as an image | No |
@@ -354,7 +353,7 @@ Docker, network, server history, `project`, `load_tools`). The `memory`, `securi
 | `WORKER_PRICE_IN`, `WORKER_PRICE_OUT` | as LLM | Prices of `WORKER_MODEL` |
 | `AGENT_VIEWER_TOKEN` | -- | Token of the viewer role (read only); needs `AGENT_TOKEN` |
 | `WEBHOOK_PORT`, `WEBHOOK_HOST`, `WEBHOOK_TOKEN` | 0, 127.0.0.1, -- | Server for alerts from outside (0 = off; won't start without a token) |
-| `WEBHOOK_INVESTIGATE` | 1 | A worker investigates a new webhook alert (reads only), report to Telegram; limit 1/h per alert, 10/day |
+| `WEBHOOK_INVESTIGATE` | 1 | A worker investigates a new webhook alert (reads only), findings with a *Fix it* button; limit once in 6 h per alert, 10/day |
 | `MCP_PORT`, `MCP_HOST`, `MCP_ALLOWED_ORIGINS` | 0, 127.0.0.1, -- | Pipe as an MCP server over HTTP (`/mcp`, Pipe token as Bearer) |
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | by provider, pl | Voice transcription (gemini/openai/groq automatically; `STT_*` takes precedence) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Failed verification of a config file change -> the backup is restored automatically |

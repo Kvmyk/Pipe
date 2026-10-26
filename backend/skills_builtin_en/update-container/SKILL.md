@@ -6,7 +6,7 @@ description: Update a docker compose service image (pull + up) with verification
 # Updating a docker compose service
 
 ## 1. Before (reads)
-- Project and directory: DIRECTORY (a [compose] entry) or docker_manage compose-ps.
+- Project and directory: DIRECTORY (a [compose] entry) or `docker ps -a` (the com.docker.compose.project label).
 - Current image and its id — write them in your answer (this is the way back):
   `docker inspect -f '{{.Config.Image}} {{.Image}}' CONTAINER`.
 - Is the tag pinned (e.g. postgres:16.4) or floating (latest) — for databases do NOT bump the major
@@ -18,7 +18,7 @@ description: Update a docker compose service image (pull + up) with verification
 Safety fuse: `docker compose config -q` before; after — project containers are running and sites respond.
 
 ## 3. After
-- Logs: docker_manage logs CONTAINER --tail 50 — migration errors, restart loop.
+- Logs: `docker logs --tail 50 CONTAINER` — migration errors, restart loop.
 - server_history operation=changes since=1h — the new image id.
 
 ## 4. Going back to the previous version

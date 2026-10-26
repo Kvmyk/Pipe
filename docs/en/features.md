@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.39.0
+Pipe v0.40.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -91,8 +91,8 @@ until your next message -- like YOLO: text from someone else's repository cannot
 Watching, suggestions, reports, `/status`, `/changes`, `/audit`, `/cleanup` and the dashboard work without a language
 model -- zero tokens. When the conversation does go to the model, Pipe sends less:
 
-- **Tools on demand** (`TOOLS_MODE=lazy`). The descriptions of the 29 tools are ~6k tokens with every step of the
-  agent. A conversation starts with the basic ones (~2.4k), and the rest turns on by itself when a message needs it
+- **Tools on demand** (`TOOLS_MODE=lazy`). The descriptions of the 28 tools are ~6k tokens with every step of the
+  agent. A conversation starts with the basic ones (~2.1k), and the rest turns on by itself when a message needs it
   (*"remind me tomorrow"* -> reminders, *"is the server secure"* -> audit) or when the model asks (`load_tools`). An
   enabled group stays until the end of the conversation, so the provider's prompt cache keeps working.
   `TOOLS_MODE=all` -- all of them, always.
@@ -525,9 +525,26 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
   subdirectories included (e.g. `backend/`, `frontend/`), without `node_modules`, `vendor` and build directories. It
   reads `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements*.txt` (only `==`), `poetry.lock`,
   `Pipfile.lock`, `uv.lock`, `go.mod`, `Cargo.lock`, `composer.lock`, `Gemfile.lock`. The result is in `/audit` with the
-  version that removes the vulnerabilities; the `vuln:apps` alert only for actively exploited and critical ones.
-  `/patch` does not change them: changing a version is a change in the app's code (the report says how; the agent
-  does it when you ask in a conversation).
+  version that removes the vulnerabilities; the `vuln:apps` alert only for actively exploited and critical ones, with
+  a *Patch* button.
+- **Patching application dependencies** (`/patch`, only this: `/patch apps`). Pipe bumps the vulnerable packages in the
+  dependency files with the language's package manager, run in a one-off container (only the app directory, no
+  `docker.sock` or privileges, as the directory's owner, no package install scripts):
+
+  | File | What Pipe does |
+  |------|----------------|
+  | `package-lock.json` | dependencies from `package.json`: `npm install <package>@<version> --package-lock-only` (an exact pin stays exact); transitive ones: `npm audit fix --package-lock-only` |
+  | `yarn.lock` (yarn 2+), `pnpm-lock.yaml` | `yarn up` / `pnpm update` in the lockfile only |
+  | `requirements*.txt` | the new version after `==` on the same line (a file with `--hash` stays -- the hashes would not match) |
+  | `poetry.lock`, `uv.lock` | `poetry update --lock`, `uv lock --upgrade-package` |
+  | `go.mod`, `Cargo.lock` | `go get <module>@v<version>` + `go mod tidy`, `cargo update -p --precise` |
+  | `composer.lock`, `Gemfile.lock` | `composer update --no-install --no-scripts --no-plugins`, `bundle lock --update` |
+
+  The changed files are backed up in the journal (one entry per app), and when a compose project is built from the
+  directory, Pipe runs `build` and `up -d` and checks the containers -- `/undo` restores the files and rebuilds the
+  project. What the manager did not bump (a version constraint in `package.json`, `pyproject.toml`,
+  `composer.json`...) shows in the result and in `/vulns`; Pipe does not try it again for a day. Left to do by hand:
+  yarn 1 (it cannot change `yarn.lock` alone), `Pipfile.lock` and the Go version itself.
 - **`/vulns`** shows everything in one place: the package in bold, the version and the fixed version, below
   it the vulnerabilities with their severity and a short explanation in Pipe's language -- what an attacker can do
   and when it is a risk. The model (`WORKER_MODEL`) writes the explanations from the OSV description, once per
@@ -599,8 +616,9 @@ WEBHOOK_TOKEN=$(openssl rand -hex 24)
 
 The alert goes to the watcher (it disappears on `resolved`) and to Telegram with an *Investigate* button. With
 `WEBHOOK_INVESTIGATE=1` a worker investigates a new alert right away (reads only: services, containers, logs,
-resources, recent changes) and the report arrives shortly after the alert; the same alert at most once an hour, 10
-investigations a day.
+resources, changes in the last day), the same way as problems Pipe finds itself: the findings arrive shortly after the
+alert with a *Fix it* button; the same alert at most once in 6 h, 10 webhook investigations a day (separate from
+`AUTO_INVESTIGATE_DAILY`).
 
 In Docker the port is published only on `127.0.0.1:7380`; senders outside the server go through a reverse proxy with
 TLS.

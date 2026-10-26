@@ -272,8 +272,12 @@ class TestBuildMenu:
     def test_every_builtin_is_in_help(self):
         from tg_format import format_help
 
+        from tg_format import HIDDEN_COMMANDS
+
         text = format_help([])
-        assert all(f"/{name}" in text for name, _ in BUILTIN_COMMANDS)
+        assert all(f"/{name}" in text for name, _ in BUILTIN_COMMANDS if name not in HIDDEN_COMMANDS)
+        # ukryte dzialaja (sa w BUILTIN_COMMANDS, wiec maja handler), ale pomoc ich nie pokazuje
+        assert all(not re.search(rf"/{name}\b", text) and name in dict(BUILTIN_COMMANDS) for name in HIDDEN_COMMANDS)
 
     def test_limits(self):
         many = [{"name": f"s{i}", "description": "x" * 400, "command": f"s{i}"} for i in range(200)]
@@ -299,7 +303,9 @@ class TestSkillListAndHelp:
 
     def test_help_lists_builtins_and_skill_count(self):
         text = format_help(SKILLS)
-        assert all(f"/{command}" in text for command, _ in BUILTIN_COMMANDS)
+        from tg_format import HIDDEN_COMMANDS
+
+        assert all(f"/{command}" in text for command, _ in BUILTIN_COMMANDS if command not in HIDDEN_COMMANDS)
         assert "Skille (1)" in text
         assert_valid_telegram_html(text)
 

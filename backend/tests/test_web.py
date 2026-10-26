@@ -97,12 +97,14 @@ class TestGraph:
     def test_locate_maps_actions_to_nodes(self):
         graph.remember(sample_infra())
         assert graph.locate("execute_command", {"command": "docker restart shop-web-1"}) == ["c:shop-web-1"]
-        assert graph.locate("docker_manage", {"operation": "logs", "target": "redis"}) == ["c:redis"]
+        assert graph.locate("execute_command", {"command": "docker logs --tail 200 redis"}) == ["c:redis"]
         assert graph.locate("execute_command", {"command": "systemctl reload nginx"}) == ["proxy:nginx"]
         assert graph.locate("write_file", {"path": "/etc/nginx/sites-available/shop"}) == ["proxy:nginx"]
         assert graph.locate("read_file", {"path": "/srv/shop/docker-compose.yml"}) == ["p:shop"]
         assert graph.locate("execute_command", {"command": "docker compose up -d"}, "/srv/shop") == ["p:shop"]
-        assert graph.locate("git_command", {"command": "pull"}, "/srv/shop") == ["p:shop"]
+        assert graph.locate("git_command", {"repo_path": ".", "subcommand": "pull"}, "/srv/shop") == ["p:shop"]
+        assert graph.locate("git_command", {"repo_path": "/srv/shop", "subcommand": "status"}) == ["p:shop"]
+        assert graph.describe("git_command", {"repo_path": "/srv/shop", "subcommand": "status"}) == "git status"
         assert graph.locate("remote_exec", {"target": "web-2", "command": "df -h"}) == ["t:web-2"]
         assert graph.locate("delegate", {"tasks": [{"target": "a", "task": "x"}, {"target": "b", "task": "y"}]}) == ["t:a", "t:b"]
         assert graph.locate("system_stats", {}) == ["host"]

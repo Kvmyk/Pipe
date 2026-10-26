@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.39.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.40.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -101,8 +101,8 @@ separate container with no access to the rest of the server, so no Node.js or Py
 before putting something up for good, and that deployment can be undone too.
 
 **Saves tokens.** Alerts, suggestions, the morning report, `/status` and `/cleanup` don't use the model at all. When
-a conversation does go to the model, Pipe sends only the tools that conversation needs (about 2.4k tokens instead of
-6.2k on every step) and shortens old command output. `/cost` shows how much was not sent this way.
+a conversation does go to the model, Pipe sends only the tools that conversation needs (about 2.1k tokens instead of
+6k on every step) and shortens old command output. `/cost` shows how much was not sent this way.
 
 **Changes things carefully.** Before every approved change it backs up the files. It validates configuration before
 reloading (`nginx -t`, `sshd -t`, `docker compose config`) and afterwards checks that the service runs and the sites

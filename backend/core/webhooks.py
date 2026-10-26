@@ -11,8 +11,9 @@ POST /hook/<zrodlo> z:
 
 Alert trafia do czuwania (klucz hook:<zrodlo>:<nazwa>, rozwiazanie zamyka go),
 a na Telegram z przyciskiem Zbadaj. Z WEBHOOK_INVESTIGATE=1 nowy alert od razu
-bada worker (tylko odczyty) i raport przychodzi chwile po alercie — z limitem
-(ten sam alert raz na godzine, MAX_INVESTIGATIONS_PER_DAY dziennie).
+bada worker (tylko odczyty, Watcher.auto_investigate — ta sama droga co problemy
+wykryte przez Pipe) i ustalenia przychodza chwile po alercie z przyciskiem Napraw —
+z limitem (ten sam alert raz na 6 h, watch.EXTERNAL_INVESTIGATIONS_DAILY dziennie).
 
 Uwierzytelnienie: WEBHOOK_TOKEN jest wymagany (bez niego serwer nie wystartuje) —
 naglowek `Authorization: Bearer <token>`, parametr `?token=` albo podpis HMAC
@@ -27,7 +28,6 @@ import hashlib
 import hmac
 import json
 import re
-import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -35,8 +35,6 @@ from backend.core.i18n import tr
 
 MAX_BODY = 1024 * 1024
 MAX_HEADERS = 100
-MAX_INVESTIGATIONS_PER_DAY = 10
-INVESTIGATION_COOLDOWN = 3600
 SOURCES = ("alertmanager", "grafana", "uptime-kuma", "github", "generic")
 _NAME = re.compile(r"[^a-z0-9_.-]+")
 
@@ -222,8 +220,6 @@ class WebhookServer:
         self.watcher = watcher
         self.token = token
         self.investigate = investigate
-        self._last_investigation: dict[str, float] = {}
-        self._day: tuple[str, int] = ("", 0)
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -262,22 +258,8 @@ class WebhookServer:
             alerts = parse(match.group(1), payload, headers)
         except ValueError as exc:
             raise HttpError(400, str(exc)) from None
-        events = self.watcher.external(alerts)
-        for event in events:
-            if event.state == "new" and self.investigate and self._may_investigate(event.key):
-                asyncio.create_task(self.watcher.investigate_external(event))
+        events = self.watcher.external(alerts, investigate=self.investigate)
         return 202, {"ok": True, "alerts": len(alerts), "events": len(events)}
-
-    def _may_investigate(self, key: str, now: float | None = None) -> bool:
-        now = now if now is not None else time.time()
-        today = time.strftime("%Y-%m-%d", time.localtime(now))
-        day, count = self._day if self._day[0] == today else (today, 0)
-        last = self._last_investigation.get(key)
-        if count >= MAX_INVESTIGATIONS_PER_DAY or (last is not None and now - last < INVESTIGATION_COOLDOWN):
-            return False
-        self._day = (day, count + 1)
-        self._last_investigation[key] = now
-        return True
 
 
 async def start(watcher: Any, host: str, port: int, token: str, investigate: bool) -> asyncio.AbstractServer | None:
