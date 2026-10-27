@@ -346,3 +346,18 @@ class TestWebBridge:
         assert inline == []                                          # CSP: script-src 'self'
         scripts = "".join((web.STATIC_DIR / name).read_text() for name in ("app.js", "md.js", "graph.js"))
         assert ".innerHTML" not in scripts and "insertAdjacentHTML" not in scripts   # tresc od modelu tylko jako tekst
+
+    def test_home_screen_icons(self):
+        """Dodana do ekranu glownego strona ma logo Pipe: iOS bierze apple-touch-icon, Android ikony z manifestu."""
+        import mimetypes
+        import struct
+        manifest = json.loads((web.STATIC_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
+        icons = manifest["icons"] + [{"src": "/static/apple-touch-icon.png", "sizes": "180x180"}]
+        for icon in icons:
+            data = (web.STATIC_DIR / icon["src"].removeprefix("/static/")).read_bytes()
+            assert data[:8] == b"\x89PNG\r\n\x1a\n" and icon["sizes"] == "{}x{}".format(*struct.unpack(">II", data[16:24]))
+        assert {"any", "maskable"} <= {icon.get("purpose") for icon in manifest["icons"]}
+        for page in ("index.html", "pair.html"):
+            text = (web.STATIC_DIR / page).read_text(encoding="utf-8")
+            assert '"/static/apple-touch-icon.png"' in text and '"/static/manifest.webmanifest"' in text
+        assert mimetypes.guess_type("manifest.webmanifest")[0] == "application/manifest+json"

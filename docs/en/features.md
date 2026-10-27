@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.47.1
+Pipe v0.47.2
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -795,7 +795,8 @@ signed in for 30 days after its last use.
 
 A device let in with *View only* has the viewer role: it chats, reads reports and the diagram, but changes nothing.
 Only an administrator can let devices in. The page on a phone is the same interface as `pipe web` -- chat and
-dashboard switch with the buttons in the top bar.
+dashboard switch with the buttons in the top bar. Added to the home screen (Safari: *Share* → *Add to Home Screen*,
+Chrome: *Add to Home screen*) it shows the Pipe icon.
 
 When ufw runs on the server, Pipe opens the page's port in it (and 80 when the page is not on 443 -- Let's Encrypt
 checks the server there while issuing the certificate). Pipe cannot see the hosting provider's firewall (cloud

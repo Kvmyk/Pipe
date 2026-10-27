@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.47.2 (2026-10-27)
+
+### Ikona Pipe na ekranie glownym telefonu
+
+- Strona `/web` dodana do ekranu glownego pokazuje logo Pipe. Wczesniej iPhone zapisywal zrzut strony, a Android
+  litere w kolku, bo strona miala tylko ikone SVG, ktorej telefony nie biora na ekran glowny. Teraz jest
+  `apple-touch-icon` dla iOS i manifest z ikonami 192/512 px (takze w wersji przycinanej przez Androida do kolka)
+- Ikona dziala juz na stronie prosby o dostep, wiec telefon mozna dodac do ekranu przed wpuszczeniem. Kto dodal
+  strone wczesniej, musi ja usunac z ekranu i dodac jeszcze raz -- telefon zapamietuje ikone w chwili dodania
+
 ## v0.47.1 (2026-10-26)
 
 ### `/aktualizuj` w menu Telegrama w kazdym widoku

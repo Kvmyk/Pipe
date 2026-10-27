@@ -1,0 +1,13 @@
+{
+  "name": "Pipe",
+  "short_name": "Pipe",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#1a1b1d",
+  "icons": [
+    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

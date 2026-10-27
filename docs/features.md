@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.47.1
+Pipe v0.47.2
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -776,7 +776,8 @@ logowanie przez 30 dni od ostatniego uzycia.
 
 Urzadzenie wpuszczone przyciskiem *Tylko podglad* ma role viewer: rozmawia, czyta raporty i schemat, ale niczego
 nie zmienia. Wpuszczac moze tylko administrator. Strona na telefonie to ten sam interfejs co `pipe web` -- rozmowa
-i pulpit przelacza sie przyciskami w gornym pasku.
+i pulpit przelacza sie przyciskami w gornym pasku. Dodana do ekranu glownego (Safari: *Udostepnij* → *Do ekranu
+poczatkowego*, Chrome: *Dodaj do ekranu glownego*) ma ikone Pipe.
 
 Gdy na serwerze dziala ufw, Pipe otwiera w nim port strony (i 80, gdy strona nie jest na 443 -- tam Let's Encrypt
 sprawdza serwer przy wystawianiu certyfikatu). Zapory u dostawcy (panel chmury) Pipe nie widzi: jesli strona nie

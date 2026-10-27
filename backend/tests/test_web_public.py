@@ -450,10 +450,15 @@ class TestPublicBridge:
             events = await self._http(sock, "GET", "/api/events")
             script = await self._http(sock, "GET", "/static/pair.js")
             key = await self._http(sock, "GET", "/?k=cokolwiek")
-            return page, api[0], events[0], script[0], key, received
-        page, api, events, script, key, received = self._run(scenario)
+            # ekran glowny: telefon pobiera ikone i manifest bez ciasteczka urzadzenia
+            icons = [await self._http(sock, "GET", f"/static/{name}")
+                     for name in ("apple-touch-icon.png", "manifest.webmanifest")]
+            return page, api[0], events[0], script[0], key, icons, received
+        page, api, events, script, key, icons, received = self._run(scenario)
         assert page[0] == 200 and b"/static/pair.js" in page[2] and b'"public": true' in page[2]
         assert api == 401 and events == 401 and script == 200 and received == []
+        assert [status for status, _, _ in icons] == [200, 200]
+        assert "Content-Type: image/png" in icons[0][1] and "Content-Type: application/manifest+json" in icons[1][1]
         assert b"pair.js" in key[2]                                     # klucz z adresu nic nie znaczy publicznie
 
     def test_foreign_host_and_plain_http_origin_are_rejected(self):
