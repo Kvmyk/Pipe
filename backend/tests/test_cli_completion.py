@@ -115,3 +115,32 @@ def test_confirm_rejects_other_words_in_cli_language():
     from rich.prompt import InvalidResponse
     with pytest.raises(InvalidResponse):
         cli.Confirm("?").process_response("moze")
+
+
+class TestServerLanguage:
+    """CLI (i pipe web, ktory dostaje jezyk z CLI) mowi jezykiem serwera, gdy na komputerze nie wybrano zadnego."""
+
+    class Client:
+        def __init__(self, lang, chosen):
+            self.data = {"lang": lang, "chosen": chosen}
+
+        async def send_command(self, name, **_):
+            return [{"response": "", "status": "ok", "done": True, "data": self.data}]
+
+    @pytest.mark.parametrize("env, chosen, expected", [
+        ("", False, "pl"),        # nic nie ustawiono na komputerze: jezyk z .env serwera
+        ("en", False, "en"),      # PIPE_LANG na komputerze wygrywa z .env serwera...
+        ("en", True, "pl"),       # ...ale nie z wyborem /jezyk
+    ])
+    def test_follows_server(self, monkeypatch, env, chosen, expected):
+        monkeypatch.setattr(cli, "LANG_FORCED", False)
+        monkeypatch.setattr(cli, "LANG", "en")
+        monkeypatch.setenv("PIPE_LANG", env)
+        asyncio.run(cli._sync_language(self.Client("pl", chosen)))
+        assert cli.LANG == expected
+
+    def test_lang_flag_wins(self, monkeypatch):
+        monkeypatch.setattr(cli, "LANG_FORCED", True)
+        monkeypatch.setattr(cli, "LANG", "en")
+        asyncio.run(cli._sync_language(self.Client("pl", True)))
+        assert cli.LANG == "en"

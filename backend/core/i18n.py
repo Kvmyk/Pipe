@@ -1,5 +1,5 @@
 """
-Jezyk Pipe: PIPE_LANG=pl (domyslnie) albo en.
+Jezyk Pipe: PIPE_LANG=en (domyslnie) albo pl.
 
 Tlumaczenia leza obok tekstu zrodlowego: `tr("polski", "english")` — przy zmianie
 komunikatu od razu widac, ze trzeba poprawic oba. Prompty i schematy narzedzi maja
@@ -32,8 +32,8 @@ _chosen = False        # czy obowiazuje wybor z language.json (a nie sam .env)
 
 
 def lang() -> str:
-    value = os.getenv("PIPE_LANG", "pl").strip().lower()
-    return "en" if value.startswith("en") else "pl"
+    value = os.getenv("PIPE_LANG", "en").strip().lower()
+    return "pl" if value.startswith(("pl", "pol")) else "en"
 
 
 def is_en() -> bool:

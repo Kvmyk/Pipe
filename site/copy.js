@@ -1,7 +1,7 @@
 // Przycisk "Kopiuj" przy blokach z komendami. Kopiuje komendy bez komentarzy (# ...).
 (function () {
   "use strict";
-  var label = document.documentElement.lang === "en" ? ["Copy", "Copied"] : ["Kopiuj", "Skopiowano"];
+  var label = document.documentElement.lang === "pl" ? ["Kopiuj", "Skopiowano"] : ["Copy", "Copied"];
   document.querySelectorAll("pre.cmd").forEach(function (block) {
     if (!navigator.clipboard) return;
     var button = document.createElement("button");

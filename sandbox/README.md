@@ -1,58 +1,59 @@
-# Piaskownica i scenariusze awarii
+# Sandbox and failure scenarios
 
-Kontener udający mały VPS: Debian, nginx na porcie 80, aplikacja „sklepu” na 8080 (`shopctl start|stop|restart`),
-pliki statyczne pod `/static/`, a w środku Pipe w trybie native. Pipe zarządza kontenerem tak jak prawdziwym
-serwerem. Nic z Twojego komputera nie jest montowane.
+A container posing as a small VPS: Debian, nginx on port 80, a "shop" app on 8080 (`shopctl start|stop|restart`),
+static files under `/static/`, and Pipe in native mode inside. Pipe manages the container like a real server.
+Nothing from your computer is mounted.
 
-Potrzebujesz Dockera i Pythona 3. Model podajesz zmiennymi jak w `backend/.env` (`LLM_PROVIDER`, `LLM_API_KEY`,
-`LLM_MODEL`) albo przez `--env-file backend/.env`. Klucz trafia do kontenera przez `docker run -e NAZWA`, więc nie
-widać go na liście procesów.
+You need Docker and Python 3. Give the model with the same variables as in `backend/.env` (`LLM_PROVIDER`,
+`LLM_API_KEY`, `LLM_MODEL`) or with `--env-file backend/.env`. The key reaches the container through
+`docker run -e NAME`, so it doesn't show up in the process list.
 
-## Wypróbuj
+## Try it
 
 ```bash
-python3 sandbox/run.py try                        # sprawny serwer
-python3 sandbox/run.py try --scenario app-down    # od razu z awarią
-pipe --no-tunnel --local-port 7390                # albo: pipe web --no-tunnel --local-port 7390
-docker rm -f pipe-sandbox                         # koniec
+python3 sandbox/run.py try                        # a healthy server
+python3 sandbox/run.py try --scenario app-down    # broken from the start
+pipe --no-tunnel --local-port 7390                # or: pipe web --no-tunnel --local-port 7390
+docker rm -f pipe-sandbox                         # done
 ```
 
-## Scenariusze
+## Scenarios
 
-| Scenariusz | Co jest zepsute | Kiedy zdany |
+| Scenario | What is broken | When it passes |
 |---|---|---|
-| `nginx-502` | `proxy_pass` wskazuje port 8081 zamiast 8080 | `curl localhost/` zwraca „Sklep dziala” |
-| `app-down` | literówka w porcie w `/etc/shop/app.conf`, aplikacja nie startuje | jak wyżej |
-| `static-403` | `/var/www/shop/static/logo.txt` ma prawa 600 | `/static/logo.txt` zwraca plik |
-| `disk-hog` | 64 MB `debug.log.1` w `/var/log/shop` | odpowiedź wskazuje ten plik, a plik dalej istnieje |
+| `nginx-502` | `proxy_pass` points at port 8081 instead of 8080 | `curl localhost/` returns "Sklep dziala" |
+| `app-down` | a typo in the port in `/etc/shop/app.conf`, the app doesn't start | as above |
+| `static-403` | `/var/www/shop/static/logo.txt` has mode 600 | `/static/logo.txt` returns the file |
+| `disk-hog` | a 64 MB `debug.log.1` in `/var/log/shop` | the answer points at that file, and the file still exists |
 
-Każdy katalog w `scenarios/` ma `scenario.json` (tytuł i polecenie po polsku i angielsku, rodzaj `fix` albo
-`diagnose`, słowa, które musi zawierać odpowiedź), `break.sh` (psuje przy starcie), `check.sh` (kod 0 = zdany)
-i `fix.sh` (wzorcowa naprawa, używana tylko przez autotest).
+Every directory in `scenarios/` has `scenario.json` (title and prompt in English and Polish, kind `fix` or
+`diagnose`, words the answer must contain), `break.sh` (breaks things at start), `check.sh` (exit 0 = passed) and
+`fix.sh` (the reference fix, used only by the self-test).
 
-## Ocena modeli
+## Evaluating models
 
 ```bash
 LLM_PROVIDER=gemini LLM_API_KEY=... python3 sandbox/run.py eval
 python3 sandbox/run.py eval --env-file backend/.env --repeat 3 --label "gemini-3.8-flash"
-python3 sandbox/run.py eval --scenario nginx-502 app-down --keep    # kontenery zostają do obejrzenia
+python3 sandbox/run.py eval --scenario nginx-502 app-down --keep    # containers stay for inspection
+PIPE_LANG=pl python3 sandbox/run.py eval                           # prompts in Polish
 ```
 
-Dla każdego scenariusza startuje świeży kontener, Pipe dostaje polecenie, a skrypt zgadza się na każdą
-proponowaną zmianę (do 12 razy), jak użytkownik, który mówi „tak”. Potem uruchamia `check.sh`. Wynik
-pokazuje liczbę zdanych scenariuszy, liczbę potwierdzeń i czas. Szczegóły z odpowiedziami trafiają do
-`sandbox/results/*.json` (poza gitem). Modele nie są deterministyczne, więc do porównań użyj `--repeat`.
+For every scenario a fresh container starts, Pipe gets the prompt, and the script approves every proposed change (up
+to 12 times), like a user who says "yes". Then it runs `check.sh`. The result shows the number of passed scenarios,
+the number of confirmations and the time. Details with the answers go to `sandbox/results/*.json` (outside git).
+Models are not deterministic, so use `--repeat` for comparisons.
 
-Uwaga: każdy scenariusz to kilka do kilkunastu zapytań do modelu, czyli realny koszt u płatnego providera.
+Note: every scenario is a few to a dozen requests to the model, which is a real cost with a paid provider.
 
-## Autotest
+## Self-test
 
 ```bash
 python3 sandbox/run.py self-test
 ```
 
-Bez modelu sprawdza, że każdy scenariusz po zepsuciu nie przechodzi `check.sh`, po `fix.sh` przechodzi, a Pipe
-w kontenerze odpowiada. Uruchamia go CI przy każdym pushu.
+Without a model it checks that every scenario fails `check.sh` after breaking, passes after `fix.sh`, and that Pipe
+in the container answers. CI runs it on every push.
 
-Nowy scenariusz to nowy katalog w `scenarios/` z czterema plikami; `backend/tests/test_sandbox.py` pilnuje, żeby
-żadnego nie brakowało.
+A new scenario is a new directory in `scenarios/` with four files; `backend/tests/test_sandbox.py` makes sure none is
+missing.

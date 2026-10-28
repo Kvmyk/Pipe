@@ -188,7 +188,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
     if not (os.environ.get("LLM_PROVIDER") or args.env_file):
         raise SystemExit("eval potrzebuje modelu: ustaw LLM_PROVIDER i LLM_API_KEY (albo --env-file backend/.env)")
     build()
-    lang = os.environ.get("PIPE_LANG", "pl")
+    lang = os.environ.get("PIPE_LANG", "en")
     results = []
     for scenario, spec in scenarios().items():
         if args.scenario and scenario not in args.scenario:

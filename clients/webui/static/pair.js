@@ -3,7 +3,7 @@
 (function () {
   "use strict";
   const config = JSON.parse(document.getElementById("pipe-config").textContent || "{}");
-  const lang = config.lang === "en" ? "en" : "pl";
+  const lang = config.lang === "pl" ? "pl" : "en";
   const T = {
     pl: {
       title: "Wejście do Pipe",

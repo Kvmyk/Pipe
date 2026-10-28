@@ -1,249 +1,256 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.48.2
+Pipe v0.49.0
 
-Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
+A Telegram bot for managing a VPS through an AI agent.
 
-## Opis
+## Overview
 
-Bot Telegram to klient agenta. Laczy sie z backendem przez Unix socket i przekazuje wiadomosci z Telegrama do agenta. Odpowiedzi sa formatowane w HTML i wysylane z powrotem do uzytkownika.
+The Telegram bot is a client of the agent. It connects to the backend over a Unix socket and passes messages from
+Telegram to the agent. Answers are formatted as HTML and sent back to the user.
 
-Obsluguje potwierdzenia przez przyciski inline (TAK / NIE; decyzja dopisuje sie do tej samej wiadomosci), wysyla
-diagramy jako zdjecia, pokazuje postep w jednej, aktualizowanej wiadomosci -- kazda komende agenta i kilka linii jej
-wyniku (po zakonczeniu zwija sie do linii "Wykonane kroki: N", liste rozwijasz dotknieciem) i -- co najwazniejsze -- **sam pisze, gdy cos sie dzieje**:
-alerty czuwania, podpowiedzi, ustalenia z samodzielnego badania i raporty rutyn przychodza bez pytania, kazde
-z przyciskami akcji (*Zbadaj*, *Zwolnij miejsce*, *Zalataj*, *Napraw*).
+It handles confirmations with inline buttons (YES / NO; the decision is added to the same message), sends diagrams
+as photos, shows progress in a single message that keeps updating -- every agent command and a few lines of its
+output (when the work is done it collapses to "Steps taken: N", tap to expand the list) and, most importantly, **writes by itself when something happens**: watcher alerts and
+watcher alerts, suggestions, findings of its own investigations and
+routine reports arrive without asking, each with action buttons (*Investigate*, *Free up space*, *Patch*, *Fix it*).
 
-Pod polem wiadomosci jest stala klawiatura: *Stan serwera*, *Co nowego*, *Projekty*, *Pomoc* -- najczestsze sprawy
-bez znajomosci komend. Menu `/` pokazuje tylko komendy uzywane co dzien; pelna lista jest w `/pomoc`.
+Under the message box there is a fixed keyboard: *Server status*, *What's new*, *Projects*, *Help* -- the most common
+things without knowing any command. The `/` menu shows only the everyday commands; the full list is in `/help`.
 
-## Alerty
+## Alerts
 
-Bot utrzymuje stale polaczenie z backendem (`{"command": "subscribe"}`, ponawiane po restarcie) i przesyla
-zdarzenia wszystkim uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`:
+The bot keeps a permanent connection to the backend (`{"command": "subscribe"}`, renewed after a restart) and forwards
+events to every user in `TELEGRAM_ALLOWED_USER_IDS`:
 
-- **OSTRZEZENIE / KRYTYCZNY** -- dysk, RAM, obciazenie, kontener w petli restartow albo unhealthy, zatrzymany
-  kontener, nowy publiczny port. Przycisk **Zbadaj** prosi agenta o diagnoze (tylko odczyty) i propozycje naprawy,
-  przy pelnym dysku jest tez **Zwolnij miejsce**.
-- **Ustalenia** -- przy krytycznym alercie Pipe nie czeka na *Zbadaj*: worker sam sprawdza przyczyne (tylko odczyty)
-  i zaraz po alercie pisze, co ustalil, z przyciskiem **Napraw** (jedno potwierdzenie; tylko administratorzy).
-  `AUTO_INVESTIGATE` w `backend/.env`.
-- **Podpowiedz** -- sprawa, ktora dopiero bedzie problemem albo cos do poprawy: kiedy zapelni sie dysk, ile miejsca
-  da sie odzyskac, kontener, ktory czesto sie restartuje, serwer czekajacy na restart, stale rosnacy RAM. Liczona
-  bez AI. Przyciski: akcja (np. *Zwolnij miejsce*), **Pozniej** (wraca za dobe), **Mniej takich** (ten rodzaj
-  zostaje tylko w skrzynce).
-- **ROZWIAZANE** -- problem minal.
-- **Rutyna X -- OK/PROBLEM** -- raport z zadania wedlug harmonogramu.
-- **Raport** -- codziennie o `DIGEST_TIME` (domyslnie 7:00): stan, zmiany od wczoraj, certyfikaty, backupy,
-  aktualizacje, podatnosci i wykres obciazenia. Skladany bez LLM.
-- **Zmiana bezpieczenstwa** -- nowe konto (uid 0 = krytyczny), nowy klucz w `authorized_keys`, nowy program SUID,
-  zmiana sudoers/sshd/PAM/`ld.so.preload`, ktorej nie zrobil Pipe. Sprawdzane co 2 minuty.
-- **Logowania SSH** -- seria nieudanych logowan (`WATCH_SSH_FAILURES` w 10 min), udane logowanie haslem z adresu,
-  ktory zgadywal hasla (krytyczny), logowanie z nowego adresu.
-- **Podatnosci** -- nowe pilne podatnosci z poprawka (aktywnie wykorzystywane, krytyczne, wysokie) w pakietach
-  serwera, obrazach kontenerow i na zdalnych serwerach; w zaleznosciach aplikacji tylko krytyczne i aktywnie
-  wykorzystywane. Przy kazdej krotko, co grozi. Przycisk **Zalataj** (tylko administratorzy) od razu instaluje
-  poprawki tego, czego dotyczy alert, a alert mowi, czego nie zalata (poprawki tylko z Ubuntu Pro, kontenery bez
-  compose, kontenery samego Pipe). Znana podatnosc nie wraca, takze po restarcie Pipe.
-- **Ustalenia dla alertu z zewnatrz** -- to samo dla alertu z Alertmanagera, Grafany, Uptime Kuma albo GitHuba
-  (webhooki, `WEBHOOK_INVESTIGATE`), takze z przyciskiem **Napraw**.
-- Alert, ktory sie powtarza, ma linie **Poprzednio:** -- co ustalono i co pomoglo ostatnim razem.
-- **ZGODA** -- zewnetrzny agent (np. Claude Code przez MCP) chce wykonac zmiane: komenda doslownie, plan
-  bezpiecznika i przyciski *Zatwierdz* / *Odrzuc* (tylko administratorzy). Wygasa po 30 minutach.
-- **Powitanie** -- raz, po instalacji: mapa serwera, ocena bezpieczenstwa i to, czego Pipe pilnuje.
-- Alerty certyfikatow (wygasa za 14 dni / nieprawidlowy), stron (nie odpowiadaja dwa razy z rzedu), DNS
-  i backupow (najnowszy plik starszy niz 26 h) -- dla domen i katalogow, ktore Pipe znalazl sam.
+- **WARNING / CRITICAL** -- disk, RAM, load, a container in a restart loop or unhealthy, a stopped container, a new
+  public port. The **Investigate** button asks the agent for a diagnosis (reads only) and a proposed fix; a full disk
+  also gets **Free up space**.
+- **Findings** -- on a critical alert Pipe does not wait for *Investigate*: a worker checks the cause by itself (reads
+  only) and right after the alert writes what it found, with a **Fix it** button (one confirmation; admins only).
+  `AUTO_INVESTIGATE` in `backend/.env`.
+- **Suggestion** -- something that will become a problem or could be better: when the disk fills up, how much space
+  can be reclaimed, a container that restarts often, a server waiting for a reboot, RAM that keeps growing. Computed
+  without AI. Buttons: the action (e.g. *Free up space*), **Later** (back in a day), **Fewer like this** (that kind
+  stays in the inbox only).
+- **RESOLVED** -- the problem is gone.
+- **Routine X -- OK/PROBLEM** -- a report from a scheduled task.
+- **Report** -- every day at `DIGEST_TIME` (7:00 by default): health, changes since yesterday, certificates, backups,
+  updates, vulnerabilities and a load chart. Built without the LLM.
+- **Security change** -- a new account (uid 0 = critical), a new key in `authorized_keys`, a new SUID program, a change
+  to sudoers/sshd/PAM/`ld.so.preload` that Pipe did not make. Checked every 2 minutes.
+- **SSH logins** -- a series of failed logins (`WATCH_SSH_FAILURES` in 10 min), a successful password login from an
+  address that was guessing passwords (critical), a login from a new address.
+- **Vulnerabilities** -- new urgent fixable vulnerabilities (actively exploited, critical, high) in the server's
+  packages, container images and on remote servers; in application dependencies only critical and actively exploited
+  ones. Each with a short note on what it risks. The **Patch** button (admins only) installs the fixes for what the
+  alert is about right away, and the alert says what it will not patch (fixes only in Ubuntu Pro, containers without
+  compose, Pipe's own containers). A known vulnerability does not come back, also after Pipe restarts.
+- **Findings for an outside alert** -- the same for an alert from Alertmanager, Grafana, Uptime Kuma or GitHub
+  (webhooks, `WEBHOOK_INVESTIGATE`), also with a **Fix it** button.
+- An alert that comes back has a **Previously:** line: what was found and what helped last time.
+- **APPROVAL** -- an external agent (for example Claude Code over MCP) wants to make a change: the command verbatim,
+  the safety-fuse plan and *Approve* / *Reject* buttons (admins only). It expires after 30 minutes.
+- **Welcome** -- once, after installation: a map of the server, a security score and what Pipe watches.
+- Alerts for certificates (expiring in 14 days / invalid), sites (not answering twice in a row), DNS and backups (the
+  newest file older than 26 h), for the domains and directories Pipe found by itself.
 
-Wszystko, co Pipe napisal sam, trafia tez do skrzynki: `/nowosci` (przycisk *Co nowego*) pokazuje ostatnie
-wiadomosci z ich przyciskami. Kiedy bot ma powiadamiac, ustawiasz przyciskami w `/powiadomienia`: poziom
-(wszystko / wazne / tylko krytyczne), cisza nocna (w nocy tylko sprawy krytyczne, reszta rano z raportem), limit
-podpowiedzi dziennie. Wiadomosc, ktora nie przeszla przez te ustawienia, czeka w skrzynce.
+Everything Pipe wrote by itself also lands in the inbox: `/news` (the *What's new* button) shows the latest messages
+with their buttons. When the bot should notify you is set with buttons in `/notifications`: the level (everything /
+important / critical only), quiet hours (at night only critical things, the rest in the morning with the report), the
+daily limit of suggestions. A message held back by these settings waits in the inbox.
 
-`TELEGRAM_ALERTS=0` w `clients/telegram/.env` wylacza przesylanie. Progi: `docs/features.md#czuwanie`.
+`TELEGRAM_ALERTS=0` in `clients/telegram/.env` turns forwarding off. Thresholds: [Watching](features.md#watching).
 
-## Gdy powiadomienia nie przychodza
+## When notifications don't arrive
 
-Alerty, raporty i przypomnienia bot dostaje stalym polaczeniem z backendem (subskrypcja zdarzen). Gdy go nie ma,
-`/przypomnienia` i `/alerty` pokazuja ostrzezenie z powodem, a przypomnienie ma stan *czeka na odbior* i dotrze po
-polaczeniu. Najczestsze przyczyny:
+The bot gets alerts, reports and reminders through a permanent connection to the backend (an event subscription).
+When it is missing, `/reminders` and `/alerts` show a warning with the reason, and a reminder is marked *waiting for
+pickup* and arrives once the bot connects. The most common causes:
 
-- `AGENT_TOKEN` w `clients/telegram/.env` rozni sie od tego w `backend/.env` -- w logu bota:
-  `Kanal zdarzen nieaktywny: backend odrzucil subskrypcje`
-- backend nie dziala albo socket (`AGENT_SOCKET`) nie jest wspolny dla obu procesow
-- dziala stary proces bota (np. druga instancja spoza Dockera)
+- `AGENT_TOKEN` in `clients/telegram/.env` differs from the one in `backend/.env`; the bot log says:
+  `Kanal zdarzen nieaktywny: the backend rejected the subscription`
+- the backend isn't running, or the socket (`AGENT_SOCKET`) isn't shared by both processes
+- an old bot process is running (for example a second instance outside Docker)
 
-Logi: `docker compose logs telegram | grep -i "kanal\|subskrypcja"` -- prawidlowo: `Subskrypcja alertow aktywna.`
-`TELEGRAM_ALERTS=0` wycisza tylko alerty czuwania i raporty; przypomnienia i prosby o zgode przychodza zawsze.
+Logs: `docker compose logs telegram | grep -i "kanal\|subskrypcja"`; when it works: `Subskrypcja alertow aktywna.`
+`TELEGRAM_ALERTS=0` only silences watcher alerts and reports; reminders and approval requests always arrive.
 
-## Wiadomosci glosowe
+## Voice messages
 
-Nagraj wiadomosc glosowa -- bot odpisze *Uslyszalem: ...* i przekaze tekst agentowi. Przy providerze `gemini`
-nagranie przepisuje sam model, przy `openai` albo `groq` -- ich Whisper; dziala od razu. Przy innych ustaw w
-`backend/.env` `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy klucz Groq albo lokalny faster-whisper).
+Record a voice message and the bot replies *I heard: ...* and passes the text to the agent. With the `gemini`
+provider the model itself transcribes the recording, with `openai` or `groq` their Whisper does; it works right away.
+For other providers set `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` in `backend/.env` (for example a free Groq key or a
+local faster-whisper).
 
-## Zdjecia i pliki
+## Photos and files
 
-Wyslij zrzut ekranu, log albo plik konfiguracyjny; podpis to pytanie (*"czemu nginx tego nie przyjmuje?"*).
-Kilka zdjec wyslanych naraz (album) trafia do agenta jako jedna wiadomosc. Limit 10 MB na plik. Obrazy model
-oglada, tekst czyta (po ukryciu sekretow), inne pliki Pipe zapisuje na serwerze i podaje agentowi sciezke.
-Viewer moze wysylac obrazy i tekst, ale nie pliki do zapisania. Szczegoly: `docs/features.md`, *Zalaczniki*.
+Send a screenshot, a log or a config file; the caption is the question (*"why won't nginx accept this?"*). Several
+photos sent at once (an album) reach the agent as one message. The limit is 10 MB per file. The model looks at images
+and reads text (after secrets are hidden); other files are saved on the server and the agent gets the path. A viewer
+can send images and text but not files to be saved. Details: [Attachments](features.md#attachments-files-screenshots-logs).
 
-## Role
+## Roles
 
-- `TELEGRAM_ALLOWED_USER_IDS` -- administratorzy: wszystko, lacznie z TAK/NIE i `/cofnij`.
-- `TELEGRAM_VIEWER_IDS` -- tylko odczyt: rozmowa, diagnoza, raporty, wykresy i alerty; bez przyciskow TAK/NIE
-  i `/cofnij`. Wymaga `AGENT_VIEWER_TOKEN` w `clients/telegram/.env` i tego samego w `backend/.env`. Backend
-  egzekwuje role sam -- nawet gdyby bot sie pomylil, zmiana z tokenem viewera nie zostanie wykonana.
+- `TELEGRAM_ALLOWED_USER_IDS` -- admins: everything, including YES/NO and `/undo`.
+- `TELEGRAM_VIEWER_IDS` -- read only: conversation, diagnosis, reports, charts and alerts; no YES/NO buttons and no
+  `/undo`. Needs `AGENT_VIEWER_TOKEN` in `clients/telegram/.env` and the same one in `backend/.env`. The backend
+  enforces roles itself: even if the bot made a mistake, a change with a viewer token would not run.
 
-## Diagramy
+## Diagrams
 
-`/mapa` albo *"pokaz architekture"* -- diagram przychodzi jako zdjecie. Diagram wiekszy niz limit zdjec
-Telegrama (10 MB, suma bokow 10000 px) przychodzi jako plik w pelnej rozdzielczosci.
+`/map` or *"show the architecture"*: the diagram arrives as a photo. A diagram larger than Telegram's photo limit
+(10 MB, sides adding up to 10000 px) arrives as a file in full resolution.
 
-## Formatowanie odpowiedzi
+## Formatting answers
 
-Bot uzywa trybu HTML Telegrama (nie MarkdownV2). Powod: MarkdownV2 wymaga escapowania 18 znakow specjalnych, co jest ekstremalnie podatne na bledy przy dynamicznej tresci (np. nazwy kontenerow z podkreslnikami). HTML wymaga escapowania tylko 3 znakow (<, >, &), co jest znacznie prostsze.
+The bot uses Telegram's HTML mode (not MarkdownV2). The reason: MarkdownV2 needs 18 special characters escaped, which
+breaks easily with dynamic content (for example container names with underscores). HTML needs only 3 characters
+escaped (<, >, &), which is much simpler.
 
-Obslugiwane tagi HTML:
-- `<b>pogrubienie</b>` -- dla kluczowych danych
-- `<i>kursywa</i>` -- dla nazw plikow
-- `<code>kod inline</code>` -- dla wartosci i polecen
-- `<pre>blok kodu</pre>` -- dla outputu komend
-- `<u>podkreslenie</u>` -- jesli potrzebne
+Supported HTML tags:
+- `<b>bold</b>` -- for key data
+- `<i>italic</i>` -- for file names
+- `<code>inline code</code>` -- for values and commands
+- `<pre>code block</pre>` -- for command output
+- `<u>underline</u>` -- when needed
 
-Bot automatycznie konwertuje resztki Markdowna (jesli LLM je wygeneruje) na odpowiadajace tagi HTML.
+The bot converts leftover Markdown (if the LLM produces it) into the matching HTML tags.
 
-Tekst w backtickach -- w tym komendy w potwierdzeniach -- jest pokazywany doslownie, bez konwersji Markdowna. Przed kliknieciem TAK widzisz wiec dokladnie te komende, ktora zostanie wykonana (lacznie z `*`, `_`, `\\`, `<`, `&` i backtickami). Znaki `<`, `>` i `&` poza tagami sa escapowane automatycznie, wiec Telegram nie odrzuca wiadomosci. Kod formatowania: `clients/telegram/tg_format.py`.
+Text in backticks, including commands in confirmations, is shown verbatim, without Markdown conversion. So before
+tapping YES you see exactly the command that will run (including `*`, `_`, `\\`, `<`, `&` and backticks). The
+characters `<`, `>` and `&` outside tags are escaped automatically, so Telegram doesn't reject the message.
+Formatting code: `clients/telegram/tg_format.py`.
 
-### Raporty i zestawienia
+### Reports and summaries
 
-- Raporty pisane przez workery (rutyny, badanie alertu, zadanie jednorazowe) przychodza jako zwykla wiadomosc:
-  status w naglowku, sekcje `USTALENIA:` / `PROPOZYCJE:` pogrubione, listy z wypunktowaniem, komendy w backtickach
-  doslownie. Tagi HTML z raportu sa pokazywane jako tekst -- raport powstaje bez nadzoru, wiec nie moze wstawic
-  klikalnego linku.
-- Zestawienia z backendu (`/zmiany`, `/zdrowie`, `/koszt`, `/dziennik`, `/przypomnienia`, `/incydenty`, wynik
-  `/cofnij`) to naglowki i listy; identyfikatory (`#ab12cd`) mozna skopiowac dotknieciem.
-- Blok kodu zostaje tam, gdzie tresc jest kodem albo logiem: `/historia`, roznice plikow, wynik komendy po zgodzie.
+- Reports written by workers (routines, alert investigation, one-off tasks) arrive as a normal message: the status in
+  the header, the `FINDINGS:` / `PROPOSALS:` sections in bold, bulleted lists, commands in backticks verbatim. HTML
+  tags in a report are shown as text: the report is written unattended, so it cannot insert a clickable link.
+- Summaries from the backend (`/changes`, `/health`, `/cost`, `/journal`, `/reminders`, `/incidents`, the result of
+  `/undo`) are headings and lists; identifiers (`#ab12cd`) can be copied with a tap.
+- A code block stays where the content is code or a log: `/history`, file diffs, command output after approval.
 
-## Wymagania
+## Requirements
 
 - Python 3.11+
-- Dzialajacy backend (`docker-compose up -d` w `backend/`)
-- Dostep do Unix socket `/tmp/vps-agent.sock`
-- Token bota Telegram (z @BotFather: https://t.me/botfather)
+- A running backend (`docker-compose up -d` in `backend/`)
+- Access to the Unix socket `/tmp/vps-agent.sock`
+- A Telegram bot token (from @BotFather: https://t.me/botfather)
 
-## Konfiguracja
+## Configuration
 
-### 1. Utworz bota przez @BotFather
+### 1. Create a bot with @BotFather
 
 ```
 /newbot
 ```
 
-Skopiuj token bota.
+Copy the bot token.
 
-### 2. Znajdz swoje user ID
+### 2. Find your user ID
 
-Wyslij `/start` do @userinfobot (https://t.me/userinfobot) -- zwroci Twoje ID numeryczne.
+Send `/start` to @userinfobot (https://t.me/userinfobot); it returns your numeric ID.
 
-### 3. Uzupelnij .env
+### 3. Fill in .env
 
 ```bash
 cp .env.example .env
 ```
 
-Edytuj `.env`:
+Edit `.env`:
 ```env
 TELEGRAM_BOT_TOKEN=1234567890:ABCxyz...
 TELEGRAM_ALLOWED_USER_IDS=123456789
 AGENT_SOCKET=/tmp/vps-agent.sock
 
-# Musi byc identyczny z AGENT_TOKEN w backend/.env.
-# Zostaw pusty, jesli backend nie wymaga tokenu.
+# Must be identical to AGENT_TOKEN in backend/.env.
+# Leave empty if the backend doesn't require a token.
 AGENT_TOKEN=
 
-# Jezyk bota: pl (domyslnie) albo en -- tak samo jak PIPE_LANG w backend/.env.
-# PIPE_LANG=en
+# Bot language: en (default) or pl, the same as PIPE_LANG in backend/.env.
+# PIPE_LANG=pl
 ```
 
-Mozesz dodac wiele ID oddzielonych przecinkami: `123456789,987654321`
+You can add several IDs separated by commas: `123456789,987654321`
 
-## Uruchomienie
+## Running
 
-Bot uruchamia sie automatycznie razem z backendem przez `docker-compose up -d`.
+The bot starts automatically together with the backend with `docker-compose up -d`.
 
-Reczne uruchomienie:
+Starting it by hand:
 ```bash
 pip install -r requirements.txt
 python bot.py
 ```
 
-## Dostepne komendy
+## What you can ask
 
-Pelna lista ponizej (sekcja *Komendy*). Mozesz tez pisac bezposrednio, np.:
-- "ile mam wolnego miejsca na dysku?"
-- "pokaz architekture serwera" / "narysuj, jak dziala deploy"
-- "dlaczego sklep dziala wolno?"
-- "sprawdz dyski na wszystkich serwerach" (workery)
-- "codziennie o 7 sprawdzaj backupy" (rutyna)
-- "odpowiadaj krocej" (VIBE)
-- "postaw mi te aplikacje: https://github.com/acme/notatnik" (warsztat)
-- "napisz skrypt, ktory policzy zamowienia z logow" (warsztat)
+The full list is below (the *Commands* section). You can also just write, for example:
+- "how much free disk space do I have?"
+- "show the server architecture" / "draw how the deploy works"
+- "why is the shop slow?"
+- "check the disks on all servers" (workers)
+- "every day at 7 check the backups" (a routine)
+- "keep your answers shorter" (VIBE)
+- "set up this app for me: https://github.com/acme/notebook" (the workshop)
+- "write a script that counts the orders in the logs" (the workshop)
 
-## Bezpieczenstwo
+## Security
 
-Bot milczy dla uzytkownikow spoza whitelisty -- nie odpowiada zadna wiadomoscia. Dzieki temu nie ujawnia swojego istnienia nieautoryzowanym osobom.
+The bot stays silent for users outside the whitelist: it doesn't answer any message. That way it doesn't reveal its
+existence to unauthorized people.
 
-## Komendy
+## Commands
 
-Przy `PIPE_LANG=en` menu `/` pokazuje angielskie nazwy (`/report`, `/changes`, `/undo`...). Polskie i angielskie
-nazwy dzialaja w obu jezykach.
+In English (the default) the `/` menu shows English names (`/report`, `/changes`, `/undo`...). Polish and English names
+work in both languages.
 
-| Komenda | Dzialanie |
+| Command | What it does |
 |---|---|
-| `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami (*Wszystko dziala* albo co wymaga uwagi), paski procesora, pamieci i dysku, liczba nowych wiadomosci i projektow |
-| `/nowosci` | Skrzynka: co Pipe napisal sam (alerty, ustalenia, podpowiedzi, raporty), z przyciskami akcji (`/news`) |
-| `/projekty` | Projekty w warsztacie: stan, adres, przyciski *Logi* i *Zatrzymaj*/*Uruchom* (`/projects`) |
-| `/web` | Pipe w przegladarce z telefonu i komputera: `/web wlacz` wystawia go pod adresem HTTPS, prosby o dostep przychodza tu z przyciskami *Wpusc* / *Tylko podglad* / *Odrzuc* (tylko administratorzy); `/web wylacz`, `/web odwolaj <nr>` |
-| `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki apt i cache npm/pip; mowi, ile zwolnil. Tylko administrator (`/cleanup`) |
-| `/powiadomienia` | Kiedy Pipe ma powiadamiac: poziom, cisza nocna, limit podpowiedzi -- przyciskami (`/notifications`) |
-| `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe (potwierdzenie przyciskami); `sprawdz` tylko pokazuje wersje |
-| `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
-| `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
-| `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjecie |
-| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow (nie ma jej w menu ani w `/pomoc` -- problemy pokazuje `/status`) |
-| `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
-| `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
-| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode; przyciski *Zatwierdz*/*Odrzuc* dla administratorow — z planem bezpiecznika |
-| `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Podlaczone serwery MCP ze stanem i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub) z przyciskiem *Dodaj* (administratorzy). Kluczy nie wpisuj w czat -- okno `/mcp` w `pipe web` albo w CLI |
-| `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
-| `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem przycisk *Cofnij*. Dziala bez LLM |
-| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem. Dostepne tez dla viewerow |
-| `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez przyciskow i pytan (administrator): pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow i zdalne serwery, potem sprzata stare obrazy i cache. Jedna wiadomosc z krokami na zywo, na koncu krotki wynik: co zalatane, co bez zmian i dlaczego, ile miejsca zwolnione. Przycisk *Zalataj* przy alercie o podatnosciach lata to, czego alert dotyczy. Dziala bez LLM |
-| `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
-| `/widok [prosty\|techniczny\|opis]` | Widok Pipe (`/view`): bez argumentu przyciski *Prosty* / *Techniczny*. Prosty zmienia menu `/`, `/pomoc` i klawiature (stan, nowosci, skille, pomoc), a agent pisze zwyklymi slowami; wspolny z CLI i `pipe web`. Przy pierwszym `/start` bot pyta, co chcesz robic -- przycisk albo kilka slow. Tylko administrator |
-| `/jezyk [pl\|en]` | Jezyk Pipe (`/language`): przelacza instrukcje agenta, raporty, komunikaty bota i menu `/` -- bez restartu, wspolnie z CLI i `pipe web`; tylko administrator |
-| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): przyciski providerow z kluczem (aktywny -- zeby zmienic model), po wyborze lista modeli providera jako przyciski ze stronami; obecny zaznaczony, "Zostaw ..." go zostawia. `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- model obecnego providera. Kluczy API bot nie przyjmuje (zostalyby w historii czatu) -- dodasz je w `pipe web` albo w CLI. Tylko administrator |
-| `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez przyciskow TAK/NIE (bezpiecznik, dziennik i `/cofnij` dzialaja dalej; zakazane -- odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu |
-| `/mapa [tytul]` | Diagram infrastruktury jako zdjecie (bez LLM -- szybko i za darmo) |
-| `/server` | Pokazuje SERVER.md. Gdy go nie ma -- agent bada serwer i tworzy plik |
-| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
-| `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
-| `/skille` | Lista zapisanych skilli z ich komendami |
-| `/pobierz skill\|plugin <wlasciciel/repo\|URL> [filtr]` | Skille i pluginy z repozytorium git: podglad z przyciskami *Zainstaluj* / *Anuluj* (`/download`); tylko administrator |
-| `/alerty` | Aktywne alerty czuwania i ostatnie zdarzenia (nie ma jej w menu ani w `/pomoc` -- wiadomosci sa w `/nowosci`) |
-| `/rutyny` | Zadania wykonywane wedlug harmonogramu |
-| `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia -- przychodza same o czasie do osoby, ktora je ustawila |
-| `/cele` | Zdalne serwery, kontenery i klastry |
-| `/nowa` | Nowa rozmowa od czystej karty (bot ma jedna rozmowe na uzytkownika); notatki o serwerze, katalogi, skille, styl i alerty zostaja |
-| `/vibe` | Co agent wie o Twoim stylu rozmowy; `/vibe reset` czysci |
-| `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat`. Mozna dopisac wskazowki: `/odnow_certyfikat tylko dla example.com` |
-| `/historia` | Ostatnie wpisy z audit logu, bez LLM (nie ma jej w menu ani w `/pomoc` -- zmiany pokazuje `/dziennik`) |
-| `/pomoc` | Lista komend |
+| `/status` | Server status at once, without AI: a plain-words headline (*All good* or what needs attention), CPU, memory and disk bars, the number of new messages and projects |
+| `/news` | The inbox: what Pipe wrote by itself (alerts, findings, suggestions, reports), with action buttons (`/nowosci`) |
+| `/projects` | Workshop projects: state, address, *Logs* and *Stop*/*Start* buttons (`/projekty`) |
+| `/web` | Pipe in the browser on your phone and computer: `/web on` exposes it at an HTTPS address, access requests arrive here with *Let in* / *View only* / *Reject* buttons (administrators only); `/web off`, `/web revoke <no>` |
+| `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded apt packages and npm/pip caches; says how much it freed. Admins only (`/sprzataj`) |
+| `/notifications` | When Pipe should notify you: level, quiet hours, suggestion limit -- with buttons (`/powiadomienia`) |
+| `/update [check]` | Update Pipe itself (confirmed with buttons); `check` only shows the versions |
+| `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
+| `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
+| `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history as a photo |
+| `/health` | TLS certificates, site responses, DNS and backup freshness (not in the menu or `/help` -- `/status` shows problems) |
+| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
+| `/incidents` | Incident memory: what happened, what was found, what helped |
+| `/approvals` | Operations of external agents (MCP) waiting for approval; *Approve*/*Reject* buttons for admins, with the safety-fuse plan |
+| `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Connected MCP servers with their state and ready add-ons (Google, Outlook, Microsoft 365, GitHub) with an *Add* button (administrators). Do not type keys in the chat -- the `/mcp` window in `pipe web` or the CLI |
+| `/journal` | Approved changes with backups (what, when, whether it can be undone) |
+| `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then an *Undo* button. Works without the LLM |
+| `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation. Viewers can use it too |
+| `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without buttons or questions (admin): this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images and remote servers, then cleans up old images and caches. One message shows the steps live, at the end a short result: what was patched, what stayed unchanged and why, how much space was freed. The *Patch* button on a vulnerability alert patches what the alert is about. Works without the LLM |
+| `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
+| `/view [simple\|technical\|description]` | Pipe's view (`/widok`): without an argument *Simple* / *Technical* buttons. Simple changes the `/` menu, `/help` and the keyboard (status, news, skills, help), and the agent writes in plain words; shared with the CLI and `pipe web`. On the first `/start` the bot asks what you want to do -- a button or a few words. Admin only |
+| `/language [pl\|en]` | Pipe's language: switches agent instructions, reports, bot messages and the `/` menu without a restart, shared with the CLI and `pipe web`; admin only |
+| `/providers [id [model]]` | LLM providers: buttons for providers that have a key (the active one too, to change its model), then the provider's models as paged buttons; the current one is marked, "Keep ..." keeps it. `/providers groq llama` picks a model by name fragment, `/providers model` changes the model of the current provider. The bot never takes API keys (they would stay in the chat history); add them in `pipe web` or the CLI. Admin only |
+| `/yolo [on\|off]` | YOLO mode: changes in this conversation run without YES/NO buttons (the safety fuse, the journal and `/undo` still work; forbidden operations are refused). Off by default, admin only, forgotten when the backend restarts |
+| `/map [title]` | Infrastructure diagram as a photo (no LLM, so fast and free) |
+| `/server` | Shows SERVER.md. When there is none, the agent explores the server and creates it |
+| `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
+| `/directory` | Map of repositories and directories (DIRECTORY) |
+| `/skills` | List of saved skills with their commands |
+| `/download skill\|plugin <owner/repo\|URL> [filter]` | Skills and plugins from a git repository: a preview with *Install* / *Cancel* buttons (`/pobierz`); admin only |
+| `/alerts` | Active watcher alerts and recent events (not in the menu or `/help` -- messages are in `/news`) |
+| `/routines` | Tasks run on a schedule |
+| `/reminders [cancel <id>]` | One-off reminders; they arrive on time to the person who set them |
+| `/targets` | Remote servers, containers and clusters |
+| `/new` | New conversation from a clean slate (the bot has one conversation per user); the server notes, directories, skills, style and alerts stay |
+| `/vibe` | What the agent knows about your conversation style; `/vibe reset` clears it |
+| `/<skill>` | Runs a skill, for example `/renew_certificate`. You can add hints: `/renew_certificate only for example.com` |
+| `/history` | Latest audit-log entries, no LLM (not in the menu or `/help` -- `/journal` shows changes) |
+| `/help` | Command list |
 
-Menu podpowiedzi po wpisaniu `/` bot ustawia sam przy starcie i odswieza po kazdej wiadomosci -- nowy skill
-pojawia sie w menu od razu. Menu jest ustawiane osobno dla czatu kazdego uzytkownika z
-`TELEGRAM_ALLOWED_USER_IDS`, a nie globalnie, wiec osoby spoza listy nie widza nazw ani opisow skilli.
-Jesli nie widzisz menu, napisz do bota cokolwiek (Telegram pozwala ustawic menu dopiero po rozpoczeciu czatu).
+The bot sets the suggestion menu shown after typing `/` at startup and refreshes it after every message, so a new
+skill shows up in the menu right away. The menu is set separately for the chat of each user in
+`TELEGRAM_ALLOWED_USER_IDS`, not globally, so people outside the list don't see skill names or descriptions. If you
+don't see the menu, write anything to the bot (Telegram only allows setting the menu after the chat has started).
 
-Na nieznana komende bot odpowiada podpowiedzia zamiast milczec.
+For an unknown command the bot replies with a hint instead of staying silent.

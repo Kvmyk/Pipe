@@ -46,7 +46,7 @@ ENTRY = "a1b2c3d4"
 
 
 def L(pl: str, en: str) -> str:
-    return en if os.environ.get("PIPE_LANG", "pl").startswith("en") else pl
+    return pl if os.environ.get("PIPE_LANG", "en").startswith("pl") else en
 
 
 def infra():
@@ -370,7 +370,7 @@ def feed_data(full: bool, seen: bool, done_actions: dict) -> dict:
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Pipe demo backend (scripted)")
     parser.add_argument("--port", type=int, default=7390)
-    parser.add_argument("--lang", choices=["pl", "en"], default="pl")
+    parser.add_argument("--lang", choices=["en", "pl"], default="en")
     parser.add_argument("--full", action="store_true", help="przykladowe skille, alerty i dziennik (testy interfejsu)")
     args = parser.parse_args()
     os.environ["PIPE_LANG"] = args.lang

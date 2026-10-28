@@ -53,7 +53,7 @@ class SetupError(Exception):
 
 
 def _tr(lang: str, pl: str, en: str) -> str:
-    return en if lang == "en" else pl
+    return pl if lang == "pl" else en
 
 
 # ─── Zapis ───────────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ def remember(conn: dict) -> None:
     save(data)
 
 
-def label(conn: dict, lang: str = "pl") -> str:
+def label(conn: dict, lang: str = "en") -> str:
     if conn.get("kind") == "local":
         return _tr(lang, "ten komputer", "this computer")
     return f"{conn.get('user', 'root')}@{conn.get('host', '')}"
@@ -107,7 +107,7 @@ def has_paramiko() -> bool:
     return importlib.util.find_spec("paramiko") is not None
 
 
-def local_problem(lang: str = "pl") -> str:
+def local_problem(lang: str = "en") -> str:
     """'' gdy Pipe da sie uruchomic na tym komputerze; inaczej powod zwyklymi slowami."""
     if not (REPO_ROOT / "backend" / "docker-compose.yml").is_file():
         return _tr(lang, "Brak katalogu backend obok aplikacji — zainstaluj Pipe z repozytorium.",
@@ -181,7 +181,7 @@ def port_open(port: int = BACKEND_PORT, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def start_local(progress: Progress, lang: str = "pl") -> dict:
+def start_local(progress: Progress, lang: str = "en") -> dict:
     """Uruchamia backend w Dockerze na tym komputerze (idempotentnie) i czeka, az odpowie."""
     problem = local_problem(lang)
     if problem:
@@ -192,7 +192,7 @@ def start_local(progress: Progress, lang: str = "pl") -> dict:
         progress(_tr(lang, "Tworze konfiguracje (klucz modelu dodasz za chwile w aplikacji)…",
                      "Creating the configuration (you will add the model key in the app in a moment)…"))
         code = _stream([sys.executable, "-m", "backend.configure", "--from-env"], progress, cwd=REPO_ROOT,
-                       env={**env, "LLM_PROVIDER": "none", "PIPE_LANG": "en" if lang == "en" else "pl"}, timeout=120)
+                       env={**env, "LLM_PROVIDER": "none", "PIPE_LANG": "pl" if lang == "pl" else "en"}, timeout=120)
         if code != 0:
             raise SetupError(_tr(lang, "Nie udalo sie zapisac backend/.env.", "Could not write backend/.env."))
     (backend / "data").mkdir(exist_ok=True)
@@ -223,7 +223,7 @@ def start_local(progress: Progress, lang: str = "pl") -> dict:
 
 # ─── Na serwerze (SSH) ───────────────────────────────────────────────────────
 
-def validate_server(params: dict, lang: str = "pl") -> tuple[str, int, str]:
+def validate_server(params: dict, lang: str = "en") -> tuple[str, int, str]:
     host = str(params.get("host") or "").strip()
     user = str(params.get("user") or "root").strip()
     if "@" in host and not params.get("user"):
@@ -244,14 +244,14 @@ def validate_server(params: dict, lang: str = "pl") -> tuple[str, int, str]:
     return host, port, user
 
 
-def remote_script(lang: str = "pl", repo: str = REPO_URL, directory: str = REMOTE_DIR) -> str:
+def remote_script(lang: str = "en", repo: str = REPO_URL, directory: str = REMOTE_DIR) -> str:
     """Skrypt na serwerze (jako root): klon + install-server.sh bez pytan; na koncu token za znacznikiem."""
-    lang = "en" if lang == "en" else "pl"
+    lang = "pl" if lang == "pl" else "en"
     q = shlex.quote
     return f"""set -e
 exec </dev/null
 DIR={q(directory)}
-t() {{ case {lang} in en) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }}
+t() {{ case {lang} in pl) printf '%s' "$1" ;; *) printf '%s' "$2" ;; esac; }}
 configured() {{ [ -f "$DIR/backend/.env" ] && grep -qE '^LLM_(PROVIDER|BASE_URL)=.+' "$DIR/backend/.env"; }}
 if configured && (exec 3<>/dev/tcp/127.0.0.1/{BACKEND_PORT}) 2>/dev/null; then
   echo "[pipe] $(t 'Pipe juz dziala na tym serwerze - lacze sie.' 'Pipe already runs on this server - connecting.')"
@@ -364,7 +364,7 @@ def _own_key(host: str, user: str, port: int):
     return path, f"{key.get_name()} {key.get_base64()} pipe@{socket.gethostname() or 'pipe'}"
 
 
-def deploy_server(params: dict, progress: Progress, lang: str = "pl") -> dict:
+def deploy_server(params: dict, progress: Progress, lang: str = "en") -> dict:
     """Stawia (albo odnajduje) Pipe na serwerze przez SSH i zwraca polaczenie do zapisania."""
     if not has_paramiko():
         raise SetupError(_tr(lang, f"Brakuje pakietu paramiko: {sys.executable} -m pip install paramiko",

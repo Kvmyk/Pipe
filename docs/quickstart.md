@@ -1,68 +1,68 @@
-# Szybki start -- instrukcja krok po kroku
+# Quick start -- step by step
 
-Pipe v0.48.2
+Pipe v0.49.0
 
-## Wyprobuj bez serwera
+## Try it without a server
 
-Nie masz wolnego serwera albo chcesz najpierw zobaczyc, jak Pipe dziala? Na swoim komputerze z Dockerem:
+No spare server, or you want to see how Pipe works first? On your own computer with Docker:
 
 ```bash
 git clone https://github.com/Kvmyk/pipe && cd pipe
 LLM_PROVIDER=gemini LLM_API_KEY=... python3 sandbox/run.py try --scenario nginx-502
-pipe --no-tunnel --local-port 7390        # albo: pipe web --no-tunnel --local-port 7390
+pipe --no-tunnel --local-port 7390        # or: pipe web --no-tunnel --local-port 7390
 ```
 
-Startuje kontener udajacy maly serwer ze sklepem (nginx i aplikacja), a w nim Pipe. Z `--scenario` serwer jest od
-razu zepsuty: `nginx-502` (zly port w nginx), `app-down` (aplikacja nie startuje), `static-403` (zle uprawnienia),
-`disk-hog` (zapomniany duzy log). Popros Pipe o pomoc i zobacz, jak szuka przyczyny, pyta o zgode i robi kopie.
-Bez klucza piaskownica tez wstaje, wtedy Pipe dziala bez modelu. Konczysz przez `docker rm -f pipe-sandbox`.
+This starts a container that pretends to be a small server with a shop (nginx and an app), with Pipe inside. With
+`--scenario` the server starts broken: `nginx-502` (wrong port in nginx), `app-down` (the app won't start),
+`static-403` (wrong permissions), `disk-hog` (a forgotten big log). Ask Pipe for help and watch it look for the cause,
+ask for approval and take backups. Without a key the sandbox still starts, and Pipe then runs without a model. Stop it
+with `docker rm -f pipe-sandbox`.
 
-Te same scenariusze sluza do oceny modeli: `python3 sandbox/run.py eval` uruchamia kazdy, zgadza sie na kazda
-proponowana zmiane i sprawdza, czy serwer naprawde zostal naprawiony (szczegoly: `sandbox/README.md`).
+The same scenarios are used to evaluate models: `python3 sandbox/run.py eval` runs each one, approves every proposed
+change and checks whether the server was really fixed (details: `sandbox/README.md`).
 
-## Wymagania wstepne
+## Prerequisites
 
-1. **Na serwerze** -- uruchomiony backend agenta
-2. **Na laptopie** -- Python 3.11+ i dostep do SSH
+1. **On the server** -- the agent backend running
+2. **On your laptop** -- Python 3.11+ and SSH access
 
-Krotsza droga: zainstaluj klienta (krok 2, adres serwera mozesz pominac) i wpisz `pipe web`. Strona zapyta, co chcesz
-robic, i sama postawi Pipe na tym komputerze (Docker) albo na Twoim serwerze (adres i haslo albo klucz SSH). Wtedy
-krok 1 i 3 dzieja sie same.
+A shorter way: install the client (step 2, you can skip the server address) and type `pipe web`. The page asks what
+you want to do and sets Pipe up itself on this computer (Docker) or on your server (address and an SSH password or
+key). Steps 1 and 3 then happen on their own.
 
 ---
 
-## Krok 1: Uruchom backend na serwerze
+## Step 1: Start the backend on the server
 
-Zaloguj sie przez SSH na serwer i wykonaj:
+Log in to the server over SSH and run:
 
 ```bash
 git clone https://github.com/Kvmyk/pipe
 cd pipe
-sudo bash scripts/install-server.sh            # albo --mode native (bez Dockera)
+sudo bash scripts/install-server.sh  # or --mode native (without Docker), --lang pl for Polish
 ```
 
-Kreator zapyta o providera LLM i klucz API, pobierze aktualna liste modeli, sprawdzi, czy wybrany model
-obsluguje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
-darmowy klucz wygenerujesz na https://aistudio.google.com/apikey (w darmowym tierze Google moze uczyc sie na
-zapytaniach, wiec na produkcji lepiej wlaczyc platnosci). Mozesz tez wybrac **Bez modelu**: Pipe pilnuje serwera,
-wysyla alerty i raporty, a nic nie wychodzi z serwera; rozmowe wlaczysz pozniej
-([backend.md](backend.md#bez-modelu-llm_providernone)).
+The wizard asks for the LLM provider and API key, fetches the current list of models, checks that the chosen model
+supports tool calling, and writes `backend/.env`. No key? Pick **Google Gemini** -- you can create a free key at
+https://aistudio.google.com/apikey (on the free tier Google may learn from your prompts, so on production enable
+billing). You can also pick **No model**: Pipe watches the server and sends alerts and reports, and nothing leaves the
+server; you turn chat on later ([backend.md](backend.md#no-model-llm_providernone)).
 
-Skrypt zainstaluje Dockera (jesli go nie ma) i uruchomi backend. Recznie to samo:
+The script installs Docker (if it is missing) and starts the backend. The same by hand:
 `python3 -m backend.configure && cd backend && docker compose up -d --build`.
 
-Sprawdz czy dziala:
+Check that it works:
 ```bash
 cd backend && docker compose logs vps-agent
-# Powinno pokazac: [VPS Agent] Serwer gotowy.
+# Should show: [VPS Agent] Server ready.
 ```
 
-Nowy serwer w chmurze mozesz postawic od razu z Pipe -- [cloud-init](../deploy/cloud-init/user-data.yaml).
+You can create a new cloud server with Pipe on it right away -- [cloud-init](../deploy/cloud-init/user-data.yaml).
 Kubernetes: [deploy/kubernetes](../deploy/kubernetes/README.md).
 
 ---
 
-## Krok 2: Zainstaluj CLI na laptopie
+## Step 2: Install the CLI on your laptop
 
 ```bash
 git clone https://github.com/Kvmyk/pipe
@@ -73,103 +73,104 @@ cd pipe
 
 ```powershell
 .\install.ps1
-# Skrypt zapyta o adres serwera: np. root@serwer.example.com
+# The script asks for the server address, e.g. root@server.example.com
 ```
 
 ### Linux / macOS (bash/zsh)
 
 ```bash
 bash install.sh
-# Skrypt zapyta o adres serwera: np. root@serwer.example.com
+# The script asks for the server address, e.g. root@server.example.com
 ```
 
-Skrypt:
-- zainstaluje zaleznosci Python (`rich`)
-- doda funkcje `pipe` do Twojego profilu terminala
-- od teraz wystarczy wpisac `pipe` w dowolnym terminalu
+The script:
+- installs the Python dependencies (`rich`)
+- adds a `pipe` function to your terminal profile
+- from then on, typing `pipe` in any terminal is enough
 
 ---
 
-## Krok 3: Polacz sie z agentem
+## Step 3: Connect to the agent
 
 ```
 pipe
 ```
 
-CLI automatycznie:
-1. Zestawia tunel SSH (zapyta o haslo jesli potrzeba)
-2. Laczy sie z agentem na serwerze
-3. Czeka na Twoje polecenia
+The CLI automatically:
+1. Sets up the SSH tunnel (asks for a password if needed)
+2. Connects to the agent on the server
+3. Waits for your requests
 
-Na poczatek: `/mapa` (diagram tego, co stoi na serwerze) i `/server` (agent zbada serwer i zapisze,
-co wie, w SERVER.md i DIRECTORY).
+To begin: `/map` (a diagram of what runs on the server) and `/server` (the agent explores the server and writes down
+what it learned in SERVER.md and DIRECTORY).
 
 ---
 
-## Przykladowa sesja
+## Example session
 
 ```
- pipe   Autonomiczny agent AI do zarzadzania serwerem Linux
+ pipe   Autonomous AI agent for managing a Linux server
 
- serwer    root@serwer.example.com
- komendy   /status  /raport  /zmiany  /mapa  /server  /skille  /pomoc  /exit
+ server    root@server.example.com
+ commands  /status  /report  /changes  /map  /server  /skills  /help  /exit
 
-Polaczono z agentem na root@serwer.example.com
+Connected to the agent on root@server.example.com
 ──────────────────────────────────────────────────────────────────────
 
-› ile mam wolnego miejsca na dysku?
+› how much free disk space do I have?
 
-Dysk jest zapelniony w 79% -- zostalo Ci okolo 4.2 GB.
-Najwieksze katalogi to /var/log (1.1 GB) i /home (2.3 GB).
-Czy chcesz wyczyscic logi? (`journalctl --vacuum-time=7d`)
+The disk is 79% full -- about 4.2 GB left.
+The largest directories are /var/log (1.1 GB) and /home (2.3 GB).
+Do you want to clean up the logs? (`journalctl --vacuum-time=7d`)
 
-› pokaz bledy nginx z ostatniej godziny
+› show nginx errors from the last hour
 
-› zrestartuj nginx
+› restart nginx
 
-╭─  Potrzebuję Twojej zgody  ──────────────────────────────────────────╮
+╭─  I need your approval  ─────────────────────────────────────────────╮
 │                                                                      │
 │    $ systemctl restart nginx                                         │
 │                                                                      │
-│  Bezpiecznik                                                         │
-│   ✓  sprawdzenie przed              nginx -t                         │
-│      (niepowodzenie = nie wykonam)                                   │
-│   ✓  weryfikacja po                 usluga nginx aktywna             │
-│                                     strony, ktore dzialaja teraz,    │
-│                                     maja dzialac po zmianie          │
+│  Safety fuse                                                         │
+│   ✓  check before                   nginx -t                         │
+│      (failure = I won't run it)                                      │
+│   ✓  verify after                   nginx service active             │
+│                                     sites that work now must         │
+│                                     still work after the change      │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-Wykonać? [t/n] (n): tak
-✓ Zatwierdzone — wykonuję...
-nginx zrestartowany, weryfikacja przeszla.
+Run it? [y/n] (n): y
+✓ Approved — running...
+nginx restarted, verification passed.
 
 › exit
-Do widzenia!
+Goodbye!
 ```
 
-Komenda w panelu jest dokladnie tym, co zostanie wykonane. Pod nia plan bezpiecznika: co Pipe sprawdzi przed
-zmiana i po niej (szczegoly: [Zmiany z bezpiecznikiem](features.md#zmiany-z-bezpiecznikiem-i-cofnij)).
+The command in the panel is exactly what will run. Below it is the safety-fuse plan: what Pipe checks before and after
+the change (details: [Changes with a safety fuse](features.md#changes-with-a-safety-fuse-and-undo)).
 
 ---
 
-## Opcje skrotu `pipe`
+## `pipe` shortcut options
 
-Mozesz tez przekazac dodatkowe opcje:
+You can also pass extra options:
 
 ```bash
-pipe --ssh-port 2222      # niestandardowy port SSH
-pipe --key ~/.ssh/id_rsa  # konkretny klucz SSH
-pipe --session moja-sesja # zachowaj historie sesji
+pipe --ssh-port 2222       # non-standard SSH port
+pipe --key ~/.ssh/id_rsa   # a specific SSH key
+pipe --session my-session  # keep the session history
+pipe --lang pl             # Polish CLI messages
 ```
 
 ---
 
-## Problemy
+## Problems
 
-| Problem | Rozwiazanie |
-|---------|-------------|
-| Agent nie odpowiada / blad modelu | `python3 -m backend.configure --check` -- sprawdzi klucz, model i tool calling |
-| W logach "Model ... nie wystepuje na liscie" | Model zostal wycofany -- wybierz nowy: `python3 -m backend.configure` |
-| Tunel SSH nie odpowiada | Sprawdz czy backend dziala: `docker logs vps-agent` na serwerze |
-| Brak komendy 'ssh' | Windows: zainstaluj OpenSSH Client (Ustawienia -> Aplikacje -> Funkcje opcjonalne) |
-| SSH pyta o haslo przy kazdym uruchomieniu | Dodaj klucz SSH: `ssh-copy-id user@serwer` |
+| Problem | Solution |
+|---------|----------|
+| The agent doesn't answer / model error | `python3 -m backend.configure --check` checks the key, the model and tool calling |
+| "Model ... is not on the list" in the logs | The model was retired, pick a new one: `python3 -m backend.configure` |
+| The SSH tunnel doesn't respond | Check that the backend runs: `docker logs vps-agent` on the server |
+| No 'ssh' command | Windows: install OpenSSH Client (Settings -> Apps -> Optional features) |
+| SSH asks for a password every time | Add an SSH key: `ssh-copy-id user@server` |

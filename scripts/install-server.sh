@@ -7,7 +7,7 @@
 # Bez pytan (cloud-init, Ansible, CI) — konfiguracja ze zmiennych srodowiska:
 #   sudo LLM_PROVIDER=gemini LLM_API_KEY=... bash scripts/install-server.sh --non-interactive
 #
-# Jezyk agenta (prompty, komunikaty, alerty): --lang pl|en albo zmienna PIPE_LANG; kreator tez o niego pyta.
+# Jezyk agenta (prompty, komunikaty, alerty): --lang en|pl albo zmienna PIPE_LANG (domyslnie en); kreator tez o niego pyta.
 # English: sudo bash scripts/install-server.sh --lang en
 #
 # Na swiezym serwerze bez repozytorium skrypt sam je sklonuje (--repo, --dir).
@@ -37,7 +37,7 @@ while [ $# -gt 0 ]; do
     --dir) DIR="${2:?}"; shift 2 ;;
     --repo) REPO="${2:?}"; shift 2 ;;
     --branch) BRANCH="${2:?}"; shift 2 ;;
-    --lang) case "${2:?}" in pl|en) PIPE_LANG="$2"; export PIPE_LANG ;; *) echo "--lang: pl | en" >&2; exit 2 ;; esac; shift 2 ;;
+    --lang) case "${2:?}" in en|pl) PIPE_LANG="$2"; export PIPE_LANG ;; *) echo "--lang: en | pl" >&2; exit 2 ;; esac; shift 2 ;;
     --non-interactive|-y) NON_INTERACTIVE=1; shift ;;
     --build) BUILD=1; shift ;;
     --profile) case "${2:?}" in full|observe) PROFILE="$2" ;; *) echo "--profile: full | observe" >&2; exit 2 ;; esac; shift 2 ;;
@@ -48,7 +48,7 @@ done
 
 case "$MODE" in docker|native) ;; *) echo "--mode: docker | native" >&2; exit 2 ;; esac
 
-t() { case "${PIPE_LANG:-pl}" in en*|EN*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }  # t "polski" "english"
+t() { case "${PIPE_LANG:-en}" in pl*|PL*) printf '%s' "$1" ;; *) printf '%s' "$2" ;; esac; }  # t "polski" "english"
 log() { printf '\033[36m[pipe]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[pipe] %s\033[0m %s\n' "$(t 'BLAD:' 'ERROR:')" "$*" >&2; exit 1; }
 
@@ -254,25 +254,25 @@ else
 fi
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-case "${PIPE_LANG:-pl}" in
-  en*|EN*) cat <<EOF
+case "${PIPE_LANG:-en}" in
+  pl*|PL*) cat <<EOF
 
-Done. On your computer:
-  bash install.sh            # Linux/macOS (or .\\install.ps1 on Windows)
-  pipe --lang en --host root@${IP:-YOUR_SERVER}
+Gotowe. Na swoim komputerze:
+  bash install.sh            # Linux/macOS (albo .\\install.ps1 na Windows)
+  pipe --lang pl --host root@${IP:-TWOJ_SERWER}
 
-Telegram: fill in clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
-and run the script again.
+Telegram: uzupelnij clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
+i uruchom skrypt ponownie.
 EOF
   ;;
   *) cat <<EOF
 
-Gotowe. Na swoim komputerze:
-  bash install.sh            # Linux/macOS (albo .\\install.ps1 na Windows)
-  pipe --host root@${IP:-TWOJ_SERWER}
+Done. On your computer:
+  bash install.sh            # Linux/macOS (or .\\install.ps1 on Windows)
+  pipe --host root@${IP:-YOUR_SERVER}
 
-Telegram: uzupelnij clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
-i uruchom skrypt ponownie.
+Telegram: fill in clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
+and run the script again.
 EOF
   ;;
 esac

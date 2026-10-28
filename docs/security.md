@@ -1,478 +1,486 @@
-# Bezpieczenstwo -- Pipe
+# Security -- Pipe
 
-Pipe v0.48.2
+Pipe v0.49.0
 
 ## Model
 
-Pipe daje modelowi jezykowemu dostep do serwera, wiec zasady bezpieczenstwa sa **w kodzie**, a nie
-w prompcie. Model moze sie pomylic albo zostac zmanipulowany tresci przeczytanego pliku (prompt injection);
-klasyfikator, potwierdzenia, redakcja sekretow i limity workerow dzialaja niezaleznie od tego, co model
-"chce" zrobic.
+Pipe gives a language model access to a server, so the security rules live **in code**, not in the prompt. The model
+can make a mistake or be manipulated by the content of a file it reads (prompt injection); the classifier,
+confirmations, secret redaction and worker limits work regardless of what the model "wants" to do.
 
-| Warstwa | Co robi |
-|---------|---------|
-| Klasyfikator komend | `safe` / `confirm` / `forbidden` -- fail-closed |
-| Samodzielnosc | rutyne wykonuje sam przez bezpiecznik, o sprawy wazne pyta (`core/autonomy.py`) |
-| Potwierdzenie | pokazuje dokladnie ten napis, ktory zostanie wykonany |
-| Redakcja sekretow | wyniki narzedzi sa czyszczone z kluczy i hasel przed wyslaniem do LLM |
-| Workery i rutyny | wykonuja wylacznie `safe`; reszta wraca jako propozycja |
-| Workspace | narzedzia plikowe widza tylko hosta i nie widza kluczy SSH, `/etc/shadow`, `/proc`... |
-| Audit log | kazda operacja, bez tresci plikow |
-| Token | `AGENT_TOKEN` wymagany dla kazdego zadania, takze potwierdzen i subskrypcji |
+| Layer | What it does |
+|-------|--------------|
+| Command classifier | `safe` / `confirm` / `forbidden`, fail-closed |
+| Autonomy | runs routine work itself through the safety fuse, asks about important things (`core/autonomy.py`) |
+| Confirmation | shows exactly the string that will run |
+| Secret redaction | tool results are cleaned of keys and passwords before they are sent to the LLM |
+| Workers and routines | run only `safe`; everything else comes back as a proposal |
+| Workspace | file tools see only the host and can't see SSH keys, `/etc/shadow`, `/proc`... |
+| Audit log | every operation, without file contents |
+| Token | `AGENT_TOKEN` required for every request, including confirmations and subscriptions |
 
 ---
 
-## Klasyfikacja komend (`backend/core/security.py`)
+## Command classification (`backend/core/security.py`)
 
-Kolejnosc:
+Order:
 
-1. **FORBIDDEN** na calym napisie -- lapie `curl ... | bash` i `$(rm -rf ~)`.
-2. Podzial na segmenty po `;`, `|`, `||`, `&&`, `&` i nowych liniach -- **z uwzglednieniem cudzyslowow**
-   (`grep 'a|b'` to jeden segment).
-3. Kazdy segment: forbidden -> wrazliwe pliki (confirm) -> wzorce confirm -> rozpoznany odczyt (safe).
-   Dopasowanie jest **tokenowe**: `ss` nie pasuje do `ssh`, `ps` do `psql`, `id` do `idiotic-cmd`.
-4. Przekierowanie zapisu (`>`, `>>` poza `/dev/null` i `2>&1`) albo dynamiczna konstrukcja (`$(...)`,
-   `${...}`, `$'...'`, backtick, `<(...)`) -> **confirm**, nawet gdy segmenty sa odczytami.
-5. Wszystko, czego klasyfikator nie rozpoznaje -> **confirm** (fail-closed).
+1. **FORBIDDEN** on the whole string, which catches `curl ... | bash` and `$(rm -rf ~)`.
+2. Splitting into segments on `;`, `|`, `||`, `&&`, `&` and newlines, **respecting quotes**
+   (`grep 'a|b'` is one segment).
+3. Each segment: forbidden -> sensitive files (confirm) -> confirm patterns -> recognised read (safe).
+   Matching is **token-based**: `ss` doesn't match `ssh`, `ps` doesn't match `psql`, `id` doesn't match `idiotic-cmd`.
+4. A write redirect (`>`, `>>` other than `/dev/null` and `2>&1`) or a dynamic construct (`$(...)`,
+   `${...}`, `$'...'`, backtick, `<(...)`) -> **confirm**, even when the segments are reads.
+5. Anything the classifier doesn't recognise -> **confirm** (fail-closed).
 
-### SAFE -- rozpoznane odczyty
+### SAFE -- recognised reads
 
-Pliki i tekst (`cat`, `grep`, `ls`, `find`, `du`, `df`, `jq`...), system (`ps`, `free`, `uptime`,
-`systemctl status`, `journalctl`), siec (`ss`, `ip addr`, `ping`, `dig`, `curl` GET), Docker
-(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config/top`, `exec` z rozpoznanym odczytem w srodku -- takze
-`sh -c '...'`), Git (`status`, `log`, `diff`, `show`, listowanie galezi/tagow), Kubernetes (`get`, `describe`, `logs`,
-`top`, `rollout status`), Helm (`list`, `status`, `get`), `dmesg` (bez czyszczenia), `sed` bez `-i` i bez komend
-`e`/`w`, `awk` bez `system()`, potokow, `getline`, `print > plik` i `ENVIRON`.
+Files and text (`cat`, `grep`, `ls`, `find`, `du`, `df`, `jq`...), system (`ps`, `free`, `uptime`,
+`systemctl status`, `journalctl`), network (`ss`, `ip addr`, `ping`, `dig`, `curl` GET), Docker
+(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config/top`, `exec` with a recognised read inside -- also
+`sh -c '...'`), Git (`status`, `log`, `diff`, `show`, listing branches/tags), Kubernetes (`get`, `describe`, `logs`,
+`top`, `rollout status`), Helm (`list`, `status`, `get`), `dmesg` (without clearing), `sed` without `-i` and without
+the `e`/`w` commands, `awk` without `system()`, pipes, `getline`, `print > file` and `ENVIRON`.
 
-Argumenty, ktore zmieniaja stan, sa sprawdzane osobno:
+Arguments that change state are checked separately:
 
-| Komenda | Wymaga potwierdzenia, gdy... |
-|---------|------------------------------|
-| `git` | podkomenda nie jest odczytem, flaga uruchamiajaca program (`-c core.pager=`, `--upload-pack`, `--receive-pack`, `--exec`, `-O`/`--open-files-in-pager`) albo piszaca do pliku (`-o`/`--output`), `branch -D`, `branch nowa`, `tag v1`, `remote add`, `config` bez `--get/--list` |
+| Command | Requires confirmation when... |
+|---------|-------------------------------|
+| `git` | the subcommand isn't a read, a flag runs a program (`-c core.pager=`, `--upload-pack`, `--receive-pack`, `--exec`, `-O`/`--open-files-in-pager`) or writes a file (`-o`/`--output`), `branch -D`, `branch new`, `tag v1`, `remote add`, `config` without `--get/--list` |
 | `find` | `-exec`, `-execdir`, `-ok`, `-delete`, `-fprint` |
-| `curl` | `-o/-O`, `-T`, `-d/--data`, `-F`, `--json`, `-D`, `--trace*`, `-X`/`--request` (takze `--request=`, `-X<METODA>`) inne niz GET/HEAD, **albo host inny niz localhost/prywatny** (eksfiltracja) -- takze proxy (`-x`, `--proxy`, `--socks5`), `--resolve`/`--connect-to` i adres zapisany jedna liczba (`http://134744072/`) |
-| `sort` | `-o`/`--output`, `--compress-program` (uruchamia program) |
+| `curl` | `-o/-O`, `-T`, `-d/--data`, `-F`, `--json`, `-D`, `--trace*`, `-X`/`--request` (also `--request=`, `-X<METHOD>`) other than GET/HEAD, **or a host other than localhost/private** (exfiltration), including proxies (`-x`, `--proxy`, `--socks5`), `--resolve`/`--connect-to` and an address written as a single number (`http://134744072/`) |
+| `sort` | `-o`/`--output`, `--compress-program` (runs a program) |
 | `journalctl` | `--vacuum-*`, `--rotate`, `--flush` |
-| `kubectl get secret` | `-o yaml/json/jsonpath/go-template/custom-columns` (takze `-o=...`) albo `--template` -- rowniez gdy sekrety sa na liscie zasobow (`get cm,secret`) -- tresc sekretu trafilaby do LLM |
+| `kubectl get secret` | `-o yaml/json/jsonpath/go-template/custom-columns` (also `-o=...`) or `--template`, also when secrets are in a resource list (`get cm,secret`), because the secret's content would reach the LLM |
 
-Odczyty tych sciezek tez wymagaja zgody, bo wyslalyby sekrety do providera:
-`/etc/shadow`, klucze SSH, `*.pem`/`*.key`, `.env` (takze wzgledne `cat .env`), **`/proc/*/environ` i `/proc/*/root`**
-(dowolny PID, `self` i globy; przy `pid: host` to zmienne i katalogi domowe procesow hosta -- obejscie
-read-only `/hostfs`), oraz globy w katalogach z sekretami (`cat /etc/s*adow`, `cat /root/.ssh/id_*`).
-Wzorce sa sprawdzane takze po usunieciu cudzyslowow i backslashy, wiec `cat /etc/sha""dow` nie przejdzie.
-Te same pliki czytane przez `read_file` tez wymagaja zgody.
+Reading these paths also requires approval, because it would send secrets to the provider:
+`/etc/shadow`, SSH keys, `*.pem`/`*.key`, `.env` (also relative `cat .env`), **`/proc/*/environ` and `/proc/*/root`**
+(any PID, `self` and globs; with `pid: host` these are the environment and home directories of host processes, a way
+around the read-only `/hostfs`), and globs in secret directories (`cat /etc/s*adow`, `cat /root/.ssh/id_*`).
+Patterns are also checked after removing quotes and backslashes, so `cat /etc/sha""dow` won't get through.
+The same files read with `read_file` also require approval.
 
-### CONFIRM -- zmiany stanu
+### CONFIRM -- state changes
 
-Nie kazda z nich czeka na Ciebie -- rutyne Pipe wykonuje sam (sekcja *Samodzielnosc* nizej). Do potwierdzenia
-klasyfikator kieruje: `rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
+Not all of them wait for you -- Pipe runs routine work itself (the *Autonomy* section below). The classifier sends
+these to confirmation: `rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
 `docker run/exec/start/stop/restart/rm/compose up/down`, `git push/commit/pull/reset...`, `kubectl apply/delete/scale/exec...`,
-`helm install/upgrade/uninstall`, `ufw`, `iptables` (poza listowaniem), `reboot`, `crontab` (poza `-l`) --
-oraz kazda nieznana komenda. Odczyt plikow z sekretami (`/etc/shadow`, klucze SSH, `*.pem`, `*.key`, `.env`)
-tez wymaga zgody.
+`helm install/upgrade/uninstall`, `ufw`, `iptables` (except listing), `reboot`, `crontab` (except `-l`), and every
+unknown command. Reading files with secrets (`/etc/shadow`, SSH keys, `*.pem`, `*.key`, `.env`) also requires approval.
 
-### FORBIDDEN -- zawsze odrzucane
+### FORBIDDEN -- always refused
 
-`rm -rf /` (i warianty: `-fr`, `/*`, `~`, `"/"`, `/hostfs`), `rm --no-preserve-root`, `dd if=`, `mkfs`,
-`wipefs`, `shred`, zapis do `/etc/passwd`, `/etc/shadow`, `/boot/`, `/dev/sd*`, fork bomb,
+`rm -rf /` (and variants: `-fr`, `/*`, `~`, `"/"`, `/hostfs`), `rm --no-preserve-root`, `dd if=`, `mkfs`,
+`wipefs`, `shred`, writing to `/etc/passwd`, `/etc/shadow`, `/boot/`, `/dev/sd*`, fork bomb,
 `curl|wget ... | sh`, `base64 ... | sh`, `python -c ...exec`, `kubectl delete ns kube-system`.
-Odmowa nie wraca do modelu jako blad do ponowienia -- dostaje informacje, zeby nie probowal obejsc.
+A refusal doesn't go back to the model as an error to retry; it gets a message telling it not to try to get around it.
 
-Regresje obejsc znalezionych przy przebudowie: `backend/tests/test_security_hardening.py`,
+Regression tests for bypasses found during the rebuild: `backend/tests/test_security_hardening.py`,
 `backend/tests/test_review_fixes_v091.py`.
 
-Poza recznymi przypadkami klasyfikator jest fuzzowany (`backend/tests/test_security_fuzz.py`, hypothesis):
-rozpoznany odczyt plus doklejona komenda (`;`, `&&`, `|`, `&`, nowa linia, `$(...)`, backticki, `<(...)`, `${IFS}`,
-`$'\x3b'`), przekierowanie do pliku, nazwa komendy rozcieta cudzyslowami albo backslashem, zmiany wielkosci liter
-i bialych znakow, odczyt sekretu ze sciezka w cudzyslowach. Wlasciwosc jest jedna: nic z tego nie moze byc `safe`,
-a dowolny tekst nie moze wywrocic klasyfikatora. W CI 300 przykladow na test; glebiej lokalnie:
-`PIPE_FUZZ_EXAMPLES=5000 pytest backend/tests/test_security_fuzz.py`. Kontrprzyklady trafiaja na liste
-`KNOWN_BYPASSES` jako stale regresje.
+Besides the hand-written cases the classifier is fuzzed (`backend/tests/test_security_fuzz.py`, hypothesis): a
+recognised read plus an appended command (`;`, `&&`, `|`, `&`, a newline, `$(...)`, backticks, `<(...)`, `${IFS}`,
+`$'\x3b'`), a redirect to a file, a command name split by quotes or a backslash, case and whitespace changes, reading
+a secret with a quoted path. There is one property: none of it may be `safe`, and no text may crash the classifier.
+CI runs 300 examples per test; deeper locally: `PIPE_FUZZ_EXAMPLES=5000 pytest backend/tests/test_security_fuzz.py`.
+Counterexamples go to the `KNOWN_BYPASSES` list as permanent regressions.
 
 ---
 
-## Redakcja sekretow
+## Secret redaction
 
-Kazdy wynik narzedzia (komendy, plik, raport workera) przechodzi przez `memory.redact_secrets()` przed
-wyslaniem do providera LLM:
+Every tool result (commands, files, worker reports) goes through `memory.redact_secrets()` before it is sent to the
+LLM provider:
 
-- klucze prywatne (caly blok PEM), klucze AWS, `sk-...`, tokeny GitHub, Slack, Google, botow Telegrama, **JWT**,
-- `NAZWA_Z_PASSWORD/SECRET/TOKEN/API_KEY=wartosc` -- klucz zostaje, wartosc znika
-  (`DB_PASSWORD=[ZREDAGOWANO: sekret]`), wiec agent wie, ze zmienna istnieje. Dopasowanie nie przechodzi
-  przez znaki NUL, wiec nie zjada calego `/proc/<pid>/environ`,
-- **dane logowania w URL-ach** (`postgres://user:haslo@host` -> `postgres://user:[ZREDAGOWANO]@host`), w tym
-  `git remote -v` i `docker inspect`,
-- **hashe hasel z `/etc/shadow`** (`$6$...`).
+- private keys (the whole PEM block), AWS keys, `sk-...`, GitHub, Slack, Google and Telegram bot tokens, **JWT**,
+- `NAME_WITH_PASSWORD/SECRET/TOKEN/API_KEY=value`: the key stays, the value disappears
+  (`DB_PASSWORD=[ZREDAGOWANO: sekret]`), so the agent knows the variable exists. Matching doesn't cross NUL
+  characters, so it doesn't swallow the whole `/proc/<pid>/environ`,
+- **credentials in URLs** (`postgres://user:password@host` -> `postgres://user:[ZREDAGOWANO]@host`), including
+  `git remote -v` and `docker inspect`,
+- **password hashes from `/etc/shadow`** (`$6$...`).
 
-Agent nie moze zapisac `write_file` tresci ze znacznikiem `[ZREDAGOWANO` -- inaczej przepisujac plik `.env`
-zniszczylby prawdziwe wartosci. Musi zmieniac taki plik punktowo (np. `sed -i`, z potwierdzeniem).
-Wylaczenie: `REDACT_SECRETS=0` (niezalecane).
+The agent can't write content containing the `[ZREDAGOWANO` marker with `write_file`; otherwise rewriting an `.env`
+file would destroy the real values. It has to change such a file in place (for example `sed -i`, with confirmation).
+Turning it off: `REDACT_SECRETS=0` (not recommended).
 
-Wyniki dluzsze niz 24 000 znakow sa przycinane (poczatek + koniec), a historia sesji -- na granicy wiadomosci
-uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
+Results longer than 24,000 characters are truncated (beginning + end), and the session history is trimmed at a user
+message boundary, so a tool call / result pair is never split.
 
 ---
 
-## Potwierdzenia: co widzisz, to wykonasz
+## Confirmations: what you see is what runs
 
-- Komenda w potwierdzeniu (`as_code()`) ma **zneutralizowane znaki sterujace i bidi** -- sekwencje ANSI, `\r`
-  i przelaczniki kierunku pisma (U+202E) sa zamieniane na widoczny zapis `\xNN`, wiec nie ukryja roznicy
-  miedzy tym, co widzisz, a tym, co sie wykona.
-- `write_file` pokazuje **diff wzgledem obecnej tresci** (albo podglad nowego pliku), a przy plikach
-  uruchamianych automatycznie (`.bashrc`, `authorized_keys`, cron, systemd, `.gitconfig`) dodaje ostrzezenie
-  o trwalym dostepie.
-- Potwierdzenie jest przypiete do `tool_call_id` w sesji; nowa wiadomosc zamiast TAK anuluje operacje.
-- Plan bezpiecznika (kopie, sprawdzenia, weryfikacja) jest czescia potwierdzenia i jest przechowywany w nim --
-  po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
-  sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
+- The command in a confirmation (`as_code()`) has **control and bidi characters neutralised**: ANSI sequences, `\r`
+  and text direction overrides (U+202E) are replaced with a visible `\xNN`, so they can't hide a difference between
+  what you see and what runs.
+- `write_file` shows a **diff against the current content** (or a preview of a new file), and for files that run
+  automatically (`.bashrc`, `authorized_keys`, cron, systemd, `.gitconfig`) adds a warning about persistent access.
+- A confirmation is bound to the `tool_call_id` in the session; a new message instead of YES cancels the operation.
+- The safety-fuse plan (backups, checks, verification) is part of the confirmation and is stored with it, so after YES
+  exactly the plan you were shown is executed. Check commands (`nginx -t`, `sshd -t`, `docker inspect`...) are built
+  from templates in code, with parameters through `shlex.quote`.
 
-## Samodzielnosc: co Pipe robi bez pytania
+## Autonomy: what Pipe does without asking
 
-Operacja, ktora klasyfikator zostawia do potwierdzenia, przechodzi jeszcze przez `backend/core/autonomy.py`, zanim
-trafi do Ciebie. Rutyne Pipe wykonuje od razu, przez ten sam bezpiecznik co po TAK: kopia plikow do dziennika,
-sprawdzenie przed (`nginx -t`, `sshd -t`, `docker compose config`), weryfikacja po (usluga aktywna, kontener
-dziala, strony odpowiadaja), automatyczne przywrocenie configu, wpis, ktory `/cofnij` odwraca. Rutyna to:
+An operation the classifier leaves for confirmation also goes through `backend/core/autonomy.py` before it reaches
+you. Routine work runs right away, through the same safety fuse as after YES: file backup to the journal, a check
+before (`nginx -t`, `sshd -t`, `docker compose config`), verification after (service active, container running,
+sites responding), automatic config restore, an entry that `/undo` reverts. Routine means:
 
-- restart, przeladowanie, start, `enable` uslug i kontenerow, `nginx -s reload`, `docker compose up -d/pull/build`,
-  `docker compose down` (bez `-v`), `docker image prune` (bez `-a`), `docker pull`, `kubectl rollout restart/undo`,
-  `kubectl scale`, `helm rollback`,
-- edycja plikow konfiguracji (`write_file`, `sed -i`, `tee`, `cp`, `mv`, `ln -s`, `> plik`), `mkdir`, `chmod`/`chown`
-  bez setuid i bez zapisu dla wszystkich, `rm` pojedynczych plikow, ktore dziennik skopiuje; konfiguracja nginx,
-  Apache i Caddy tez, o ile zmiana nie dodaje `root`, `alias` ani `autoindex`, a tresc stoi w samej komendzie
-  albo pochodzi z tego samego katalogu serwera,
-- `apt`/`dnf`/`apk` install/upgrade/update/clean z repozytorium systemu, `dpkg --configure -a`, `journalctl --vacuum`,
-  `certbot renew`, `git pull/fetch` z nazwanego remote (`origin`), `git checkout <galaz>/commit/merge/stash`,
-- `curl` GET do domen, ktore ten serwer sam obsluguje (z konfiguracji proxy),
-- latki (`security_patch`), cofniecie zmiany (`journal undo`), zadanie jednorazowe (worker tylko czyta),
-  aktualizacja Pipe, uruchomienie projektu z warsztatu.
+- restart, reload, start, `enable` of services and containers, `nginx -s reload`, `docker compose up -d/pull/build`,
+  `docker compose down` (without `-v`), `docker image prune` (without `-a`), `docker pull`, `kubectl rollout
+  restart/undo`, `kubectl scale`, `helm rollback`,
+- editing config files (`write_file`, `sed -i`, `tee`, `cp`, `mv`, `ln -s`, `> file`), `mkdir`, `chmod`/`chown`
+  without setuid and without world write, `rm` of single files the journal can back up; nginx, Apache and Caddy
+  config too, as long as the change adds no `root`, `alias` or `autoindex` and the content is in the command itself
+  or comes from the same server directory,
+- `apt`/`dnf`/`apk` install/upgrade/update/clean from the system repository, `dpkg --configure -a`,
+  `journalctl --vacuum`, `certbot renew`, `git pull/fetch` from a named remote (`origin`), `git checkout
+  <branch>/commit/merge/stash`,
+- `curl` GET to domains this server serves itself (from the proxy config),
+- patches (`security_patch`), undoing a change (`journal undo`), a one-off task (the worker only reads), the Pipe
+  update, starting a workshop project.
 
-O sprawy wazne Pipe pyta zawsze, z powodem w kodzie:
+Pipe always asks about important things, with the reason in code:
 
-| Powod | Przyklady |
-|-------|-----------|
-| dane, ktorych nie skopiuje | `rm -r`, globy, pliki wieksze niz kopia dziennika (5 MB), `docker rm`, wolumeny, `system prune`, `compose down -v`, `apt remove`, `git reset --hard`, `git clean`, `git checkout -- .`, `kubectl delete` |
-| dostep do serwera | SSH (`/etc/ssh`, `.ssh/`), uzytkownicy i hasla, sudo, PAM, zapora (`ufw`, `iptables`, `nft`), setuid, `chmod 777` |
-| autostart | cron, jednostki systemd, `.bashrc`/`.profile`, `/etc/profile.d`, `rc.local`, `logrotate.d`, hooki gita |
-| system i jego zrodla | `/usr`, `/boot`, `/etc/apt`, `/etc/docker`, `fstab`, `sysctl`, `ld.so.preload`, `systemctl mask` |
-| kod | pliki skryptow i programow (`.php`, `.py`, `.sh`, `.js`, `.htaccess`...), pliki compose i `Dockerfile` (`compose up -d` jest rutyna, wiec to one mowia, co sie uruchomi), `pip`/`npm install`, `docker run/exec`, `kubectl apply`, `kubectl set image`, `git pull <adres>`, `bash skrypt.sh`, `apt install ./plik.deb`, `apt -o Dpkg::Pre-Invoke` |
-| kontener z dostepem do hosta | `docker run` z `--privileged`, `docker.sock`, `--cap-add`, `--network host`, montowaniem `/` |
-| katalog strony | pliki w `/var/www`, `/srv/www`, `public_html`, `public/`, `static/`, `uploads/` -- to, co tam trafi, widac z internetu |
-| wystawienie katalogow | konfiguracja serwera WWW z nowym `root`, `alias`, `autoindex`; plik konfiguracji skopiowany spoza katalogu serwera albo tresc z innego pliku (`cat x > /etc/nginx/...`) |
-| dane wychodzace | `curl`/`wget` do obcych hostow, `git push`, `scp`, `rsync`, `nc` |
-| odciecie dostepu albo Pipe | zatrzymanie `ssh`, `docker`, sieci; kontener i projekt compose samego Pipe; `nginx -s stop`; `kill` |
-| restart maszyny | `reboot`, `shutdown` |
-| sekrety i dane Pipe | `.env`, klucze, `tokens.json`, katalog danych Pipe |
-| zdalne serwery | zmiana plikow na celu ssh/docker/kubectl -- tam nie ma kopii po stronie Pipe |
-| niewiadome | komenda, ktorej Pipe nie rozpoznaje, podstawienie `$(...)`, zmienne przed komenda (`LD_PRELOAD=`) |
+| Reason | Examples |
+|--------|----------|
+| data it cannot back up | `rm -r`, globs, files larger than the journal backup (5 MB), `docker rm`, volumes, `system prune`, `compose down -v`, `apt remove`, `git reset --hard`, `git clean`, `git checkout -- .`, `kubectl delete` |
+| access to the server | SSH (`/etc/ssh`, `.ssh/`), users and passwords, sudo, PAM, firewall (`ufw`, `iptables`, `nft`), setuid, `chmod 777` |
+| autostart | cron, systemd units, `.bashrc`/`.profile`, `/etc/profile.d`, `rc.local`, `logrotate.d`, git hooks |
+| the system and its sources | `/usr`, `/boot`, `/etc/apt`, `/etc/docker`, `fstab`, `sysctl`, `ld.so.preload`, `systemctl mask` |
+| code | script and program files (`.php`, `.py`, `.sh`, `.js`, `.htaccess`...), compose files and `Dockerfile` (`compose up -d` is routine, so they decide what runs), `pip`/`npm install`, `docker run/exec`, `kubectl apply`, `kubectl set image`, `git pull <url>`, `bash script.sh`, `apt install ./file.deb`, `apt -o Dpkg::Pre-Invoke` |
+| a container with host access | `docker run` with `--privileged`, `docker.sock`, `--cap-add`, `--network host`, a `/` mount |
+| a site directory | files in `/var/www`, `/srv/www`, `public_html`, `public/`, `static/`, `uploads/` -- whatever lands there is visible from the internet |
+| exposing directories | web server config with a new `root`, `alias`, `autoindex`; a config file copied from outside the server directory or content from another file (`cat x > /etc/nginx/...`) |
+| outgoing data | `curl`/`wget` to foreign hosts, `git push`, `scp`, `rsync`, `nc` |
+| cutting access or Pipe | stopping `ssh`, `docker`, the network; Pipe's own container and compose project; `nginx -s stop`; `kill` |
+| machine restart | `reboot`, `shutdown` |
+| secrets and Pipe data | `.env`, keys, `tokens.json`, Pipe's data directory |
+| remote servers | changing files on an ssh/docker/kubectl target -- there is no backup on the Pipe side |
+| unknowns | a command Pipe does not recognise, `$(...)` substitution, variables before the command (`LD_PRELOAD=`) |
 
-Pytanie wraca tez dla kazdej zmiany w turze, w ktorej model czytal strone z internetu, wynik serwera MCP albo
-zalacznik (jak przy YOLO), dla operacji, o ktore model sam poprosil (`requires_confirmation: true`), dla zapisu
-pamieci Pipe (skille, SERVER.md), nowych celow, rutyn i serwerow MCP oraz zawsze dla roli viewer i w trybie
-obserwacji. Blad reguly oznacza pytanie, nigdy wykonanie.
+The question also comes back for every change in a turn in which the model read a web page, an MCP server result or
+an attachment (as with YOLO), for operations the model asked about itself (`requires_confirmation: true`), for
+writes to Pipe's memory (skills, SERVER.md), new targets, routines and MCP servers, and always for the viewer role
+and in observe mode. A rule error means asking, never running.
 
-Dlaczego nieznana komenda zawsze pyta: Pipe czyta logi, strony i pliki, w ktorych obcy moze zostawic tekst
-udajacy polecenie. Bez pytania wykona tylko to, co rozpoznaje i co bezpiecznik umie sprawdzic albo cofnac -- wiec
-nawet zmanipulowany model nie zalozy sobie dostepu, autostartu ani nie wysle danych na zewnatrz. Najgorsze, co moze
-zrobic bez Ciebie, to rutynowa zmiana z kopia w dzienniku.
+Why an unknown command always asks: Pipe reads logs, pages and files in which a stranger can leave text pretending
+to be an instruction. Without asking it runs only what it recognises and what the safety fuse can check or undo --
+so even a manipulated model cannot give itself access, add autostart or send data out. The worst it can do without
+you is a routine change with a backup in the journal.
 
-Kazda taka zmiana jest widoczna: w rozmowie pojawia sie „Bez pytania (rutyna, przez bezpiecznik): ...”, pod
-komenda jej wynik z dopiskiem *bez pytania*, w dzienniku i audit logu interfejs ma dopisek `[auto]`
-(np. `telegram:123 [auto]`). Komendy `host: true` w trybie docker dostaja pelny plan bezpiecznika (kopie z katalogu
-hosta, sprawdzenia i komendy odwrotne przez kontener pomocniczy). `AUTONOMY=0` w `backend/.env` przywraca pytanie
-o kazda zmiane.
+Every such change is visible: the conversation shows "Without asking (routine, through the safety fuse): ...", the
+command's output appears under it marked *without asking*, and in the journal and audit log the interface has an
+`[auto]` suffix (e.g. `telegram:123 [auto]`). `host: true` commands in docker mode get the full fuse plan (backups
+from the host directory, checks and inverse commands through the helper container). `AUTONOMY=0` in `backend/.env`
+brings back the question for every change.
 
-## Tryb YOLO (`/yolo`)
+## YOLO mode (`/yolo`)
 
-Domyslnie rutyna wykonuje sie sama, a sprawy wazne czekaja na TAK. `/yolo on` (CLI, `pipe web`, Telegram) wylacza to pytanie -- **tylko w tej
-rozmowie (sesji)**, tylko dla administratora i tylko do restartu backendu albo `/yolo off`. Co sie nie zmienia:
+By default routine work runs by itself and important things wait for YES. `/yolo on` (CLI, `pipe web`, Telegram) turns that question off, **only in this
+conversation (session)**, only for an admin and only until the backend restarts or `/yolo off`. What doesn't change:
 
-- klasyfikacja: operacje `forbidden` sa nadal odrzucane, a `safe` dzialaja jak zawsze;
-- bezpiecznik: kazda zmiana idzie przez ten sam plan co po TAK (kopia plikow, sprawdzenie przed, weryfikacja po,
-  automatyczne przywrocenie configow) i trafia do dziennika -- `/cofnij` dziala;
-- workery nadal tylko czytaja (propozycje zmian nie sa wykonywane), a zgody zewnetrznych agentow MCP nadal czekaja na decyzje;
-- rola viewer nie moze wlaczyc YOLO, a nawet ustawiona flaga nic nie zmienia dla sesji viewera.
+- classification: `forbidden` operations are still refused, and `safe` ones work as always;
+- the safety fuse: every change goes through the same plan as after YES (file backups, check before, verification
+  after, automatic restore of configs) and goes into the journal, so `/undo` works;
+- workers still only read (proposed changes are not run), and external MCP agents' approvals still wait for a decision;
+- the viewer role can't turn YOLO on, and even a set flag changes nothing for a viewer's session.
 
-Wykonanie bez pytania jest widoczne: klient dostaje `progress` „YOLO — wykonuje bez pytania: ...”, `pipe web` pokazuje
-czerwony znacznik nad polem wpisywania, CLI -- `YOLO` w prompcie, a audit log i dziennik zapisuja interfejs z dopiskiem
-`[yolo]` (np. `cli:kuba [yolo]`). Model dostaje w prompcie blok o trybie YOLO (ostroznosc, najmniejsza zmiana,
-bez nieodwracalnych operacji bez wyraznej prosby). YOLO usuwa czlowieka z petli -- wlaczaj je na czas konkretnej pracy.
+Running without asking is visible: the client gets a `progress` "YOLO — running without asking: ...", `pipe web`
+shows a red badge above the input box, the CLI shows `YOLO` in the prompt, and the audit log and journal record the
+interface with a `[yolo]` suffix (for example `cli:kuba [yolo]`). The model gets a block about YOLO mode in its prompt
+(caution, the smallest change, no irreversible operations without an explicit request). YOLO takes the human out of
+the loop, so turn it on for a specific piece of work.
 
-## Tryb obserwacji (`PIPE_OBSERVE=1`)
+## Observe mode (`PIPE_OBSERVE=1`)
 
-Na poczatek, zanim zaufasz agentowi, mozesz zainstalowac go tak, zeby niczego nie zmienial:
-`sudo bash scripts/install-server.sh --profile observe`. Pipe dalej pilnuje serwera, wysyla alerty i raporty,
-odpowiada na pytania, rysuje schematy i dziala jako bramka MCP do odczytu. Zmiany sa odrzucane na dwoch poziomach.
+To start with, before you trust the agent, you can install it so that it changes nothing:
+`sudo bash scripts/install-server.sh --profile observe`. Pipe still watches the server, sends alerts and reports,
+answers questions, draws diagrams and works as a read-only MCP gateway. Changes are refused on two levels.
 
-W aplikacji (`runtime.observe()`, takze w trybie native):
+In the application (`runtime.observe()`, native mode included):
 
-- komenda zmieniajaca stan, zapis pliku, `journal undo`, `cron_manage add/remove` i `pipe_update apply`
-  sa odrzucane bez pytania o TAK, rowniez w trybie YOLO; model dostaje w prompcie blok o trybie obserwacji,
-- `run_command` w bramce MCP odmawia zamiast tworzyc zgode, a juz istniejacej zgody nie da sie zatwierdzic,
-- `undo` z `execute` (przycisk w `pipe web`, `/cofnij` w CLI i Telegramie) zwraca blad,
-- rejestry i pamiec Pipe dzialaja dalej z potwierdzeniem jak zwykle: rutyny (czytaja), cele, SERVER.md, skille.
+- a state-changing command, a file write, `journal undo`, `cron_manage add/remove` and
+  `pipe_update apply` are refused without asking for YES, in YOLO mode too; the model gets an observe-mode block
+  in its prompt,
+- `run_command` in the MCP gateway refuses instead of creating an approval, and an existing approval can't be approved,
+- `undo` with `execute` (the button in `pipe web`, `/undo` in the CLI and Telegram) returns an error,
+- Pipe's registries and memory keep working, with confirmation as usual: routines (they read), targets, SERVER.md,
+  skills.
 
-W kontenerze (`backend/docker-compose.observe.yml`, tylko tryb docker):
+In the container (`backend/docker-compose.observe.yml`, docker mode only):
 
-- agent nie ma `docker.sock`; Dockera widzi przez `tecnativa/docker-socket-proxy` z API tylko do odczytu
-  (`ps`, `inspect`, `logs`, `info` dzialaja; `run`, `exec`, `restart`, `stop` dostaja 403). Proxy jest w osobnej
-  sieci wewnetrznej, bez dostepu z zewnatrz,
-- `/root` hosta jest tylko do odczytu (bez nakladki rw),
-- kontener nie ma uprawnien jadra poza `DAC_READ_SEARCH` (czytanie plikow) i `NET_RAW` (ping) i dziala
-  z `no-new-privileges`; `/proc/*/environ` procesow hosta jest wtedy nieczytelny.
+- the agent has no `docker.sock`; it sees Docker through `tecnativa/docker-socket-proxy` with a read-only API
+  (`ps`, `inspect`, `logs`, `info` work; `run`, `exec`, `restart`, `stop` get 403). The proxy sits on a separate
+  internal network with no outside access,
+- the host's `/root` is read-only (no rw overlay),
+- the container has no kernel capabilities except `DAC_READ_SEARCH` (reading files) and `NET_RAW` (ping) and runs
+  with `no-new-privileges`; `/proc/*/environ` of host processes is then unreadable.
 
-Zapisywalne zostaja `backend/data` (pamiec Pipe) i `/tmp` hosta (socket dla bota Telegram). W trybie native
-obowiazuje tylko ochrona w aplikacji: proces dziala jako root. Pelny tryb przywraca
+`backend/data` (Pipe's memory) and the host's `/tmp` (the socket for the Telegram bot) stay writable. In native mode
+only the application-level protection applies: the process runs as root. Full mode comes back with
 `sudo bash scripts/install-server.sh --profile full`.
 
 ## Internet (`web_search`, `web_fetch`, `software_info`)
 
-Agent sam decyduje, kiedy siegnac do sieci, wiec internet jest traktowany jak niezaufane zrodlo:
+The agent decides by itself when to go to the web, so the internet is treated as an untrusted source:
 
-- **Nic poufnego nie wychodzi**: zapytanie, adres i argumenty `software_info` z sekretem (`memory.find_secret()`)
-  sa odrzucane, prompt kaze pisac zapytania ogolnie (tresc bledu, oprogramowanie i wersja -- bez domen, IP, nazw
-  uzytkownikow). Kazde zapytanie trafia do audit logu.
-- **Adres to tez kanal wycieku** (`https://obcy.example/?d=<dane>`): `web_fetch` czyta bez pytania tylko adresy
-  z wynikow `web_search` tej sesji (`Session.web_urls`) albo wpisane przez uzytkownika (wiadomosci zbudowane przez
-  backend, np. alerty z webhookow, sie nie licza). Inny adres -- potwierdzenie.
-- **Tylko publiczny internet** (SSRF): host musi wskazywac wylacznie na adresy publiczne (`ipaddress.is_global`);
-  loopback, sieci prywatne, link-local (metadane chmury `169.254.169.254`), CGNAT i adresy IPv4 w IPv6 sa
-  odrzucane -- przy kazdym przekierowaniu osobno. Ograniczenie: sprawdzenie DNS i polaczenie to dwa kroki
-  (teoretycznie mozliwy DNS rebinding); lokalne uslugi agent sprawdza przez `network_info`.
-- **Prompt injection**: wyniki sa oznaczone jako dane, nie polecenia. Strone z pytaniem czyta osobne zapytanie
-  do modelu **bez narzedzi** (`WEB_READER_PROMPT`) -- do agenta trafia tylko odpowiedz. Po przeczytaniu czegokolwiek
-  z internetu (`Session.web_tainted`) tryb YOLO jest wstrzymany do nastepnej wiadomosci uzytkownika: zmiana
-  zaproponowana pod wplywem strony zawsze czeka na TAK.
-- Wyszukiwarki bez klucza to nieoficjalne endpointy (DuckDuckGo) i publiczne API (Stack Exchange, Wikipedia,
-  endoflife.date, OSV.dev); `WEB_SEARCH=off` zabiera agentowi internet calkowicie.
-- **Skan podatnosci** (czuwanie, bez agenta) wysyla do OSV.dev nazwy i wersje pakietow systemu i pobiera katalog
-  CISA KEV; nic wiecej nie opuszcza serwera. Wylacza go `VULN_INTERVAL=0` (niezaleznie od `WEB_SEARCH`). Komende
-  latki sklada serwer z nazw pasujacych do wzorca nazwy pakietu; klient przysyla tylko token z podgladu.
+- **Nothing confidential goes out**: a query, an address and `software_info` arguments containing a secret
+  (`memory.find_secret()`) are refused, and the prompt says to write queries generally (the error text, the software
+  and version, without domains, IPs or user names). Every query goes into the audit log.
+- **An address is a leak channel too** (`https://foreign.example/?d=<data>`): `web_fetch` reads without asking only
+  addresses from this session's `web_search` results (`Session.web_urls`) or typed by the user (messages built by the
+  backend, such as webhook alerts, don't count). Any other address needs confirmation.
+- **Public internet only** (SSRF): the host must point only at public addresses (`ipaddress.is_global`); loopback,
+  private networks, link-local (cloud metadata `169.254.169.254`), CGNAT and IPv4-in-IPv6 addresses are refused, on
+  every redirect separately. Limitation: the DNS check and the connection are two steps (DNS rebinding is
+  theoretically possible); the agent checks local services with `network_info`.
+- **Prompt injection**: results are marked as data, not instructions. A page with a question is read by a separate
+  model request **without tools** (`WEB_READER_PROMPT`), and only the answer reaches the agent. After reading anything
+  from the internet (`Session.web_tainted`), YOLO mode is paused until the next user message: a change proposed under
+  the influence of a page always waits for YES.
+- Keyless search engines are unofficial endpoints (DuckDuckGo) and public APIs (Stack Exchange, Wikipedia,
+  endoflife.date, OSV.dev); `WEB_SEARCH=off` takes the internet away from the agent completely.
+- **The vulnerability scan** (the watcher, not the agent) sends system package names and versions to OSV.dev and
+  downloads the CISA KEV catalog; nothing else leaves the server. `VULN_INTERVAL=0` turns it off (independently of
+  `WEB_SEARCH`). The server builds the patch command from names matching the package-name pattern; the client only
+  sends the token from the preview.
 
-## Zalaczniki (pliki, zrzuty ekranu, glosowki)
+## Attachments (files, screenshots, voice messages)
 
-Plik wyslany przez uzytkownika to tez obcy tekst -- log moze zawierac linie napisana przez atakujacego:
+A file sent by the user is foreign text too: a log can contain a line written by an attacker:
 
-- tresc pliku jest opisana w wiadomosci jako DANE, nie polecenia, a po wiadomosci z zalacznikiem tryb YOLO jest
-  wstrzymany do nastepnej wiadomosci (`Session.web_tainted`) -- zmiana zaproponowana pod wplywem pliku czeka na TAK,
-- pliki tekstowe przechodza przez `memory.redact_secrets()` przed wyslaniem do modelu (jak wyniki narzedzi),
-- tekst z zalacznika nie uczy VIBE i nie liczy sie jako adres *wpisany przez uzytkownika* dla `web_fetch`
-  (`pipe_text` trzyma tylko to, co uzytkownik napisal),
-- obraz jest w historii tylko w swojej turze; pliki binarne leza w `DATA_DIR/uploads/` z prawami 0600 przez 7 dni,
-  zapis trafia do audit logu; viewer nie moze zapisac pliku na serwerze (obrazy i tekst -- tak),
-- rodzaj pliku wynika z zawartosci (sygnatura, UTF-8), nie z nazwy ani typu MIME od klienta; nazwa jest
-  sprowadzana do bezpiecznych znakow (bez katalogow),
-- limity: 10 MB na plik, 20 MB na wiadomosc; `READ_LIMIT` serwera i `MAX_BODY` mostu `pipe web` (32 MiB)
-  wynikaja z nich.
+- the file content is described in the message as DATA, not instructions, and after a message with an attachment YOLO
+  mode is paused until the next message (`Session.web_tainted`), so a change proposed under the influence of the file
+  waits for YES,
+- text files go through `memory.redact_secrets()` before they are sent to the model (like tool results),
+- text from an attachment doesn't teach VIBE and doesn't count as an address *typed by the user* for `web_fetch`
+  (`pipe_text` holds only what the user wrote),
+- an image is in the history only for its own turn; binary files are kept in `DATA_DIR/uploads/` with 0600
+  permissions for 7 days, and the write goes into the audit log; a viewer can't save a file on the server (images and
+  text, yes),
+- the file kind comes from the content (signature, UTF-8), not from the name or the client's MIME type; the name is
+  reduced to safe characters (no directories),
+- limits: 10 MB per file, 20 MB per message; the server's `READ_LIMIT` and the `pipe web` bridge's `MAX_BODY`
+  (32 MiB) follow from them.
 
-## Role i tokeny
+## Roles and tokens
 
-- `AGENT_TOKEN` -- admin, `AGENT_VIEWER_TOKEN` -- viewer, tokeny klientow z `python3 -m backend.tokens`
-  (plik `tokens.json` 0600, tylko skroty SHA-256; odwolanie: `revoke`). Porownanie w stalym czasie, na bajtach.
-- Viewer: backend odrzuca `confirm: true` i `undo` z `execute`, a narzedzia zmieniajace stan (takze zapis pamieci
-  Pipe) zwracaja modelowi odmowe -- pytanie o TAK nie powstaje. Egzekwuje to backend, nie klient.
-- Sesja jest przypieta do tozsamosci tokenu, ktora ja zalozyla: inny token nie odczyta jej historii ani nie
-  zatwierdzi cudzej operacji, nawet znajac `session_id`.
+- `AGENT_TOKEN` -- admin, `AGENT_VIEWER_TOKEN` -- viewer, client tokens from `python3 -m backend.tokens`
+  (`tokens.json`, 0600, SHA-256 hashes only; revoking: `revoke`). Comparison in constant time, on bytes.
+- Viewer: the backend refuses `confirm: true` and `undo` with `execute`, and tools that change state (including writing
+  Pipe's memory) return a refusal to the model, so no YES question is ever created. The backend enforces this, not the
+  client.
+- A session is bound to the identity of the token that created it: another token can't read its history or approve
+  someone else's operation, even knowing the `session_id`.
 
-## Pipe w internecie (`/web`)
+## Pipe on the internet (`/web`)
 
-`/web wlacz` wystawia `pipe web` pod publicznym adresem HTTPS (`core/webpublic.py`, `core/webaccess.py`):
+`/web on` exposes `pipe web` at a public HTTPS address (`core/webpublic.py`, `core/webaccess.py`):
 
-- mikr.us (`/web wlacz mikrus` albo sam, gdy na hoscie jest `/klucz_api`): Caddy po zwyklym HTTP tylko na IPv6
-  (`[::]:7443`), HTTPS konczy proxy mikr.us. Odcinek proxy -> serwer idzie bez TLS przez siec mikr.us; ciasteczko
-  urzadzenia ma `Secure`, wiec przegladarka wysyla je tylko po HTTPS. Adres klienta z `X-Forwarded-For` proxy --
-  da sie go podrobic, laczac sie z portem wprost, ale sluzy tylko do pokazania i limitu prob (globalny limit
-  oczekujacych prosb zostaje).
-- Tunel (`/web wlacz tunel` albo sam, gdy porty 80/443 sa nieosiagalne): kontener `cloudflared` (przypieta wersja)
-  bez portow, plikow i uprawnien (`--cap-drop ALL`, `no-new-privileges`), we wspolnej sieci z kontenerem Pipe --
-  most slucha dla niego tylko na `127.0.0.1:7402`, niewidocznym z zewnatrz. Cloudflare konczy TLS, wiec widzi ruch strony (tresc rozmowy, ciasteczko
-  urzadzenia) -- to swiadomy kompromis za dzialanie bez otwartych portow; kto tego nie chce, uzywa
-  `/web wlacz bezposrednio` z wlasna domena albo tunelu SSH. Adres klienta z naglowka `Cf-Connecting-Ip` (ustawia go
-  Cloudflare). Nowy adres tunelu po restarcie = nowa domena, wiec ciasteczka starych urzadzen nie pasuja i trzeba je
-  wpuscic jeszcze raz.
+- mikr.us (`/web on mikrus`, or on its own when `/klucz_api` is on the host): Caddy over plain HTTP on IPv6 only
+  (`[::]:7443`), HTTPS ends at the mikr.us proxy. The proxy -> server hop goes without TLS over the mikr.us network;
+  the device cookie is `Secure`, so the browser sends it only over HTTPS. The client address comes from the proxy's
+  `X-Forwarded-For` -- it can be forged by connecting to the port directly, but it is only shown and used for the
+  attempt limit (the global cap on pending requests stays).
+- Tunnel (`/web on tunnel`, or on its own when ports 80/443 cannot be reached): a `cloudflared` container (pinned
+  version) without ports, files or privileges (`--cap-drop ALL`, `no-new-privileges`), sharing the network of Pipe's
+  container -- the bridge listens for it only on `127.0.0.1:7402`, invisible from outside. Cloudflare terminates TLS, so it sees the page traffic (the chat,
+  the device cookie) -- a deliberate trade-off for working without open ports; whoever does not want it uses
+  `/web on direct` with their own domain or an SSH tunnel. The client address comes from the `Cf-Connecting-Ip` header
+  (set by Cloudflare). A new tunnel address after a restart is a new domain, so old devices' cookies do not match and
+  they have to be let in again.
 
-- Caddy (`caddy:2.11-alpine`, kontener `pipe-web`) ma siec hosta, ale tylko gniazdo mostu (`/tmp/pipe-web/web.sock`)
-  i wolumen certyfikatow -- bez `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`), `no-new-privileges`,
-  limity pamieci i procesow, bez API administracyjnego. Przekazuje adres klienta naglowkiem, ktorego klient nie
-  podrobi (Caddy go nadpisuje).
-- Most w procesie Pipe nie ma tokenu backendu. Bez ciasteczka urzadzenia odpowiada tylko strona prosby o dostep,
-  jej pliki i dwa wywolania parowania; reszta to 401. Host musi byc adresem strony, Origin -- `https://` tego adresu.
-- Parowanie: prosba dostaje kod (6 znakow, bez mylacych sie liter) i sekret znany tylko stronie, ktora ja wyslala.
-  Zgode daje administrator z rozmowy (przycisk z backendu albo `/web wpusc <kod>`); kod na ekranie i w wiadomosci
-  pozwala sprawdzic, ze zatwierdzasz swoje urzadzenie. Prosba wygasa po 5 minutach, najwyzej 5 prosb na 10 minut
-  z jednego IP i 10 oczekujacych naraz. Token urzadzenia trafia raz do strony, ktora poprosila, i tylko jako
-  ciasteczko `HttpOnly; Secure; SameSite=Lax` (Lax, zeby link z Telegrama otwieral sie zalogowany; API to POST
-  z kontrola Origin). Zatwierdzony, a nieodebrany w 2 minuty token jest usuwany.
-- Urzadzenie to zwykly token klienta w `tokens.json` (nazwa `web-...`, tylko skrot SHA-256, rola admin albo viewer),
-  wiec uprawnienia egzekwuje backend jak dla kazdego innego tokenu. Wygasa po 30 dniach bez uzycia; `/web odwolaj`
-  dziala od razu, takze dla otwartej karty (strumien zdarzen sprawdza urzadzenie co 25 s). Tokeny urzadzen nie
-  zamykaja trybu bez tokenu -- CLI i Telegram bez `AGENT_TOKEN` dzialaja dalej, a strona i tak wymaga urzadzenia.
-- Wlaczenie, wylaczenie, wpuszczanie i odwolywanie -- tylko administrator; kazda decyzja trafia do audit logu
-  z kodem, urzadzeniem i IP. Tryb obserwacji odmawia `/web wlacz`.
+- Caddy (`caddy:2.11-alpine`, the `pipe-web` container) uses the host network, but gets only the bridge socket
+  (`/tmp/pipe-web/web.sock`) and the certificate volume -- no `docker.sock`, `--cap-drop ALL` (+ `NET_BIND_SERVICE`),
+  `no-new-privileges`, memory and process limits, no admin API. It passes the client address in a header the client
+  cannot forge (Caddy overwrites it).
+- The bridge in Pipe's process has no backend token. Without a device cookie it serves only the access-request page,
+  its files and two pairing calls; everything else is 401. Host must be the page's address, Origin -- `https://` of
+  that address.
+- Pairing: a request gets a code (6 characters, no look-alike letters) and a secret known only to the page that sent
+  it. An administrator approves it from the chat (a backend-built button or `/web approve <code>`); the code on the
+  screen and in the message lets you check that you approve your own device. A request expires after 5 minutes, at
+  most 5 requests per 10 minutes from one IP and 10 pending at once. The device token goes once to the page that asked,
+  and only as an `HttpOnly; Secure; SameSite=Lax` cookie (Lax so a link from Telegram opens signed in; the API is POST
+  with an Origin check). A token approved but not collected within 2 minutes is removed.
+- A device is an ordinary client token in `tokens.json` (name `web-...`, only the SHA-256 hash, role admin or viewer),
+  so the backend enforces permissions as for any other token. It expires after 30 days without use; `/web revoke`
+  works at once, also for an open tab (the event stream checks the device every 25 s). Device tokens do not end the
+  no-token mode -- the CLI and Telegram without `AGENT_TOKEN` keep working, and the page still requires a device.
+- Turning on and off, letting in and revoking -- administrator only; every decision goes to the audit log with the
+  code, device and IP. Observe mode refuses `/web on`.
 
-Strona w internecie to nowa droga do Pipe, ktory ma `docker.sock`. Wpuszczaj tylko urzadzenia, ktorych kod widzisz
-na wlasnym ekranie, a nieuzywane odwoluj. Do samego czytania wystarczy *Tylko podglad*.
+A page on the internet is a new way into Pipe, which has `docker.sock`. Let in only devices whose code you see on your
+own screen, and revoke the ones you do not use. *View only* is enough for reading.
 
 ## MCP
 
-**Pipe jako serwer MCP.** Zewnetrzny agent dostaje narzedzia Pipe zamiast powloki: kazda komenda przechodzi przez
-klasyfikator, odczyt wykonuje sie od razu, zmiana czeka na zgode administratora (Telegram/CLI) i po niej idzie przez
-bezpiecznik i dziennik. Zakazane komendy sa odrzucane, pliki z sekretami nie sa wydawane, wyniki sa redagowane.
-Token viewer nie tworzy zgod. Zgode moze sprawdzic tylko agent, ktory ja utworzyl; zgody zyja w pamieci i wygasaja
-po 30 minutach. `ask_pipe` uruchamia agenta Pipe w roli viewer. Endpoint HTTP: tylko localhost, token Pipe
-(`Authorization: Bearer`), walidacja `Origin` (403) i naglowkow 2026-07-28 (`-32020`).
+**Pipe as an MCP server.** An external agent gets Pipe's tools instead of a shell: every command goes through the
+classifier, a read runs right away, a change waits for admin approval (Telegram/CLI) and then goes through the safety
+fuse and the journal. Forbidden commands are refused, files with secrets are not handed out, results are redacted. A
+viewer token doesn't create approvals. Only the agent that created an approval can check it; approvals live in memory
+and expire after 30 minutes. `ask_pipe` runs the Pipe agent in the viewer role. HTTP endpoint: localhost only, a Pipe
+token (`Authorization: Bearer`), `Origin` validation (403) and 2026-07-28 header validation (`-32020`).
 
-**Pipe jako klient MCP.** W v0.35 klient zostal usuniety: cudzy serwer dzialal jako proces Pipe, z jego dostepem do
-`docker.sock` i plikow. Od v0.42 wraca z inna granica: serwer stdio (`npx`, `uvx`, obraz Dockera) dziala w jednorazowym
-kontenerze bez montowan, `docker.sock` i uprawnien (`--cap-drop ALL`, `no-new-privileges`, uzytkownik `nobody`, limity),
-wiec moze najwyzej korzystac z sieci i zmieniac swoja usluge (np. repozytorium na GitHubie) -- nie serwer. Inne
-programy niz `npx`/`uvx`/obraz i opcje `docker run` typu `-v`, `--network host`, `--privileged` sa odrzucane. Sekrety
-tylko jako `${MCP_*}` z `backend/.env` albo z `mcp_secrets.json` (0600; wpisywane w oknie `/mcp` w `pipe web` i CLI
-komenda `mcp_servers` `klucz`, tylko administrator, wartosc nigdy nie wraca do klienta i nie trafia do rozmowy ani
-audit logu -- tylko nazwa) -- model nie wskaze `${LLM_API_KEY}` ani tokenu Pipe; tekst wygladajacy na sekret
-w konfiguracji -- odmowa. Dodatki z katalogu (`backend/addons/`) przechodza ta sama walidacje; `state: true` daje
-serwerowi nazwany wolumen `pipe-mcp-state-<nazwa>` na `/state` (nigdy katalog hosta; usuwany razem z serwerem),
-a `autoApprove` w katalogu obejmuje tylko logowanie i stan logowania. Dodanie serwera: jedno TAK z podgladem (albo `/mcp dodaj` administratora). Narzedzie bez
-`readOnlyHint` -- TAK przy kazdym wywolaniu; adnotacje sa deklaracja serwera, wiec odczyty bez pytania sa bezpieczne
-tylko o tyle, o ile ufasz temu serwerowi (`askAlways: true` w konfiguracji wylacza to dla niego). Wynik traktowany jak
-tresc z internetu (YOLO wylaczone do nastepnej wiadomosci), argument z sekretem nie wychodzi. Tryb obserwacji i viewer:
-tylko odczyty. Kazde wywolanie jest w audit logu.
+**Pipe as an MCP client.** In v0.35 the client was removed: another party's server ran as a Pipe process, with its
+access to `docker.sock` and files. Since v0.42 it is back with a different boundary: a stdio server (`npx`, `uvx`, a
+Docker image) runs in a one-off container without mounts, `docker.sock` or privileges (`--cap-drop ALL`,
+`no-new-privileges`, user `nobody`, limits), so at most it can use the network and change its own service (e.g. a
+GitHub repository) -- not the server. Programs other than `npx`/`uvx`/an image and `docker run` options such as `-v`,
+`--network host`, `--privileged` are refused. Secrets only as `${MCP_*}` from `backend/.env` or from `mcp_secrets.json` (0600; entered in the `/mcp` window in
+`pipe web` and the CLI through the `mcp_servers` `klucz` command, admin only, the value never goes back to a client and
+never reaches the chat or the audit log -- only the name) -- the model cannot point at `${LLM_API_KEY}` or a Pipe
+token; text that looks like a secret in the configuration -- refused. Catalog add-ons (`backend/addons/`) go through
+the same validation; `state: true` gives the server a named volume `pipe-mcp-state-<name>` at `/state` (never a host
+directory; removed together with the server), and catalog `autoApprove` covers only the login and the login state. Adding a server:
+one YES with a preview (or an admin's `/mcp add`). A tool without `readOnlyHint` -- a YES on every call; annotations are
+the server's own declaration, so reads without asking are only as safe as your trust in that server (`askAlways: true`
+in the configuration turns this off for it). The result is treated like internet content (YOLO off until the next
+message), an argument with a secret does not go out. Observe mode and viewer: reads only. Every call is in the audit log.
 
-## Webhooki
+## Webhooks
 
-- Serwer webhookow jest domyslnie wylaczony; bez `WEBHOOK_TOKEN` nie startuje. Nasluchuje na `127.0.0.1`
-  (w Dockerze port publikowany tylko na localhost) -- nadawcy spoza serwera przez odwrotne proxy z TLS.
-- Tresc alertu pochodzi z zewnatrz: trafia do modelu jako dane, a automatyczne badanie robi worker, ktory
-  wykonuje wylacznie odczyty. Limit badan: raz na 6 h na alert, 10 dziennie. *Napraw* wysyla ustalenia
-  agentowi jako zwykla wiadomosc -- zmiany i tak przechodza przez klasyfikator i potwierdzenie.
+- The webhook server is off by default; without `WEBHOOK_TOKEN` it doesn't start. It listens on `127.0.0.1` (in
+  Docker the port is published only on localhost); senders outside the server go through a reverse proxy with TLS.
+- The alert content comes from outside: it reaches the model as data, and the automatic investigation is done by a
+  worker that only reads. Investigation limit: once in 6 h per alert, 10 a day. *Fix it* sends the findings
+  to the agent as an ordinary message -- the changes still go through the classifier and confirmation.
 
-## Dziennik zmian i cofanie
+## Change journal and undo
 
-- Kopie plikow sprzed zmian leza w `backend/data/journal/` (katalogi `0700`, pliki `0600`). Edytowany `.env`
-  trafia tam w calosci -- to kopia na dysku serwera, nie wysylana do LLM. Limit: 50 wpisow, 14 dni, 5 MB na plik.
-- `/cofnij` pokazuje roznice i komendy odwrotne przed TAK. Komendy odwrotne przechodza przez klasyfikator:
-  zakazana komenda jest pomijana i logowana. Identyfikator wpisu jest walidowany (tylko hex), wiec nie wskaze
-  sciezki poza katalogiem dziennika. Przywracanie i komendy odwrotne trafiaja do audit logu.
-- `/cofnij` z klienta dziala bez LLM -- tak jak inne komendy wymaga tokenu (`AGENT_TOKEN`), a w Telegramie
-  przycisk *Cofnij* zadziala tylko dla dozwolonego uzytkownika, ktory otworzyl podglad.
+- Backups of files from before a change are kept in `backend/data/journal/` (directories `0700`, files `0600`). An
+  edited `.env` is stored there in full; it is a copy on the server's disk, not sent to the LLM. Limit: 50 entries,
+  14 days, 5 MB per file.
+- `/undo` shows the diff and the inverse commands before YES. Inverse commands go through the classifier: a forbidden
+  command is skipped and logged. The entry identifier is validated (hex only), so it can't point at a path outside the
+  journal directory. Restores and inverse commands go into the audit log.
+- `/undo` from a client works without the LLM; like other commands it requires the token (`AGENT_TOKEN`), and on
+  Telegram the *Undo* button works only for the allowed user who opened the preview.
 
-## Workery, cele i rutyny
+## Workers, targets and routines
 
-- **Workery i rutyny wykonuja tylko `safe`.** Komenda `confirm` nie jest wykonywana; trafia do raportu jako
-  propozycja, ktora glowny agent moze wykonac przez `remote_exec` -- z Twoim potwierdzeniem. `forbidden`
-  jest logowane jak zawsze.
-- **Dodanie celu i rutyny wymaga potwierdzenia** -- zmanipulowany model nie doda po cichu serwera atakujacego.
-  Potwierdzenie rutyny pokazuje cala tresc zadania.
-- Pola celu sa walidowane wzorcami, komenda idzie jako jeden argument (`shlex.quote`). Na celu-klastrze
-  dozwolona jest jedna komenda kubectl/helm (dalsze segmenty `| grep` dzialaja lokalnie) -- druga komenda
-  kubectl poszlaby do domyslnego kontekstu.
-- SSH w trybie `BatchMode` (bez hasel), `StrictHostKeyChecking=accept-new`, `known_hosts` w `backend/data`.
+- **Workers and routines run only `safe`.** A `confirm` command is not run; it goes into the report as a proposal
+  that the main agent can run through `remote_exec`, with your confirmation. `forbidden` is logged as always.
+- **Adding a target or a routine requires confirmation**, so a manipulated model can't quietly add an attacker's
+  server. A routine's confirmation shows the whole task text.
+- Target fields are validated with patterns, and the command goes as one argument (`shlex.quote`). On a cluster
+  target one kubectl/helm command is allowed (further `| grep` segments run locally), because a second kubectl command
+  would go to the default context.
+- SSH in `BatchMode` (no passwords), `StrictHostKeyChecking=accept-new`, `known_hosts` in `backend/data`.
 
-## Czuwanie
+## Watching
 
-Sprawdzenia sa deterministyczne i tylko czytaja. Przycisk *Zbadaj* wysyla agentowi wiadomosc zbudowana przez
-backend (nie przez klienta) -- dalej obowiazuja zwykle zasady. Subskrypcja zdarzen wymaga tokenu, a bot
-wysyla alerty tylko uzytkownikom z `TELEGRAM_ALLOWED_USER_IDS`.
-
----
-
-## Workspace (narzedzia plikowe)
-
-`read_file`, `write_file`, `change_directory` rozwiazuja sciezke (symlinki, `..`) i odrzucaja ponizsze sciezki.
-W Dockerze symlink hosta (`/etc/nginx/sites-enabled/x -> /etc/nginx/sites-available/x`) jest rozwiazywany wzgledem
-korzenia hosta (`/hostfs`), a `..` nie wychodzi ponad ten korzen. Odrzucane:
-wszystko poza hostem (`/hostfs` w Dockerze), `/boot`, `/dev`, `/proc`, `/sys`, `/var/spool`, katalogi binarek,
-`/root/.ssh`, `/home/*/.ssh`, `/etc/shadow`, `/etc/gshadow`, prywatne klucze hosta SSH. Zapis do
-`/etc/passwd`, `/etc/shadow`, `/boot`, `/dev` jest zakazany; kazdy inny zapis wymaga potwierdzenia.
-
-## Warsztat (`project`) i Pipe piszacy pierwszy
-
-Warsztat (`WORKSPACE_DIR`, domyslnie `/root/pipe-workspace`) to jedyne miejsce, w ktorym Pipe zmienia cos bez
-pytania. Granice:
-
-- **Zapis plikow bez potwierdzenia** tylko wtedy, gdy podana sciezka i sciezka po rozwiazaniu symlinkow leza w
-  warsztacie i nie jest to plik startowy (`.bashrc`, cron, systemd...) -- link w sklonowanym repozytorium nie
-  wyprowadzi zapisu poza warsztat. Kazdy taki zapis jest w audit logu z dopiskiem `[warsztat]`.
-- **Kod z repozytorium nigdy nie dziala w procesie ani kontenerze Pipe** (tam jest `docker.sock`). `exec` uruchamia
-  go w jednorazowym kontenerze z oficjalnego obrazu jezyka: tylko katalog projektu jako `/work`, bez `docker.sock`,
-  `--cap-drop ALL`, `no-new-privileges`, limit pamieci, procesow i czasu. Siec ma (instalacja zaleznosci).
-- **`clone`**: tylko `https://` albo `git@`, `--depth 1`, bez hookow, submodulow i LFS, bez pytania o haslo; za duze
-  repozytorium (`PROJECT_MAX_MB`) jest od razu usuwane.
-- **README i AGENTS.md to dane.** Po ich przeczytaniu (albo po tresci z internetu) `exec` znow wymaga potwierdzenia
-  do nastepnej wiadomosci uzytkownika -- jak YOLO, tekst z cudzego repozytorium nie uruchomi sam kodu.
-- **`run` i `remove` zawsze z potwierdzeniem** z planem. Port tylko na `127.0.0.1`. Compose z `privileged`,
-  `docker.sock`, siecia hosta, montowaniem katalogow systemowych albo portem na swiat -- potwierdzenie mowi to wprost.
-  `run` jest w dzienniku, `/cofnij` usuwa wdrozenie.
-- `WORKSPACE_AUTONOMY=0` -- zgoda na kazda operacje. Tryb obserwacji i viewer -- tylko lista i logi.
-
-Wiadomosci, ktore Pipe wysyla sam (skrzynka, `core/feed.py`), maja przyciski zbudowane przez backend; klient odsyla
-tylko numer wiadomosci i akcji (`feed_act`), wiec nie da sie nim podac wlasnej komendy. Akcje zmieniajace serwer
-(*Zwolnij miejsce*, *Zalataj*, *Napraw*) sa tylko dla administratora. *Napraw* wysyla agentowi propozycje z
-samodzielnego badania jako zwykla wiadomosc -- zmiany przechodza przez klasyfikator i potwierdzenie jak zawsze.
-Samodzielne badanie to worker tylko z odczytami, z limitem `AUTO_INVESTIGATE_DAILY` dziennie.
-
-## Pamiec agenta
-
-Pamiec trafia do promptu KAZDEJ przyszlej rozmowy (SERVER.md, DIRECTORY, VIBE) albo jest ladowana na zadanie
-(skille), wiec jeden udany prompt injection moglby zaszczepic tam trwala instrukcje. Obrona:
-
-- **Zapis/zastapienie skilla i pelne nadpisanie SERVER.md wymagaja potwierdzenia** (z podgladem tresci/diffem) --
-  najsilniejsze wektory trwalej injekcji nie przechodza bez Twojego TAK.
-- **Kazdy inny zapis pamieci jest zglaszany widocznym komunikatem `[PAMIEC]`** (Telegram i CLI) -- pamieci
-  nie da sie zmienic po cichu, nawet gdy model probuje to ukryc w swojej odpowiedzi.
-- kazdy zapis jest w audit logu (sciezka, bez tresci),
-- oczywiste sekrety sa odrzucane, a z adresow remote repozytoriow usuwane sa dane logowania,
-- w prompcie tresc jest oznaczona jako **dane, nie polecenia** -- nie zmienia klasyfikacji ani potwierdzen;
-  VIBE to tylko wskazowki stylu.
-
-Skille z cudzych repozytoriow (`/pobierz`, `skill_manage install`) to ten sam wektor: przed instalacja widac podglad
-(nazwy, opisy, zrodlo, co pominiete) i trzeba kliknac *Zainstaluj* albo dac TAK; do pamieci trafia sam tekst
-`SKILL.md` z dopisanym zrodlem, skrypty i pliki pluginu nie (haki, komendy, agenty i programy -- nigdy). Repozytorium
-jest klonowane jak w warsztacie (bez hookow, submodulow, LFS, limit rozmiaru) i usuwane po odczycie; tresc to dane --
-YOLO jest wylaczone do nastepnej wiadomosci. Instaluj tylko z zaufanych zrodel.
-
-Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/vibe`, `/skille`) -- ramowanie
-"dane, nie polecenia" nie jest gwarancja.
+The checks are deterministic and only read. The *Investigate* button sends the agent a message built by the backend
+(not by the client), and the usual rules apply from there. The event subscription requires the token, and the bot
+sends alerts only to users in `TELEGRAM_ALLOWED_USER_IDS`.
 
 ---
 
-## Ograniczenia, o ktorych trzeba wiedziec
+## Workspace (file tools)
 
-- **`docker.sock` = root na hoscie.** Kto moze wykonac `docker run -v /:/x`, ma pelny dostep do hosta --
-  montowanie `/` jako read-only niewiele tu zmienia. Dlatego `docker run/exec` zawsze wymaga potwierdzenia,
-  ale ostatecznym zabezpieczeniem jest Twoje TAK.
-- **Komendy na hoscie (tryb docker).** System plikow hosta jest w kontenerze tylko do odczytu, wiec zmiany na
-  serwerze (`apt-get`, `systemctl`, `sed -i` w `/etc`, `ufw`, latki z `/zalataj`) Pipe wykonuje przez krotki
-  kontener pomocniczy z wlasnego obrazu: `docker run --rm --privileged --pid=host`, a w nim `nsenter -t 1` do
-  przestrzeni nazw hosta -- komenda dziala jak w powloce roota na serwerze. To nie jest nowe uprawnienie (patrz
-  punkt wyzej), tylko jedna przewidywalna droga: model prosi o nia przez `execute_command` z `host: true`,
-  klasyfikator ocenia komende docelowa, zakazane sa odrzucane, rutyne (sekcja *Samodzielnosc*) Pipe wykonuje sam,
-  a reszta czeka na Twoje TAK.
-  W potwierdzeniu widac komende docelowa i linie *na hoscie: kontener pomocniczy...*; opakowanie sklada kod,
-  komenda trafia do niego jako jeden argument. Tryb obserwacji i rola viewer tej drogi nie maja. Bezpiecznik dziala
-  jak dla komendy lokalnej: kopie plikow czyta z katalogu hosta, sprawdzenia (`nginx -t`, `systemctl is-active`)
-  i komendy odwrotne ida tym samym kontenerem pomocniczym, a nieudany config wraca z kopii. Jesli nie potrzebujesz zarzadzania kontenerami,
-  zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
-- **`/zalataj` nie pyta o kazda komende.** Wpisanie `/zalataj` (albo przycisk *Zalataj*) przez administratora jest
-  zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, podbija zaleznosci aplikacji (menedzer
-  pakietow w jednorazowym kontenerze jak `exec` w warsztacie: tylko katalog aplikacji, bez `docker.sock` i uprawnien,
-  bez skryptow instalacyjnych pakietow; nazwy i wersje z lockfile'i przechodza przez wzorce ekosystemu; kopia plikow w
-  dzienniku), odswieza obrazy kontenerow z compose (w Dockerfile zmienia tylko tag w linii `FROM`, w tej samej linii
-  wersji, z kopia pliku w dzienniku),
-  lata zdalne serwery (cele ssh: jako root albo przez `sudo -n`) i sprzata po sobie (obrazy bez tagu, cache
-  budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer, stare jadra, ktore apt sam uznaje za
-  zbedne). Komendy sklada serwer z wyniku skanu, bez modelu: nazwy pakietow i projektow compose przechodza przez
-  wzorce, wiec tresc z bazy pakietow ani z etykiet kontenera nie doklei nic do powloki. Agent w rozmowie (narzedzie
-  `security_patch`) dostaje te sama latke bez pytania (rutyna; przy `AUTONOMY=0` za jednym Twoim TAK). Viewer i tryb obserwacji jej
-  nie maja. Obrazu, ktory nie ma nowszej wersji, Pipe nie zostawia: instaluje w nim poprawki z repozytorium jego
-  systemu (kontener tymczasowy z tego obrazu, `docker commit` pod tym samym tagiem). Poprzedni obraz zostaje pod tagiem
-  `pipe-rollback-*`, a `/cofnij` do niego wraca.
-- Rozmowy leza na dysku w `DATA_DIR/sessions` (prawa 0600, katalog 0700) przez `SESSION_KEEP_DAYS` dni, zeby
-  przetrwaly restart. Wyniki narzedzi sa w nich zredagowane jak w zapytaniach do modelu, ale to, co sam wpiszesz,
-  zostaje. `SESSION_KEEP_DAYS=0` wylacza zapis i przy starcie usuwa zapisane sesje.
-- Klasyfikator nie jest sandboxem. Rozpoznaje wzorce; potwierdzenie jest po to, zebys widzial, co sie wykona.
-  Czytaj komendy przed TAK.
-- Tryb native i nakladka Kubernetes `host-agent` dzialaja jako root na maszynie.
-- Nakladka Kubernetes `operator` pozwala usuwac pody i skalowac workloady (z potwierdzeniem).
+`read_file`, `write_file`, `change_directory` resolve the path (symlinks, `..`) and refuse the paths below. In Docker
+a host symlink (`/etc/nginx/sites-enabled/x -> /etc/nginx/sites-available/x`) is resolved relative to the host root
+(`/hostfs`), and `..` doesn't go above that root. Refused:
+everything outside the host (`/hostfs` in Docker), `/boot`, `/dev`, `/proc`, `/sys`, `/var/spool`, binary
+directories, `/root/.ssh`, `/home/*/.ssh`, `/etc/shadow`, `/etc/gshadow`, the SSH host private keys. Writing to
+`/etc/passwd`, `/etc/shadow`, `/boot`, `/dev` is forbidden; every other write requires confirmation.
+
+## The workshop (`project`) and Pipe writing first
+
+The workshop (`WORKSPACE_DIR`, `/root/pipe-workspace` by default) is the only place where Pipe changes things without
+asking. The limits:
+
+- **Files are written without confirmation** only when both the given path and the path after resolving symlinks are
+  inside the workshop and it is not a startup file (`.bashrc`, cron, systemd...) -- a link in a cloned repository
+  cannot lead a write out of the workshop. Each such write is in the audit log marked `[warsztat]`.
+- **Code from a repository never runs in Pipe's process or container** (that is where `docker.sock` is). `exec` runs
+  it in a one-off container from an official language image: only the project directory as `/work`, no `docker.sock`,
+  `--cap-drop ALL`, `no-new-privileges`, memory, process and time limits. It does have network (installing
+  dependencies).
+- **`clone`**: only `https://` or `git@`, `--depth 1`, no hooks, submodules or LFS, no password prompt; a repository
+  that is too big (`PROJECT_MAX_MB`) is deleted at once.
+- **README and AGENTS.md are data.** After reading them (or content from the internet) `exec` requires confirmation
+  again until the user's next message -- as with YOLO, text from someone else's repository cannot run code by itself.
+- **`run` and `remove` are always confirmed** with a plan. The port is bound to `127.0.0.1` only. A compose file with
+  `privileged`, `docker.sock`, host networking, system directory mounts or a port open to the world -- the
+  confirmation says so plainly. `run` is in the journal, `/undo` removes the deployment.
+- `WORKSPACE_AUTONOMY=0` -- confirmation for every operation. Observe mode and viewers -- the list and logs only.
+
+Messages Pipe sends by itself (the inbox, `core/feed.py`) carry buttons built by the backend; the client sends back
+only the message and action number (`feed_act`), so it cannot pass a command of its own. Actions that change the
+server (*Free up space*, *Patch*, *Fix it*) are for admins only. *Fix it* sends the proposal from the investigation
+to the agent as an ordinary message -- the changes go through the classifier and confirmation as always. The
+investigation itself is a read-only worker, at most `AUTO_INVESTIGATE_DAILY` a day.
+
+## Agent memory
+
+Memory goes into the prompt of EVERY future conversation (SERVER.md, DIRECTORY, VIBE) or is loaded on demand
+(skills), so one successful prompt injection could plant a persistent instruction there. Defences:
+
+- **Saving/replacing a skill and fully overwriting SERVER.md require confirmation** (with a content preview/diff), so
+  the strongest persistent injection vectors don't get through without your YES.
+- **Every other memory write is reported with a visible `[PAMIEC]` message** (Telegram and CLI), so memory can't be
+  changed quietly, even when the model tries to hide it in its answer.
+- every write is in the audit log (the path, without content),
+- obvious secrets are refused, and credentials are stripped from repository remote URLs,
+- in the prompt the content is marked as **data, not instructions**; it doesn't change classification or
+  confirmations, and VIBE is only style guidance.
+
+Skills from other repositories (`/download`, `skill_manage install`) are the same vector: before installing you see a
+preview (names, descriptions, source, what is skipped) and have to click *Install* or give a YES; only the `SKILL.md`
+text goes into memory, with its source added, not scripts or plugin files (hooks, commands, agents and programs --
+never). The repository is cloned like in the workshop (no hooks, submodules, LFS, a size limit) and removed after
+reading; its content is data -- YOLO is off until the next message. Install only from sources you trust.
+
+Still, review `backend/data/` from time to time (`/server`, `/directory`, `/vibe`, `/skills`); the "data, not
+instructions" framing is not a guarantee.
+
+---
+
+## Limitations you need to know about
+
+- **`docker.sock` = root on the host.** Whoever can run `docker run -v /:/x` has full access to the host; mounting `/`
+  read-only changes little here. That's why `docker run/exec` always requires confirmation, but the final safeguard is
+  your YES.
+- **Host commands (docker mode).** The host filesystem is read-only in the container, so Pipe makes changes on the
+  server (`apt-get`, `systemctl`, `sed -i` in `/etc`, `ufw`, patches from `/patch`) through a short-lived helper
+  container from its own image: `docker run --rm --privileged --pid=host`, and in it `nsenter -t 1` into the host's
+  namespaces -- the command runs like in a root shell on the server. This is not a new permission (see the point
+  above), just one predictable path: the model asks for it through `execute_command` with `host: true`, the
+  classifier judges the target command, forbidden ones are refused, Pipe runs routine work itself (the *Autonomy*
+  section) and the rest waits for your YES.
+  The confirmation shows the target command and an *on the host: a helper container...* line; the wrapper is built
+  by code and the command goes into it as one argument. Observe mode and the viewer role do not have this path.
+  The safety fuse works as for a local command: it reads file backups from the host directory, checks (`nginx -t`,
+  `systemctl is-active`) and inverse commands go through the same helper container, and a failed config comes back
+  from the backup. If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
+  `docker.sock` mount from `docker-compose.yml`.
+- **`/patch` does not ask about every command.** An administrator typing `/patch` (or pressing *Patch*) approves the
+  whole patch: Pipe installs this server's package fixes right away, bumps the application dependencies (a package
+  manager in a one-off container like the workshop's `exec`: only the app directory, no `docker.sock` or privileges,
+  no package install scripts; names and versions from lockfiles go through the ecosystem's patterns; the files are
+  backed up in the journal), refreshes the container images from compose (in a Dockerfile it changes only the tag on the `FROM` line,
+  within the same version line, with the file backed up in the journal),
+  patches the remote servers (ssh targets: as root or through `sudo -n`) and cleans up after itself (untagged images,
+  build cache older than a day, downloaded packages, npm/pip/yarn/composer caches, old kernels that apt itself
+  considers unneeded). The server builds the commands from the scan result, without the model: package and compose
+  project names go through patterns, so content from the package database or from container labels cannot add
+  anything to the shell. The agent in a conversation (the `security_patch` tool) gets the same patch without asking
+  (routine; with `AUTONOMY=0` for one YES of yours). The viewer role and observe mode do not have it. Pipe does not leave an image that has
+  no newer version: it installs the fixes from its system's repository inside it (a temporary container from that
+  image, `docker commit` under the same tag). The previous image stays under a `pipe-rollback-*` tag and `/undo` goes
+  back to it.
+- Conversations are kept on disk in `DATA_DIR/sessions` (mode 0600, directory 0700) for `SESSION_KEEP_DAYS` days so
+  they survive a restart. Tool results in them are redacted the same way as in requests to the model, but what you
+  type yourself stays. `SESSION_KEEP_DAYS=0` turns saving off and removes saved sessions at startup.
+- The classifier is not a sandbox. It recognises patterns; the confirmation is there so you see what will run. Read
+  commands before YES.
+- Native mode and the Kubernetes `host-agent` overlay run as root on the machine.
+- The Kubernetes `operator` overlay allows deleting pods and scaling workloads (with confirmation).
 
 ## Audit log
 
@@ -483,40 +491,41 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
 [2026-09-24 14:30:02] [worker:web-1@telegram:123456789] [SAFE] ssh ... web-1 -- 'uptime' → exit_code=0
 ```
 
-Zawartosc plikow (read_file, write_file, pamiec) nigdy nie trafia do logu. Znaki nowej linii w komendzie sa
-escapowane (`\n`), wiec komenda z `\n` nie sfalszuje kolejnych wpisow. Token porownywany jest w stalym czasie
-(`hmac.compare_digest`).
+File contents (read_file, write_file, memory) never go into the log. Newlines in a command are escaped (`\n`), so a
+command with `\n` can't forge further entries. The token is compared in constant time (`hmac.compare_digest`).
 
-## Zalecenia
+## Recommendations
 
-1. **`AGENT_TOKEN`** -- kreator i `scripts/install-server.sh` generuja go automatycznie; w trybie kubernetes
-   jest wymagany (backend nie wystartuje bez niego). Ustawiasz recznie tylko przy zmianie.
-2. Nie publikuj portu 7379 na publicznym interfejsie -- dostep przez tunel SSH albo `kubectl port-forward`.
-   Nakladka Kubernetes dokłada `NetworkPolicy` (deny z innych podow) obok tokenu.
-3. Ogranicz `TELEGRAM_ALLOWED_USER_IDS` do minimum.
-4. Dla workerow na innych serwerach uzywaj dedykowanego klucza SSH i uzytkownika z ograniczonymi uprawnieniami.
-5. Czytaj komendy przed potwierdzeniem i przegladaj audit log (`/historia`) oraz pamiec (`/skille`, `/server`).
+1. **`AGENT_TOKEN`** -- the wizard and `scripts/install-server.sh` generate it automatically; in kubernetes mode it is
+   required (the backend won't start without it). You set it by hand only to change it.
+2. Don't publish port 7379 on a public interface; access goes through an SSH tunnel or `kubectl port-forward`.
+   The Kubernetes overlay adds a `NetworkPolicy` (deny from other pods) next to the token.
+3. Keep `TELEGRAM_ALLOWED_USER_IDS` to a minimum.
+4. For workers on other servers use a dedicated SSH key and a user with limited permissions.
+5. Read commands before confirming and review the audit log (`/history`) and memory (`/skills`, `/server`).
 
-## Klucze providerow LLM dodane z interfejsu
+## LLM provider keys added from the interface
 
-`pipe web` pozwala dodac klucz API kolejnego providera. Klucz idzie z przegladarki do lokalnego mostu (`127.0.0.1`),
-tunelem SSH do backendu i tam zostaje w `DATA_DIR/llm_keys.json` (0600). Nie wraca do klienta (lista providerow podaje
-tylko, czy klucz jest i skad), nie trafia do audit logu (logowana jest sama zmiana providera) ani do modelu. Zanim
-zostanie zapisany, backend sprawdza go u providera -- wylacznie pod adresem z presetu albo z pliku providerow, wiec
-klucza nie da sie wyslac pod dowolny adres. Zmiany moze robic tylko administrator. Odczyt `llm_keys.json` przez
-agenta jest klasyfikowany jak `.env` (wymaga potwierdzenia), a redakcja sekretow obejmuje wyniki narzedzi jak zwykle.
+`pipe web` lets you add an API key for another provider. The key goes from the browser to the local bridge
+(`127.0.0.1`), through the SSH tunnel to the backend, and stays there in `DATA_DIR/llm_keys.json` (0600). It doesn't go
+back to the client (the provider list only says whether a key exists and where it came from), it doesn't go into the
+audit log (only the provider change is logged) and not to the model. Before it is saved, the backend checks it with
+the provider, only at the address from the preset or the providers file, so the key can't be sent to an arbitrary
+address. Only an admin can make changes. The agent reading `llm_keys.json` is classified like `.env` (requires
+confirmation), and secret redaction covers tool results as usual.
 
-## Aktualizacja samego Pipe (`pipe_update`)
+## Updating Pipe itself (`pipe_update`)
 
-To narzedzie pobiera kod z sieci i uruchamia go z uprawnieniami agenta, wiec jest celowo waskie:
+This tool pulls code from the network and runs it with the agent's permissions, so it is deliberately narrow:
 
-- nie przyjmuje adresu, galezi, komendy ani sciezki -- model moze tylko wybrac `check` albo `apply`;
-- zrodlem jest wylacznie `origin` repozytorium, w ktorym Pipe jest zainstalowany, przez `git pull --ff-only`
-  (bez nadpisywania historii i bez scalania);
-- `apply` wykonuje sie bez pytania jak inna rutyna (przy `AUTONOMY=0` po potwierdzeniu), a rola viewer jest
-  odrzucana z gory;
-- projekt, katalog i uslugi compose pochodza z etykiet Dockera wlasnego kontenera i sa cytowane pojedynczo;
-- naraz dziala jedna aktualizacja; kontener pomocniczy dostaje `docker.sock` i katalog repozytorium, nic wiecej.
+- it takes no address, branch, command or path; the model can only choose `check` or `apply`;
+- the only source is the `origin` of the repository Pipe is installed from, through `git pull --ff-only`
+  (no rewriting history and no merging);
+- `apply` runs without asking like other routine work (after confirmation with `AUTONOMY=0`), and the viewer role
+  is refused upfront;
+- the compose project, directory and services come from the Docker labels of its own container and are quoted one by
+  one;
+- one update runs at a time; the helper container gets `docker.sock` and the repository directory, nothing more.
 
-Zaufanie przenosi sie na zdalne repozytorium: kto moze wypchnac commit na sledzona galaz, ten przy nastepnej aktualizacji
-uruchomi kod na serwerze. To ta sama granica co przy recznym `git pull`, ale warto o niej pamietac.
+Trust moves to the remote repository: whoever can push a commit to the tracked branch will run code on the server
+at the next update. It is the same boundary as with a manual `git pull`, but worth keeping in mind.

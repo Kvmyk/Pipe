@@ -1,65 +1,63 @@
-# Pipe w Kubernetesie
+# Pipe in Kubernetes
 
-Manifesty kustomize. Baza uruchamia Pipe jako agenta **klastra**: zarzadza nim przez kubectl
-z wlasnym ServiceAccount, a pamiec (SERVER.md, DIRECTORY, skille, VIBE, cele, rutyny, audit log)
-trzyma na PVC.
+Kustomize manifests. The base runs Pipe as a **cluster** agent: it manages the cluster through kubectl with its own
+ServiceAccount and keeps its memory (SERVER.md, DIRECTORY, skills, VIBE, targets, routines, audit log) on a PVC.
 
-| Katalog | Co dodaje |
-|---------|-----------|
-| `base/` | Namespace `pipe`, ServiceAccount + ClusterRole **tylko do odczytu, bez sekretow**, PVC, Deployment (1 replika, non-root), Service ClusterIP |
-| `overlays/operator/` | Zmiany w klastrze: restart/skalowanie workloadow, usuwanie podow, `kubectl exec`, joby, cordon. Kazda komenda nadal wymaga potwierdzenia w rozmowie. |
-| `overlays/telegram/` | Bot Telegram jako sidecar (Unix socket we wspolnym `emptyDir`) -- alerty czuwania na telefon |
-| `overlays/host-agent/` | Pipe zarzadza tez **wezlem** jak VPS-em: `/` wezla pod `/hostfs`, `/proc` pod `/hostproc`, `hostPID`. Uprawnienia roota na wezle -- dla klastrow, ktore administrujesz sam (np. k3s na VPS). |
+| Directory | What it adds |
+|-----------|--------------|
+| `base/` | Namespace `pipe`, ServiceAccount + ClusterRole **read-only, without secrets**, PVC, Deployment (1 replica, non-root), ClusterIP Service |
+| `overlays/operator/` | Changes in the cluster: restarting/scaling workloads, deleting pods, `kubectl exec`, jobs, cordon. Every command still needs a confirmation in the chat. |
+| `overlays/telegram/` | The Telegram bot as a sidecar (Unix socket in a shared `emptyDir`): watch alerts on your phone |
+| `overlays/host-agent/` | Pipe also manages the **node** like a VPS: the node's `/` under `/hostfs`, `/proc` under `/hostproc`, `hostPID`. Root on the node, for clusters you administer yourself (e.g. k3s on a VPS). |
 
-## Instalacja
+## Installation
 
 ```bash
-# 1. Obrazy (amd64 + arm64): gotowe wydania sa w ghcr.io/kvmyk/pipe i ghcr.io/kvmyk/pipe-telegram
-#    (tag = wersja, np. 0.27.0; podpis cosign — patrz notatki wydania na GitHubie).
-#    Wlasne obrazy w Twoim rejestrze:
-#      docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG --push backend/
-#      docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-telegram:TAG -f clients/telegram/Dockerfile --push .
+# 1. Images (amd64 + arm64): releases are in ghcr.io/kvmyk/pipe and ghcr.io/kvmyk/pipe-telegram
+#    (tag = version, e.g. 0.27.0; cosign signature, see the release notes on GitHub).
+#    Your own images in your registry:
+#      docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-backend:TAG --push backend/
+#      docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-telegram:TAG -f clients/telegram/Dockerfile --push .
 
-# 2. Wskaz obrazy — w wybranej nakladce albo bazie:
-cd deploy/kubernetes/overlays/telegram     # albo base/, overlays/operator/ ...
-kustomize edit set image pipe-backend=ghcr.io/kvmyk/pipe:WERSJA pipe-telegram=ghcr.io/kvmyk/pipe-telegram:WERSJA
-#   (bez kustomize: zmien newName/newTag w sekcji images pliku kustomization.yaml)
+# 2. Point at the images, in the chosen overlay or the base:
+cd deploy/kubernetes/overlays/telegram     # or base/, overlays/operator/ ...
+kustomize edit set image pipe-backend=ghcr.io/kvmyk/pipe:VERSION pipe-telegram=ghcr.io/kvmyk/pipe-telegram:VERSION
+#   (without kustomize: change newName/newTag in the images section of kustomization.yaml)
 
-# 3. Sekrety (nie trzymaj ich w repozytorium)
+# 3. Secrets (don't keep them in the repository)
 kubectl create namespace pipe
 kubectl -n pipe create secret generic pipe-env \
     --from-literal=LLM_PROVIDER=gemini --from-literal=LLM_API_KEY=... \
     --from-literal=AGENT_TOKEN="$(openssl rand -hex 24)"
-#   jezyk angielski: dodaj --from-literal=PIPE_LANG=en (takze w sekrecie pipe-telegram)
-# tylko z nakladka telegram:
+#   Polish: add --from-literal=PIPE_LANG=pl (also in the pipe-telegram secret)
+# only with the telegram overlay:
 kubectl -n pipe create secret generic pipe-telegram \
     --from-literal=TELEGRAM_BOT_TOKEN=... --from-literal=TELEGRAM_ALLOWED_USER_IDS=123456789 \
-    --from-literal=AGENT_TOKEN=<ten sam co wyzej>
+    --from-literal=AGENT_TOKEN=<the same as above>
 
-# 4. Wdrozenie
-kubectl apply -k deploy/kubernetes/overlays/telegram    # albo base, overlays/operator, overlays/host-agent
+# 4. Deployment
+kubectl apply -k deploy/kubernetes/overlays/telegram    # or base, overlays/operator, overlays/host-agent
 kubectl -n pipe rollout status deploy/pipe
 ```
 
-Nakladki mozna laczyc: skopiuj `overlays/operator` i dopisz w `resources` tez `../telegram`
-zamiast `../../base`.
+Overlays can be combined: copy `overlays/operator` and list `../telegram` in `resources` instead of `../../base`.
 
-## Polaczenie z CLI
+## Connecting from the CLI
 
 ```bash
-pipe --kube pipe --token <AGENT_TOKEN>            # kubectl port-forward svc/pipe w namespace pipe
+pipe --kube pipe --token <AGENT_TOKEN>            # kubectl port-forward svc/pipe in the pipe namespace
 pipe --kube pipe --kube-context prod-cluster
 ```
 
-Service jest typu ClusterIP. **Nie wystawiaj Pipe przez Ingress ani LoadBalancer** -- to pelny dostep
-do klastra przez LLM. Dostep tylko przez `kubectl port-forward` (czyli przez Twoje uprawnienia do klastra).
+The Service is a ClusterIP. **Don't expose Pipe through an Ingress or a LoadBalancer**: that is full access to the
+cluster through an LLM. Access only through `kubectl port-forward` (that is, through your own cluster permissions).
 
-## Co agent widzi
+## What the agent sees
 
-- Tryb `PIPE_RUNTIME=kubernetes`: prompt mowi agentowi, ze system plikow poda to nie wezel, a klastrem
-  zarzadza przez kubectl. `/mapa` rysuje ingressy -> serwisy -> deploymenty.
-- Uprawnienia bazowe: `get/list/watch` na podach (z logami), serwisach, wezlach, eventach, configmapach,
-  PV/PVC, workloadach (`apps`, `batch`), ingressach, HPA, CRD i metrykach. **Bez `secrets`**, a
-  `kubectl get secret -o yaml` i tak wymaga potwierdzenia w klasyfikatorze.
-- Inne klastry (np. produkcja z laptopa) dodasz jako cele `kubernetes` z kontekstem kubeconfig -- wtedy
-  zamontuj kubeconfig w podzie (Secret -> `/tmp/.kube/config`, `HOME=/tmp`).
+- Mode `PIPE_RUNTIME=kubernetes`: the prompt tells the agent that the pod's file system is not the node and that it
+  manages the cluster through kubectl. `/map` draws ingresses -> services -> deployments.
+- Base permissions: `get/list/watch` on pods (with logs), services, nodes, events, configmaps, PV/PVC, workloads
+  (`apps`, `batch`), ingresses, HPA, CRDs and metrics. **No `secrets`**, and `kubectl get secret -o yaml` needs a
+  confirmation in the classifier anyway.
+- Other clusters (e.g. production from your laptop) are added as `kubernetes` targets with a kubeconfig context; then
+  mount the kubeconfig in the pod (Secret -> `/tmp/.kube/config`, `HOME=/tmp`).

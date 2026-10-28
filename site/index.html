@@ -1,21 +1,21 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pipe: agent AI na Twoim serwerze Linux</title>
-<meta name="description" content="Pipe działa na Twoim serwerze, pilnuje go, pisze, gdy coś się psuje, i zmienia cokolwiek dopiero po Twoim potwierdzeniu, z kopią i możliwością cofnięcia. Open source, MIT.">
+<title>Pipe: an AI agent that lives on your Linux server</title>
+<meta name="description" content="Pipe runs on your server, watches it, messages you when something breaks, and changes anything only after you approve, with a backup and a way to undo. Open source, MIT.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pipe">
 <meta property="og:url" content="https://kvmyk.github.io/Pipe/">
-<meta property="og:title" content="Pipe: agent AI na Twoim serwerze Linux">
-<meta property="og:description" content="Pipe działa na Twoim serwerze, pilnuje go, pisze, gdy coś się psuje, i zmienia cokolwiek dopiero po Twoim potwierdzeniu, z kopią i możliwością cofnięcia. Open source, MIT.">
-<meta property="og:image" content="https://kvmyk.github.io/Pipe/assets/social-preview.png">
+<meta property="og:title" content="Pipe: an AI agent that lives on your Linux server">
+<meta property="og:description" content="Pipe runs on your server, watches it, messages you when something breaks, and changes anything only after you approve, with a backup and a way to undo. Open source, MIT.">
+<meta property="og:image" content="https://kvmyk.github.io/Pipe/assets/social-preview-en.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
-<link rel="alternate" hreflang="en" href="en/">
+<link rel="alternate" hreflang="pl" href="pl/">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,68 +27,68 @@
       Pipe
     </a>
     <nav>
-      <a class="hide-sm" href="#jak-dziala">Jak działa</a>
-      <a href="#instalacja">Instalacja</a>
-      <a class="hide-sm" href="#ograniczenia">Ograniczenia</a>
-      <a href="docs/">Dokumentacja</a>
+      <a class="hide-sm" href="#how-it-works">How it works</a>
+      <a href="#installation">Installation</a>
+      <a class="hide-sm" href="#limitations">Limitations</a>
+      <a href="docs/">Docs</a>
       <a class="hide-sm" href="https://github.com/Kvmyk/pipe">GitHub</a>
-      <a class="lang" href="en/" hreflang="en" lang="en">EN</a>
+      <span class="lang-pick"><span aria-current="true" title="English"><svg class="flag" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><rect width="60" height="40" fill="#012169"/><path d="M0 0L60 40M60 0L0 40" stroke="#fff" stroke-width="8"/><path d="M0 0L60 40M60 0L0 40" stroke="#c8102e" stroke-width="3"/><path d="M30 0v40M0 20h60" stroke="#fff" stroke-width="12"/><path d="M30 0v40M0 20h60" stroke="#c8102e" stroke-width="7"/></svg>EN</span><a href="pl/" hreflang="pl" lang="pl" title="Polski"><svg class="flag" viewBox="0 0 16 10" preserveAspectRatio="none" aria-hidden="true"><rect width="16" height="10" fill="#fff"/><rect y="5" width="16" height="5" fill="#dc143c"/></svg>PL</a></span>
     </nav>
   </div>
 </header>
 
 <main>
   <div class="wrap intro">
-    <h1>Admin, który nie śpi i niczego nie rusza bez pytania</h1>
-    <p class="lead">Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie
-      na Telegram, szuka przyczyny i proponuje poprawkę. Czyta wszystko, ale zmienia dopiero po Twoim „tak”.
-      Przed zmianą robi kopię, a po niej sprawdza, czy wszystko dalej działa.</p>
+    <h1>A sysadmin that never sleeps and never touches anything without asking</h1>
+    <p class="lead">Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on
+      Telegram, finds the cause and proposes a fix. It reads everything but changes nothing until you say yes.
+      Before a change it takes a backup, and afterwards it checks that everything still works.</p>
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
-    <p class="meta">Open source na licencji MIT · działa z Gemini (darmowy limit), OpenAI, Claude, Ollamą i innymi ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.48.2</a></p>
+    <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.49.0</a></p>
 
     <figure class="shot">
-      <img src="assets/demo-pl.gif" width="1100" height="647" alt="Okno pipe web: po lewej rozmowa z agentem, który bada błędy 502 i prosi o zgodę na zmianę konfiguracji nginx; po prawej schemat serwera z podświetlonym elementem, na którym agent pracuje">
-      <figcaption>Interfejs w przeglądarce (<code>pipe web</code>). Nagranie z zaplanowanej sesji demonstracyjnej.</figcaption>
+      <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and asks for approval to change the nginx config; on the right a map of the server with the element the agent works on highlighted">
+      <figcaption>The browser interface (<code>pipe web</code>). Recorded from a scripted demo session.</figcaption>
     </figure>
   </div>
 
-  <section id="jak-dziala">
+  <section id="how-it-works">
     <div class="wrap">
       <div class="narrow">
-        <h2>Jak wygląda praca z Pipe</h2>
-        <p>Piszesz zwykłym językiem. Agent sam dobiera komendy, czyta logi i konfigurację, a gdy czegoś nie wie,
-          szuka w internecie. Zanim cokolwiek zmieni, pokazuje dokładną komendę i plan zabezpieczeń.</p>
+        <h2>What working with Pipe looks like</h2>
+        <p>You write in plain language. The agent picks the commands, reads logs and configuration, and searches the
+          web when it doesn't know something. Before it changes anything, it shows the exact command and the safety plan.</p>
       </div>
 
-      <div class="chat" aria-label="Przykładowa rozmowa">
-        <div class="turn me"><div class="who">ty</div><div class="msg">sklep.example.com co chwilę sypie 502, sprawdź co jest grane</div></div>
+      <div class="chat" aria-label="Example conversation">
+        <div class="turn me"><div class="who">you</div><div class="msg">shop.example.com keeps throwing 502s, find out what is going on</div></div>
         <div class="turn"><div class="who">pipe</div><div>
           <ul class="steps">
             <li>docker logs shop-app</li>
             <li>tail -n 80 /var/log/nginx/error.log</li>
-            <li>szuka w sieci: nginx upstream timed out 110</li>
-            <li>czyta nginx.org: ngx_http_proxy_module</li>
+            <li>searches the web: nginx upstream timed out 110</li>
+            <li>reads nginx.org: ngx_http_proxy_module</li>
           </ul>
         </div></div>
         <div class="turn"><div class="who">pipe</div><div>
           <div class="ask">
-            <div class="t">Ta zmiana wymaga Twojej zgody</div>
-            <pre>$ sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' /etc/nginx/sites-enabled/sklep.conf &amp;&amp; systemctl reload nginx</pre>
+            <div class="t">This change needs your approval</div>
+            <pre>$ sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' /etc/nginx/sites-enabled/shop.conf &amp;&amp; systemctl reload nginx</pre>
             <ul>
-              <li>kopia przed zmianą: /etc/nginx/sites-enabled/sklep.conf</li>
-              <li>sprawdzenie przed: nginx -t (błąd = nic nie wykonam)</li>
-              <li>weryfikacja po: nginx działa, strony odpowiadają jak przed zmianą</li>
-              <li>jeśli weryfikacja nie przejdzie: sam przywrócę kopię</li>
+              <li>backup before the change: /etc/nginx/sites-enabled/shop.conf</li>
+              <li>check before: nginx -t (failure = nothing runs)</li>
+              <li>verification after: nginx runs, sites respond as before</li>
+              <li>if verification fails: the backup is restored automatically</li>
             </ul>
           </div>
         </div></div>
-        <div class="turn me"><div class="who">ty</div><div class="msg">tak</div></div>
+        <div class="turn me"><div class="who">you</div><div class="msg">yes</div></div>
         <div class="turn"><div class="who">pipe</div><div>
-          <p>Naprawione, sklep.example.com znów odpowiada. Raport PDF generuje się około 75 sekund, a nginx czekał
-            na odpowiedź tylko 60 (<code>proxy_read_timeout</code>). Podniosłem limit do 120 sekund. Kopia jest
-            w dzienniku, cofniesz to komendą <code>/cofnij</code>.</p>
+          <p>Fixed, shop.example.com responds again. The PDF report takes about 75 seconds to generate, while nginx waited
+            only 60 for a response (<code>proxy_read_timeout</code>). I raised the limit to 120 seconds. The backup is in
+            the journal; undo it with <code>/undo</code>.</p>
         </div></div>
       </div>
     </div>
@@ -97,41 +97,41 @@ sudo bash scripts/install-server.sh</code></pre>
   <section>
     <div class="wrap">
       <div class="narrow">
-        <h2>Co robi sam, a o co pyta</h2>
-        <p>O tym decyduje klasyfikator zapisany w kodzie Pipe, a nie instrukcja dla modelu. Model nie może go
-          przekonać ani obejść.</p>
+        <h2>What it does on its own, and what it asks about</h2>
+        <p>This is decided by a classifier written in Pipe's code, not by an instruction to the model. The model cannot
+          talk its way around it.</p>
       </div>
       <div class="rules">
         <div class="ok">
-          <h3>Od razu</h3>
-          <p class="why">rozpoznane odczyty</p>
+          <h3>Right away</h3>
+          <p class="why">recognised reads</p>
           <ul>
-            <li>logi, procesy, dyski, pamięć</li>
-            <li>stan kontenerów i usług</li>
-            <li>odczyt plików konfiguracyjnych</li>
+            <li>logs, processes, disks, memory</li>
+            <li>state of containers and services</li>
+            <li>reading configuration files</li>
             <li><code>git status</code>, <code>git log</code></li>
-            <li>wyszukiwanie w internecie</li>
+            <li>searching the web</li>
           </ul>
         </div>
         <div class="ask2">
-          <h3>Po Twoim „tak”</h3>
-          <p class="why">wszystko, co zmienia serwer, oraz każda nieznana komenda</p>
+          <h3>After your yes</h3>
+          <p class="why">anything that changes the server, and every unknown command</p>
           <ul>
-            <li>zapis i edycja plików</li>
-            <li>restart usług i kontenerów</li>
-            <li>instalacja i aktualizacja pakietów</li>
+            <li>writing and editing files</li>
+            <li>restarting services and containers</li>
+            <li>installing and upgrading packages</li>
             <li><code>git pull</code>, <code>docker compose up</code></li>
-            <li>odczyt plików z sekretami (<code>.env</code>, klucze)</li>
+            <li>reading files with secrets (<code>.env</code>, keys)</li>
           </ul>
         </div>
         <div class="no">
-          <h3>Nigdy</h3>
-          <p class="why">odrzucane bez względu na to, kto prosi</p>
+          <h3>Never</h3>
+          <p class="why">refused no matter who asks</p>
           <ul>
-            <li><code>rm -rf /</code> i jego odmiany</li>
-            <li><code>mkfs</code>, <code>dd</code>, <code>wipefs</code> na dyskach</li>
-            <li>zapis do <code>/etc/shadow</code> i <code>/boot</code></li>
-            <li>pobieranie i uruchamianie skryptów (<code>curl … | sh</code>)</li>
+            <li><code>rm -rf /</code> and its variants</li>
+            <li><code>mkfs</code>, <code>dd</code>, <code>wipefs</code> on disks</li>
+            <li>writing to <code>/etc/shadow</code> and <code>/boot</code></li>
+            <li>downloading and running scripts (<code>curl … | sh</code>)</li>
           </ul>
         </div>
       </div>
@@ -141,18 +141,18 @@ sudo bash scripts/install-server.sh</code></pre>
   <section>
     <div class="wrap">
       <div class="narrow">
-        <h2>Gdzie z nim rozmawiasz</h2>
-        <p>Backend działa na serwerze. Klienci łączą się z nim przez tunel SSH, więc na serwerze nie trzeba
-          otwierać żadnego portu.</p>
+        <h2>Where you talk to it</h2>
+        <p>The backend runs on the server. Clients connect to it through an SSH tunnel, so no port has to be opened on
+          the server.</p>
       </div>
       <table class="table">
-        <tr><th>Terminal</th><td>Komenda <code>pipe</code> na Twoim komputerze (Windows, macOS, Linux). Potwierdzenia
-          pokazują komendę i plan bezpiecznika, diagramy zapisują się jako PNG. Plik dołączasz przez <code>@ścieżka</code>.</td></tr>
-        <tr><th>Przeglądarka</th><td><code>pipe web</code> otwiera rozmowę obok schematu serwera, na którym widać, gdzie
-          agent właśnie pracuje. Każda zmiana ma podgląd różnic i przycisk cofnięcia. Zrzut ekranu wklejasz do rozmowy,
-          a mikrofon nagrywa pytanie głosem.</td></tr>
-        <tr><th>Telegram</th><td>Tu przychodzą alerty, przypomnienia i poranny raport. Przy alercie jest przycisk
-          „Zbadaj”. Możesz wysłać głosówkę, zdjęcie albo plik z logiem (głos rozumie od razu z Gemini, OpenAI i Groq).</td></tr>
+        <tr><th>Terminal</th><td>The <code>pipe</code> command on your computer (Windows, macOS, Linux). Confirmations show
+          the command and the safety plan; diagrams are saved as PNG. Attach a file with <code>@path</code>.</td></tr>
+        <tr><th>Browser</th><td><code>pipe web</code> opens the conversation next to a map of the server that shows where
+          the agent is working. Every change has a diff preview and an undo button. Paste a screenshot into the
+          conversation, or ask by voice with the microphone.</td></tr>
+        <tr><th>Telegram</th><td>Alerts, reminders and the morning report arrive here, with an "Investigate" button on
+          alerts. You can send a voice note, a photo or a log file (voice works out of the box with Gemini, OpenAI and Groq).</td></tr>
       </table>
     </div>
   </section>
@@ -160,88 +160,87 @@ sudo bash scripts/install-server.sh</code></pre>
   <section>
     <div class="wrap">
       <div class="narrow">
-        <h2>Co jeszcze potrafi</h2>
+        <h2>What else it does</h2>
       </div>
       <dl class="features">
         <div>
-          <dt>Pilnuje bez kosztów</dt>
-          <dd>Co dwie minuty sprawdza dyski, pamięć, obciążenie, kontenery i nowe porty otwarte na świat. Te sprawdzenia
-            działają bez modelu językowego, więc nic nie kosztują.</dd>
-          <dt>Wie, co się zmieniło</dt>
-          <dd>Co godzinę zapisuje stan serwera: pakiety, obrazy kontenerów, porty, crona, konta i konfiguracje. Na pytanie
-            „co się zmieniło od wczoraj?” odpowiada z godziną.</dd>
-          <dt>Monitoring bez konfiguracji</dt>
-          <dd>Sam znajduje domeny w konfiguracji nginx, Caddy i Traefika i pilnuje certyfikatów, odpowiedzi stron, DNS
-            oraz świeżości backupów.</dd>
-          <dt>Audyt bezpieczeństwa</dt>
-          <dd><code>/audyt</code> ocenia serwer w skali 0–100: SSH, zapora, bazy wystawione na świat, konta, aktualizacje.
-            Do każdej uwagi daje gotową poprawkę.</dd>
+          <dt>Watching at no cost</dt>
+          <dd>Every two minutes it checks disks, memory, load, containers and new ports open to the internet. These checks
+            run without a language model, so they cost nothing.</dd>
+          <dt>Knows what changed</dt>
+          <dd>Every hour it records the server state: packages, container images, ports, cron, accounts and configs.
+            "What changed since yesterday?" gets an answer with the time.</dd>
+          <dt>Monitoring without setup</dt>
+          <dd>It finds domains in the nginx, Caddy and Traefik configuration by itself and watches certificates, site
+            responses, DNS and backup freshness.</dd>
+          <dt>Security audit</dt>
+          <dd><code>/audit</code> scores the server 0–100: SSH, firewall, databases exposed to the internet, accounts,
+            updates. Every finding comes with a ready fix.</dd>
         </div>
         <div>
-          <dt>Wiele serwerów</dt>
-          <dd>Zdalne maszyny (SSH), kontenery i klastry Kubernetes dodajesz jako cele. Pomocnicy badają je równolegle
-            i tylko czytają.</dd>
-          <dt>Pamięć</dt>
-          <dd>Zapisuje fakty o serwerze, mapę katalogów, sprawdzone procedury i rozwiązane incydenty. Gdy problem wraca,
-            zaczyna od tego, co pomogło poprzednio.</dd>
-          <dt>Rutyny i przypomnienia</dt>
-          <dd>„Codziennie o 7 sprawdź backupy, pisz tylko jak coś jest nie tak” zakłada zadanie, które wykonuje się samo.</dd>
-          <dt>Inni agenci przez MCP</dt>
-          <dd>Claude Code czy Cursor mogą pracować na serwerze przez Pipe. Ich zmiany też czekają na Twoją zgodę.</dd>
+          <dt>Many servers</dt>
+          <dd>Remote machines (SSH), containers and Kubernetes clusters are added as targets. Helpers investigate them in
+            parallel and only read.</dd>
+          <dt>Memory</dt>
+          <dd>It keeps facts about the server, a map of directories, proven procedures and resolved incidents. When a
+            problem comes back, it starts from what helped last time.</dd>
+          <dt>Routines and reminders</dt>
+          <dd>"Every day at 7 check the backups, message me only if something is wrong" sets up a task that runs by itself.</dd>
+          <dt>Other agents over MCP</dt>
+          <dd>Claude Code or Cursor can work on the server through Pipe. Their changes also wait for your approval.</dd>
         </div>
       </dl>
     </div>
   </section>
 
-  <section id="instalacja">
+  <section id="installation">
     <div class="wrap steps-install">
       <div class="narrow">
-        <h2>Instalacja</h2>
-        <p>Potrzebujesz serwera z Linuksem, dostępu przez SSH i klucza API do modelu językowego. Jeśli nie masz klucza,
-          wybierz Google Gemini: darmowy klucz wygenerujesz na
-          <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>.</p>
+        <h2>Installation</h2>
+        <p>You need a Linux server, SSH access and an API key for a language model. If you don't have one, pick Google
+          Gemini and create a free key at <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>.</p>
 
-        <h3>Na serwerze</h3>
-        <p>Instalator postawi Dockera (jeśli go nie ma), zapyta o dostawcę modelu i klucz, sprawdzi, czy wybrany model
-          obsługuje narzędzia, i uruchomi Pipe.</p>
+        <h3>On the server</h3>
+        <p>The installer sets up Docker (if missing), asks for the model provider and key, checks that the chosen model
+          supports tools, and starts Pipe.</p>
         <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh
-<span class="c"># bez Dockera: sudo bash scripts/install-server.sh --mode native</span></code></pre>
+<span class="c"># without Docker: add --mode native</span></code></pre>
 
-        <h3>Na swoim komputerze</h3>
-        <p>Instalator klienta zapyta o adres serwera. Potem w każdym terminalu wpisujesz <code>pipe</code>
-          albo <code>pipe web</code>.</p>
+        <h3>On your computer</h3>
+        <p>The client installer asks for the server address. After that you type <code>pipe</code> or
+          <code>pipe web</code> in any terminal.</p>
         <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 bash install.sh       <span class="c"># Linux, macOS</span>
 .\install.ps1         <span class="c"># Windows (PowerShell)</span></code></pre>
 
         <h3>Telegram</h3>
-        <p>Załóż bota u <a href="https://t.me/BotFather">@BotFather</a>, wpisz jego token i swój identyfikator do
-          <code>clients/telegram/.env</code> i uruchom instalator serwera jeszcze raz.
-          <a href="docs/telegram.html">Instrukcja krok po kroku</a>.</p>
+        <p>Create a bot with <a href="https://t.me/BotFather">@BotFather</a>, put its token and your user id into
+          <code>clients/telegram/.env</code> and run the server installer again.
+          <a href="docs/telegram.html">Step-by-step guide</a>.</p>
 
-        <p>Kubernetes, instalację natywną z systemd i cloud-init opisuje strona
-          <a href="docs/deploy.html">Wdrożenie</a> w dokumentacji.</p>
+        <p>Kubernetes, a native install with systemd and cloud-init are covered on the
+          <a href="docs/deploy.html">Deployment</a> page of the docs.</p>
       </div>
     </div>
   </section>
 
-  <section id="ograniczenia">
+  <section id="limitations">
     <div class="wrap">
       <div class="narrow">
-        <h2>Co warto wiedzieć przed instalacją</h2>
+        <h2>Worth knowing before you install</h2>
         <ul class="limits">
-          <li>W trybie Docker Pipe ma dostęp do <code>docker.sock</code>, czyli w praktyce uprawnienia
-            roota. Bez pytania Pipe robi tylko rutynę z kopią (restart, przeładowanie, poprawka w konfiguracji).
-            Usunięcie danych, dostęp, autostart i nieznane komendy czekają na Ciebie, więc czytaj, co zatwierdzasz.</li>
-          <li>Treść rozmowy trafia do dostawcy modelu. Klucze, hasła i tokeny z plików są ukrywane
-            przed wysłaniem, ale logi i konfiguracja już nie. Jeśli to problem, użyj lokalnego modelu przez Ollamę.</li>
-          <li>Rozmowy są w pamięci procesu. Restart backendu je kasuje. Pamięć o serwerze, dziennik
-            zmian i historia zostają na dysku.</li>
-          <li>Jakość diagnozy zależy od modelu. Słabszy model częściej się myli. Dlatego każda zmiana
-            przechodzi przez kopię i weryfikację, a ważne czekają na Twoje potwierdzenie.</li>
+          <li>In Docker mode Pipe has access to <code>docker.sock</code>, which in practice means root.
+            Without asking Pipe does only routine work with a backup (a restart, a reload, a config fix). Deleting
+            data, access, autostart and unknown commands wait for you, so read what you approve.</li>
+          <li>The conversation goes to the model provider. Keys, passwords and tokens from files are
+            hidden before sending, but logs and configuration are not. If that is a problem, run a local model with Ollama.</li>
+          <li>Conversations live in process memory. A backend restart clears them. What Pipe knows about the
+            server, the change journal and the history stay on disk.</li>
+          <li>Diagnosis quality depends on the model. A weaker model is wrong more often. That is why every
+            change goes through a backup and verification, and important ones wait for your confirmation.</li>
         </ul>
-        <p>Szczegóły: <a href="docs/security.html">Bezpieczeństwo</a>.</p>
+        <p>Details: <a href="docs/security.html">Security</a>.</p>
       </div>
     </div>
   </section>
@@ -249,11 +248,11 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.48.2 · licencja MIT</span>
-    <a href="https://github.com/Kvmyk/pipe">Kod na GitHubie</a>
-    <a href="docs/">Dokumentacja</a>
-    <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Historia zmian</a>
-    <a href="https://github.com/Kvmyk/pipe/issues">Zgłoś błąd</a>
+    <span>Pipe 0.49.0 · MIT license</span>
+    <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
+    <a href="docs/">Documentation</a>
+    <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>
+    <a href="https://github.com/Kvmyk/pipe/issues">Report a bug</a>
   </div>
 </footer>
 

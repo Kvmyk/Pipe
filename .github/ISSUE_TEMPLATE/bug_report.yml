@@ -1,56 +1,56 @@
-name: Błąd / Bug report
-description: Pipe zrobił coś innego, niż powinien. / Pipe did something it shouldn't have.
+name: Bug report / Błąd
+description: Pipe did something it shouldn't have. / Pipe zrobił coś innego, niż powinien.
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Możesz pisać po polsku albo po angielsku. Nie wklejaj kluczy API, tokenów ani haseł.
-        Podatność (np. komenda, która zmienia serwer bez potwierdzenia) zgłoś prywatnie: SECURITY.md.
-
-        Polish or English is fine. Don't paste API keys, tokens or passwords.
+        English or Polish is fine. Don't paste API keys, tokens or passwords.
         Report vulnerabilities (e.g. a command that changes the server without confirmation) privately: SECURITY.md.
+
+        Możesz pisać po angielsku albo po polsku. Nie wklejaj kluczy API, tokenów ani haseł.
+        Podatność (np. komenda, która zmienia serwer bez potwierdzenia) zgłoś prywatnie: SECURITY.md.
   - type: textarea
     id: what
     attributes:
-      label: Co się stało / What happened
-      description: Co napisałeś, co zrobił Pipe, czego się spodziewałeś. / What you asked, what Pipe did, what you expected.
+      label: What happened / Co się stało
+      description: What you asked, what Pipe did, what you expected. / Co napisałeś, co zrobił Pipe, czego się spodziewałeś.
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
-      label: Jak to powtórzyć / How to reproduce
-      description: Kroki albo scenariusz z piaskownicy (`sandbox/`), jeśli się da. / Steps, or a sandbox scenario if possible.
+      label: How to reproduce / Jak to powtórzyć
+      description: Steps, or a sandbox scenario if possible. / Kroki albo scenariusz z piaskownicy (`sandbox/`), jeśli się da.
   - type: input
     id: version
     attributes:
-      label: Wersja / Version
-      description: Plik `VERSION` albo baner CLI. / The `VERSION` file or the CLI banner.
+      label: Version / Wersja
+      description: The `VERSION` file or the CLI banner. / Plik `VERSION` albo baner CLI.
       placeholder: "X.Y.Z"
     validations:
       required: true
   - type: dropdown
     id: mode
     attributes:
-      label: Tryb / Mode
+      label: Mode / Tryb
       options: [docker, native, kubernetes, sandbox]
     validations:
       required: true
   - type: dropdown
     id: client
     attributes:
-      label: Klient / Client
+      label: Client / Klient
       multiple: true
       options: [CLI, pipe web, Telegram, MCP]
   - type: input
     id: model
     attributes:
-      label: Provider i model / Provider and model
+      label: Provider and model / Provider i model
       placeholder: "gemini / gemini-3.8-flash"
   - type: textarea
     id: logs
     attributes:
-      label: Logi / Logs
-      description: "`docker compose logs vps-agent` albo `journalctl -u pipe`. Sprawdź, czy nie ma w nich sekretów. / Check them for secrets first."
+      label: Logs / Logi
+      description: "`docker compose logs vps-agent` or `journalctl -u pipe`. Check them for secrets first. / Sprawdź, czy nie ma w nich sekretów."
       render: text

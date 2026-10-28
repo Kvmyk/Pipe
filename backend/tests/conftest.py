@@ -4,9 +4,22 @@ Wspolna konfiguracja testow.
 Testy opisuja domyslne wdrozenie (kontener Docker z hostem pod /hostfs),
 wiec runtime jest ustawiony na `docker` niezaleznie od maszyny, na ktorej
 uruchamiamy pytest. Testy trybu native/kubernetes nadpisuja to same.
+
+Domyslny jezyk Pipe to angielski, ale testy sprawdzaja polskie teksty (tr(pl, en)), wiec jezykiem testow
+jest polski — ustawiony juz przy imporcie (cli.LANG czyta go na poziomie modulu). Domyslny jezyk bez
+PIPE_LANG sprawdza test_i18n.py. Testy angielskich tekstow ustawiaja PIPE_LANG=en same.
 """
 
+import os
+
 import pytest
+
+os.environ["PIPE_LANG"] = "pl"
+
+
+@pytest.fixture(autouse=True)
+def _polish_texts(monkeypatch):
+    monkeypatch.setenv("PIPE_LANG", "pl")
 
 
 @pytest.fixture(autouse=True)

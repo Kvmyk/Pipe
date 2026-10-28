@@ -1,4 +1,4 @@
-"""Strona projektu: renderer Markdown z scripts/build_site.py i dokumentacja w dwoch jezykach."""
+"""Strona projektu: renderer Markdown z scripts/build_site.py i dokumentacja w dwoch jezykach (angielski podstawowy, polski dodatkiem)."""
 
 import importlib.util
 import re
@@ -18,14 +18,14 @@ DOCS, ROOT, build, doc_link, render_markdown = (
 def test_every_doc_page_exists_in_both_languages():
     for name, *_ in DOCS:
         assert (ROOT / "docs" / f"{name}.md").exists(), name
-        assert (ROOT / "docs" / "en" / f"{name}.md").exists(), f"brak tlumaczenia docs/en/{name}.md"
+        assert (ROOT / "docs" / "pl" / f"{name}.md").exists(), f"brak tlumaczenia docs/pl/{name}.md"
 
 
-def test_english_docs_have_the_same_sections_count_roughly():
+def test_polish_docs_have_the_same_sections_count():
     # tlumaczenie nie gubi rozdzialow: tyle samo naglowkow h2
     for name, *_ in DOCS:
-        pl = re.findall(r"^## ", (ROOT / "docs" / f"{name}.md").read_text(encoding="utf-8"), re.M)
-        en = re.findall(r"^## ", (ROOT / "docs" / "en" / f"{name}.md").read_text(encoding="utf-8"), re.M)
+        en = re.findall(r"^## ", (ROOT / "docs" / f"{name}.md").read_text(encoding="utf-8"), re.M)
+        pl = re.findall(r"^## ", (ROOT / "docs" / "pl" / f"{name}.md").read_text(encoding="utf-8"), re.M)
         assert len(pl) == len(en), name
 
 
@@ -50,23 +50,26 @@ def test_raw_html_is_escaped():
 
 
 def test_links_between_docs_and_to_repo():
-    pl = doc_link("pl", "docs/quickstart.md")
+    pl = doc_link("pl", "docs/pl/quickstart.md")
     assert pl("features.md#czuwanie") == "features.html#czuwanie"
-    assert pl("../deploy/cloud-init/user-data.yaml").endswith("/blob/main/deploy/cloud-init/user-data.yaml")
-    en = doc_link("en", "docs/en/quickstart.md")
+    assert pl("../../deploy/cloud-init/user-data.yaml").endswith("/blob/main/deploy/cloud-init/user-data.yaml")
+    en = doc_link("en", "docs/quickstart.md")
     assert en("./deploy.md") == "deploy.html"
-    assert en("../../deploy/kubernetes/README.md").endswith("/blob/main/deploy/kubernetes/README.md")
+    assert en("../deploy/kubernetes/README.md").endswith("/blob/main/deploy/kubernetes/README.md")
     assert en("https://example.com") == "https://example.com"
 
 
 def test_built_site_has_no_broken_internal_links(tmp_path):
     out = tmp_path / "site"
     build(out)
-    pages = list(out.glob("docs/*.html")) + list(out.glob("en/docs/*.html"))
+    pages = list(out.glob("docs/*.html")) + list(out.glob("pl/docs/*.html"))
     assert len(pages) == 2 * (len(DOCS) + 1)
-    for page in pages:
+    redirects = list(out.glob("en/**/*.html"))        # stare adresy angielskiej wersji (do v0.48 pod /en/)
+    assert len(redirects) == len(DOCS) + 2
+    for page in pages + redirects + [out / "index.html", out / "pl" / "index.html"]:
         text = page.read_text(encoding="utf-8")
-        for href in re.findall(r'href="([^"]+)"', text):
+        for href in re.findall(r'href="([^"]+)"|url=([^"]+)"', text):
+            href = href[0] or href[1]
             if href.startswith(("http://", "https://")):
                 continue
             path, _, anchor = href.partition("#")
@@ -97,9 +100,26 @@ def test_one_logo_everywhere():
     assert (ROOT / "clients" / "webui" / "static" / "icon.svg").read_bytes() == logo
     for path, ref in [("clients/webui/static/index.html", 'src="/static/icon.svg"'),
                       ("clients/webui/static/pair.html", 'src="/static/icon.svg"'),
-                      ("site/index.html", 'src="assets/logo.svg"'), ("site/en/index.html", 'src="../assets/logo.svg"'),
+                      ("site/index.html", 'src="assets/logo.svg"'), ("site/pl/index.html", 'src="../assets/logo.svg"'),
                       ("scripts/build_site.py", 'src="{root}assets/logo.svg"'), ("README.md", 'src="docs/assets/logo.svg"'),
-                      ("README.en.md", 'src="docs/assets/logo.svg"')]:
+                      ("README.pl.md", 'src="docs/assets/logo.svg"')]:
         text = (ROOT / path).read_text(encoding="utf-8")
         assert ref in text, path
         assert 'fill-rule="evenodd"' not in text, f"{path}: wlasna kopia litery P zamiast pliku logo"
+
+
+def test_english_first_with_flags(tmp_path):
+    # Angielski jest podstawowy: README.md, strona pod /, dokumentacja pod /docs/; polski to dodatek (README.pl.md, /pl/)
+    assert 'html lang="en"' in (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    assert 'html lang="pl"' in (ROOT / "site" / "pl" / "index.html").read_text(encoding="utf-8")
+    assert '<b>🇬🇧 English</b>' in (ROOT / "README.md").read_text(encoding="utf-8")
+    assert '<b>🇵🇱 Polski</b>' in (ROOT / "README.pl.md").read_text(encoding="utf-8")
+    out = tmp_path / "site"
+    build(out)
+    assert '<html lang="en">' in (out / "docs" / "index.html").read_text(encoding="utf-8")
+    # przelacznik jezyka z flagami na kazdej stronie: strona glowna, dokumentacja i pipe web
+    for page in [out / "index.html", out / "pl" / "index.html", out / "docs" / "cli.html", out / "pl" / "docs" / "cli.html",
+                 ROOT / "clients" / "webui" / "static" / "index.html"]:
+        text = page.read_text(encoding="utf-8")
+        assert 'class="lang-pick' in text and text.count('class="flag"') == 2, page
+        assert 'fill="#012169"' in text and 'fill="#dc143c"' in text, page      # flaga Wielkiej Brytanii i Polski

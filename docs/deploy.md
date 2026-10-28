@@ -1,17 +1,17 @@
-# Wdrozenie -- Pipe
+# Deployment -- Pipe
 
-Pipe v0.48.2
+Pipe v0.49.0
 
-Pipe dziala w trzech trybach (`PIPE_RUNTIME`, domyslnie wykrywany automatycznie). Od trybu zalezy,
-jak agent widzi zarzadzana maszyne -- reszta (narzedzia, pamiec, klienci, protokol) jest taka sama.
+Pipe runs in three modes (`PIPE_RUNTIME`, auto-detected by default). The mode decides how the agent sees the managed
+machine; everything else (tools, memory, clients, protocol) is the same.
 
-| Tryb | Kiedy | Jak widzi hosta | Instalacja |
-|------|-------|-----------------|------------|
-| `docker` | VPS, domyslnie | host pod `/hostfs` (ro, `/root` rw), `/proc` hosta pod `/hostproc`, `docker.sock` | `scripts/install-server.sh` |
-| `native` | serwer bez Dockera, LXC, maly VPS | bezposrednio | `scripts/install-server.sh --mode native` |
-| `kubernetes` | klaster (k3s, EKS, GKE, AKS...) | klaster przez kubectl (ServiceAccount); opcjonalnie wezel | `kubectl apply -k deploy/kubernetes/...` |
+| Mode | When | How it sees the host | Installation |
+|------|------|----------------------|--------------|
+| `docker` | VPS, default | host under `/hostfs` (ro, `/root` rw), host `/proc` under `/hostproc`, `docker.sock` | `scripts/install-server.sh` |
+| `native` | server without Docker, LXC, small VPS | directly | `scripts/install-server.sh --mode native` |
+| `kubernetes` | cluster (k3s, EKS, GKE, AKS...) | the cluster through kubectl (ServiceAccount); optionally the node | `kubectl apply -k deploy/kubernetes/...` |
 
-Obraz Dockera budowany jest dla **amd64 i arm64** (Hetzner CAX, Oracle Ampere, AWS Graviton, Raspberry Pi).
+The Docker image is built for **amd64 and arm64** (Hetzner CAX, Oracle Ampere, AWS Graviton, Raspberry Pi).
 
 ---
 
@@ -22,111 +22,116 @@ git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh
 ```
 
-Skrypt instaluje Dockera z repozytorium dystrybucji (apt, dnf, apk, pacman, zypper), uruchamia kreator
-providera LLM i uruchamia kontenery. Bot Telegram startuje, gdy istnieje `clients/telegram/.env`.
+The script installs Docker from the distribution's repository (apt, dnf, apk, pacman, zypper), runs the LLM provider
+wizard and starts the containers. The Telegram bot starts when `clients/telegram/.env` exists.
 
-Obraz pochodzi z wydania: `ghcr.io/kvmyk/pipe:<wersja z pliku VERSION>` (amd64 i arm64, podpisany cosign w CI,
-polecenie weryfikacji jest w notatkach wydania na GitHubie). Gdy takiego obrazu nie ma (wersja bez wydania, brak
-dostepu do ghcr.io) albo podasz `--build`, obraz jest budowany na serwerze ze zrodel. `/aktualizuj` robi to samo.
+The image comes from a release: `ghcr.io/kvmyk/pipe:<version from the VERSION file>` (amd64 and arm64, signed with
+cosign in CI; the verification command is in the GitHub release notes). When there is no such image (a version without
+a release, no access to ghcr.io) or you pass `--build`, the image is built on the server from source. `/update` does
+the same.
 
-Recznie: `python3 -m backend.configure && cd backend && PIPE_VERSION=$(cat ../VERSION) docker compose up -d`
-(bez `PIPE_VERSION`: `docker compose up -d --build` buduje lokalnie obraz z tagiem `local`).
+By hand: `python3 -m backend.configure && cd backend && PIPE_VERSION=$(cat ../VERSION) docker compose up -d`
+(without `PIPE_VERSION`: `docker compose up -d --build` builds a local image tagged `local`).
 
-Montowania (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/hostfs/root` (rw),
-`/proc` -> `/hostproc:ro`, `docker.sock`, `/root/.ssh:ro` (git, cele ssh), opcjonalnie `/root/.kube:ro`
-(cele-klastry). Port 7379 jest publikowany **tylko na 127.0.0.1** -- dostep przez tunel SSH; 7380 (webhooki,
-dziala po ustawieniu `WEBHOOK_PORT` i `WEBHOOK_TOKEN`) -- tez tylko na 127.0.0.1. Caly `backend/.env` trafia do
-kontenera (`env_file`), wiec kazde ustawienie z `backend/.env.example` dziala bez edycji compose.
+Mounts (`backend/docker-compose.yml`): host `/` -> `/hostfs:ro`, `/root` -> `/hostfs/root` (rw),
+`/proc` -> `/hostproc:ro`, `docker.sock`, `/root/.ssh:ro` (git, ssh targets), optionally `/root/.kube:ro`
+(cluster targets). Port 7379 is published **only on 127.0.0.1**, access goes through an SSH tunnel; 7380 (webhooks,
+active once `WEBHOOK_PORT` and `WEBHOOK_TOKEN` are set) is also only on 127.0.0.1. The whole `backend/.env` reaches the
+container (`env_file`), so every setting from `backend/.env.example` works without editing compose.
 
-`--profile observe` instaluje Pipe w trybie obserwacji: dodaje `backend/docker-compose.observe.yml` (bez
-`docker.sock`, Docker tylko do odczytu przez proxy, `/root` tylko do odczytu, bez uprawnien jadra) i ustawia
-`PIPE_OBSERVE=1`. Pipe pilnuje i odpowiada, ale niczego nie zmienia. `--profile full` wraca do pelnego trybu,
-a ponowna instalacja bez `--profile` zostawia ten, ktory jest. Szczegoly: [security.md](security.md#tryb-obserwacji-pipe_observe1).
+`--profile observe` installs Pipe in observe mode: it adds `backend/docker-compose.observe.yml` (no `docker.sock`,
+read-only Docker through a proxy, read-only `/root`, no kernel capabilities) and sets `PIPE_OBSERVE=1`. Pipe watches
+and answers but changes nothing. `--profile full` goes back to full mode, and reinstalling without `--profile` keeps
+the current one. Details: [security.md](security.md#observe-mode-pipe_observe1).
 
-## Native (systemd, bez Dockera)
+## Native (systemd, without Docker)
 
 ```bash
 sudo bash scripts/install-server.sh --mode native
 ```
 
-Tworzy `.venv`, instaluje zaleznosci, ustawia w `backend/.env` `PIPE_RUNTIME=native`, `TCP_HOST=127.0.0.1`,
-`DATA_DIR` i `AUDIT_LOG_PATH` w katalogu instalacji, instaluje `deploy/systemd/pipe.service`
-(i `pipe-telegram.service`, jesli jest `.env` bota). Logi: `journalctl -u pipe -f`.
+Creates `.venv`, installs the dependencies, sets `PIPE_RUNTIME=native`, `TCP_HOST=127.0.0.1`, `DATA_DIR` and
+`AUDIT_LOG_PATH` (in the install directory) in `backend/.env`, installs `deploy/systemd/pipe.service`
+(and `pipe-telegram.service` when the bot's `.env` exists). Logs: `journalctl -u pipe -f`.
 
-W tym trybie `cron_manage` moze edytowac crontab, a `systemctl`/`apt` dzialaja na serwerze (z potwierdzeniem).
-Preset Ollamy (`host.docker.internal`) jest automatycznie zamieniany na `127.0.0.1`.
+In this mode `cron_manage` can edit the crontab, and `systemctl`/`apt` work on the server (with confirmation).
+The Ollama preset (`host.docker.internal`) is automatically replaced with `127.0.0.1`.
 
 ## Kubernetes
 
-> Eksperymentalne: dziala i ma testy, ale ma za soba mniej uzycia na prawdziwych serwerach niz reszta Pipe.
-> Jesli cos nie gra, zglos to w issue.
+> Experimental: it works and has tests, but has seen less use on real servers than the rest of Pipe.
+> If something is off, please open an issue.
 
-[deploy/kubernetes/README.md](../deploy/kubernetes/README.md) -- baza (zarzadzanie klastrem, RBAC tylko
-do odczytu, bez sekretow) i nakladki: `operator` (zmiany w klastrze), `telegram` (bot jako sidecar),
-`host-agent` (takze wezel, jak VPS). CLI laczy sie przez `pipe --kube pipe` (kubectl port-forward).
+[deploy/kubernetes/README.md](../deploy/kubernetes/README.md) -- the base (cluster management, read-only RBAC,
+no secrets) and overlays: `operator` (changes in the cluster), `telegram` (the bot as a sidecar),
+`host-agent` (also the node, like a VPS). The CLI connects with `pipe --kube pipe` (kubectl port-forward).
 
 ---
 
-## Nowy serwer w chmurze (cloud-init)
+## New cloud server (cloud-init)
 
-[deploy/cloud-init/user-data.yaml](../deploy/cloud-init/user-data.yaml) dziala u kazdego dostawcy
-z cloud-init. Uzupelnij `LLM_PROVIDER` i `LLM_API_KEY` (opcjonalnie token bota) i podaj plik przy
-tworzeniu serwera. Po ~3 minutach: `ssh root@IP tail /var/log/pipe-install.log`, na laptopie `pipe --host root@IP`.
+[deploy/cloud-init/user-data.yaml](../deploy/cloud-init/user-data.yaml) works with every provider that supports
+cloud-init. Fill in `LLM_PROVIDER` and `LLM_API_KEY` (optionally the bot token) and pass the file when creating the
+server. After about 3 minutes: `ssh root@IP tail /var/log/pipe-install.log`, and on your laptop `pipe --host root@IP`.
 
-| Dostawca | Przyklad |
-|----------|----------|
-| Hetzner | `hcloud server create --name pipe --type cax11 --image ubuntu-24.04 --ssh-key moj --user-data-from-file user-data.yaml` |
+| Provider | Example |
+|----------|---------|
+| Hetzner | `hcloud server create --name pipe --type cax11 --image ubuntu-24.04 --ssh-key mine --user-data-from-file user-data.yaml` |
 | DigitalOcean | `doctl compute droplet create pipe --image ubuntu-24-04-x64 --size s-1vcpu-2gb --region fra1 --ssh-keys ID --user-data-file user-data.yaml` |
-| AWS EC2 | `aws ec2 run-instances --image-id ami-... --instance-type t4g.small --key-name moj --user-data file://user-data.yaml` |
+| AWS EC2 | `aws ec2 run-instances --image-id ami-... --instance-type t4g.small --key-name mine --user-data file://user-data.yaml` |
 | Google Cloud | `gcloud compute instances create pipe --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud --metadata-from-file user-data=user-data.yaml` |
-| Azure | `az vm create -n pipe -g grupa --image Ubuntu2404 --custom-data user-data.yaml --ssh-key-values ~/.ssh/id_ed25519.pub` |
-| OVH / Oracle / Vultr / Linode / Scaleway | pole *user data* / *cloud-init* w panelu albo odpowiednik w CLI |
+| Azure | `az vm create -n pipe -g group --image Ubuntu2404 --custom-data user-data.yaml --ssh-key-values ~/.ssh/id_ed25519.pub` |
+| OVH / Oracle / Vultr / Linode / Scaleway | the *user data* / *cloud-init* field in the panel or its CLI equivalent |
 
-Dostawca przechowuje user-data w metadanych serwera -- klucz API jest tam widoczny dla kont z dostepem
-do projektu. Jesli to istotne, po instalacji zmien klucz albo skonfiguruj go recznie przez SSH.
+The provider keeps user-data in the server's metadata, so the API key is visible there to accounts with access to the
+project. If that matters, change the key after installation or configure it by hand over SSH.
 
 ---
 
-## Konfiguracja bez pytan
+## Configuration without questions
 
-`python3 -m backend.configure --from-env [--test]` przepisuje do `backend/.env` ustawione zmienne:
+`python3 -m backend.configure --from-env [--test]` copies the variables that are set into `backend/.env`:
 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_REASONING_EFFORT`, `LLM_TIMEOUT`,
-`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `PIPE_LANG`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY` -- i sprawdza, czy
-konfiguracja LLM jest kompletna (`--test` od razu testuje tool calling). Uzywaja go `install-server.sh -y`
-i cloud-init; przyda sie w Ansible czy CI.
+`AGENT_TOKEN`, `WORKER_MODEL`, `PIPE_RUNTIME`, `PIPE_LANG`, `TCP_HOST`, `WATCH_*`, `VIBE_EVERY`, and checks that the
+LLM configuration is complete (`--test` also tests tool calling). `install-server.sh -y` and cloud-init use it; it is
+handy in Ansible or CI.
 
-## Strefa czasowa
+## Time zone
 
-Godziny w przypomnieniach (*"przypomnij o 9"*), rutynach, porannym raporcie (`DIGEST_TIME`) i alertach to czas
-**serwera**. W Dockerze kontenery dostaja strefe hosta (`/etc/localtime`); wczesniej chodzily w UTC niezaleznie od
-hosta. Jesli serwer jest w UTC, a Ty nie -- ustaw w `backend/.env` np. `TZ=Europe/Warsaw` i zrob
-`docker compose up -d` (w trybie native: `timedatectl set-timezone Europe/Warsaw`; w Kubernetesie dodaj `TZ` do
-sekretow `pipe-env` i `pipe-telegram`). `/przypomnienia` pokazuje aktualny czas i strefe serwera.
+Times in reminders (*"remind me at 9"*), routines, the morning report (`DIGEST_TIME`) and alerts are **server**
+time. In Docker the containers take the host's time zone (`/etc/localtime`); before that they ran in UTC regardless of
+the host. If the server is in UTC and you are not, set for example `TZ=Europe/Warsaw` in `backend/.env` and run
+`docker compose up -d` (in native mode: `timedatectl set-timezone Europe/Warsaw`; in Kubernetes add `TZ` to the
+`pipe-env` and `pipe-telegram` secrets). `/reminders` shows the server's current time and time zone.
 
-## Jezyk (`PIPE_LANG`)
+## Language (`PIPE_LANG`)
 
-`pl` (domyslnie) albo `en`. Interaktywny kreator pyta o jezyk jako pierwszy; bez pytan: `--lang en` albo zmienna
-`PIPE_LANG=en` przy `install-server.sh` (instalator przepisuje ja tez do `clients/telegram/.env`). W Kubernetesie
-dodaj `--from-literal=PIPE_LANG=en` do sekretow `pipe-env` i `pipe-telegram`. Na dzialajacej instalacji wystarczy
-dopisac `PIPE_LANG=en` do obu plikow `.env` i zrestartowac backend oraz bota.
+`en` (default) or `pl`. The interactive wizard asks for the language first; without questions: `--lang pl` or the
+`PIPE_LANG=pl` variable for `install-server.sh` (the installer also copies it into `clients/telegram/.env`). In
+Kubernetes add `--from-literal=PIPE_LANG=pl` to the `pipe-env` and `pipe-telegram` secrets. On a running installation
+add `PIPE_LANG=pl` to both `.env` files and restart the backend and the bot, or use `/language pl` at runtime.
+Installations whose `.env` has no `PIPE_LANG` (set up before v0.49 without the wizard) switch to English after the
+update; `PIPE_LANG=pl` or `/language pl` brings Polish back.
 
-## Budowanie obrazow
+## Building images
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-backend:TAG -f backend/Dockerfile --push .
-docker buildx build --platform linux/amd64,linux/arm64 -t REJESTR/pipe-telegram:TAG \
+docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-backend:TAG -f backend/Dockerfile --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t REGISTRY/pipe-telegram:TAG \
     -f clients/telegram/Dockerfile --push .
 ```
 
-Argumenty obrazu backendu: `INSTALL_KUBECTL=1` (domyslnie; `0` zmniejsza obraz), `KUBECTL_VERSION=stable`,
-`DOCKER_VERSION`. Obraz backendu buduje sie z korzenia repozytorium (zawiera tez strone `pipe web` dla `/web wlacz`);
-`backend/Dockerfile.dockerignore` wpuszcza do niego tylko `backend/` i `clients/webui/`, bez `.env`, `data/` i testow.
+Backend image arguments: `INSTALL_KUBECTL=1` (default; `0` makes the image smaller), `KUBECTL_VERSION=stable`,
+`DOCKER_VERSION`. The backend image is built from the repository root (it also holds the `pipe web` page for
+`/web on`); `backend/Dockerfile.dockerignore` lets in only `backend/` and `clients/webui/`, without `.env`, `data/`
+and tests.
 
-## Aktualizacja
+## Updating
 
 ```bash
 cd /opt/pipe && git pull && sudo bash scripts/install-server.sh           # docker
 cd /opt/pipe && git pull && sudo bash scripts/install-server.sh --mode native
 ```
 
-Pamiec agenta (`backend/data/`) i `.env` zostaja bez zmian.
+The agent's memory (`backend/data/`) and `.env` stay unchanged. In docker mode `/update` does the same from a
+conversation.

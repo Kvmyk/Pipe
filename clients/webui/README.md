@@ -1,72 +1,77 @@
 # Pipe Web
 
-Interfejs w przegladarce: rozmowa z agentem, schemat serwera na zywo i podglad zmian.
+The browser interface: chat with the agent, a live map of the server and a preview of changes.
 
 ```bash
-pipe web                 # tunel SSH jak w CLI + strona na http://127.0.0.1:7400
-pipe web --lang en       # po angielsku
-pipe web --no-browser    # tylko wypisz adres
+pipe web                 # SSH tunnel as in the CLI + the page at http://127.0.0.1:7400
+pipe web --lang pl       # in Polish (without --lang the page speaks the server's language)
+pipe web --no-browser    # only print the address
 pipe web --web-port 8080
 ```
 
-Adres wypisany w terminalu zawiera jednorazowy klucz dostepu. Nic nie trzeba budowac ani instalowac --
-strona to zwykle pliki z `static/`, a serwer (`server.py`) uzywa wylacznie biblioteki standardowej Pythona.
+The address printed in the terminal contains a one-time access key. Nothing needs to be built or installed:
+the page is plain files from `static/`, and the server (`server.py`) uses only the Python standard library.
 
-## Jak to dziala
+## How it works
 
 ```
-przegladarka --HTTP--> 127.0.0.1:7400 (server.py na Twoim laptopie) --tunel SSH--> backend na serwerze
+browser --HTTP--> 127.0.0.1:7400 (server.py on your laptop) --SSH tunnel--> backend on the server
 ```
 
-- Na serwerze nie otwiera sie zaden nowy port; token backendu zostaje w procesie `pipe web`.
-- `POST /api/request` przekazuje zadanie protokolu Pipe i strumieniuje ramki (NDJSON),
-  `GET /api/events` przekazuje alerty, przypomnienia i raporty na zywo (SSE).
-- Strona jest dostepna tylko z tego komputera, z kluczem z adresu (potem ciasteczko HttpOnly);
-  zadania z obcym naglowkiem `Host` albo `Origin` sa odrzucane.
+- No new port opens on the server; the backend token stays in the `pipe web` process.
+- `POST /api/request` forwards a Pipe protocol request and streams the frames (NDJSON),
+  `GET /api/events` forwards alerts, reminders and reports live (SSE).
+- The page is reachable only from this computer, with the key from the address (then an HttpOnly cookie);
+  requests with a foreign `Host` or `Origin` header are refused.
 
-## Pierwsze uruchomienie
+## First run
 
-`pipe web` bez `--host` i bez zapisanego polaczenia (albo z `--setup`) otwiera kreator: *Co chcesz robic z Pipe?*
-(kilka slow albo wybor widoku prostego lub technicznego), potem *Gdzie ma dzialac Pipe?* -- na tym komputerze (Docker)
-albo na Twoim serwerze (adres, port, uzytkownik i haslo, plik klucza albo klucze z `~/.ssh`). Most (`server.py`,
-`POST /api/setup`) wola `clients/cli/appsetup.py` i pokazuje postep linia po linii; po sukcesie przelacza sie na nowy
-backend, a strona odswieza sie sama. Haslo idzie tylko do tego procesu i nie jest zapisywane. Klikniecie adresu serwera
-w naglowku otwiera drugi krok ponownie (zmiana miejsca).
+`pipe web` without `--host` and without a saved connection (or with `--setup`) opens a wizard: *What do you want to do
+with Pipe?* (a few words, or a pick between the simple and the technical view), then *Where should Pipe run?*: on this
+computer (Docker) or on your server (address, port, user and password, a key file or the keys from `~/.ssh`). The bridge
+(`server.py`, `POST /api/setup`) calls `clients/cli/appsetup.py` and shows the progress line by line; on success it
+switches to the new backend and the page reloads by itself. The password goes only to this process and is not saved.
+Clicking the server address in the header opens the second step again (change of place).
 
-## Co jest na stronie
+## What is on the page
 
-- **Widok** -- przycisk w naglowku przelacza widok prosty (rozmowa, *Pulpit* bez wykresow, *Dodatki*) i techniczny
-  (do tego *Schemat* i *Zmiany*). Wybor jest wspolny z CLI i Telegramem (`/widok`).
-- **Dodatki** -- skille (uruchom, podglad), podlaczone serwery MCP i dodawanie nowych z GitHuba (`/pobierz`, `/mcp dodaj`).
-- **Pulpit** (pierwsza zakladka) -- bez modelu: naglowek *Wszystko dziala* albo co wymaga uwagi, pierscienie
-  procesora, pamieci i dysku z przebiegiem z ostatniej doby, skrzynka *Od Pipe* (alerty, ustalenia, podpowiedzi
-  i raporty z przyciskami akcji; dzwonek w gornym pasku liczy nowe i otwiera ustawienia powiadomien), karty projektow
-  z warsztatu (logi, zatrzymanie, *Z GitHuba*) i zuzycie modelu dzis. Wiadomosc z `push` pokazuje sie tez jako okienko.
-- **Rozmowa** -- pusty ekran podsuwa zadania zwyklymi slowami (te oznaczone *bez AI* dzialaja od razu i nic nie kosztuja); odpowiedzi agenta, diagramy, potwierdzenia z planem bezpiecznika i roznica pliku.
-- **Zalaczniki i glos** -- spinacz, przeciagniecie pliku albo wklejenie zrzutu ekranu dolacza pliki do wiadomosci
-  (miniatury przed wyslaniem, do 10 MB na plik); mikrofon nagrywa glosowke (WAV 16 kHz) i wysyla jej tekst.
-- **Schemat** -- generowany automatycznie, trzy poziomy: serwery -> wnetrze serwera -> projekt compose.
-  Element, na ktorym agent pracuje, jest podswietlony; *Sledze agenta* przenosi widok za nim. Dowolny ruch
-  na schemacie wylacza sledzenie, przycisk wlacza je z powrotem. Pod schematem os czasu dzialan.
-- **Zmiany** -- dziennik zatwierdzonych zmian: roznica "przed -> po" dla kazdego pliku i przycisk cofniecia.
-- **Provider** -- przy pierwszym wejsciu ekran wyboru providera LLM (klucz API, sprawdzenie, model). Nad polem
-  rozmowy przelacznik: lista providerow, do ktorych jest klucz, i przelaczenie jednym kliknieciem. `/provider`
-  otwiera ekran ponownie. Logotypy providerow (`static/providers/`, pakiet `@lobehub/icons-static-svg`, MIT) sa znakami towarowymi swoich wlascicieli i sluza tylko wskazaniu, z czyimi modelami laczy sie agent -- patrz `static/providers/NOTICE.md`; wlasni providerzy maja monogram. Klucze sa zapisywane na serwerze (`DATA_DIR/llm_keys.json`), nie w przegladarce.
-- **Komendy** -- wpisz `/` w polu rozmowy: rozwija sie lista wszystkich komend i skilli z opisami
-  (strzalki, Enter uruchamia, Tab uzupelnia, Esc zamyka). Te same komendy co w CLI, po polsku i po angielsku.
-  Skille uruchamiasz stad (`/skille` pokazuje liste z trescia); alerty sa w skrzynce na pulpicie i w `/alerty`.
+- **View**: a button in the header switches between the simple view (chat, a *Dashboard* without charts, *Add-ons*)
+  and the technical one (plus the *Map* and *Changes*). The choice is shared with the CLI and Telegram (`/view`).
+- **Language**: EN | PL with flags in the header (`/language`); the choice is shared by the whole agent.
+- **Add-ons**: skills (run, preview), connected MCP servers and adding new ones from GitHub (`/download`, `/mcp add`).
+- **Dashboard** (the first tab), without a model: a headline *Everything works* or what needs attention, CPU, memory
+  and disk rings with the last day's history, the *From Pipe* inbox (alerts, findings, suggestions and reports with
+  action buttons; the bell in the top bar counts new ones and opens the notification settings), workshop project cards
+  (logs, stop, *From GitHub*) and today's model usage. A message with `push` also shows up as a toast. Sections and
+  single messages fold.
+- **Chat**: an empty screen suggests tasks in plain words (those marked *no AI* work at once and cost nothing); agent
+  answers, diagrams, confirmations with the safety-fuse plan and the file diff.
+- **Attachments and voice**: the paperclip, dragging a file or pasting a screenshot attaches files to the message
+  (thumbnails before sending, up to 10 MB per file); the microphone records a voice message (WAV 16 kHz) and sends its text.
+- **Map**: generated automatically, three levels: servers -> inside a server -> a compose project. The element the
+  agent is working on is highlighted; *Follow the agent* moves the view after it. Any move on the map turns following
+  off, the button turns it back on. Under the map, a timeline of actions.
+- **Changes**: the journal of approved changes: a "before -> after" diff for every file and an undo button.
+- **Provider**: on the first visit, a screen to choose the LLM provider (API key, check, model). Above the chat box,
+  a switcher: the providers that have a key, switched with one click. `/providers` opens the screen again. Provider
+  logos (`static/providers/`, the `@lobehub/icons-static-svg` package, MIT) are trademarks of their owners and only show
+  whose models the agent connects to, see `static/providers/NOTICE.md`; your own providers get a monogram. Keys are
+  stored on the server (`DATA_DIR/llm_keys.json`), not in the browser.
+- **Commands**: type `/` in the chat box: a list of all commands and skills with descriptions opens (arrows, Enter
+  runs, Tab completes, Esc closes). The same commands as in the CLI, in English and Polish. You run skills from here
+  (`/skills` shows the list with their content); alerts are in the dashboard inbox and in `/alerts`.
 
-## Pliki
+## Files
 
-| Plik | Rola |
+| File | Role |
 |------|------|
-| `server.py` | lokalny serwer HTTP i most do backendu |
-| `static/app.js` | czat, potwierdzenia, os czasu, zakladki |
-| `static/home.js` | pulpit: stan serwera, skrzynka z akcjami, projekty, ustawienia powiadomien |
-| `static/onboard.js` | pierwsze uruchomienie: widok, miejsce (lokalnie / serwer), postep instalacji |
-| `static/addons.js` | zakladka Dodatki: skille i serwery MCP |
-| `static/graph.js` | schemat: uklad, kamera, przejscia miedzy poziomami, animacje |
-| `static/md.js` | bezpieczny renderer Markdowna (bez `innerHTML`) |
-| `static/i18n.js` | teksty pl / en |
-| `static/app.css` | wyglad: jasny i ciemny motyw, kolor tylko z funkcja (niebieski -- agent pracuje, bursztyn -- czeka na zgode, zielony / czerwony -- wynik) |
-| `static/fonts/` | IBM Plex Sans i IBM Plex Mono (`woff2`, licencja SIL OFL 1.1 w `OFL.txt`) -- strona nie laduje nic z zewnatrz |
+| `server.py` | local HTTP server and the bridge to the backend |
+| `static/app.js` | chat, confirmations, timeline, tabs |
+| `static/home.js` | dashboard: server state, inbox with actions, projects, notification settings |
+| `static/onboard.js` | first run: view, place (local / server), installation progress |
+| `static/addons.js` | the Add-ons tab: skills and MCP servers |
+| `static/graph.js` | the map: layout, camera, transitions between levels, animations |
+| `static/md.js` | a safe Markdown renderer (no `innerHTML`) |
+| `static/i18n.js` | texts en / pl |
+| `static/app.css` | the look: light and dark theme, colour only with a purpose (blue: the agent works, amber: waits for approval, green / red: the result) |
+| `static/fonts/` | IBM Plex Sans and IBM Plex Mono (`woff2`, SIL OFL 1.1 license in `OFL.txt`); the page loads nothing from outside |

@@ -38,7 +38,7 @@ class TestStore:
         assert appsetup.saved_connection() == conn
         if os.name == "posix":
             assert (home / ".pipe" / "app.json").stat().st_mode & 0o777 == 0o600
-        assert appsetup.label(conn) == "kuba@203.0.113.7" and appsetup.label({"kind": "local"}) == "ten komputer"
+        assert appsetup.label(conn) == "kuba@203.0.113.7" and appsetup.label({"kind": "local"}) == "this computer"
 
     def test_garbage_is_ignored(self, home):
         (home / ".pipe").mkdir()
@@ -190,12 +190,12 @@ class TestDeploy:
 
     def test_sudo_without_password_explains(self, ssh):
         ssh(install_code=1, install_output="sudo: a password is required\n")
-        with pytest.raises(appsetup.SetupError, match="haslo"):
+        with pytest.raises(appsetup.SetupError, match="password"):
             appsetup.deploy_server({"host": "203.0.113.7", "user": "kuba"}, lambda line: None)
 
     def test_rejected_credentials(self, ssh):
         ssh(reject=True)
-        with pytest.raises(appsetup.SetupError, match="nie przyjal"):
+        with pytest.raises(appsetup.SetupError, match="rejected"):
             appsetup.deploy_server({"host": "203.0.113.7", "password": "zle"}, lambda line: None)
 
     def test_new_host_key_is_remembered_with_fingerprint(self, ssh, home):

@@ -4,214 +4,214 @@
 
 <h1 align="center">Pipe</h1>
 
-<h3 align="center">Admin, który nie śpi i niczego nie rusza bez pytania.</h3>
+<h3 align="center">A sysadmin that never sleeps and never touches anything without asking.</h3>
 
 <p align="center">
-  Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie na Telegram,<br>
-  szuka przyczyny i naprawia. Rutynowe poprawki robi sam, z kopią, którą cofniesz jedną komendą. O ważne rzeczy pyta.
+  Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on Telegram,<br>
+  finds the cause and fixes it. It makes routine fixes by itself, with a backup you can undo in one command. It asks about the important ones.
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.48.2-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.49.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <b>Polski</b> · <a href="./README.en.md">English</a> ·
-  <a href="https://kvmyk.github.io/Pipe/">Strona projektu</a> ·
-  <a href="#instalacja">Instalacja</a> ·
-  <a href="docs/">Dokumentacja</a>
+  <b>🇬🇧 English</b> · <a href="./README.pl.md">🇵🇱 Polski</a> ·
+  <a href="https://kvmyk.github.io/Pipe/">Website</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="https://kvmyk.github.io/Pipe/docs/">Documentation</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-pl.gif" alt="pipe web: agent sprawdza logi, szuka przyczyny błędów 502 w sieci i po zatwierdzeniu poprawia konfigurację nginx" width="100%">
+  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent checks the logs, looks up the cause of 502 errors on the web and fixes the nginx config after approval" width="100%">
   <br>
-  <sub>Nagranie <code>pipe web</code> z zaplanowanej sesji (<a href="scripts/demo">scripts/demo</a>).</sub>
+  <sub><code>pipe web</code> recorded from a scripted session (<a href="scripts/demo">scripts/demo</a>).</sub>
 </p>
 
-## Co to jest
+## What it is
 
-Pipe instalujesz na serwerze i zostawiasz go tam na stałe. Rozmawiasz z nim z terminala, z przeglądarki albo
-z Telegrama, po polsku lub po angielsku. Możesz poprosić o diagnozę („czemu sklep działa wolno?”), o zmianę
-(„podnieś limit pamięci PHP”) albo o wyjaśnienie („co się zmieniło od wczoraj?”).
+You install Pipe on a server and leave it there. You talk to it from a terminal, a browser or Telegram, in English
+or Polish. Ask it to diagnose something ("why is the shop slow?"), change something ("raise the PHP memory limit")
+or explain something ("what changed since yesterday?").
 
-Pipe pracuje także między rozmowami. Co dwie minuty sprawdza dyski, pamięć, obciążenie, kontenery i porty otwarte na
-świat. Co godzinę zapisuje stan serwera, więc wie, co i kiedy się zmieniło. Nie musisz pytać: gdy coś jest nie tak,
-Pipe pisze pierwszy, na Telegram, do przeglądarki albo do terminala. Przy poważnej awarii od razu sprawdza przyczynę
-i przysyła, co ustalił, z przyciskiem *Napraw*. Uprzedza też, zanim zrobi się problem: „dysk zapełni się za ok.
-4 dni”, „mogę zwolnić 6 GB”. Rano przychodzi krótki raport.
+Pipe keeps working between conversations. Every two minutes it checks disks, memory, load, containers and ports
+open to the internet. Every hour it records the state of the server, so it knows what changed and when. You don't
+have to ask: when something is wrong, Pipe writes first, to Telegram, the browser or the terminal. On a serious
+failure it checks the cause right away and sends what it found, with a *Fix it* button. It also warns you before
+something becomes a problem: "the disk will be full in about 4 days", "I can free up 6 GB". Every morning a short
+report arrives.
 
-Agent czyta serwer swobodnie. Rutynowe zmiany, jak restart usługi, przeładowanie nginx albo poprawka w pliku
-konfiguracji, robi sam, z kopią i sprawdzeniem przed i po. Zanim usunie dane, ruszy dostęp do serwera (SSH,
-użytkownicy, zapora) albo uruchomi komendę, której nie zna, pyta. Decyduje o tym klasyfikator zapisany w kodzie
-(nie w prompcie), a operacje niszczące są odrzucane zawsze. W rozmowie widać każdą komendę i kilka linii jej wyniku.
+The agent reads the server freely. Routine changes, like restarting a service, reloading nginx or fixing a config
+file, it makes by itself, with a backup and a check before and after. Before it deletes data, touches access to the
+server (SSH, users, firewall) or runs a command it doesn't know, it asks. A classifier written in code (not in the
+prompt) decides that, and destructive operations are always refused. The conversation shows every command and a few
+lines of its output.
 
-Pipe działa z dowolnym modelem zgodnym z API OpenAI. Domyślnie z Google Gemini, który ma darmowy limit.
+Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
 
-## Przykłady
+## Examples
 
-Tak wyglądają typowe prośby:
-
-| Piszesz | Pipe |
+| You write | Pipe |
 |---|---|
-| *strona padła w nocy, co się zmieniło?* | przegląda historię zmian (pakiety, obrazy kontenerów, porty, konfiguracje) i wskazuje, co zmieniło się tuż przed awarią |
-| *pokaż architekturę serwera* | rysuje diagram: domeny, reverse proxy, kontenery, bazy, porty wystawione na świat |
-| *jak bezpieczny jest ten serwer?* | ocenia go w skali 0–100 i do każdej uwagi daje gotową poprawkę; *„napraw 1”* wykonuje ją z kopią |
-| */podatnosci* | pokazuje znane podatności w pakietach, obrazach kontenerów, na zdalnych serwerach i w aplikacjach, każdą z krótkim wyjaśnieniem po polsku |
-| */zalataj* | od razu instaluje poprawki w pakietach serwera, obrazach kontenerów i na zdalnych serwerach, potem usuwa stare obrazy i cache; nie pyta o każdą komendę (same obrazy: */zalataj obrazy*) |
-| *codziennie o 7 sprawdzaj backupy i certyfikaty* | zakłada rutynę i pisze na Telegram tylko wtedy, gdy coś jest nie tak |
-| *sprawdź dyski na wszystkich serwerach* | wysyła równoległych pomocników (workerów) na zdalne maszyny przez SSH |
-| *czy nasz PostgreSQL jest jeszcze wspierany?* | sprawdza wersję na serwerze i porównuje z endoflife.date |
-| *cofnij ostatnią zmianę* | przywraca pliki z kopii zrobionej przed zmianą |
-| *postaw mi tę aplikację: https://github.com/acme/notatnik* | klonuje repozytorium, sam rozpoznaje, co to jest i jak to uruchomić, stawia je w kontenerze i podaje adres; pyta raz, przed uruchomieniem |
-| *napisz skrypt, który policzy zamówienia z logów* | pisze skrypt w swoim katalogu roboczym, uruchamia go w odizolowanym kontenerze i oddaje wynik |
-| *czemu to nie działa?* + zrzut ekranu albo log | ogląda zrzut, czyta log (sekrety ukrywa przed modelem) i szuka przyczyny na serwerze |
+| *the site went down overnight, what changed?* | goes through the change history (packages, container images, ports, configs) and points at what changed right before the outage |
+| *show me the server architecture* | draws a diagram: domains, reverse proxy, containers, databases, ports exposed to the internet |
+| *how secure is this server?* | scores it 0–100 and gives a ready fix for every finding; *"fix 1"* applies it with a backup |
+| */vulns* | shows known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation |
+| */patch* | installs the fixes right away in the server's packages, container images and on remote servers, then removes old images and caches; it does not ask about every command (images only: */patch images*) |
+| *every day at 7 check backups and certificates* | sets up a routine and messages you on Telegram only when something is off |
+| *check the disks on all servers* | sends parallel helpers (workers) to remote machines over SSH |
+| *is our PostgreSQL still supported?* | reads the version on the server and checks it against endoflife.date |
+| *undo the last change* | restores the files from the backup taken before the change |
+| *set up this app for me: https://github.com/acme/notebook* | clones the repository, works out what it is and how to run it, starts it in a container and gives you the address; asks once, before starting it |
+| *write a script that counts the orders in the logs* | writes the script in its working directory, runs it in an isolated container and hands you the result |
+| *why is this broken?* + a screenshot or a log | looks at the screenshot, reads the log (secrets hidden from the model) and looks for the cause on the server |
 
-Pełna lista funkcji z przykładami: [docs/features.md](./docs/features.md).
+## For Claude Code, Codex and other agents
 
-## Dla Claude Code, Codexa i innych agentów
+If you already work with an agent in the terminal, you don't have to give it SSH to production. Connect it to Pipe
+over MCP. The agent gets a `run_command` tool that goes through the same classifier as a chat with Pipe. Reads run
+right away, forbidden commands are refused, and every change waits for your approval on Telegram (in the CLI:
+`/zgody`). After you approve, Pipe backs up the files, checks the config before the reload and after it, and when
+something stops working it restores the previous version. Every change goes to the journal and can be undone.
 
-Jeśli pracujesz już z agentem w terminalu, nie musisz dawać mu SSH do produkcji. Podłącz go do Pipe przez MCP.
-Agent dostaje narzędzie `run_command`, które przechodzi przez ten sam klasyfikator co rozmowa z Pipe. Odczyty
-wykonują się od razu, zakazane komendy są odrzucane, a każda zmiana czeka na Twoją zgodę na Telegramie (w CLI:
-`/zgody`). Po zgodzie Pipe robi kopię plików, sprawdza konfigurację przed przeładowaniem i po nim, a gdy coś
-przestaje działać, przywraca poprzednią wersję. Każda zmiana trafia do dziennika i można ją cofnąć.
+The agent also gets what Pipe knows about the server: the history of changes, the service map, check and audit
+results.
 
-Agent dostaje też to, co Pipe wie o serwerze: historię zmian, mapę usług, wyniki sprawdzeń i audytu.
-
-Na serwerze utwórz osobny token dla agenta, a na swoim komputerze dodaj Pipe jako serwer MCP:
+Create a separate token for the agent on the server, then add Pipe as an MCP server on your computer:
 
 ```bash
-python3 -m backend.tokens add claude-code --role admin                 # na serwerze, w katalogu Pipe
-claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@serwer   # Claude Code na laptopie
+python3 -m backend.tokens add claude-code --role admin                 # on the server, in the Pipe directory
+claude mcp add pipe -e AGENT_TOKEN=<token> -- pipe --mcp --host root@server   # Claude Code on your laptop
 ```
 
-Gotową konfigurację dla innych programów wypisze `pipe connect <program> --host root@serwer`, gdzie programem
-jest `claude`, `claude-desktop`, `cursor`, `codex`, `hermes` albo `openclaw`. Hermes Agent i OpenClaw mogą więc
-pracować na serwerze przez Pipe, z tymi samymi zgodami i `/cofnij`. Pipe nie potrzebuje do tego własnego modelu: przy `LLM_PROVIDER=none` myśli Twój agent,
-a Pipe pilnuje tego, co się wykonuje. Szczegóły: [docs/features.md](./docs/features.md) (sekcja MCP).
+`pipe connect <program> --host root@server` prints a ready configuration for other programs: `claude`,
+`claude-desktop`, `cursor`, `codex`, `hermes` or `openclaw`. So Hermes Agent and OpenClaw can work on the server
+through Pipe, with the same approvals and `/undo`. Pipe doesn't need its own model for this: with `LLM_PROVIDER=none` your agent does the
+thinking and Pipe guards what gets executed. Details: [docs/features.md](./docs/features.md) (MCP section).
 
-## Co potrafi
+## What it does
 
-**Pilnuje serwera bez Twojego udziału.** Sprawdzenia co dwie minuty działają bez modelu językowego, więc nic nie
-kosztują. Pipe sam znajduje domeny w konfiguracji nginx, Caddy i Traefika, a potem pilnuje ważności certyfikatów,
-odpowiedzi stron i DNS. Wykrywa nowe konta, klucze SSH i podejrzane logowania. Przyjmuje też alerty z Alertmanagera,
-Grafany, Uptime Kuma i GitHuba i od razu bada ich przyczynę.
+**Watches the server on its own.** The two-minute checks run without a language model, so they cost nothing.
+Pipe finds domains in the nginx, Caddy and Traefik configuration by itself and watches certificate expiry, site
+responses and DNS. It notices new accounts, SSH keys and suspicious logins. It also accepts alerts from
+Alertmanager, Grafana, Uptime Kuma and GitHub and starts looking into the cause right away.
 
-**Stawia i pisze rzeczy sam.** Projekty trzyma w jednym katalogu na serwerze (`/root/pipe-workspace`). Tam klonuje
-repozytoria, pisze skrypty i uruchamia je bez pytania, ale zawsze w osobnym kontenerze bez dostępu do reszty
-serwera, więc na hoście nie przybywa Node.js ani Pythona. O zgodę pyta, zanim coś wystawi na stałe, i to wdrożenie
-też da się cofnąć.
+**Sets things up and writes code by itself.** It keeps projects in one directory on the server
+(`/root/pipe-workspace`). There it clones repositories, writes scripts and runs them without asking, but always in a
+separate container with no access to the rest of the server, so no Node.js or Python piles up on the host. It asks
+before putting something up for good, and that deployment can be undone too.
 
-**Oszczędza tokeny.** Alerty, podpowiedzi, raport poranny, `/status` i `/sprzataj` w ogóle nie używają modelu.
-Gdy rozmowa trafia do modelu, Pipe wysyła mu tylko te narzędzia, których rozmowa potrzebuje (ok. 2,1 tys. tokenów
-zamiast 6 tys. przy każdym kroku) i skraca stare wyniki komend. `/koszt` pokazuje, ile w ten sposób nie poszło.
+**Saves tokens.** Alerts, suggestions, the morning report, `/status` and `/cleanup` don't use the model at all. When
+a conversation does go to the model, Pipe sends only the tools that conversation needs (about 2.1k tokens instead of
+6k on every step) and shortens old command output. `/cost` shows how much was not sent this way.
 
-**Zmienia ostrożnie.** Przed każdą zmianą robi kopię plików. Konfigurację sprawdza przed
-przeładowaniem (`nginx -t`, `sshd -t`, `docker compose config`), a po zmianie upewnia się, że usługa działa i strony
-dalej odpowiadają. Jeśli nie odpowiadają, sam przywraca poprzednią wersję. Wszystko trafia do dziennika i można to
-cofnąć komendą `/cofnij`.
+**Changes things carefully.** Before every change it backs up the files. It validates configuration before
+reloading (`nginx -t`, `sshd -t`, `docker compose config`) and afterwards checks that the service runs and the sites
+still respond. If they don't, it restores the previous version by itself. Everything goes into a journal and can be
+undone with `/undo`.
 
-**Pamięta serwer.** W `SERVER.md` zapisuje fakty o serwerze, w mapie katalogów zapisuje, gdzie leżą repozytoria,
-aplikacje i backupy, a sprawdzone procedury zapisuje jako skille. Pamięta też rozwiązane incydenty: gdy problem
-wraca, zaczyna od tego, co pomogło poprzednio.
+**Remembers the server.** It keeps facts about the server in `SERVER.md`, a map of where repositories, applications
+and backups live, and proven procedures as skills. It also remembers resolved incidents: when a problem comes back,
+it starts from what helped last time.
 
-**Zarządza kilkoma maszynami.** Zdalne serwery (SSH), kontenery i klastry Kubernetes dodajesz jako cele. Na drugiej
-stronie nic nie trzeba instalować. Pomocnicy (workery) badają cele równolegle i tylko czytają; zmiany wracają do
-Ciebie jako propozycje.
+**Manages several machines.** Remote servers (SSH), containers and Kubernetes clusters are added as targets. Nothing
+is installed on the other side. Workers investigate targets in parallel and only read; changes come back to you as
+proposals.
 
-**Szuka w internecie, gdy czegoś nie wie.** Nieznany komunikat błędu, nowa wersja, CVE: Pipe sam przeszukuje sieć
-(DuckDuckGo, Stack Exchange, Wikipedia) i podaje źródła. Nie potrzeba do tego żadnego klucza API.
+**Searches the web when it doesn't know something.** An unknown error message, a new version, a CVE: Pipe searches
+the web (DuckDuckGo, Stack Exchange, Wikipedia) and cites its sources. No API key needed.
 
-**Współpracuje z innymi agentami.** Claude Code, Cursor albo Twój własny agent mogą pracować na serwerze przez
-Pipe (MCP). Odczyty wykonują się od razu, a każda zmiana czeka na Twoją zgodę na Telegramie
-([wyżej](#dla-claude-code-codexa-i-innych-agentów)).
+**Works with other agents.** Claude Code, Cursor or your own agent can work on the server through Pipe (MCP). Reads
+run right away, and every change waits for your approval on Telegram
+([above](#for-claude-code-codex-and-other-agents)).
 
-## Instalacja
+## Installation
 
-Na serwerze (Docker; kreator zapyta o providera modelu i klucz API):
+On the server (Docker; the wizard asks for the model provider and API key):
 
 ```bash
 git clone https://github.com/Kvmyk/pipe && cd pipe
 sudo bash scripts/install-server.sh
 ```
 
-Instalator pobiera gotowy obraz z ghcr.io, podpisany przy wydaniu (z `--build` zbuduje go na serwerze ze źródeł).
-Bez Dockera: `sudo bash scripts/install-server.sh --mode native`.
+The installer pulls a ready image from ghcr.io, signed at release (with `--build` it builds it on the server from
+source). Without Docker: `sudo bash scripts/install-server.sh --mode native`.
 
-Nie masz klucza API? Wybierz Google Gemini, darmowy klucz wygenerujesz na
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey). W darmowym planie Google może jednak uczyć się
-na Twoich zapytaniach, a te zawierają logi i konfigurację serwera, więc na produkcji włącz płatności albo wybierz
-innego dostawcę. Możesz też wybrać „Bez modelu”: Pipe pilnuje serwera, wysyła alerty i raporty, działa jako bramka
-MCP i nic nie wysyła na zewnątrz. Rozmowę włączysz później, dodając dostawcę.
+No API key? Pick Google Gemini and create a free key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). On the free plan, though, Google may learn from your
+prompts, and those contain the server's logs and configs, so on production enable billing or pick another provider.
+You can also choose "No model": Pipe watches the server, sends alerts and reports, works as an MCP gateway and
+sends nothing out. You turn chat on later by adding a provider.
 
-Na swoim komputerze zainstaluj klienta i wpisz `pipe`. Klient łączy się z serwerem przez tunel SSH:
+On your own computer install the client and type `pipe`. It connects to the server through an SSH tunnel:
 
 ```bash
-bash install.sh          # Linux i macOS
+bash install.sh          # Linux and macOS
 .\install.ps1            # Windows (PowerShell)
 ```
 
-Komenda `pipe web` otwiera wersję w przeglądarce, ze schematem serwera, na którym widać, gdzie agent właśnie
-pracuje. Na serwerze nie otwiera się żaden dodatkowy port.
+`pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
+is opened on the server.
 
-Chcesz wchodzić z telefonu bez tunelu? Napisz `/web wlacz`. Pipe dostanie adres HTTPS z certyfikatem, a każde nowe
-urządzenie wpuszczasz raz, przyciskiem w wiadomości od Pipe, po sprawdzeniu kodu z ekranu.
+Want to open it on your phone without a tunnel? Write `/web on`. Pipe gets an HTTPS address with a certificate, and you
+let each new device in once, with a button in a message from Pipe, after checking the code on its screen.
 
-Nie chcesz instalować niczego na serwerze ręcznie? Zainstaluj tylko klienta, pomiń adres i wpisz `pipe web`. Strona
-zapyta, co chcesz robić, i postawi Pipe sama: na tym komputerze (Docker) albo na Twoim serwerze po SSH. Hasło zostaje
-na Twoim komputerze. Do wyboru są dwa widoki: prosty (rozmowa, przypomnienia, skille, dodatki do aplikacji) i techniczny
-(do tego schemat serwera, zmiany, podatności). Zmienisz go w każdej chwili przez `/widok`, także w terminalu
-i na Telegramie.
+Don't want to install anything on the server by hand? Install only the client, skip the address and type `pipe web`.
+The page asks what you want to do and sets Pipe up itself: on this computer (Docker) or on your server over SSH. The
+password stays on your computer. There are two views: simple (chat, reminders, skills, add-ons for apps) and technical
+(plus the server map, changes, vulnerabilities). Change it any time with `/view`, also in the terminal and on Telegram.
 
-Telegram (polecany, bo tam przychodzą alerty): uzupełnij `clients/telegram/.env` (token bota i swój identyfikator)
-i uruchom instalator jeszcze raz. Szczegóły: [docs/telegram.md](./docs/telegram.md).
+Telegram (recommended, alerts arrive there): fill in `clients/telegram/.env` (bot token and your user id) and run the
+installer again. Pipe speaks English by default. For Polish add `--lang pl` to the installer, or type
+`/language pl` at runtime (the CLI and `pipe web` follow the server).
 
-Inne sposoby wdrożenia (natywnie z systemd, Kubernetes, cloud-init): [docs/deploy.md](./docs/deploy.md).
+Other ways to deploy (native with systemd, Kubernetes, cloud-init) are described in
+[docs/deploy.md](./docs/deploy.md).
 
-Chcesz najpierw zobaczyć, jak to działa, bez własnego serwera? `python3 sandbox/run.py try --scenario nginx-502`
-uruchamia na Twoim komputerze kontener udający serwer z zepsutym nginx, a w nim Pipe. Te same scenariusze służą do
-sprawdzania, które modele radzą sobie z naprawami: [sandbox/README.md](./sandbox/README.md).
+Want to see how it works first, without your own server? `python3 sandbox/run.py try --scenario nginx-502` starts a
+container on your computer that pretends to be a server with a broken nginx, with Pipe inside. The same scenarios are
+used to check which models can handle the fixes: [sandbox/README.md](./sandbox/README.md).
 
-## Bezpieczeństwo
+## Security
 
-- Bez pytania Pipe robi rozpoznane odczyty i rutynowe zmiany, które umie sprawdzić i cofnąć. O usuwanie danych,
-  dostęp, autostart, wysyłanie danych poza serwer i nieznane komendy pyta. `AUTONOMY=0` to pytanie o każdą zmianę.
-- Okno potwierdzenia pokazuje dokładnie tę komendę, która się wykona, razem z planem kopii i weryfikacji.
-- Klucze API, hasła i tokeny z plików są ukrywane, zanim tekst trafi do dostawcy modelu.
-- Workery i rutyny tylko czytają. Każda operacja jest zapisywana w dzienniku audytu.
+- Without asking Pipe runs recognised reads and routine changes it can check and undo. It asks about deleting data,
+  access, autostart, sending data outside the server and unknown commands. `AUTONOMY=0` means a question for every change.
+- The confirmation shows exactly the command that will run, together with the backup and verification plan.
+- API keys, passwords and tokens from files are hidden before any text reaches the model provider.
+- Workers and routines only read. Every operation is written to an audit log.
 
-Ważne ograniczenie: w trybie Docker Pipe ma dostęp do `docker.sock`, czyli w praktyce uprawnienia roota na serwerze.
-Ochroną jest to, że bez pytania Pipe robi tylko rutynę z kopią, a reszta czeka na Twoje potwierdzenie. Pełny opis:
-[docs/security.md](./docs/security.md).
+An important limitation: in Docker mode Pipe has access to `docker.sock`, which in practice means root on the server.
+The protection is that without asking Pipe does only routine work with a backup, and everything else waits for your
+confirmation. Full description: [docs/security.md](./docs/security.md).
 
-Jeśli wolisz zacząć ostrożnie, zainstaluj Pipe z `--profile observe`. Wtedy nie dostaje `docker.sock` (Dockera
-widzi tylko do odczytu), `/root` jest tylko do odczytu, a każda zmiana jest odrzucana bez pytania. Pipe dalej
-pilnuje serwera, odpowiada na pytania i wysyła alerty. Pełny tryb włączysz później przez `--profile full`.
+If you'd rather start carefully, install Pipe with `--profile observe`. It then gets no `docker.sock` (it sees Docker
+read-only), `/root` is read-only, and every change is refused without asking. Pipe still watches the server, answers
+questions and sends alerts. Turn on full mode later with `--profile full`.
 
-Znalazłeś podatność? Zgłoś ją prywatnie, nie w publicznym issue: [SECURITY.md](./SECURITY.md).
-Chcesz pomóc w inny sposób? Zobacz [CONTRIBUTING.md](./CONTRIBUTING.md).
+Found a vulnerability? Report it privately, not in a public issue: [SECURITY.md](./SECURITY.md).
+Want to help another way? See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-## Dokumentacja
+## Documentation
 
-Ta sama dokumentacja jest na stronie projektu: [kvmyk.github.io/Pipe/docs](https://kvmyk.github.io/Pipe/docs/).
+The documentation is also on the website: [kvmyk.github.io/Pipe/docs](https://kvmyk.github.io/Pipe/docs/).
 
 | | |
 |---|---|
-| [Szybki start](./docs/quickstart.md) | instalacja krok po kroku |
-| [Funkcje](./docs/features.md) | czuwanie, workery, rutyny, diagramy, `pipe web`, MCP |
-| [Wdrożenie](./docs/deploy.md) | Docker, systemd, Kubernetes, chmury |
-| [Backend](./docs/backend.md) | konfiguracja, zmienne `.env`, narzędzia agenta |
-| [CLI](./docs/cli.md) i [Telegram](./docs/telegram.md) | klienci i komendy |
-| [Bezpieczeństwo](./docs/security.md) | klasyfikator, potwierdzenia, ograniczenia |
-| [Protokół](./docs/protocol.md) | format komunikacji klientów z backendem |
-| [Historia zmian](./docs/changelog.md) | co się zmieniło w kolejnych wersjach |
+| [Quick start](./docs/quickstart.md) | installation step by step |
+| [Features](./docs/features.md) | watching, workers, routines, diagrams, `pipe web`, MCP |
+| [Deployment](./docs/deploy.md) | Docker, systemd, Kubernetes, clouds |
+| [Backend](./docs/backend.md) | configuration, `.env` variables, agent tools |
+| [CLI](./docs/cli.md) and [Telegram](./docs/telegram.md) | clients and commands |
+| [Security](./docs/security.md) | classifier, confirmations, limitations |
+| [Protocol](./docs/protocol.md) | how clients talk to the backend |
+| [Changelog](./docs/changelog.md) | what changed in each version (entries before v0.49 in Polish) |
 
-## Licencja
+## License
 
-MIT, zobacz [LICENSE](./LICENSE). Zgłoszenia błędów i pull requesty są mile widziane.
+MIT, see [LICENSE](./LICENSE). Bug reports and pull requests are welcome.
 
-<sub>Logotypy dostawców modeli w `pipe web` są znakami towarowymi ich właścicieli i wskazują tylko, z czyimi modelami
-łączy się agent; Pipe nie jest z tymi firmami powiązany (`clients/webui/static/providers/NOTICE.md`). Kroje IBM Plex
-Sans i IBM Plex Mono: SIL Open Font License 1.1 (`clients/webui/static/fonts/OFL.txt`).</sub>
+<sub>LLM provider logos in `pipe web` are trademarks of their owners and only indicate whose models the agent connects
+to; Pipe is not affiliated with these companies (`clients/webui/static/providers/NOTICE.md`). IBM Plex Sans and IBM
+Plex Mono typefaces: SIL Open Font License 1.1 (`clients/webui/static/fonts/OFL.txt`).</sub>

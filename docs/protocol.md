@@ -1,175 +1,177 @@
-# Protokol komunikacji -- Pipe
+# Communication protocol -- Pipe
 
-Pipe v0.48.2
+Pipe v0.49.0
 
-## Opis
+## Overview
 
-Backend nassluchuje rownoczesnie na:
-1. Unix socket (`/tmp/vps-agent.sock`) -- dla klientow na tym samym serwerze (Telegram bot)
-2. TCP `127.0.0.1:7379` -- dla SSH tunnel z laptopa (CLI)
+The backend listens on both at once:
+1. A Unix socket (`/tmp/vps-agent.sock`) -- for clients on the same server (the Telegram bot)
+2. TCP `127.0.0.1:7379` -- for an SSH tunnel from a laptop (CLI)
 
-Komunikacja odbywa sie przez prosty protokol JSON lines (jedna linia JSON = jedna wiadomosc).
-W trybie Kubernetes dostep do portu TCP daje `kubectl port-forward svc/pipe 7379:7379`.
+Communication uses a simple JSON lines protocol (one JSON line = one message).
+In Kubernetes mode `kubectl port-forward svc/pipe 7379:7379` gives access to the TCP port.
 
-## Format wiadomosci
+## Message format
 
-### Zadanie -- wiadomosc uzytkownika
+### Request -- user message
 
 ```json
 {
-  "message": "tekst wiadomosci",
-  "session_id": "uuid-per-uzytkownik",
+  "message": "message text",
+  "session_id": "uuid-per-user",
   "interface": "cli:<user>|telegram:<user_id>|web:<user>",
-  "token": "tajny-token",
-  "attachments": [{"name": "zrzut.png", "mime": "image/png", "data": "<base64>"}]
+  "token": "secret-token",
+  "attachments": [{"name": "screenshot.png", "mime": "image/png", "data": "<base64>"}]
 }
 ```
 
-`attachments` jest opcjonalne (pliki, zdjecia, zrzuty ekranu); z zalacznikami `message` moze byc puste. Limity:
-10 MB na plik, 20 MB i 10 plikow na wiadomosc -- przekroczenie albo zly base64 konczy sie ramka bledu bez wywolania
-agenta. Rodzaj backend ustala z zawartosci: obraz idzie do modelu jako `image_url`, tekst jest wklejany do wiadomosci
-(po redakcji sekretow), inne pliki zapisuje w `DATA_DIR/uploads/` i podaje agentowi sciezke. Linia zadania moze
-miec do 32 MiB (`READ_LIMIT` serwera).
+`attachments` is optional (files, photos, screenshots); with attachments `message` can be empty. Limits: 10 MB per
+file, 20 MB and 10 files per message; exceeding them or bad base64 ends with an error frame without calling the agent.
+The backend determines the kind from the content: an image goes to the model as `image_url`, text is pasted into the
+message (after secret redaction), other files are saved in `DATA_DIR/uploads/` and the agent gets the path. A request
+line can be up to 32 MiB (the server's `READ_LIMIT`).
 
-### Zadanie -- potwierdzenie operacji
+### Request -- confirming an operation
 
 ```json
 {
   "confirm": true,
-  "session_id": "uuid-per-uzytkownik",
-  "token": "tajny-token"
+  "session_id": "uuid-per-user",
+  "token": "secret-token"
 }
 ```
 
-### Zadanie -- komenda klienta
+### Request -- client command
 
-Komendy "/" klientow (Telegram, CLI) wysylaja `{"command": ...}`:
+The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 
 ```json
 {
   "command": "run_skill",
-  "session_id": "uuid-per-uzytkownik",
+  "session_id": "uuid-per-user",
   "interface": "cli:kuba",
-  "name": "odnow_certyfikat",
-  "args": "tylko dla example.com",
-  "token": "tajny-token"
+  "name": "renew_certificate",
+  "args": "only for example.com",
+  "token": "secret-token"
 }
 ```
 
-| `command` | Dodatkowe pola | Odpowiedz |
+| `command` | Extra fields | Response |
 |---|---|---|
-| `list_skills` | -- | jedna linia z `"data": {"skills": [{"name", "description", "command"}]}` |
-| `server_md` | -- | `"data": {"content": "..."}` (pusty, gdy SERVER.md nie istnieje) |
-| `scan_server` | -- | streaming: agent bada serwer, tworzy/aktualizuje SERVER.md i DIRECTORY |
-| `status` | -- | stan serwera **bez LLM**: ramka z tekstem w `response` (dla starszych klientow), potem `done` z `"data"` jak `overview` |
-| `overview` | -- | `"data": {"hostname", "status": "ok\|warning\|critical", "headline", "facts", "gauges": [{"id", "label", "pct", "level": "ok\|warn\|crit", "value"}], "series": {"cpu", "mem", "disk"}, "alerts", "containers", "sites", "projects", "unread", "usage": {"tokens", "cost", "cached", "prompt", "saved", "calls"}, "text"}` -- pulpit **bez LLM** |
-| `feed` | `args`: puste albo `seen` (przeczytane); opcjonalnie `since` (znacznik czasu) | `"data": {"items": [{"id", "ts", "at", "type", "severity", "title", "text", "key", "kind", "actions": [{"index", "label", "kind", "command"?, "args"?, "admin"?, "primary"?}], "push", "held", "done", "unread"}], "unread", "seen", "text", "prefs"}` -- skrzynka: co Pipe wyslal sam |
-| `feed_act` | `id` wiadomosci, `action` (indeks) | wykonuje przycisk: `snooze` / `mute` / `dismiss` -> `"data": {"id", "done", "text"?, "muted"?}`; `message` -> streaming rozmowy z agentem; `command` -> jak ta komenda (`cleanup`, `patch`, `investigate`...). Akcja z `admin` -- tylko administrator; wykonana akcja (`done`) drugi raz -> `error` |
-| `prefs` | opcjonalnie `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` albo `off`), `per_day` (0-50), `args: unmute <rodzaj>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- ustawienia powiadomien; zmiana tylko dla administratora |
-| `install` | `args`: `skill\|plugin <zrodlo> [filtr]`; potem `token` + `execute: true` | `/pobierz` bez LLM: podglad `"data": {"token", "text", "skills", "servers", "empty"}` (repozytorium sklonowane i usuniete), po TAK `"data": {"text"}`; token wazny 15 min, jednorazowy. Tylko admin; w trybie obserwacji bez serwerow MCP |
-| `mcp_servers` | `args`: puste (stan), `dodaj <dodatek z katalogu>`, `dodaj <nazwa> <npx ...\|uvx ...\|docker run ...\|URL> [ZMIENNA=${MCP_X}]`, `usun <nazwa>`, `wlacz\|wylacz <nazwa>`, `odswiez`, `klucz` (z `name` = `MCP_...` i `key` = wartosc), `zapomnij <MCP_...>` (tez `add`/`remove`/`enable`/`disable`/`reload`/`key`/`forget`) | okno `/mcp`: `"data": {"text", "servers": [{"name", "status", "error", "description", "source", "addon", "enabled", "runs", "version", "tools": [{"name", "read", "ask", "description"}], "secrets": [{"name", "set"}]}], "catalog": [{"name", "title", "description", "category", "homepage", "login", "installed", "ready", "runs", "secrets": [{"name", "label", "help", "url", "set"}]}], "can_edit"}` -- wartosci sekretow nigdy. Zmiany: tylko admin, dodanie i wlaczenie nie w trybie obserwacji |
-| `web` | `args`: puste (stan), `wlacz [tunel\|bezposrednio] [port] [domena]` / `on` (`tunel` = `wlacz tunel`), `wylacz` / `off`, `wpusc <kod> [podglad]` / `approve`, `odrzuc <kod>` / `deny`, `odwolaj <numer\|nazwa\|wszystkie>` / `revoke`; przyciski skrzynki podaja `id` prosby i `role` | Pipe w przegladarce pod publicznym adresem (`core/webpublic.py`, `core/webaccess.py`): `"data": {"on", "url", "mode" (direct\|tunnel), "devices", "pending", "text", "can_edit"}`; `wlacz` wysyla ramki `progress` i dodaje `ok`. Stan widzi kazdy (urzadzenia i prosby -- administrator), zmiany tylko administrator. **Bez LLM** |
-| `cleanup` | -- | zwolnij miejsce **bez LLM**: ramki `progress`, potem `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Odrzucane: viewer, tryb obserwacji |
-| `projects` | `args`: puste albo `logs` / `stop` / `start` / `remove` (z `execute: true`, inaczej podglad), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; z `args` -- `"data": {"name", "text"}`. Zmiany: administrator, nie w trybie obserwacji |
-| `run_skill` | `name` (nazwa albo komenda skilla), opcjonalnie `args` | streaming |
-| `diagram` | opcjonalnie `args` (tytul) | mapa infrastruktury **bez LLM**: ramka z `attachment`, potem `done` z `"data": {"summary": "..."}` |
+| `list_skills` | -- | one line with `"data": {"skills": [{"name", "description", "command"}]}` |
+| `server_md` | -- | `"data": {"content": "..."}` (empty when SERVER.md doesn't exist) |
+| `scan_server` | -- | streaming: the agent explores the server, creates/updates SERVER.md and DIRECTORY |
+| `status` | -- | server status **without the LLM**: a frame with the text in `response` (for older clients), then `done` with `"data"` like `overview` |
+| `overview` | -- | `"data": {"hostname", "status": "ok\|warning\|critical", "headline", "facts", "gauges": [{"id", "label", "pct", "level": "ok\|warn\|crit", "value"}], "series": {"cpu", "mem", "disk"}, "alerts", "containers", "sites", "projects", "unread", "usage": {"tokens", "cost", "cached", "prompt", "saved", "calls"}, "text"}` -- the dashboard **without the LLM** |
+| `feed` | `args`: empty or `seen` (mark as read); optionally `since` (a timestamp) | `"data": {"items": [{"id", "ts", "at", "type", "severity", "title", "text", "key", "kind", "actions": [{"index", "label", "kind", "command"?, "args"?, "admin"?, "primary"?}], "push", "held", "done", "unread"}], "unread", "seen", "text", "prefs"}` -- the inbox: what Pipe sent on its own |
+| `feed_act` | the message's `id`, `action` (index) | runs a button: `snooze` / `mute` / `dismiss` -> `"data": {"id", "done", "text"?, "muted"?}`; `message` -> a streamed conversation with the agent; `command` -> like that command (`cleanup`, `patch`, `investigate`...). An action with `admin` -- administrator only; an action already done (`done`) a second time -> `error` |
+| `prefs` | optionally `level` (`all\|important\|critical`), `quiet` (`22:00-07:00` or `off`), `per_day` (0-50), `args: unmute <kind>\|all` | `"data": {"level", "quiet", "per_day", "muted", "text", "can_edit"}` -- notification settings; changes by the administrator only |
+| `install` | `args`: `skill\|plugin <source> [filter]`; then `token` + `execute: true` | `/download` without the LLM: a preview `"data": {"token", "text", "skills", "servers", "empty"}` (the repository is cloned and removed), after YES `"data": {"text"}`; the token is valid 15 min, single-use. Admin only; no MCP servers in observe mode |
+| `mcp_servers` | `args`: empty (state), `add <catalog add-on>`, `add <name> <npx ...\|uvx ...\|docker run ...\|URL> [VAR=${MCP_X}]`, `remove <name>`, `enable\|disable <name>`, `reload`, `key` (with `name` = `MCP_...` and `key` = the value), `forget <MCP_...>` (also `dodaj`/`usun`/`wlacz`/`wylacz`/`odswiez`/`klucz`/`zapomnij`) | the `/mcp` window: `"data": {"text", "servers": [{"name", "status", "error", "description", "source", "addon", "enabled", "runs", "version", "tools": [{"name", "read", "ask", "description"}], "secrets": [{"name", "set"}]}], "catalog": [{"name", "title", "description", "category", "homepage", "login", "installed", "ready", "runs", "secrets": [{"name", "label", "help", "url", "set"}]}], "can_edit"}` -- never secret values. Changes: admin only, adding and enabling not in observe mode |
+| `web` | `args`: empty (state), `on [tunnel\|direct] [port] [domain]` / `wlacz` (`tunnel` = `on tunnel`), `off` / `wylacz`, `approve <code> [viewer]` / `wpusc`, `deny <code>` / `odrzuc`, `revoke <number\|name\|all>` / `odwolaj`; inbox buttons pass the request `id` and `role` | Pipe in the browser at a public address (`core/webpublic.py`, `core/webaccess.py`): `"data": {"on", "url", "mode" (direct\|tunnel), "devices", "pending", "text", "can_edit"}`; `on` sends `progress` frames and adds `ok`. Everyone sees the state (devices and requests -- administrator), changes are admin only. **Without the LLM** |
+| `cleanup` | -- | free up space **without the LLM**: `progress` frames, then `"data": {"freed", "text", "steps", "skipped", "exit_code"}`. Refused: viewer, observe mode |
+| `projects` | `args`: empty or `logs` / `stop` / `start` / `remove` (with `execute: true`, otherwise a preview), `name` | `"data": {"projects": [{"name", "path", "url", "stack", "run", "status", "detail"}], "workspace", "text", "can_edit"}`; with `args` -- `"data": {"name", "text"}`. Changes: administrator, not in observe mode |
+| `run_skill` | `name` (skill name or command), optionally `args` | streaming |
+| `diagram` | optionally `args` (title) | infrastructure map **without the LLM**: a frame with `attachment`, then `done` with `"data": {"summary": "..."}` |
 | `directory` | -- | `"data": {"entries": [{"path", "kind", "description", "remote", "branch", ...}], "text": "..."}` |
-| `new_chat` | -- | `"data": {"cleared": true\|false}`: usuwa historie sesji z pamieci i z dysku (`/nowa`); pamiec serwera zostaje |
-| `vibe` | `args`: puste albo `reset` | `"data": {"content": "..."}` albo `{"content": "", "reset": true\|false}` (VIBE uzytkownika z `interface`) |
-| `alerts` | -- | `"data": {"active": [alert], "recent": [zdarzenie], "enabled": bool}` |
-| `targets` | -- | `"data": {"targets": ["opis celu", ...]}` |
-| `routines` | -- | `"data": {"routines": ["opis rutyny", ...]}` |
-| `skill` | `name` (nazwa albo komenda) | `"data": {"name", "description", "content", "command"}` -- tresc skilla do podgladu |
-| `graph` | -- | `"data": {"root", "hostname", "views": {"fleet" \| "host" \| "p:<projekt>": {"title", "parent", "nodes": [{id, kind, label, sub, state, opens?, meta, alerts?}], "edges": [{from, to, kind, label?}]}}, "index": {id: [wezel na kazdym poziomie]}}` -- schemat jako dane (interfejs webowy) |
-| `journal_changes` | `id` | `"data": {"id", "command", "status", "undoable", "files": [{path, status: added\|deleted\|modified\|unchanged\|unknown, diff, note}], "inverse", "notes"}` -- roznica "przed -> teraz" z kopii dziennika, sekrety zredagowane |
-| `providers` | -- | `"data": {"providers": [{id, name, model, default_model, requires_key, has_key, key_source: web\|env\|"", ready, key_url, notes, base, active}], "active": {id, name, model}, "chosen": bool, "can_edit": bool}` -- providerzy LLM bez kluczy; `ready` = ma klucz |
-| `provider_models` | `name` (id providera), `key` (opcjonalnie -- nowy klucz do sprawdzenia) | `"data": {"models": [...], "total"}` -- aktualne modele czatu providera; odrzucony klucz = `error`. Tylko administrator |
-| `provider_set` | `name`, `key` (opcjonalnie), `model` (opcjonalnie) | jak `providers` -- zapisuje klucz (po sprawdzeniu u providera) i model, przelacza agenta, ustawia `chosen`. Tylko administrator |
-| `provider_forget` | `name` | jak `providers` -- usuwa klucz dodany z interfejsu; provider bez klucza przestaje byc aktywny. Tylko administrator |
-| `yolo` | `args`: `on` \| `off` (opcjonalnie; takze `wlacz`/`wylacz`, `tak`/`nie`) | `"data": {"yolo": bool, "can_edit": bool, "text"}` -- bez `args` stan, z `args` wlacza/wylacza tryb YOLO **tej sesji**: operacje wymagajace potwierdzenia wykonuja sie od razu (przez bezpiecznik i dziennik; w strumieniu zamiast `[POTWIERDZ]` przychodzi zdarzenie `progress` „YOLO — ...”). Zmiana tylko dla administratora; nie przetrwa restartu backendu |
-| `view` | `args`: `prosty` \| `techniczny` (opcjonalnie; takze `simple`, `technical` albo opis zwyklymi slowami, np. *"przypomnienia i maile"*) | `"data": {"view": "simple" \| "tech", "chosen": bool, "views", "can_edit": bool, "text"}` -- bez `args` stan, z `args` ustawia widok calego agenta (`DATA_DIR/view.json`, `core/views.py`); subskrybenci dostaja zdarzenie `view`. Nieznany opis -> blad z oboma nazwami. Zmiana tylko dla administratora |
-| `language` | `args`: `pl` \| `en` (opcjonalnie; takze `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- bez `args` stan, z `args` przelacza jezyk calego agenta (prompty, opisy narzedzi, raporty, komunikaty) bez restartu i zapisuje wybor w `DATA_DIR/language.json`; subskrybenci dostaja zdarzenie `language`. Zmiana tylko dla administratora |
-| `reminders` | `cancel`: id (opcjonalnie), `claim`: true (opcjonalnie) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [zdarzenia reminder], "cancelled"}` -- `claim` odbiera przypomnienia, ktore odpalily, gdy nikt nie subskrybowal (CLI) |
-| `history` | -- | `"data": {"entries": ["linia audit logu", ...]}` (ostatnie 15) |
-| `update` | `args`: puste albo `sprawdz` / `check` | streaming: agent wywoluje narzedzie `pipe_update` (`apply` z potwierdzeniem albo `check`) |
-| `investigate` | `id` alertu | streaming: agent bada alert czuwania; backend dolacza zmiany na serwerze z ostatniej doby |
-| `changes` | `args`: okres (`24h`, `3d`) | `"data": {"text": "...", "hours": 24}` -- co sie zmienilo (migawki), **bez LLM** |
-| `chart` | `args`: `load\|ram\|dysk` i okres (`ram 7d`) | ramka z `attachment` (PNG), potem `"data": {"summary", "metric", "image": bool}` |
-| `health` | -- | `"data": {"text": "..."}` -- certyfikaty, strony, DNS, backupy (sprawdzenia bez konfiguracji) |
-| `digest` | -- | ramka z `attachment` (wykres load 24 h), potem `"data"` jak zdarzenie `digest` (ponizej) |
-| `mcp` | `rpc`: jedna wiadomosc JSON-RPC MCP | `"data": {"rpc": odpowiedz \| null}` -- most MCP (CLI `--mcp`); tozsamosc i rola z tokenu |
-| `approvals` | -- | `"data": {"pending": [zdarzenie approval]}` |
-| `approve` | `id`, `decision` (bool) | tylko admin; zatwierdzenie wykonuje operacje przez bezpiecznik, `"data": {"id", "status", "text"}` |
-| `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamiec incydentow (co sie zdarzalo, ustalenia, co pomoglo) |
-| `transcribe` | `audio` (base64, maks. 10 MB; OGG, WAV, MP3...), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomosci glosowej (STT) |
-| `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
-| `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
-| `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
-| `vulns` | -- | `"data": {"text", "view"}` -- raport podatnosci w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, zdalne serwery, obrazy, aplikacje) z wyjasnieniami; brakujace pisze model (najwyzej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
-| `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `apps`/`aplikacje`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | lata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobe; `freed` -- bajty zwolnione przy sprzataniu; `report` -- stan po latce jak `view` z `vulns`). Nic do zalatania: `"data": {"nothing": true, "text", ...}`. Komendy sklada serwer z biezacego skanu. Latanie dziala w tle: drugie `patch` w trakcie dostaje ten sam postep i wynik, a po rozlaczeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podglad sprzed v0.38) sa ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
-| `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofniecia, gdy brak `id`); z `execute` i `id`: cofniecie, `"data": {"id", "text"}`. **Bez LLM** |
-| `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
-| `subscribe` | -- | polaczenie zostaje otwarte; zdarzenia czuwania (ponizej) do rozlaczenia klienta |
+| `new_chat` | -- | `"data": {"cleared": true\|false}`: removes the session history from memory and disk (`/new`); the server memory stays |
+| `vibe` | `args`: empty or `reset` | `"data": {"content": "..."}` or `{"content": "", "reset": true\|false}` (the VIBE of the user from `interface`) |
+| `alerts` | -- | `"data": {"active": [alert], "recent": [event], "enabled": bool}` |
+| `targets` | -- | `"data": {"targets": ["target description", ...]}` |
+| `routines` | -- | `"data": {"routines": ["routine description", ...]}` |
+| `skill` | `name` (name or command) | `"data": {"name", "description", "content", "command"}` -- the skill's content for preview |
+| `graph` | -- | `"data": {"root", "hostname", "views": {"fleet" \| "host" \| "p:<project>": {"title", "parent", "nodes": [{id, kind, label, sub, state, opens?, meta, alerts?}], "edges": [{from, to, kind, label?}]}}, "index": {id: [node on each level]}}` -- the map as data (web interface) |
+| `journal_changes` | `id` | `"data": {"id", "command", "status", "undoable", "files": [{path, status: added\|deleted\|modified\|unchanged\|unknown, diff, note}], "inverse", "notes"}` -- the "before -> now" diff from the journal backup, secrets redacted |
+| `providers` | -- | `"data": {"providers": [{id, name, model, default_model, requires_key, has_key, key_source: web\|env\|"", ready, key_url, notes, base, active}], "active": {id, name, model}, "chosen": bool, "can_edit": bool}` -- LLM providers without keys; `ready` = has a key |
+| `provider_models` | `name` (provider id), `key` (optional -- a new key to check) | `"data": {"models": [...], "total"}` -- the provider's current chat models; a rejected key = `error`. Admin only |
+| `provider_set` | `name`, `key` (optional), `model` (optional) | like `providers` -- saves the key (after checking it with the provider) and the model, switches the agent, sets `chosen`. Admin only |
+| `provider_forget` | `name` | like `providers` -- removes a key added from the interface; a provider without a key stops being active. Admin only |
+| `yolo` | `args`: `on` \| `off` (optional; also `wlacz`/`wylacz`, `tak`/`nie`) | `"data": {"yolo": bool, "can_edit": bool, "text"}` -- without `args` the state, with `args` turns YOLO mode **of this session** on/off: operations that need confirmation run right away (through the safety fuse and the journal; instead of `[POTWIERDZ]` the stream carries a `progress` event "YOLO — ..."). Admin only; doesn't survive a backend restart |
+| `view` | `args`: `simple` \| `technical` (optional; also `prosty`, `techniczny` or a plain-words description, e.g. *"reminders and emails"*) | `"data": {"view": "simple" \| "tech", "chosen": bool, "views", "can_edit": bool, "text"}` -- without `args` the state, with `args` sets the view of the whole agent (`DATA_DIR/view.json`, `core/views.py`); subscribers get a `view` event. An unknown description -> an error naming both views. Admin only |
+| `language` | `args`: `pl` \| `en` (optional; also `polski`, `english`, `angielski`) | `"data": {"lang", "chosen": bool, "languages": ["pl", "en"], "can_edit": bool, "text"}` -- without `args` the state, with `args` switches the language of the whole agent (prompts, tool descriptions, reports, messages) without a restart and saves the choice in `DATA_DIR/language.json`; subscribers get a `language` event. Admin only |
+| `reminders` | `cancel`: id (optional), `claim`: true (optional) | `"data": {"text", "reminders": [{id, due, kind, text, fired}], "claimed": [reminder events], "cancelled"}` -- `claim` picks up reminders that fired while nobody was subscribed (CLI) |
+| `history` | -- | `"data": {"entries": ["audit log line", ...]}` (the last 15) |
+| `update` | `args`: empty or `sprawdz` / `check` | streaming: the agent calls the `pipe_update` tool (`apply` with confirmation or `check`) |
+| `investigate` | alert `id` | streaming: the agent investigates a watcher alert; the backend adds the server changes from the last day |
+| `changes` | `args`: period (`24h`, `3d`) | `"data": {"text": "...", "hours": 24}` -- what changed (snapshots), **without the LLM** |
+| `chart` | `args`: `load\|ram\|dysk` and a period (`ram 7d`) | a frame with `attachment` (PNG), then `"data": {"summary", "metric", "image": bool}` |
+| `health` | -- | `"data": {"text": "..."}` -- certificates, sites, DNS, backups (checks without configuration) |
+| `digest` | -- | a frame with `attachment` (24 h load chart), then `"data"` like the `digest` event (below) |
+| `mcp` | `rpc`: one MCP JSON-RPC message | `"data": {"rpc": response \| null}` -- MCP bridge (CLI `--mcp`); identity and role from the token |
+| `approvals` | -- | `"data": {"pending": [approval event]}` |
+| `approve` | `id`, `decision` (bool) | admin only; approving runs the operation through the safety fuse, `"data": {"id", "status", "text"}` |
+| `incidents` | -- | `"data": {"text", "incidents": [...]}` -- incident memory (what happened, findings, what helped) |
+| `transcribe` | `audio` (base64, max. 10 MB; OGG, WAV, MP3...), `filename` | `"data": {"text": "..."}` -- voice message transcription (STT) |
+| `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **without the LLM** |
+| `welcome` | -- | a frame with `attachment` (map), then `"data"` like the `welcome` event |
+| `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- change journal |
+| `vulns` | -- | `"data": {"text", "view"}` -- the vulnerability report in Markdown (`view`: the same as data for `pipe web`, `vulns.report_view`) (packages, remote servers, images, applications) with explanations; the model writes missing ones (at most `EXPLAIN_WAIT` s), without a model the OSV description |
+| `patch` | `scope`: empty / `all` (everything), `images`/`obrazy`, `system`/`serwer`, `servers`/`serwery`, an ssh target name, `urgent`/`pilne` (this server's urgent packages) | patches right away (`core/patching.py`): `progress` frames with the steps, then a new scan and `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- unchanged by the install, not tried again for a day; `freed` -- bytes freed by the cleanup; `report` -- the state after the patch, like `view` from `vulns`). Nothing to patch: `"data": {"nothing": true, "text", ...}`. The server builds the commands from the current scan. Patching runs in the background: a second `patch` meanwhile gets the same progress and result, and after the client disconnects the result arrives as a `message` reminder. The `execute` and `patch_token` fields (the preview before v0.38) are ignored. Refused: viewer, observe mode; this server's packages and images only in native and docker mode (with the helper container). **Without the LLM** |
+| `undo` | optionally `id`; `execute: true` | without `execute`: `"data": {"id", "undoable", "preview"}` (the last entry to undo when there is no `id`); with `execute` and `id`: the undo, `"data": {"id", "text"}`. **Without the LLM** |
+| `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
+| `subscribe` | -- | the connection stays open; watcher events (below) until the client disconnects |
 
-Tresc wiadomosci dla agenta (`scan_server`, `run_skill`, `investigate`, akcja `message` ze skrzynki) buduje backend --
-klient wysyla tylko komende. Wiadomosci zbudowane przez backend nie ucza VIBE.
-Pole `command` skilla to nazwa zgodna z zasadami Telegrama (male litery, cyfry, `_`, do 32 znakow). Jest puste,
-gdy nazwa skilla jest zarezerwowana (`status`, `mapa`, `server`, `skille`, `katalogi`, `vibe`, `alerty`,
-`cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, `cofnij`, `dziennik`, `audyt`, ...) albo po skroceniu koliduje z innym skillem.
+The backend builds the message for the agent (`scan_server`, `run_skill`, `investigate`, a `message` action from the
+inbox); the client sends only the command. Messages built by the backend don't teach VIBE.
+A skill's `command` field is a name that follows Telegram's rules (lowercase letters, digits, `_`, up to 32
+characters). It is empty when the skill name is reserved (`status`, `mapa`, `server`, `skille`, `katalogi`, `vibe`,
+`alerty`, `cele`, `rutyny`, `zmiany`, `wykres`, `zdrowie`, `raport`, `koszt`, `cofnij`, `dziennik`, `audyt`, ...) or
+collides with another skill after shortening.
 
-### Odpowiedz
+### Response
 
 ```json
 {
-  "response": "tekst odpowiedzi",
+  "response": "response text",
   "status": "ok|confirm|error",
   "done": false
 }
 ```
 
-Serwer wysyla wiele linii JSON (streaming). Ostatnia linia ma `"done": true`.
-Ramka moze zawierac dodatkowo (wtedy `response` jest pusty, wiec starsi klienci ja pomijaja):
+The server sends many JSON lines (streaming). The last line has `"done": true`.
+A frame can additionally contain (then `response` is empty, so older clients skip it):
 
-**Zalacznik** -- plik dla uzytkownika, np. diagram:
+**Attachment** -- a file for the user, for example a diagram:
 
 ```json
 {"response": "", "status": "ok", "done": false, "attachment": {
-  "name": "mapa-infrastruktury.png", "mime": "image/png", "caption": "Mapa infrastruktury",
-  "data": "<base64>", "source": "<kod Mermaid>", "text": "<podglad ASCII albo pusty>"}}
+  "name": "infrastructure-map.png", "mime": "image/png", "caption": "Infrastructure map",
+  "data": "<base64>", "source": "<Mermaid source>", "text": "<ASCII preview or empty>"}}
 ```
 
-**Postep** -- status posredni (np. co robi worker), do pokazania na biezaco, nie wchodzi do odpowiedzi:
+**Progress** -- an intermediate status (for example what a worker is doing), to show live; it isn't part of the
+answer:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "progress", "text": "web-1 $ uptime", "source": "worker:web-1"}}
 ```
 
-Ramki z diagramami maja setki KB -- klient musi czytac linie z wiekszym limitem niz domyslne 64 KiB
-asyncio (`open_connection(..., limit=32 * 1024 * 1024)`).
+Frames with diagrams are hundreds of KB, so the client must read lines with a larger limit than asyncio's default
+64 KiB (`open_connection(..., limit=32 * 1024 * 1024)`).
 
-### Zdarzenia czuwania (`subscribe`)
+### Watcher events (`subscribe`)
 
-Po `{"command": "subscribe"}` serwer wysyla `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
-"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- jezyk wybrano komenda `language`, klient powinien go
-przejac; `view_chosen` -- tak samo dla widoku), a potem, bez `done`:
+After `{"command": "subscribe"}` the server sends `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
+"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- the language was chosen with the `language` command,
+and the client should adopt it; `view_chosen` -- the same for the view), and then, without `done`:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
 ```
 
-(jezyk Pipe zmieniony z dowolnego kanalu -- klient przelacza swoje komunikaty; zdarzenie nie trafia do historii `alerts`;
-tak samo `{"type": "view", "view": "simple"}` po zmianie widoku)
+(Pipe's language was changed from any channel, so the client switches its messages; the event doesn't go into the
+`alerts` history; likewise `{"type": "view", "view": "simple"}` after a view change)
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
   "type": "alert", "id": "3f2a9c1d0b", "key": "disk:/", "severity": "warning|critical",
-  "title": "Dysk / zapelniony w 93%", "detail": "wolne 3.1 GB z 40 GB (/dev/sda1)",
+  "title": "Disk / is 93% full", "detail": "3.1 GB free of 40 GB (/dev/sda1)",
   "since": "2026-09-24 14:02", "state": "new|resolved|event", "history": "", "at": "2026-09-24 14:02"}}
 ```
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
-  "type": "routine", "name": "poranny-przeglad", "status": "OK|PROBLEM", "report": "...", "at": "..."}}
+  "type": "routine", "name": "morning-review", "status": "OK|PROBLEM", "report": "...", "at": "..."}}
 ```
 
 ```json
@@ -180,103 +182,99 @@ tak samo `{"type": "view", "view": "simple"}` po zmianie widoku)
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
-  "type": "activity", "id": "<id wywolania narzedzia>", "phase": "start|wait|end", "tool": "execute_command",
+  "type": "activity", "id": "<tool call id>", "phase": "start|wait|end", "tool": "execute_command",
   "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {},
   "output": "web", "full": "...", "code": 0, "auto": true}}
 ```
 
-Zdarzenia `activity` dostaje kazdy klient w strumieniu rozmowy (poza rola viewer) -- mowia, co agent robi i na
-ktorych wezlach schematu (`graph`). `wait` = czeka na potwierdzenie; `end` ma `ok` (true/false/null po odmowie)
-i `entry` -- identyfikator wpisu dziennika, gdy zmiana zostala wykonana. Przy komendach (`execute_command`,
-`remote_exec`, `git_command`, `cron_manage`, `write_file`) `end` niesie tez wycinek wyniku: `output` (do 3 linii:
-przy bledzie linie z bledem i ostatnia, przy sukcesie koniec, plus alarm bezpiecznika), `full` (do 60 linii / 4000
-znakow, do rozwiniecia) i `code` (kod wyjscia). To ten sam wynik, ktory dostal model, juz po redakcji sekretow;
-w widoku prostym tych pol nie ma. `auto: true` -- zmiana wykonana bez pytania (samodzielnosc, `docs/security.md`).
-Klient, ktory zna tylko `progress`, moze zdarzenia `activity` pominac.
+Every client gets `activity` events in a conversation stream (except the viewer role); they say what the agent is
+doing and on which nodes of the map (`graph`). `wait` = waiting for confirmation; `end` has `ok` (true/false/null
+after a refusal) and `entry`, the journal entry id when the change was made. For commands (`execute_command`,
+`remote_exec`, `git_command`, `cron_manage`, `write_file`) `end` also carries a fragment of the output: `output` (up
+to 3 lines: on an error the error lines and the last one, on success the end, plus a safety fuse alarm), `full` (up
+to 60 lines / 4000 characters, to expand) and `code` (the exit code). It is the same result the model got, already
+with secrets redacted; in the simple view these fields are absent. `auto: true` -- a change made without asking
+(autonomy, `docs/security.md`). A client that knows only `progress` can skip `activity` events.
 
-`to` to interfejs, ktory ustawil przypomnienie -- klient decyduje, komu je pokazac. Dla `kind: task`
-pole `report` zawiera raport workera.
+`to` is the interface that set the reminder; the client decides whom to show it to. For `kind: task` the `report`
+field contains the worker's report.
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
-  "type": "digest", "title": "Raport vps1 -- 29.09.2026 07:00", "text": "<calosc jako tekst>",
-  "sections": [{"title": "Stan", "lines": ["..."]}, {"title": "Zmiany od wczoraj", "lines": ["..."]}],
-  "attachment": {"name": "wykres-load.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
+  "type": "digest", "title": "Report vps1 -- 29.09.2026 07:00", "text": "<everything as text>",
+  "sections": [{"title": "Health", "lines": ["..."]}, {"title": "Changes since yesterday", "lines": ["..."]}],
+  "attachment": {"name": "load-chart.png", "mime": "image/png", "data": "<base64>", "...": "..."}, "at": "..."}}
 ```
 
-`{"type": "investigation", "key", "title", "report", "auto", "alert_id", "severity", "fix_message"}` -- ustalenia
-workera, ktory sam zbadal krytyczny alert czuwania (`AUTO_INVESTIGATE`) albo alert z webhooka (`WEBHOOK_INVESTIGATE=1`);
-obie drogi to jedno `Watcher.auto_investigate()`, a `fix_message` to tresc przycisku *Napraw*.
-`history` w alercie -- ostatnie wystapienie tego samego problemu (pamiec incydentow).
+`{"type": "investigation", "key", "title", "report", "auto", "alert_id", "severity", "fix_message"}` -- the findings
+of a worker that investigated a critical watcher alert (`AUTO_INVESTIGATE`) or a webhook alert (`WEBHOOK_INVESTIGATE=1`)
+by itself; both go through one `Watcher.auto_investigate()`, and `fix_message` is the text of the *Fix it* button. `history` in an alert -- the last occurrence of the same problem (incident memory).
 
-`{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- podpowiedz bez LLM (prognoza
-zapelnienia dysku, miejsce do odzyskania, restarty kontenera, czekajacy restart serwera, rosnacy RAM).
-`{"type": "notice", "title", "text"}` -- podsumowanie tego, co czekalo w ciszy nocnej.
-`{"type": "login", "id", "code", "device", "ip", "title", "text"}` -- ktos przed strona `/web` prosi o dostep;
-przyciski skrzynki (*Wpusc*, *Tylko podglad*, *Odrzuc*) wolaja komende `web`. Zawsze z powiadomieniem, tylko dla
-administratorow.
+`{"type": "insight", "key", "kind", "severity": "info|warning", "title", "text"}` -- a suggestion without the LLM (disk
+full forecast, space to reclaim, container restarts, a pending server reboot, growing RAM).
+`{"type": "notice", "title", "text"}` -- a summary of what waited during quiet hours.
+`{"type": "login", "id", "code", "device", "ip", "title", "text"}` -- someone at the `/web` page asks for access; the
+inbox buttons (*Let in*, *View only*, *Reject*) call the `web` command. Always notified, administrators only.
 
-**Skrzynka.** Zdarzenia `alert`, `insight`, `digest`, `welcome`, `routine`, `investigation` i `notice` trafiaja do
-skrzynki i maja dodatkowo `feed_id`, `push` (czy powiadomic teraz: poziom, cisza nocna, limit podpowiedzi), `held`
-(czeka na koniec ciszy) i `actions` (przyciski: `index`, `label`, `kind`, `admin`...). Klient powiadamia tylko przy
-`push: true`, a przycisk wysyla `feed_act` z `feed_id` i `index`. Brak `push` (starszy backend) = powiadom.
+**The inbox.** `alert`, `insight`, `digest`, `welcome`, `routine`, `investigation` and `notice` events land in the
+inbox and also carry `feed_id`, `push` (whether to notify now: level, quiet hours, the suggestion limit), `held`
+(waits for the end of quiet hours) and `actions` (buttons: `index`, `label`, `kind`, `admin`...). A client notifies
+only on `push: true`, and a button sends `feed_act` with `feed_id` and `index`. No `push` (an older backend) = notify.
 
-`{"type": "approval", "id", "command", "target", "requested_by", "reason", "plan", "status"}` -- zewnetrzny agent
-(MCP) czeka na zgode administratora; klient pokazuje przyciski i wysyla `approve`.
+`{"type": "approval", "id", "command", "target", "requested_by", "reason", "plan", "status"}` -- an external agent
+(MCP) is waiting for admin approval; the client shows buttons and sends `approve`.
 
-`{"type": "welcome", "title", "sections", "score", "grade", "text", "attachment"?}` -- raz po instalacji, gdy
-podlaczy sie pierwszy subskrybent.
+`{"type": "welcome", "title", "sections", "score", "grade", "text", "attachment"?}` -- once after installation, when
+the first subscriber connects.
 
-`state`: `new` -- nowy albo eskalowany alert, `resolved` -- problem minal, `event` -- zdarzenie jednorazowe
-(nowy publiczny port, zatrzymany kontener). `investigate` z `id` prosi agenta o zbadanie alertu.
-Klucze alertow maja prefiks grupy: `disk:`, `memory`, `load`, `container:`, `port:` (co `WATCH_INTERVAL`)
-oraz `cert:`, `site:`, `dns:`, `backup:` (sprawdzenia bez konfiguracji, co `CHECKS_INTERVAL`).
-`vuln:system` -- pilne podatnosci z poprawka w pakietach systemu, `vuln:images` -- w obrazach kontenerow,
-`vuln:servers` -- na zdalnych serwerach (cele ssh), `vuln:apps` -- krytyczne w zaleznosciach aplikacji (trwale;
-wysylane ponownie, gdy dojdzie nowa).
-`hook:<zrodlo>:<nazwa>` -- alerty z webhookow (trwale do komunikatu `resolved`). `auth:ssh` (seria nieudanych
-logowan) jest trwaly; `security:<sekcja>:<klucz>`, `auth:breach:...` i `auth:login:...`
-to zdarzenia jednorazowe.
-`digest` przychodzi raz dziennie o `DIGEST_TIME`.
+`state`: `new` -- a new or escalated alert, `resolved` -- the problem is gone, `event` -- a one-off event (a new public
+port, a stopped container). `investigate` with an `id` asks the agent to investigate the alert.
+Alert keys have a group prefix: `disk:`, `memory`, `load`, `container:`, `port:` (every `WATCH_INTERVAL`)
+and `cert:`, `site:`, `dns:`, `backup:` (checks without configuration, every `CHECKS_INTERVAL`).
+`vuln:system` -- urgent fixable vulnerabilities in system packages, `vuln:images` -- in container images,
+`vuln:servers` -- on remote servers (ssh targets), `vuln:apps` -- critical ones in application dependencies
+(persistent; sent again when a new one appears).
+`hook:<source>:<name>` -- webhook alerts (persistent until a `resolved` message). `auth:ssh` (a series of failed
+logins) is persistent; `security:<section>:<key>`, `auth:breach:...` and `auth:login:...` are one-off events.
+`digest` arrives once a day at `DIGEST_TIME`.
 
-### Autoryzacja tokenem
+### Token authorization
 
-Pole `token` jest wymagane, gdy skonfigurowano jakikolwiek token: `AGENT_TOKEN` (rola admin),
-`AGENT_VIEWER_TOKEN` (rola viewer) albo tokeny klientow (`python3 -m backend.tokens add NAZWA --role admin|viewer`,
-w `data/tokens.json` sam skrot SHA-256). Bez zadnego tokenu backend przyjmuje kazde zadanie (rola admin).
+The `token` field is required when any token is configured: `AGENT_TOKEN` (admin role), `AGENT_VIEWER_TOKEN` (viewer
+role) or client tokens (`python3 -m backend.tokens add NAME --role admin|viewer`, with only the SHA-256 hash in
+`data/tokens.json`). Without any token the backend accepts every request (admin role).
 
-Rola **viewer** (tylko odczyt): `{"confirm": true}` i `undo` z `execute` sa odrzucane, narzedzia zmieniajace stan
-zwracaja modelowi odmowe (klient nie dostaje pytania o TAK). Sesja nalezy do tozsamosci, ktora ja zalozyla
-(token admina, viewera albo nazwany token) -- zadanie z innym tokenem i tym samym `session_id` dostaje
-`Ta sesja nalezy do innego klienta.`
+The **viewer** role (read only): `{"confirm": true}` and `undo` with `execute` are refused, tools that change state
+return a refusal to the model (the client never gets a YES question). A session belongs to the identity that created
+it (the admin token, the viewer token or a named token); a request with another token and the same `session_id` gets
+`This session belongs to another client.`
 
-Token jest sprawdzany dla **kazdego** typu zadania -- rowniez dla potwierdzen
-(`confirm`), zeby nieuwierzytelniony klient nie mogl zatwierdzic operacji
-oczekujacej w cudzej sesji. Przy blednym tokenie backend odpowiada:
+The token is checked for **every** request type, including confirmations (`confirm`), so an unauthenticated client
+can't approve an operation pending in someone else's session. With a wrong token the backend answers:
 
 ```json
-{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": true}
+{"response": "Error: invalid authorization token.", "status": "error", "done": true}
 ```
 
-## Stany odpowiedzi
+## Response states
 
-| Status | Znaczenie |
-|--------|-----------|
-| `ok` | Standardowa odpowiedz agenta |
-| `confirm` | Agent czeka na potwierdzenie uzytkownika |
-| `error` | Blad agenta lub odmowa |
+| Status | Meaning |
+|--------|---------|
+| `ok` | A normal agent response |
+| `confirm` | The agent is waiting for the user's confirmation |
+| `error` | An agent error or a refusal |
 
-## Przebieg sesji
+## Session flow
 
-1. Klient nawiazuje polaczenie (Unix socket lub TCP)
-2. Klient wysyla zadanie (linia JSON + `\n`)
-3. Serwer odpowiada jedna lub wieloma liniami JSON
-4. Ostatnia linia ma `"done": true`
-5. Jesli `"status": "confirm"` -- klient pyta uzytkownika o potwierdzenie
-6. Klient wysyla `{"confirm": true|false, "session_id": "..."}` 
-7. Serwer kontynuuje przetwarzanie i wysyla kolejne odpowiedzi
+1. The client connects (Unix socket or TCP)
+2. The client sends a request (a JSON line + `\n`)
+3. The server answers with one or more JSON lines
+4. The last line has `"done": true`
+5. If `"status": "confirm"`, the client asks the user for confirmation
+6. The client sends `{"confirm": true|false, "session_id": "..."}`
+7. The server continues processing and sends further responses
 
-## Implementacja w Pythonie
+## Python implementation
 
 ```python
 import asyncio
@@ -284,51 +282,50 @@ import json
 
 async def chat_with_agent(message: str, session_id: str) -> list[dict]:
     reader, writer = await asyncio.open_unix_connection("/tmp/vps-agent.sock", limit=32 * 1024 * 1024)
-    
+
     request = {"message": message, "session_id": session_id, "interface": "my-client"}
     writer.write(json.dumps(request).encode() + b"\n")
     await writer.drain()
-    
+
     responses = []
     while True:
         raw = await reader.readline()
         resp = json.loads(raw)
         if resp.get("attachment"):
-            save(resp["attachment"])            # np. base64 -> plik PNG
+            save(resp["attachment"])            # e.g. base64 -> PNG file
         elif resp.get("event"):
             show_progress(resp["event"])
         else:
             responses.append(resp)
         if resp.get("done"):
             break
-    
+
     writer.close()
     return responses
 ```
 
-## Wymagania dla nowych klientow
+## Requirements for new clients
 
-- Jeden `session_id` per uzytkownik (np. `str(user_id)`)
-- Wysylaj `interface` (`<klient>:<uzytkownik>`) -- identyfikuje uzytkownika w audit logu i w VIBE
-- Obsluz status `confirm` -- zapytaj uzytkownika i wyslij odpowiedz
-- Obsluz `attachment` (pokaz obraz albo zapisz plik) i `event` typu `progress` (pokaz na biezaco)
-- Czytaj linie z limitem >= 32 MiB
-- Obsluz dlugie odpowiedzi -- podziel na mniejsze wiadomosci jesli platforma ma limit
-- Alerty: osobne, trwale polaczenie z `subscribe` i ponawianiem po rozlaczeniu
+- One `session_id` per user (for example `str(user_id)`)
+- Send `interface` (`<client>:<user>`); it identifies the user in the audit log and in VIBE
+- Handle the `confirm` status: ask the user and send the answer
+- Handle `attachment` (show the image or save the file) and `event` of type `progress` (show it live)
+- Read lines with a limit >= 32 MiB
+- Handle long answers: split them into smaller messages if the platform has a limit
+- Alerts: a separate, permanent connection with `subscribe` and reconnecting after a disconnect
 
+## Webhooks (HTTP)
 
-## Webhooki (HTTP)
-
-Osobny port (`WEBHOOK_PORT`, domyslnie wylaczony), przyjmuje alerty z innych systemow:
+A separate port (`WEBHOOK_PORT`, off by default) that accepts alerts from other systems:
 
 ```
 POST /hook/alertmanager | /hook/grafana | /hook/uptime-kuma | /hook/github | /hook/generic
-Authorization: Bearer <WEBHOOK_TOKEN>        (albo ?token=..., albo podpis X-Hub-Signature-256 GitHuba)
+Authorization: Bearer <WEBHOOK_TOKEN>        (or ?token=..., or GitHub's X-Hub-Signature-256 signature)
 Content-Type: application/json
 
 202 {"ok": true, "alerts": 2, "events": 1}
 GET /health -> 200 {"ok": true}
 ```
 
-Format ogolny (`/hook/generic`): `{"title", "message", "severity": "critical|warning", "status": "firing|resolved",
-"name"}`. Limit tresci 1 MiB. Bez `WEBHOOK_TOKEN` serwer webhookow nie startuje.
+Generic format (`/hook/generic`): `{"title", "message", "severity": "critical|warning", "status": "firing|resolved",
+"name"}`. Body limit 1 MiB. Without `WEBHOOK_TOKEN` the webhook server doesn't start.

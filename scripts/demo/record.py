@@ -151,7 +151,7 @@ def to_gif(frames: list[tuple[Path, float]], out: Path, width: int, fps: int) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Record the pipe web demo GIF")
-    parser.add_argument("--lang", choices=["pl", "en"], default="pl")
+    parser.add_argument("--lang", choices=["en", "pl"], default="en")
     parser.add_argument("--theme", choices=["dark", "light"], default="dark")
     parser.add_argument("--port", type=int, default=7390)
     parser.add_argument("--backend-python", default=sys.executable,

@@ -1,3 +1,3 @@
-# Telegram Bot -- Pipe
+# Telegram bot -- Pipe
 
-Dokumentacja Telegram bota znajduje sie w [docs/telegram.md](../../docs/telegram.md).
+The Telegram bot documentation is in [docs/telegram.md](../../docs/telegram.md) (Polish: [docs/pl/telegram.md](../../docs/pl/telegram.md)).

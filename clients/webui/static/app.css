@@ -325,7 +325,14 @@ body.fresh .chips .chip { display: inline-flex; align-items: center; }
 .crumbs button.here { color: var(--ink); font-weight: 500; cursor: default; background: none; }
 .crumbs i { color: var(--ink-3); font-style: normal; padding: 0 1px; }
 .icon { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; color: var(--ink-2); transition: background .15s, color .15s; }
-.icon.lang { font: 500 11.5px var(--mono); letter-spacing: .02em; }
+/* jezyk: EN | PL z flagami (SVG — emoji flag nie rysuje sie na Windowsie), biezacy zaznaczony */
+.lang-pick { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; }
+.lang-pick button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; border-radius: 5px;
+  font: 500 11.5px var(--mono); letter-spacing: .02em; color: var(--ink-3); transition: background .15s, color .15s; }
+.lang-pick button:hover { color: var(--ink); }
+.lang-pick button[aria-pressed="true"] { background: var(--sunken); color: var(--ink); cursor: default; }
+.lang-pick button:not([aria-pressed="true"]) .flag { opacity: .7; }
+.flag { width: 16px; height: 11px; border-radius: 2px; flex: none; box-shadow: 0 0 0 1px var(--line-strong); }
 .icon:hover { background: var(--sunken); color: var(--ink); }
 .icon.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1122,6 +1129,7 @@ button, a, input, textarea, select, [role="tab"] { touch-action: manipulation; }
 @media (pointer: coarse) {
   .topbar { min-height: calc(52px + env(safe-area-inset-top)); }
   .icon { width: 40px; height: 40px; }
+  .lang-pick button { height: 36px; padding: 0 10px; }
   .ghost { height: 40px; min-width: 40px; justify-content: center; }
   .mobile-switch button { padding: 8px 12px; }
   .stage-tabs { height: 46px; }

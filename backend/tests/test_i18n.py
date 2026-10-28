@@ -58,18 +58,30 @@ def run(gen):
 
 class TestSwitch:
 
-    def test_default_is_polish(self, monkeypatch):
+    def test_default_is_english(self, monkeypatch):
         monkeypatch.delenv("PIPE_LANG", raising=False)
+        assert i18n.lang() == "en" and i18n.tr("tak", "yes") == "yes"
+
+    @pytest.mark.parametrize("value", ["pl", "PL", "pl_PL.UTF-8", " polski "])
+    def test_polish_values(self, monkeypatch, value):
+        monkeypatch.setenv("PIPE_LANG", value)
         assert i18n.lang() == "pl" and i18n.tr("tak", "yes") == "tak"
+
+    def test_clients_default_to_english_too(self, monkeypatch):
+        import inspect
+        from clients.webui.server import WebBridge
+        monkeypatch.delenv("PIPE_LANG", raising=False)
+        assert tg_format.lang() == "en"
+        assert inspect.signature(WebBridge).parameters["lang"].default == "en"
 
     @pytest.mark.parametrize("value", ["en", "EN", "en_US.UTF-8", " english "])
     def test_english_values(self, monkeypatch, value):
         monkeypatch.setenv("PIPE_LANG", value)
         assert i18n.lang() == "en" and i18n.tr("tak", "yes") == "yes"
 
-    def test_unknown_value_falls_back_to_polish(self, monkeypatch):
+    def test_unknown_value_falls_back_to_english(self, monkeypatch):
         monkeypatch.setenv("PIPE_LANG", "de")
-        assert i18n.lang() == "pl"
+        assert i18n.lang() == "en"
 
     def test_load_env_lang_reads_file_but_environment_wins(self, tmp_path, monkeypatch):
         env = tmp_path / ".env"
@@ -85,7 +97,7 @@ class TestSwitch:
     def test_load_env_lang_missing_file(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PIPE_LANG", "")
         i18n.load_env_lang(tmp_path / "nope.env")
-        assert i18n.lang() == "pl"
+        assert i18n.lang() == "en"
 
 
 class TestPromptAndTools:

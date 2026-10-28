@@ -33,14 +33,14 @@ def notes(changelog: str, version: str) -> str:
 
 ---
 
-Obrazy / images (linux/amd64, linux/arm64):
+Images (linux/amd64, linux/arm64):
 
 ```
 docker pull {IMAGE}:{version}
 docker pull {IMAGE}-telegram:{version}
 ```
 
-Podpis / signature (cosign, keyless):
+Signature (cosign, keyless):
 
 ```
 cosign verify {IMAGE}:{version} \\

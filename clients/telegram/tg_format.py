@@ -21,8 +21,8 @@ import re
 
 
 def lang() -> str:
-    """Jezyk bota: PIPE_LANG=pl (domyslnie) albo en — ten sam przelacznik co w backendzie."""
-    return "en" if os.getenv("PIPE_LANG", "pl").strip().lower().startswith("en") else "pl"
+    """Jezyk bota: PIPE_LANG=en (domyslnie) albo pl — ten sam przelacznik co w backendzie."""
+    return "pl" if os.getenv("PIPE_LANG", "en").strip().lower().startswith("pl") else "en"
 
 
 def tr(pl, en):

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.48.2
+Pipe v0.49.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -843,7 +843,7 @@ async def cmd_koszt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def _apply_language(value) -> None:
     """Jezyk bota w trakcie pracy — tg_format.lang() czyta PIPE_LANG przy kazdym wywolaniu."""
-    os.environ["PIPE_LANG"] = "en" if str(value or "").strip().lower().startswith("en") else "pl"
+    os.environ["PIPE_LANG"] = "pl" if str(value or "").strip().lower().startswith("pl") else "en"
 
 
 async def _language_changed(app: Application, value) -> None:

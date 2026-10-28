@@ -53,8 +53,9 @@ do listy `PATTERNS` w skrypcie, zeby nastepnym razem zadzialal sam.
 
 **`docs/changelog.md` jest obowiazkowy.** Dopisz nowa sekcje na gorze, nad poprzednia wersja,
 w formacie uzywanym w tym pliku (naglowek `## vX.Y.Z (RRRR-MM-DD)`, pod nim naglowki `###`
-grupujace zmiany tematycznie, pod nimi punkty). Pisz po polsku, w czasie przeszlym,
-o tym co sie zmienilo dla uzytkownika — nie streszczaj diffa linia po linii.
+grupujace zmiany tematycznie, pod nimi punkty). Pisz **po angielsku** (od v0.49.0 changelog i notatki wydania
+sa angielskie; starsze wpisy zostaja po polsku), w czasie przeszlym, o tym co sie zmienilo dla uzytkownika —
+nie streszczaj diffa linia po linii.
 
 Nastepnie sprawdz, czy zmiana nie unieważnila innych dokumentow, i popraw te, ktorych dotyczy:
 
@@ -69,7 +70,9 @@ Nastepnie sprawdz, czy zmiana nie unieważnila innych dokumentow, i popraw te, k
 | Telegram (`clients/telegram/`) | `docs/telegram.md`, `clients/telegram/.env.example` |
 | architektura, uklad modulow | `CLAUDE.md` |
 
-Cala dokumentacja i komentarze w tym repo sa **po polsku** — trzymaj sie tego.
+Pipe jest **English-first**: `README.md` i `docs/*.md` sa angielskie, polskie tlumaczenie to `README.pl.md`
+i `docs/pl/*.md` — zmiana jednej wersji wymaga tej samej zmiany w drugiej (te same sekcje `##`, pilnuje
+`test_site.py`). Komentarze w kodzie, docstringi i komunikaty commitow zostaja po polsku.
 
 ## 4. Uruchom testy
 

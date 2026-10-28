@@ -1,4 +1,34 @@
-# Historia zmian -- Pipe
+# Changelog -- Pipe
+
+Entries from v0.49.0 on are in English; older ones are in Polish.
+
+## v0.49.0 (2026-10-28)
+
+### English first, Polish as a translation
+
+- Pipe now speaks English by default: the agent, the CLI, the Telegram bot, `pipe web`, the setup wizard and both
+  installers. Polish is one switch away: `--lang pl` when installing, `PIPE_LANG=pl` in `.env`, or `/jezyk pl`
+  at runtime
+- The CLI and `pipe web` follow the server's language when nothing is set on your computer, so a Polish server gives
+  you a Polish CLI without `--lang pl`. `--lang` still wins
+- Voice transcription uses Pipe's language when `STT_LANGUAGE` is not set (it was always Polish before)
+- Upgrading: an installation whose `backend/.env` has no `PIPE_LANG` (set up without the wizard) switches to English.
+  Type `/jezyk pl` or add `PIPE_LANG=pl` to get Polish back
+
+### Documentation and website
+
+- `README.md` and the docs in `docs/` are English; the Polish versions moved to `README.pl.md` and `docs/pl/`
+- The website is English at kvmyk.github.io/Pipe and Polish at `/pl/`; the documentation is at `/docs/` and
+  `/pl/docs/`. The old `/en/...` addresses redirect to the new ones
+- The READMEs in `clients/webui`, `deploy/kubernetes`, `sandbox` and `backend/addons`, both `.env.example` files,
+  the release notes and the GitHub templates are in English (or English first)
+- The changelog is written in English from this version on
+
+### Language switch with flags
+
+- `pipe web`, the website and the documentation have an EN | PL switch with the British and Polish flags, with the
+  current language highlighted. The flags are drawn as SVG, because Windows doesn't show flag emoji. On a phone the
+  switch is in the "…" menu of `pipe web`
 
 ## v0.48.2 (2026-10-28)
 

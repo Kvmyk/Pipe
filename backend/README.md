@@ -1,3 +1,3 @@
 # Backend -- Pipe
 
-Dokumentacja backendu znajduje sie w [docs/backend.md](../../docs/backend.md).
+The backend documentation is in [docs/backend.md](../docs/backend.md) (Polish: [docs/pl/backend.md](../docs/pl/backend.md)).

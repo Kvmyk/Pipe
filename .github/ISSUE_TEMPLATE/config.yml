@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Podatność / Security vulnerability
+  - name: Security vulnerability / Podatność
     url: https://github.com/Kvmyk/Pipe/security/advisories/new
-    about: Zgłoś prywatnie, nie w publicznym issue (SECURITY.md). / Report privately, not in a public issue.
-  - name: Dokumentacja / Documentation
+    about: Report privately, not in a public issue (SECURITY.md). / Zgłoś prywatnie, nie w publicznym issue.
+  - name: Documentation / Dokumentacja
     url: https://kvmyk.github.io/Pipe/docs/
-    about: Instalacja, funkcje, bezpieczeństwo. / Installation, features, security.
+    about: Installation, features, security. / Instalacja, funkcje, bezpieczeństwo.

@@ -1,255 +1,255 @@
 # CLI -- Pipe
 
-Pipe v0.48.2
+Pipe v0.49.0
 
-Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
+An interactive terminal for managing a VPS through an AI agent.
 
-Dziala na Twoim laptopie -- laczy sie zdalnie z backendem uruchomionym na serwerze przez automatyczny tunel SSH.
+It runs on your laptop and connects to the backend running on the server through an automatic SSH tunnel.
 
-## Jak to dziala
+## How it works
 
 ```
-Twoj laptop
+Your laptop
     +-- cli.py
-          +-- automatycznie otwiera tunel SSH ->
-          |       ssh -L 7379:127.0.0.1:7379 user@serwer
-          +-- laczy sie przez tunel z agentem na serwerze
+          +-- opens an SSH tunnel automatically ->
+          |       ssh -L 7379:127.0.0.1:7379 user@server
+          +-- talks to the agent on the server through the tunnel
                         |
-              serwer -- backend/server.py
+              server -- backend/server.py
                         |
-              /tmp/vps-agent.sock + 127.0.0.1:7379 (tylko localhost)
+              /tmp/vps-agent.sock + 127.0.0.1:7379 (localhost only)
 ```
 
-CLI automatycznie zestawia tunel SSH -- nie musisz nic robic recznie.
+The CLI sets up the SSH tunnel by itself, there is nothing to do by hand.
 
-Po polaczeniu CLI od razu pokazuje stan serwera jednym wierszem (bez modelu) i liczbe nowych wiadomosci od Pipe.
-Gdy czekasz przy prompcie, wiadomosci, ktore Pipe napisal sam (alerty, ustalenia, podpowiedzi), pojawiaja sie nad nim
-jako ramki -- te same, o ktorych Pipe powiadamia na Telegramie (`/powiadomienia`). Akcje wiadomosci wybierasz w
-`/nowosci`, wpisujac numer wiadomosci i litere akcji, np. `1a`.
+Once connected, the CLI shows the server's state in one line right away (without the model) and the number of new
+messages from Pipe. While you sit at the prompt, messages Pipe wrote by itself (alerts, findings, suggestions) appear
+above it as boxes -- the same ones Pipe notifies about on Telegram (`/notifications`). You pick a message's action in
+`/news` by typing the message number and the action letter, e.g. `1a`.
 
-## Wymagania
+## Requirements
 
 - Python 3.11+
-- `ssh` dostepny w terminalu (`which ssh`)
-- Konto SSH na serwerze
-- Dzialajacy backend na serwerze (`docker-compose up -d` w katalogu `backend/`)
+- `ssh` available in the terminal (`which ssh`)
+- An SSH account on the server
+- A running backend on the server (`docker-compose up -d` in `backend/`)
 
-## Instalacja
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Uzycie
+## Usage
 
 ```bash
-# Podstawowe -- podaj adres serwera
-python cli.py --host root@serwer.example.com
+# Basic: give the server address
+python cli.py --host root@server.example.com
 
-# Niestandardowy port SSH
+# Non-standard SSH port
 python cli.py --host root@1.2.3.4 --ssh-port 2222
 
-# Klucz SSH (jesli nie masz domyslnego w ~/.ssh/)
-python cli.py --host root@1.2.3.4 --key ~/.ssh/id_serwer
+# SSH key (if you don't have a default one in ~/.ssh/)
+python cli.py --host root@1.2.3.4 --key ~/.ssh/id_server
 
-# Zmienna srodowiskowa zamiast flagi (wygodne do codziennego uzycia)
-export VPS_HOST=root@serwer.example.com
+# Environment variable instead of a flag (handy for daily use)
+export VPS_HOST=root@server.example.com
 python cli.py
 ```
 
-W trakcie pracy agenta pod Twoja wiadomoscia pojawia sie szara linia na kazdy krok -- `✓ $ komenda` (albo opis,
-np. *czyta /etc/hosts*) i do 4 linii wyniku pod nia; przy kodzie wyjscia innym niz 0 dopisek *kod N*, przy zmianie
-wykonanej bez pytania -- *bez pytania*. W widoku prostym tych linii nie ma.
+While the agent works, a grey line appears under your message for every step -- `✓ $ command` (or a description,
+e.g. *reads /etc/hosts*) and up to 4 lines of output under it; an exit code other than 0 adds *exit N*, a change made
+without asking adds *without asking*. The simple view has no such lines.
 
-## Jesli masz juz wlasny tunel SSH
+## If you already have your own SSH tunnel
 
 ```bash
-# Recznie zestawiasz tunel w tle
-ssh -N -L 7379:127.0.0.1:7379 root@serwer.example.com &
+# Set up the tunnel in the background yourself
+ssh -N -L 7379:127.0.0.1:7379 root@server.example.com &
 
-# CLI z wylaczonym auto-tunnel
+# CLI with the automatic tunnel turned off
 python cli.py --no-tunnel --local-port 7379
 ```
 
-## Pipe w Kubernetesie
+## Pipe in Kubernetes
 
-Zamiast tunelu SSH CLI zestawia `kubectl port-forward svc/pipe` (potrzebny `kubectl` i dostep do klastra):
-
-```bash
-pipe --kube pipe                          # namespace, w ktorym dziala Pipe
-pipe --kube pipe --kube-context prod      # inny kontekst kubeconfig
-```
-
-## Interfejs w przegladarce (`pipe web`)
+Instead of an SSH tunnel the CLI sets up `kubectl port-forward svc/pipe` (needs `kubectl` and access to the cluster):
 
 ```bash
-pipe web                  # zestawia tunel jak zwykle i otwiera http://127.0.0.1:7400/?k=...
-pipe web --no-browser     # tylko wypisz adres
-pipe web --web-port 8080  # inny port (albo zmienna PIPE_WEB_PORT)
-pipe web --lang en
-pipe web --setup          # kreator od nowa: gdzie ma dzialac Pipe
+pipe --kube pipe                          # the namespace Pipe runs in
+pipe --kube pipe --kube-context prod      # another kubeconfig context
 ```
 
-Bez `--host` i bez zapisanego polaczenia `pipe web` zaczyna od kreatora: co chcesz robic (widok prosty albo
-techniczny) i gdzie ma dzialac Pipe -- na tym komputerze (Docker) albo na Twoim serwerze (adres i haslo albo klucz SSH;
-strona sama klonuje repozytorium i uruchamia instalator). Haslo zostaje na tym komputerze. Polaczenie trafia do
-`~/.pipe/app.json` i od tej pory `pipe web` oraz `pipe` bez `--host` lacza sie same. Opis: `docs/features.md`
-(Widoki).
-
-Ten sam proces co CLI: tunel SSH (albo `--kube`, `--no-tunnel`), a zamiast REPL-a -- lokalna strona. Token backendu
-zostaje w procesie `pipe web`; przegladarka dostaje tylko jednorazowy klucz w adresie. Strona dziala wylacznie na
-`127.0.0.1` i odrzuca zadania z obcym naglowkiem `Host` albo `Origin`.
-
-Na stronie: rozmowa i trzy zakladki panelu bocznego. *Pulpit* odpowiada bez modelu, czy wszystko dziala (pierscienie
-procesora, pamieci i dysku, skrzynka *Od Pipe* z przyciskami akcji, karty projektow z warsztatu, zuzycie modelu dzis),
-*Schemat* pokazuje serwer na zywo (trzy poziomy: serwery, wnetrze serwera, projekt compose; przycisk *Sledze agenta*),
-*Zmiany* -- roznice i cofanie. Skille uruchamiasz z listy `/`. Spinacz przy polu rozmowy (albo przeciagniecie pliku,
-albo wklejenie zrzutu ekranu) dolacza pliki do wiadomosci, a mikrofon nagrywa glosowke. Po wpisaniu `/` w polu rozmowy rozwija sie lista komend
-i skilli -- dzialaja te same komendy co ponizej. Przy pierwszym wejsciu strona pyta o providera LLM (klucz API
-i model), a przelacznik nad polem rozmowy pozwala skakac miedzy providerami, do ktorych jest klucz (`/provider`). W odroznieniu od REPL-a strona odbiera alerty i przypomnienia od razu. Szczegoly: `clients/webui/README.md`.
-
-## Most MCP (`--mcp`)
-
-`pipe --mcp --host root@serwer` zamienia CLI w serwer MCP (stdio) dla Claude Code, Cursora i innych agentow:
-narzedzia Pipe przez ten sam tunel SSH i token. Na stdout idzie tylko protokol MCP; tunel ma wlasny wolny port
-i nie pyta o haslo (`BatchMode` -- potrzebny klucz SSH).
-
-Gotowa konfiguracja dla konkretnej aplikacji -- do wklejenia, z instrukcja, gdzie:
+## Browser interface (`pipe web`)
 
 ```bash
-pipe connect claude --host root@serwer          # polecenie claude mcp add
-pipe connect claude-desktop --host root@serwer  # claude_desktop_config.json
-pipe connect cursor --host root@serwer          # ~/.cursor/mcp.json
-pipe connect codex --host root@serwer           # ~/.codex/config.toml
-pipe connect hermes --host root@serwer          # mcp_servers w config.yaml Hermes Agent
-pipe connect openclaw --host root@serwer        # openclaw mcp add
+pipe web                  # sets up the tunnel as usual and opens http://127.0.0.1:7400/?k=...
+pipe web --no-browser     # only print the address
+pipe web --web-port 8080  # another port (or the PIPE_WEB_PORT variable)
+pipe web --lang pl
+pipe web --setup          # the wizard again: where Pipe should run
 ```
 
-Te same opcje co zwykle CLI (`--ssh-port`, `--key`, `--kube`). Token trafia zawsze do zmiennej `AGENT_TOKEN`,
-nigdy do argumentow procesu; bez `--token` w miejscu tokenu jest `<TOKEN>` i podpowiedz, jak utworzyc osobny token
-dla tej aplikacji (`python3 -m backend.tokens add hermes --role admin`). Recznie, np. w Claude Code:
+Without `--host` and without a saved connection `pipe web` starts with a wizard: what you want to do (the simple or
+technical view) and where Pipe should run -- on this computer (Docker) or on your server (address and an SSH password
+or key; the page clones the repository and runs the installer itself). The password stays on this computer. The
+connection goes to `~/.pipe/app.json`, and from then on `pipe web` and `pipe` without `--host` connect on their own.
+Description: `docs/features.md` (Views).
+
+The same process as the CLI: an SSH tunnel (or `--kube`, `--no-tunnel`), and a local page instead of the REPL. The
+backend token stays in the `pipe web` process; the browser only gets a one-time key in the address. The page listens
+only on `127.0.0.1` and refuses requests with a foreign `Host` or `Origin` header.
+
+On the page: the conversation and three side-panel tabs. *Dashboard* answers without the model whether everything works
+(CPU, memory and disk rings, the *From Pipe* inbox with action buttons, workshop project cards, model usage today),
+*Map* shows the server live (three levels: servers, inside a server, a compose project; a *Follow the agent* button),
+*Changes* -- diffs and undo. Skills are run from the `/` list. The paperclip next to the message box (or dragging a file in, or pasting
+a screenshot) attaches files to the message, and the microphone records a voice message. Typing `/` in the message
+box opens the list of commands and skills, the same commands as below. On the first visit the page asks for an LLM
+provider (API key and model), and the switcher above the message box jumps between providers that have a key
+(`/provider`). Unlike the REPL, the page receives alerts and reminders immediately. Details: `clients/webui/README.md`.
+
+## MCP bridge (`--mcp`)
+
+`pipe --mcp --host root@server` turns the CLI into an MCP server (stdio) for Claude Code, Cursor and other agents:
+Pipe's tools through the same SSH tunnel and token. Only the MCP protocol goes to stdout; the tunnel takes its own free
+port and never asks for a password (`BatchMode`, so an SSH key is required).
+
+A ready configuration for a given app -- to paste, with where it goes:
+
+```bash
+pipe connect claude --host root@server          # the claude mcp add command
+pipe connect claude-desktop --host root@server  # claude_desktop_config.json
+pipe connect cursor --host root@server          # ~/.cursor/mcp.json
+pipe connect codex --host root@server           # ~/.codex/config.toml
+pipe connect hermes --host root@server          # mcp_servers in Hermes Agent's config.yaml
+pipe connect openclaw --host root@server        # openclaw mcp add
+```
+
+The same options as the regular CLI (`--ssh-port`, `--key`, `--kube`). The token always goes to the `AGENT_TOKEN`
+variable, never to the process arguments; without `--token` the token is `<TOKEN>` with a hint on creating a separate
+token for that app (`python3 -m backend.tokens add hermes --role admin`). By hand, for example in Claude Code:
 
 ```json
-{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@serwer"],
-                         "env": {"AGENT_TOKEN": "<token z python3 -m backend.tokens add claude-code>"}}}}
+{"mcpServers": {"pipe": {"command": "pipe", "args": ["--mcp", "--host", "root@server"],
+                         "env": {"AGENT_TOKEN": "<token from python3 -m backend.tokens add claude-code>"}}}}
 ```
 
-## Diagramy
+## Diagrams
 
-Diagram (np. `/mapa` albo *"narysuj architekture"*) CLI zapisuje jako PNG w `~/.pipe/diagrams/`
-(`PIPE_DIAGRAMS_DIR`) i pokazuje jego podglad ASCII, jesli miesci sie w terminalu. `--open` otwiera PNG
-w domyslnej przegladarce obrazow, `/mermaid` wypisuje kod ostatniego diagramu (np. do README).
+The CLI saves a diagram (for example `/map` or *"draw the architecture"*) as a PNG in `~/.pipe/diagrams/`
+(`PIPE_DIAGRAMS_DIR`) and shows an ASCII preview when it fits in the terminal. `--open` opens the PNG in the default
+image viewer, `/mermaid` prints the source of the last diagram (for example for a README).
 
-Postep workerow (`› web-1 $ uptime`) jest wypisywany na biezaco, zanim agent odpowie.
+Worker progress (`› web-1 $ uptime`) is printed live, before the agent answers.
 
-## Zmienne srodowiskowe
+## Environment variables
 
-| Zmienna | Opis | Domyslnie |
-|---------|------|-----------|
-| `VPS_HOST` | Adres serwera (`user@host`) | -- |
-| `AGENT_TOKEN` | Token autoryzacji backendu (rownowazny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN` | -- |
-| `VPS_SSH_PORT` | Port SSH | `22` |
-| `VPS_SSH_KEY` | Sciezka do klucza prywatnego | domyslny klucz |
-| `VPS_LOCAL_PORT` | Lokalny port tunelu; gdy jest zajety (drugie otwarte CLI, stary tunel), CLI bierze inny wolny | `7379` |
-| `VPS_REMOTE_SOCKET` | Socket na serwerze | `/tmp/vps-agent.sock` |
-| `PIPE_KUBE_NAMESPACE` | Jak `--kube` | -- |
-| `PIPE_KUBE_CONTEXT` | Jak `--kube-context` | biezacy kontekst |
-| `PIPE_DIAGRAMS_DIR` | Gdzie zapisywac diagramy | `~/.pipe/diagrams` |
-| `PIPE_LANG` | Jezyk CLI: `pl` albo `en` (rownowazne `--lang`) | `pl` |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VPS_HOST` | Server address (`user@host`) | -- |
+| `AGENT_TOKEN` | Backend authorization token (same as `--token`); needed only when the backend has `AGENT_TOKEN` set | -- |
+| `VPS_SSH_PORT` | SSH port | `22` |
+| `VPS_SSH_KEY` | Path to the private key | default key |
+| `VPS_LOCAL_PORT` | Local tunnel port; when it is taken (a second CLI, an old tunnel), the CLI picks another free one | `7379` |
+| `VPS_REMOTE_SOCKET` | Socket on the server | `/tmp/vps-agent.sock` |
+| `PIPE_KUBE_NAMESPACE` | Same as `--kube` | -- |
+| `PIPE_KUBE_CONTEXT` | Same as `--kube-context` | current context |
+| `PIPE_DIAGRAMS_DIR` | Where diagrams are saved | `~/.pipe/diagrams` |
+| `PIPE_LANG` | CLI language: `en` or `pl` (same as `--lang`) | the server's language, otherwise `en` |
 
-## Przykladowe komendy w CLI
+## Example requests in the CLI
 
 ```
-> ile mam wolnego miejsca na dysku?
-> pokaz ostatnie bledy nginx
-> zrestartuj docker compose
-> sprawdz czy port 80 jest otwarty
-> sprawdz uzycie RAM przez procesy
-> pokaz status repozytoriow git
-> wyswietl otwarte porty
-> pokaz architekture serwera
-> narysuj, jak zapytanie trafia do sklepu
-> gdzie lezy repozytorium bloga?
-> dodaj serwer 10.0.0.5 jako web-2 (ssh, root) i sprawdz na nim dysk
-> sprawdz aktualizacje na wszystkich serwerach
-> codziennie o 7 sprawdzaj backupy, pisz tylko jak cos jest nie tak
+> how much free disk space do I have?
+> show the latest nginx errors
+> restart docker compose
+> check whether port 80 is open
+> check RAM usage by process
+> show the status of the git repositories
+> list the open ports
+> show the server architecture
+> draw how a request reaches the shop
+> where is the blog repository?
+> add server 10.0.0.5 as web-2 (ssh, root) and check its disk
+> check for updates on all servers
+> every day at 7 check the backups, only write when something is wrong
 ```
 
-Wpisz `exit` lub nacisnij `Ctrl+C` aby wyjsc.
+Type `exit` or press `Ctrl+C` to quit.
 
-## Komendy
+## Commands
 
-Po wpisaniu `/` pod promptem pojawia sie lista komend i skilli z opisami; zaweza sie w trakcie pisania
-(pasuje nazwa polska, angielska i alias). `Tab` wstawia pierwsza pozycje, kolejne `Tab` / strzalki wybieraja
-nastepne, strzalka w gore przywoluje wczesniejsze wpisy. Wymaga `prompt_toolkit` (jest w `requirements.txt`) w tym samym
-Pythonie / venv, z ktorego startuje `pipe` -- CLI przy starcie podaje gotowe polecenie instalacji, gdy go brakuje;
-bez niego CLI dziala jak dotad, bez podpowiedzi.
+Typing `/` at the prompt shows the list of commands and skills with descriptions; it narrows as you type (the Polish
+name, the English name and aliases all match). `Tab` inserts the first item, further `Tab` / arrows pick the next ones,
+the up arrow recalls earlier input. This needs `prompt_toolkit` (it is in `requirements.txt`) in the same Python / venv
+that `pipe` starts from. When it is missing, the CLI prints the install command at startup and works as before,
+without suggestions.
 
-Kazda komenda ma angielski alias, ktory dziala w obu jezykach: `/report`, `/changes`, `/chart`, `/health`,
-`/audit`, `/news`, `/projects`, `/cleanup`, `/notifications`, `/map`, `/directory`, `/skills`, `/alerts`, `/incidents`, `/routines`, `/targets`, `/journal`, `/undo`, `/patch`,
-`/approvals`, `/cost`, `/history`, `/providers`, `/language`, `/help`. `pipe --lang en` przelacza komunikaty CLI na angielski
-tylko w tym uruchomieniu; `/jezyk en` (`/language pl`) zmienia jezyk calego Pipe -- instrukcje agenta, raporty,
-komunikaty -- bez restartu, takze w `pipe web` i na Telegramie. Wybor zostaje po restarcie i CLI przejmuje go
-przy polaczeniu (chyba ze podano `--lang`).
+Polish command names are canonical; the English names below work in both languages (`/raport` = `/report`).
+Without `--lang` the CLI and `pipe web` speak the server's language. `pipe --lang pl` switches the CLI messages to
+Polish for that run only; `/language pl` (`/jezyk en`) changes the language of all of Pipe (agent instructions,
+reports, messages) without a restart, also in `pipe web` and on Telegram. The choice survives a restart and the CLI
+adopts it on connect (unless `--lang` was given).
 
-| Komenda | Dzialanie |
+| Command | What it does |
 |---|---|
-| `/status` | Stan serwera od razu, bez AI: naglowek zwyklymi slowami, paski procesora, pamieci i dysku, nowe wiadomosci, projekty |
-| `/nowosci` | Skrzynka: co Pipe napisal sam, z akcjami -- wpisz numer i litere, np. `1a` (`/news`) |
-| `/projekty` | Projekty w warsztacie: stan i adres (`/projects`). Nowy projekt: napisz np. *"sklonuj https://github.com/... i uruchom"* |
-| `/web` | Pipe w przegladarce z telefonu i komputera pod adresem HTTPS: `/web wlacz [port] [domena]`, `/web wylacz`, `/web wpusc <kod>` (wpuszcza urzadzenie), `/web odwolaj <nr>`; bez argumentow stan i urzadzenia (`docs/features.md`) |
-| `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki i cache npm/pip; tylko administrator (`/cleanup`) |
-| `/powiadomienia [wszystko\|wazne\|krytyczne] [cisza 22-7\|cisza off] [dziennie 3]` | Kiedy Pipe ma powiadamiac; bez argumentow pokazuje obecne ustawienia (`/notifications`) |
-| `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe na serwerze; `sprawdz` tylko pokazuje wersje; po restarcie backendu CLI laczy sie ponownie samo (do 3 min), bez uruchamiania od nowa |
-| `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
-| `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
-| `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
-| `/zdrowie` | Certyfikaty TLS, odpowiedz stron, DNS i swiezosc backupow (bez podpowiedzi i bez `/pomoc` -- problemy pokazuje `/status`) |
-| `/audyt` | Ocena bezpieczenstwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
-| `/incydenty` | Pamiec incydentow: co sie zdarzalo, co ustalono, co pomoglo |
-| `/zgody` | Operacje zewnetrznych agentow (MCP) czekajace na zgode — z planem bezpiecznika |
-| `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Bez argumentow okno w ramce (strzalki, Enter, Esc): podlaczone serwery ze szczegolami i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub); klucze wpisuje sie tu ukrytym polem. Serwery dzialaja w izolowanym kontenerze. Zmiany tylko administrator |
-| `/dziennik` | Zatwierdzone zmiany z kopiami (co, kiedy, czy da sie cofnac) |
-| `/cofnij [id]` | Cofa ostatnia (albo wskazana) zmiane: podglad roznic i komend odwrotnych, potem pytanie TAK/NIE. Dziala bez LLM |
-| `/podatnosci` | Znane podatnosci w pakietach, obrazach kontenerow, na zdalnych serwerach i w aplikacjach, kazda z krotkim wyjasnieniem w jezyku Pipe |
-| `/zalataj [obrazy\|serwer\|aplikacje\|serwery\|<cel>]` | Lata od razu, bez dodatkowego pytania: pakiety tego serwera, zaleznosci aplikacji (podbite w plikach zaleznosci, projekt compose przebudowany), obrazy kontenerow z compose (nowszy obraz albo poprawki zainstalowane w obrazie) i zdalne serwery, potem sprzata stare obrazy i cache. Kroki widac na zywo, na koncu co zalatane, co bez zmian i dlaczego. Dziala bez LLM |
-| `/koszt` | Zuzycie tokenow LLM dzis i w ostatnich dniach (z kosztem, gdy ceny sa w `.env`) |
-| `/widok [prosty\|techniczny\|opis]` | Widok Pipe (`/view`), wspolny dla CLI, weba i Telegrama: prosty chowa komendy serwera w podpowiedziach i `/pomoc`, agent pisze zwyklymi slowami. Bez argumentu pokazuje obecny; opis zwyklymi slowami tez dziala. Przy pierwszym polaczeniu CLI pyta o niego samo. Tylko administrator |
-| `/jezyk [pl\|en]` | Jezyk Pipe: bez argumentu pokazuje obecny, z argumentem przelacza caly agent (wspolny dla CLI, weba i Telegrama; tylko administrator) |
-| `/providerzy [id [model]]` | Providerzy LLM (`/providers`): lista, potem wybor providera i modelu z listy, ktora zwraca provider (obecny zaznaczony, Enter go zostawia; fragment nazwy zaweza liste). Klucz API wpisywany bez echa. `/providerzy groq` -- od razu do modeli Groq, `/providerzy groq llama` -- model po fragmencie nazwy, `/providerzy model` -- tylko zmiana modelu obecnego providera, `/providerzy zapomnij <id>` -- usuwa klucz dodany z interfejsu. Wybor dotyczy calego agenta; zmiana tylko dla administratora |
-| `/plik <sciezka> [pytanie]` | Wyslij agentowi plik z tego komputera (log, konfiguracja, zrzut ekranu; do 10 MB). W zwyklej wiadomosci wystarczy `@sciezka`, np. `co tu nie gra? @nginx.conf`; Tab podpowiada sciezki. Alias: `/file` |
-| `/yolo [on\|off]` | Tryb YOLO: zmiany w tej rozmowie wykonuja sie bez pytania o TAK (bezpiecznik, dziennik i `/cofnij` dzialaja dalej, operacje zakazane sa nadal odrzucane). Domyslnie wylaczony, tylko administrator, zapominany przy restarcie backendu; prompt pokazuje wtedy czerwone `YOLO` |
-| `/mapa [tytul]` | Diagram infrastruktury (bez LLM) |
-| `/mermaid` | Kod Mermaid ostatniego diagramu |
-| `/server` | Pokazuje SERVER.md; gdy go nie ma -- agent bada serwer i tworzy plik |
-| `/server aktualizuj` | Agent bada serwer ponownie i aktualizuje SERVER.md i DIRECTORY |
-| `/katalogi` | Mapa repozytoriow i katalogow (DIRECTORY) |
-| `/skille` | Lista zapisanych skilli z ich komendami |
-| `/pobierz skill\|plugin <wlasciciel/repo\|URL> [filtr]` | Skille i pluginy z repozytorium git: podglad, potem pytanie TAK/NIE (`/download`); tylko administrator |
-| `/alerty` | Aktywne alerty czuwania (bez podpowiedzi i bez `/pomoc` -- nowe pokazuja sie same nad promptem i w `/nowosci`) |
-| `/rutyny` | Zadania wykonywane wedlug harmonogramu |
-| `/przypomnienia [anuluj <id>]` | Jednorazowe przypomnienia; CLI pokazuje je samo nad promptem (sprawdza co 10 s), takze wynik `/aktualizuj`; ustawione z CLI ida rowniez na Telegram i do `pipe web` |
-| `/cele` | Zdalne serwery, kontenery i klastry |
-| `/nowa` | Nowa rozmowa od czystej karty; notatki o serwerze, katalogi, skille, styl i alerty zostaja |
-| `/vibe` | Notatka o Twoim stylu rozmowy; `/vibe reset` czysci |
-| `/historia` | Ostatnie wpisy audit logu (bez podpowiedzi i bez `/pomoc` -- zmiany pokazuje `/dziennik`) |
-| `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazowkami |
-| `/pomoc` | Lista komend |
-| `/exit` | Wyjscie |
+| `/status` | Server status at once, without AI: a plain-words headline, CPU, memory and disk bars, new messages, projects |
+| `/news` | The inbox: what Pipe wrote by itself, with actions -- type the number and the letter, e.g. `1a` (`/nowosci`) |
+| `/projects` | Workshop projects: state and address (`/projekty`). A new project: write e.g. *"clone https://github.com/... and run it"* |
+| `/web` | Pipe in the browser on your phone and computer at an HTTPS address: `/web on [port] [domain]`, `/web off`, `/web approve <code>` (lets a device in), `/web revoke <no>`; without arguments the state and devices (`docs/features.md`) |
+| `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded packages and npm/pip caches; admins only (`/sprzataj`) |
+| `/notifications [all\|important\|critical] [quiet 22-7\|quiet off] [daily 3]` | When Pipe should notify you; without arguments shows the current settings (`/powiadomienia`) |
+| `/update [check]` | Update Pipe itself on the server; `check` only shows the versions; after the backend restarts the CLI reconnects by itself (up to 3 min), no need to start it again |
+| `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
+| `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
+| `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history (PNG in `~/.pipe/diagrams/`) |
+| `/health` | TLS certificates, site responses, DNS and backup freshness (not suggested or in `/help` -- `/status` shows problems) |
+| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
+| `/incidents` | Incident memory: what happened, what was found, what helped |
+| `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
+| `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Without arguments a framed window (arrows, Enter, Esc): connected servers with details and ready add-ons (Google, Outlook, Microsoft 365, GitHub); keys are entered here in a hidden field. Servers run in an isolated container. Changes admin only |
+| `/journal` | Approved changes with backups (what, when, whether it can be undone) |
+| `/undo [id]` | Undoes the last (or the given) change: a preview of the diff and inverse commands, then a YES/NO question. Works without the LLM |
+| `/vulns` | Known vulnerabilities in packages, container images, on remote servers and in applications, each with a short explanation in Pipe's language |
+| `/patch [images\|server\|apps\|servers\|<target>]` | Patches right away, without another question: this server's packages, application dependencies (bumped in the dependency files, the compose project rebuilt), container images from compose (a newer image or the fixes installed inside the image) and remote servers, then cleans up old images and caches. The steps show live, at the end what was patched, what stayed unchanged and why. Works without the LLM |
+| `/cost` | LLM token usage today and over the last days (with cost when prices are in `.env`) |
+| `/view [simple\|technical\|description]` | Pipe's view (`/widok`), shared by the CLI, web and Telegram: simple hides server commands from suggestions and `/help`, and the agent writes in plain words. Without an argument shows the current one; a plain-words description works too. On the first connection the CLI asks for it on its own. Admin only |
+| `/language [pl\|en]` | Pipe's language: without an argument shows the current one, with an argument switches the whole agent (shared by the CLI, web and Telegram; admin only) |
+| `/providers [id [model]]` | LLM providers: a list, then picking a provider and a model from the list the provider returns (current one preselected, Enter keeps it; a name fragment narrows the list). The API key is typed without echo. `/providers groq` goes straight to Groq's models, `/providers groq llama` picks a model by name fragment, `/providers model` only changes the model of the current provider, `/providers forget <id>` removes a key added from the interface. The choice applies to the whole agent; changing it is admin only |
+| `/file <path> [question]` | Send the agent a file from this computer (a log, a config, a screenshot; up to 10 MB). In a normal message `@path` is enough, for example `what's wrong here? @nginx.conf`; Tab completes paths |
+| `/yolo [on\|off]` | YOLO mode: changes in this conversation run without asking for YES (the safety fuse, the journal and `/undo` still work, forbidden operations are still refused). Off by default, admin only, forgotten when the backend restarts; the prompt then shows a red `YOLO` |
+| `/map [title]` | Infrastructure diagram (no LLM) |
+| `/mermaid` | Mermaid source of the last diagram |
+| `/server` | Shows SERVER.md; when there is none, the agent explores the server and creates it |
+| `/server update` | The agent explores the server again and updates SERVER.md and DIRECTORY |
+| `/directory` | Map of repositories and directories (DIRECTORY) |
+| `/skills` | List of saved skills with their commands |
+| `/download skill\|plugin <owner/repo\|URL> [filter]` | Skills and plugins from a git repository: a preview, then a YES/NO question (`/pobierz`); admin only |
+| `/alerts` | Active watcher alerts (not suggested or in `/help` -- new ones show up by themselves above the prompt and in `/news`) |
+| `/routines` | Tasks run on a schedule |
+| `/reminders [cancel <id>]` | One-off reminders; the CLI prints them above the prompt by itself (it checks every 10 s), including the result of `/update`; those set from the CLI also go to Telegram and `pipe web` |
+| `/targets` | Remote servers, containers and clusters |
+| `/new` | New conversation from a clean slate; the server notes, directories, skills, style and alerts stay |
+| `/vibe` | Note about your conversation style; `/vibe reset` clears it |
+| `/history` | Latest audit-log entries (not suggested or in `/help` -- `/journal` shows changes) |
+| `/<skill>` | Runs a skill, for example `/renew_certificate` or `/renew-certificate`, optionally with hints |
+| `/help` | Command list |
+| `/exit` | Quit |
 
-Tekst zaczynajacy sie od `/`, ktory nie jest komenda (np. `/var/log jest pelny?`), trafia do agenta jak zwykla wiadomosc.
+Text starting with `/` that is not a command (for example `/var/log is full?`) goes to the agent as a normal message.
 
-## Uruchomienie bezposrednio na serwerze
+## Running directly on the server
 
-Po zalogowaniu przez SSH na serwer mozesz rozmawiac z agentem bez tunelu -- backend wystawia port `7379`
-na `127.0.0.1` serwera:
+Once logged in to the server over SSH you can talk to the agent without a tunnel, because the backend publishes port
+`7379` on the server's `127.0.0.1`:
 
 ```bash
-pip install -r clients/cli/requirements.txt   # jednorazowo
-python3 clients/cli/cli.py --no-tunnel        # + --token ..., jesli ustawiles AGENT_TOKEN
+pip install -r clients/cli/requirements.txt   # once
+python3 clients/cli/cli.py --no-tunnel        # + --token ... if you set AGENT_TOKEN
 ```
 
-`install.sh` buduje skrot z tunelem SSH, wiec na samym serwerze wygodniej dodac alias recznie, np.
-`alias pipe='python3 ~/Pipe/clients/cli/cli.py --no-tunnel'`. Pamiec agenta (SERVER.md, skille) jest wspolna
-dla wszystkich klientow -- to, co agent zapisze w Telegramie, widac w terminalu i odwrotnie. Wyjatkiem jest
-VIBE: notatka o stylu jest osobna dla kazdego uzytkownika (`cli:<login>`, `telegram:<id>`).
+`install.sh` builds a shortcut with an SSH tunnel, so on the server itself it is easier to add an alias by hand, for
+example `alias pipe='python3 ~/Pipe/clients/cli/cli.py --no-tunnel'`. The agent's memory (SERVER.md, skills) is shared
+by all clients: what the agent saves on Telegram shows up in the terminal and the other way round. The exception is
+VIBE: the style note is separate for each user (`cli:<login>`, `telegram:<id>`).

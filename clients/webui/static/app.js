@@ -1921,7 +1921,9 @@
     vv.addEventListener("scroll", fitViewport);
     fitViewport();
   }
-  $("lang").addEventListener("click", () => setLanguage(window.PipeI18n.lang === "en" ? "pl" : "en"));
+  for (const button of $("lang").querySelectorAll("button[data-lang]")) {
+    button.addEventListener("click", () => { if (button.dataset.lang !== window.PipeI18n.lang) setLanguage(button.dataset.lang); });
+  }
   // Nowa rozmowa = nowa sesja (YOLO zostaje w starej); stara znika z backendu od razu, zamiast czekac
   // SESSION_KEEP_DAYS. Wiedza o serwerze zostaje — prompt sklada sie z pamieci przy kazdym zapytaniu.
   function newChat() {
@@ -1944,7 +1946,8 @@
   $("home-loading").textContent = t("loadingHome");
   $("theme").title = t("theme");
   moreBtn.title = t("more"); moreBtn.setAttribute("aria-label", t("more"));
-  $("lang").textContent = window.PipeI18n.lang.toUpperCase(); $("lang").title = t("language");
+  $("lang").setAttribute("aria-label", t("language"));
+  for (const button of $("lang").querySelectorAll("button[data-lang]")) button.setAttribute("aria-pressed", String(button.dataset.lang === window.PipeI18n.lang));
   $("follow-label").textContent = t("follow"); $("fit").title = t("fit"); $("refresh").title = t("refresh");
   $("stage-hide").title = t("hidePanel"); $("stage-hide").setAttribute("aria-label", t("hidePanel"));
   $("stage-toggle").setAttribute("aria-label", t("showPanel") + " / " + t("hidePanel"));

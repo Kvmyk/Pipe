@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.core.i18n import tr
+from backend.core.i18n import lang, tr
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024    # jak limit zalacznika; ~5 min WAV 16 kHz albo godzina Opusa
 
@@ -53,7 +53,7 @@ class TranscriptionError(RuntimeError):
 
 def resolve(env: dict[str, str], llm) -> SttConfig | None:
     """Konfiguracja STT z .env albo z providera LLM (openai/groq). None — brak transkrypcji."""
-    language = env.get("STT_LANGUAGE", "pl").strip()
+    language = env.get("STT_LANGUAGE", "").strip() or lang()
     base = env.get("STT_BASE_URL", "").strip()
     if base:
         model = env.get("STT_MODEL", "").strip() or "whisper-1"

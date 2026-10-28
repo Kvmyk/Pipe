@@ -1,3 +1,3 @@
 # CLI -- Pipe
 
-Dokumentacja CLI znajduje sie w [docs/cli.md](../../docs/cli.md).
+The CLI documentation is in [docs/cli.md](../../docs/cli.md) (Polish: [docs/pl/cli.md](../../docs/pl/cli.md)).

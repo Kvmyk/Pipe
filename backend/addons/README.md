@@ -1,22 +1,23 @@
-# Katalog dodatkow MCP
+# MCP add-on catalog
 
-Gotowe integracje, ktore uzytkownik wlacza jednym kliknieciem (`/mcp` w CLI, `pipe web` i na Telegramie). Nic
-nie jest wlaczone z gory. Jeden plik JSON = jeden dodatek; nazwa pliku = `name`.
+Ready integrations the user turns on with one click (`/mcp` in the CLI, `pipe web` and on Telegram). Nothing is on by
+default. One JSON file = one add-on; the file name = `name`.
 
-Dodajesz nowy? Skopiuj `github.json` i zmien:
+Adding a new one? Copy `github.json` and change:
 
-- `name` -- male litery, cyfry, `-`, `_` (do 24 znakow); tak bedzie sie nazywal serwer i grupa narzedzi `mcp:<name>`.
-- `title`, `description` -- po polsku i angielsku, zwyklymi slowami: co uzytkownik z tym zrobi.
-- `server` -- to samo, co przyjmuje `/mcp dodaj`: `command` `npx`/`uvx` z argumentami, `image` (obraz Dockera)
-  albo `url` (serwer HTTP). Przypnij wersje paczki (`paczka@1.2.3`). Serwer dziala w izolowanym kontenerze: bez
-  plikow serwera, bez docker.sock, jako uzytkownik nobody.
-- `env` -- sekrety tylko jako `${MCP_NAZWA}`; kazdy taki sekret opisz w `secrets` (etykieta, jak go zdobyc, link).
-  Uzytkownik wpisuje go w oknie `/mcp` w `pipe web` albo w CLI, nigdy w rozmowie z modelem.
-- `state: true` -- serwer dostaje wlasny wolumen `/state` (np. tokeny po logowaniu kodem urzadzenia). Usuniecie
-  dodatku usuwa tez wolumen.
-- `autoApprove` -- tylko narzedzia, ktore niczego nie zmieniaja (logowanie, stan logowania). Reszta pyta o zgode,
-  chyba ze serwer sam oznaczy narzedzie jako odczyt (`readOnlyHint`).
-- `login` -- opcjonalnie: co zrobic po dodaniu (np. "napisz: zaloguj mnie do ...").
-- `category` -- `dev`, `office` albo `other` (kolejnosc na liscie).
+- `name`: lowercase letters, digits, `-`, `_` (up to 24 characters); this becomes the server name and the tool group
+  `mcp:<name>`.
+- `title`, `description`: in English and Polish, in plain words: what the user will do with it.
+- `server`: the same as `/mcp add` takes: `command` `npx`/`uvx` with arguments, `image` (a Docker image) or `url`
+  (an HTTP server). Pin the package version (`package@1.2.3`). The server runs in an isolated container: no server
+  files, no docker.sock, as the nobody user.
+- `env`: secrets only as `${MCP_NAME}`; describe every such secret in `secrets` (label, how to get it, a link). The
+  user types it in the `/mcp` window in `pipe web` or in the CLI, never in the chat with the model.
+- `state: true`: the server gets its own `/state` volume (e.g. tokens after a device-code login). Removing the add-on
+  removes the volume too.
+- `autoApprove`: only tools that change nothing (logging in, login state). The rest asks for approval, unless the
+  server itself marks the tool as read-only (`readOnlyHint`).
+- `login`: optional: what to do after adding (e.g. "write: log me in to ...").
+- `category`: `dev`, `office` or `other` (order in the list).
 
-`backend/tests/test_addons.py` sprawdza kazdy plik ta sama walidacja co `/mcp dodaj`.
+`backend/tests/test_addons.py` checks every file with the same validation as `/mcp add`.

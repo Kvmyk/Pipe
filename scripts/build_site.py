@@ -1,7 +1,8 @@
 """
 Sklada strone projektu (GitHub Pages) do jednego katalogu: site/ + logo i nagrania z docs/assets
-+ kroje IBM Plex z pipe web + dokumentacja z docs/*.md (polska, /docs/) i docs/en/*.md (angielska,
-/en/docs/). Uzywa go workflow .github/workflows/pages.yml i podglad lokalny:
++ kroje IBM Plex z pipe web + dokumentacja z docs/*.md (angielska, /docs/) i docs/pl/*.md (polska,
+/pl/docs/). Angielski jest podstawowy (/), polski to dodatek (/pl/); stare adresy /en/... przekierowuja na
+nowe. Uzywa go workflow .github/workflows/pages.yml i podglad lokalny:
 
     python scripts/build_site.py              # -> _site/
     python -m http.server -d _site 8000       # http://localhost:8000
@@ -31,7 +32,7 @@ REPO = "https://github.com/Kvmyk/pipe"
 SITE = "https://kvmyk.github.io/Pipe"
 
 # Strony dokumentacji w kolejnosci menu: (plik bez .md, tytul w menu pl, en, opis pl, en).
-# Kazdy plik musi istniec w docs/ i w docs/en/ -- inaczej budowanie konczy sie bledem.
+# Kazdy plik musi istniec w docs/ i w docs/pl/ -- inaczej budowanie konczy sie bledem.
 DOCS: list[tuple[str, str, str, str, str]] = [
     ("quickstart", "Szybki start", "Quick start",
      "Instalacja na serwerze i na komputerze, pierwsza rozmowa, typowe problemy.",
@@ -60,9 +61,35 @@ DOCS: list[tuple[str, str, str, str, str]] = [
 ]
 
 LANGS = {
-    "pl": {"src": ROOT / "docs", "out": "docs", "home": "../", "other": "../en/docs/"},
-    "en": {"src": ROOT / "docs" / "en", "out": "en/docs", "home": "../", "other": "../../docs/"},
+    "en": {"src": ROOT / "docs", "out": "docs", "root": "../", "other": "../pl/docs/"},
+    "pl": {"src": ROOT / "docs" / "pl", "out": "pl/docs", "root": "../../", "other": "../../docs/"},
 }
+
+# Flagi w przelaczniku jezyka (SVG, bo emoji flag nie rysuje sie na Windowsie); te same co w pipe web.
+FLAGS = {
+    "en": ('<svg class="flag" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true">'
+           '<rect width="60" height="40" fill="#012169"/>'
+           '<path d="M0 0L60 40M60 0L0 40" stroke="#fff" stroke-width="8"/>'
+           '<path d="M0 0L60 40M60 0L0 40" stroke="#c8102e" stroke-width="3"/>'
+           '<path d="M30 0v40M0 20h60" stroke="#fff" stroke-width="12"/>'
+           '<path d="M30 0v40M0 20h60" stroke="#c8102e" stroke-width="7"/></svg>'),
+    "pl": ('<svg class="flag" viewBox="0 0 16 10" preserveAspectRatio="none" aria-hidden="true">'
+           '<rect width="16" height="10" fill="#fff"/><rect y="5" width="16" height="5" fill="#dc143c"/></svg>'),
+}
+NAMES = {"en": "English", "pl": "Polski"}
+
+
+def lang_switch(current: str, other_href: str) -> str:
+    """EN | PL z flagami: biezacy jezyk zaznaczony, drugi jest linkiem do tej samej strony."""
+    items = []
+    for code in ("en", "pl"):
+        inner = f"{FLAGS[code]}{code.upper()}"
+        if code == current:
+            items.append(f'<span aria-current="true" title="{NAMES[code]}">{inner}</span>')
+        else:
+            items.append(f'<a href="{other_href}" hreflang="{code}" lang="{code}" title="{NAMES[code]}">{inner}</a>')
+    return f'<span class="lang-pick">{"".join(items)}</span>'
+
 
 T = {
     "pl": {"docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
@@ -71,14 +98,14 @@ T = {
            "index_lead": "Wszystko o instalacji, codziennej pracy z Pipe i o tym, jak działa w środku. "
                          "Strony powstają z plików w katalogu docs/ repozytorium, więc opisują aktualną wersję.",
            "index_title": "Dokumentacja Pipe", "start": "Zacznij od szybkiego startu",
-           "changelog_note": "Historia zmian jest na GitHubie (po polsku)."},
+           "changelog_note": "Historia zmian jest na GitHubie (od v0.49 po angielsku)."},
     "en": {"docs": "Docs", "on_page": "On this page", "all": "All pages",
            "edit": "Edit this page on GitHub", "changelog": "Changelog", "issues": "Report a bug",
            "source": "Source on GitHub", "license": "MIT license", "install": "Installation",
            "index_lead": "Everything about installing Pipe, working with it day to day and how it works inside. "
                          "The pages are built from the docs/ directory of the repository, so they describe the current version.",
            "index_title": "Pipe documentation", "start": "Start with the quick start",
-           "changelog_note": "The changelog is on GitHub (in Polish)."},
+           "changelog_note": "The changelog is on GitHub (entries before v0.49 are in Polish)."},
 }
 
 COPYABLE = {"bash", "sh", "shell", "powershell", "ps1", "console"}
@@ -306,7 +333,7 @@ def _render_list(lines: list[str], i: int, link) -> tuple[str, int]:
 
 
 def doc_link(lang: str, doc_file: str):
-    """Przepisuje adres z pliku docs[/en]/X.md: inna strona dokumentacji -> X.html, plik repo -> GitHub."""
+    """Przepisuje adres z pliku docs[/pl]/X.md: inna strona dokumentacji -> X.html, plik repo -> GitHub."""
     src_dir = posixpath.dirname(doc_file)
     names = {d[0] for d in DOCS}
 
@@ -315,10 +342,10 @@ def doc_link(lang: str, doc_file: str):
             return url
         path, _, anchor = url.partition("#")
         target = posixpath.normpath(posixpath.join(src_dir, path))
-        for base in ("docs/en", "docs"):
+        for base in ("docs/pl", "docs"):
             if posixpath.dirname(target) == base and target.endswith(".md"):
                 name = posixpath.basename(target)[:-3]
-                if name in names and (base == "docs/en") == (lang == "en"):
+                if name in names and (base == "docs/pl") == (lang == "pl"):
                     return f"{name}.html" + (f"#{anchor}" if anchor else "")
         kind = "blob" if posixpath.splitext(target)[1] else "tree"
         return f"{REPO}/{kind}/main/{target}" + (f"#{anchor}" if anchor else "")
@@ -330,8 +357,8 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
          headings: list[tuple[str, str]], version: str, edit: str | None) -> str:
     t = T[lang]
     conf = LANGS[lang]
-    root = "../" if lang == "pl" else "../../"
-    other = "en" if lang == "pl" else "pl"
+    root = conf["root"]
+    other = "pl" if lang == "en" else "en"
     other_href = conf["other"] + (f"{current}.html" if current != "index" else "")
     nav_items = []
     for name, pl, en, _, _ in DOCS:
@@ -366,15 +393,15 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="{conf["home"]}">
+    <a class="brand" href="../">
       <img src="{root}assets/logo.svg" width="24" height="24" alt="">
       Pipe
     </a>
     <nav>
-      <a class="hide-sm" href="{conf["home"]}{install}">{t["install"]}</a>
+      <a class="hide-sm" href="../{install}">{t["install"]}</a>
       <a href="./"{' aria-current="page"' if current == "index" else ""}>{t["docs"]}</a>
       <a href="{REPO}">GitHub</a>
-      <a class="lang" href="{other_href}" hreflang="{other}" lang="{other}">{other.upper()}</a>
+      {lang_switch(lang, other_href)}
     </nav>
   </div>
 </header>
@@ -443,6 +470,21 @@ def build_docs(out: Path, version: str) -> list[Path]:
     return written
 
 
+def redirect(to: str) -> str:
+    """Strona pod starym adresem (do v0.48 angielska wersja byla pod /en/) -- od razu przenosi pod nowy."""
+    return (f'<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Pipe</title>\n'
+            f'<meta http-equiv="refresh" content="0; url={to}">\n<link rel="canonical" href="{to}">\n</head>\n'
+            f'<body><p><a href="{to}">{to}</a></p></body>\n</html>\n')
+
+
+def build_redirects(out: Path) -> None:
+    (out / "en" / "docs").mkdir(parents=True, exist_ok=True)
+    (out / "en" / "index.html").write_text(redirect("../"), encoding="utf-8")
+    (out / "en" / "docs" / "index.html").write_text(redirect("../../docs/"), encoding="utf-8")
+    for name, *_ in DOCS:
+        (out / "en" / "docs" / f"{name}.html").write_text(redirect(f"../../docs/{name}.html"), encoding="utf-8")
+
+
 def build(out: Path) -> None:
     if out.exists():
         shutil.rmtree(out)
@@ -455,6 +497,7 @@ def build(out: Path) -> None:
         shutil.copy2(font, assets / "fonts" / font.name)
     shutil.copy2(FONTS / "OFL.txt", assets / "fonts" / "OFL.txt")
     build_docs(out, (ROOT / "VERSION").read_text(encoding="utf-8").strip())
+    build_redirects(out)
     (out / ".nojekyll").write_text("", encoding="utf-8")       # pliki serwowane jak sa, bez Jekylla
 
 

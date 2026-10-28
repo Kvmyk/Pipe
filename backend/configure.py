@@ -448,11 +448,11 @@ def save_without_llm(current: dict[str, str], language: str) -> int:
 
 def choose_language(current: dict[str, str]) -> str:
     """Pyta o jezyk Pipe (PIPE_LANG) i od razu przelacza na niego kreator."""
-    existing = (os.environ.get("PIPE_LANG") or current.get("PIPE_LANG") or "pl").strip().lower()
-    default = "2" if existing.startswith("en") else "1"
-    print("Jezyk / Language:\n  1) polski\n  2) English")
-    answer = ask("Numer / Number", default).lower()
-    language = "en" if answer in ("2", "en", "english") else "pl"
+    existing = (os.environ.get("PIPE_LANG") or current.get("PIPE_LANG") or "en").strip().lower()
+    default = "2" if existing.startswith("pl") else "1"
+    print("Language / Jezyk:\n  1) English\n  2) polski")
+    answer = ask("Number / Numer", default).lower()
+    language = "pl" if answer in ("2", "pl", "polski", "polish") else "en"
     os.environ["PIPE_LANG"] = language
     return language
 

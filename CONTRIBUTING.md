@@ -31,9 +31,10 @@ scripts and runs the sandbox self-test.
 Before you change something, read `CLAUDE.md`: it describes the architecture, the handler contract, the security
 model and the rules for user-visible text. The short version:
 
-- Every user- or model-visible string exists in Polish and English: `tr("polski", "english")` next to its use.
-  Prompts and tool descriptions are whole-file translations (`prompts.py` / `prompts_en.py`, `tools.py` /
-  `tools_en.py`). A change to `docs/*.md` needs the same change in `docs/en/`.
+- Every user- or model-visible string exists in English (the default) and Polish: `tr("polski", "english")` next
+  to its use. Prompts and tool descriptions are whole-file translations (`prompts.py` / `prompts_en.py`, `tools.py` /
+  `tools_en.py`). A change to `docs/*.md` (English) needs the same change in `docs/pl/`, and `README.md` in
+  `README.pl.md`.
 - Protocol tags (`[POTWIERDZ]`, `[BLAD]`, `[ODMOWA]`, ...) never change with the language.
 - A new tool is three edits: a schema in `core/tools.py`, a `handle_<name>` async generator in `core/handlers/`, and
   its export in `core/handlers/__init__.py`.

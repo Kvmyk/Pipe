@@ -98,7 +98,7 @@ def free_port(preferred: int) -> int:
 
 
 class WebBridge:
-    def __init__(self, backend_host: str | None, backend_port: int, token: str, *, lang: str = "pl",
+    def __init__(self, backend_host: str | None, backend_port: int, token: str, *, lang: str = "en",
                  server_label: str = "", port: int = DEFAULT_PORT, setup=None, public=None) -> None:
         # setup: obiekt z state(lang) -> dict i run(request, progress, lang) -> (host, port, token, etykieta);
         # dostarcza go CLI (`pipe web`). Bez niego strona nie stawia Pipe, tylko z nim rozmawia.
@@ -111,7 +111,7 @@ class WebBridge:
         self.backend_host = backend_host
         self.backend_port = backend_port
         self.token = token
-        self.lang = "en" if lang.startswith("en") else "pl"
+        self.lang = "pl" if lang.startswith("pl") else "en"
         self.server_label = server_label
         self.port = port
         self.key = secrets.token_urlsafe(24)
@@ -588,7 +588,7 @@ class WebBridge:
             await server.serve_forever()
 
 
-def run(backend_host: str | None, backend_port: int, token: str, *, lang: str = "pl", server_label: str = "",
+def run(backend_host: str | None, backend_port: int, token: str, *, lang: str = "en", server_label: str = "",
         port: int = DEFAULT_PORT, open_browser: bool = True, ready=None, setup=None) -> None:
     bridge = WebBridge(backend_host, backend_port, token, lang=lang, server_label=server_label, port=free_port(port),
                        setup=setup)

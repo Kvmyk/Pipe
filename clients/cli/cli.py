@@ -44,14 +44,14 @@ import appsetup          # clients/cli/appsetup.py — pierwsze uruchomienie `pi
 
 
 def _initial_lang() -> str:
-    """Jezyk CLI: --lang pl|en (ma pierwszenstwo) albo zmienna PIPE_LANG; domyslnie polski."""
-    value = os.getenv("PIPE_LANG", "pl")
+    """Jezyk CLI: --lang en|pl (ma pierwszenstwo) albo zmienna PIPE_LANG; domyslnie angielski."""
+    value = os.getenv("PIPE_LANG", "en")
     for index, arg in enumerate(sys.argv):
         if arg == "--lang" and index + 1 < len(sys.argv):
             value = sys.argv[index + 1]
         elif arg.startswith("--lang="):
             value = arg.split("=", 1)[1]
-    return "en" if value.strip().lower().startswith("en") else "pl"
+    return "pl" if value.strip().lower().startswith("pl") else "en"
 
 
 LANG: str = _initial_lang()
@@ -513,8 +513,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.48.2[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.48.2[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.49.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.49.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()
@@ -1432,18 +1432,21 @@ async def _providers_command(args: str, client: "RemoteClient") -> None:
 def _set_lang(value: str) -> None:
     """Przelacza jezyk CLI w trakcie pracy — `tr()` czyta LANG przy kazdym wywolaniu."""
     global LANG
-    LANG = "en" if str(value).strip().lower().startswith("en") else "pl"
+    LANG = "pl" if str(value).strip().lower().startswith("pl") else "en"
 
 
 async def _sync_language(client: "RemoteClient") -> None:
-    """Po polaczeniu: jezyk wybrany na serwerze komenda /jezyk obowiazuje tez tutaj (chyba ze podano --lang)."""
+    """
+    Po polaczeniu: jezyk serwera obowiazuje tez tutaj, gdy wybrano go komenda /jezyk albo gdy na tym komputerze
+    nie ustawiono zadnego (PIPE_LANG) — serwer po polsku daje polskie CLI bez --lang pl. --lang zawsze wygrywa.
+    """
     if LANG_FORCED:
         return
     try:
         data = _response_data(await client.send_command("language"))
     except Exception:
         return          # starszy backend nie zna tej komendy
-    if data.get("chosen") and data.get("lang"):
+    if data.get("lang") and (data.get("chosen") or not os.getenv("PIPE_LANG", "").strip()):
         _set_lang(data["lang"])
 
 
@@ -1970,12 +1973,12 @@ class AppSetup:
     def __init__(self) -> None:
         self.tunnel: SSHTunnel | None = None
 
-    def state(self, lang: str = "pl") -> dict:
+    def state(self, lang: str = "en") -> dict:
         saved = appsetup.saved_connection()
         return {"local": appsetup.local_problem(lang), "paramiko": appsetup.has_paramiko(),
                 "saved": appsetup.label(saved, lang) if saved else ""}
 
-    def run(self, request: dict, progress, lang: str = "pl") -> tuple[str, int, str, str]:
+    def run(self, request: dict, progress, lang: str = "en") -> tuple[str, int, str, str]:
         if request.get("kind") == "local":
             conn = appsetup.start_local(progress, lang)
         else:
@@ -1984,7 +1987,7 @@ class AppSetup:
         appsetup.remember(conn)
         return target
 
-    def open(self, conn: dict, progress=None, lang: str = "pl") -> tuple[str, int, str, str]:
+    def open(self, conn: dict, progress=None, lang: str = "en") -> tuple[str, int, str, str]:
         """(host, port, token, etykieta) dzialajacego backendu; lokalny w razie potrzeby uruchamia, do serwera tunel."""
         progress = progress or (lambda line: None)
         if conn.get("kind") == "local":
@@ -2379,9 +2382,9 @@ Examples:
     parser.add_argument("--no-browser", action="store_true",
                         help=tr("pipe web: nie otwieraj przeglądarki, tylko wypisz adres",
                                 "pipe web: do not open the browser, just print the address"))
-    parser.add_argument("--lang", choices=("pl", "en"), default=LANG,
-                        help=tr("Język interfejsu CLI (domyślnie z PIPE_LANG, inaczej pl).",
-                                "CLI language (defaults to PIPE_LANG, otherwise pl)."))
+    parser.add_argument("--lang", choices=("en", "pl"), default=LANG,
+                        help=tr("Język interfejsu CLI (domyślnie z PIPE_LANG, inaczej en).",
+                                "CLI language (defaults to PIPE_LANG, otherwise en)."))
 
     # ─── SSH ───────────────────────────────────────────────────────────────
     ssh_group = parser.add_argument_group(tr("Połączenie SSH (domyślne)", "SSH connection (default)"))

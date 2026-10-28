@@ -1,4 +1,4 @@
-name: Wydanie
+name: Release
 
 # Tag vX.Y.Z (wypychany przez /ship) -> obrazy w GHCR (amd64 + arm64, podpisane cosign bez kluczy)
 # + GitHub Release z sekcja changelogu. Instalator i compose pobieraja obraz o tagu z pliku VERSION.
