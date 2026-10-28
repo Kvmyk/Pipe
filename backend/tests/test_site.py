@@ -89,3 +89,17 @@ def test_release_notes_take_the_version_section_from_the_changelog():
     assert "ghcr.io/kvmyk/pipe:1.2.0" in text and "cosign verify" in text and "Kvmyk/Pipe/" in text
     current = (ROOT / "VERSION").read_text().strip()
     assert notes.section((ROOT / "docs" / "changelog.md").read_text(encoding="utf-8"), current)   # /ship pisze sekcje
+
+
+def test_one_logo_everywhere():
+    # Jedno logo (kafelek z P): README, strona, dokumentacja, pipe web, parowanie /web i ikona karty czytaja ten sam plik
+    logo = (ROOT / "docs" / "assets" / "logo.svg").read_bytes()
+    assert (ROOT / "clients" / "webui" / "static" / "icon.svg").read_bytes() == logo
+    for path, ref in [("clients/webui/static/index.html", 'src="/static/icon.svg"'),
+                      ("clients/webui/static/pair.html", 'src="/static/icon.svg"'),
+                      ("site/index.html", 'src="assets/logo.svg"'), ("site/en/index.html", 'src="../assets/logo.svg"'),
+                      ("scripts/build_site.py", 'src="{root}assets/logo.svg"'), ("README.md", 'src="docs/assets/logo.svg"'),
+                      ("README.en.md", 'src="docs/assets/logo.svg"')]:
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert ref in text, path
+        assert 'fill-rule="evenodd"' not in text, f"{path}: wlasna kopia litery P zamiast pliku logo"

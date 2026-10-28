@@ -109,7 +109,7 @@ button { cursor: pointer; border: 0; background: none; }
   background: var(--panel); border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; color: var(--ink); }
-.brand svg { color: var(--ink); }
+.brand img { display: block; flex: none; }
 .server-pill {
   min-width: 0; display: inline-flex; align-items: center; gap: 7px; padding: 0 0 0 10px; height: 24px; color: var(--ink-2); font: 13px var(--mono);
   max-width: 44vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--line);
@@ -164,7 +164,7 @@ button { cursor: pointer; border: 0; background: none; }
 .cstep .more-out { grid-column: 2; justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--accent-ink);
   font: 12px var(--sans); cursor: pointer; }
 .welcome { margin: auto 0; padding: 24px 8px; color: var(--ink-2); max-width: 440px; }
-.welcome .logo { width: 28px; height: 28px; color: var(--ink); margin-bottom: 14px; display: block; }
+.welcome .logo { width: 40px; height: 40px; margin-bottom: 14px; display: block; }
 .welcome h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: -.015em; color: var(--ink); }
 .welcome p { margin: 0; }
 
@@ -986,7 +986,7 @@ body.setup-mode #view-btn { visibility: hidden; }
 body.pair-page { overflow-y: auto; display: block; min-height: 100%; }
 .pair { max-width: 420px; margin: 0 auto; padding: max(48px, 12vh) 20px 32px; display: flex; flex-direction: column; gap: 14px; }
 .pair-brand { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font: 13px var(--mono); overflow-wrap: anywhere; }
-.pair-brand svg { color: var(--ink); flex: none; }
+.pair-brand img { display: block; flex: none; }
 .pair h1 { margin: 10px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
 .pair-lead { margin: 0; color: var(--ink-2); font-size: 15px; }
 .pair-code { margin: 6px 0; padding: 18px 12px; text-align: center; border: 1px solid var(--line-strong); border-radius: var(--radius);

@@ -1,5 +1,15 @@
 # Historia zmian -- Pipe
 
+## v0.48.2 (2026-10-28)
+
+### Jedno logo wszedzie
+
+- `pipe web` (gorny pasek i ekran powitalny), strona parowania `/web`, strona projektu i dokumentacja pokazuja to samo
+  logo co README, ikona karty i ikona na ekranie glownym telefonu: ciemny kafelek z bialym P. Wczesniej naglowki mialy
+  wlasna, gola litere P o innych proporcjach
+- Wszystkie strony czytaja jeden plik logo zamiast trzymac wlasna kopie, a test pilnuje, zeby tak zostalo. Ikona karty
+  w `pipe web` dostala delikatna obwodke, dzieki ktorej kafelek widac na ciemnym pasku kart
+
 ## v0.48.1 (2026-10-28)
 
 ### Zwijany pulpit w `pipe web`

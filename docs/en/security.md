@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.48.1
+Pipe v0.48.2
 
 ## Model
 

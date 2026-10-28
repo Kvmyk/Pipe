@@ -81,10 +81,6 @@ T = {
            "changelog_note": "The changelog is on GitHub (in Polish)."},
 }
 
-LOGO = ('<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill-rule="evenodd" '
-        'd="M4 7a4 4 0 0 1 4-4h5a5 5 0 0 1 0 10H9v8.5H4zm9-1.2a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z" '
-        'fill="currentColor"/></svg>')
-
 COPYABLE = {"bash", "sh", "shell", "powershell", "ps1", "console"}
 
 
@@ -371,7 +367,7 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 <header class="top">
   <div class="wrap">
     <a class="brand" href="{conf["home"]}">
-      {LOGO}
+      <img src="{root}assets/logo.svg" width="24" height="24" alt="">
       Pipe
     </a>
     <nav>

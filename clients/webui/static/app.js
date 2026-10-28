@@ -96,8 +96,8 @@
   ];
   function welcome() {
     const box = el("div", "welcome");
-    const mark = document.querySelector(".brand svg").cloneNode(true);
-    mark.setAttribute("class", "logo"); mark.setAttribute("width", "28"); mark.setAttribute("height", "28");
+    const mark = document.querySelector(".brand img").cloneNode(true);
+    mark.setAttribute("class", "logo"); mark.setAttribute("width", "40"); mark.setAttribute("height", "40");
     box.appendChild(mark);
     box.appendChild(el("h1", "", t("welcomeTitle")));
     box.appendChild(el("p", "", t(view === "simple" ? "welcomeTextSimple" : "welcomeText")));
