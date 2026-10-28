@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.49.0
+Pipe v0.49.1
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -459,13 +459,15 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome = tr(
         "<b>Czesc, tu Pipe.</b>\n\n"
         "Dbam o Twoj serwer. Pilnuje go w tle i <b>sam napisze</b>, gdy cos bedzie wymagalo uwagi — z gotowym "
-        "przyciskiem, ktory to naprawi.\n\n"
+        "przyciskiem, ktory to naprawi. Rutynowe poprawki robie sam, z kopia, ktora cofniesz; o wazne sprawy "
+        "(usuwanie danych, dostep do serwera) zapytam.\n\n"
         "Pisz do mnie normalnie, np. <i>\"czemu sklep dziala wolno?\"</i>, <i>\"postaw mi te aplikacje z GitHuba\"</i> "
         "albo <i>\"napisz skrypt, ktory co noc robi kopie bazy\"</i>. Mozesz tez nagrac glosowke.\n\n"
         "Przyciski pod polem wiadomosci: stan serwera, co nowego, projekty, pomoc.",
         "<b>Hi, this is Pipe.</b>\n\n"
         "I look after your server. I keep watch in the background and <b>write on my own</b> when something needs "
-        "attention — with a ready button that fixes it.\n\n"
+        "attention — with a ready button that fixes it. Routine fixes I make myself, with a backup you can undo; I ask "
+        "about anything important (deleting data, access to the server).\n\n"
         "Just write to me, e.g. <i>\"why is the shop slow?\"</i>, <i>\"set up this app from GitHub for me\"</i> or "
         "<i>\"write a script that backs up the database every night\"</i>. You can also record a voice note.\n\n"
         "Buttons under the message field: server status, what's new, projects, help."

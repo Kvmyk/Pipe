@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pipe: agent AI na Twoim serwerze Linux</title>
-<meta name="description" content="Pipe działa na Twoim serwerze, pilnuje go, pisze, gdy coś się psuje, i zmienia cokolwiek dopiero po Twoim potwierdzeniu, z kopią i możliwością cofnięcia. Open source, MIT.">
+<meta name="description" content="Pipe mieszka na Twoim serwerze Linux, pilnuje go, pisze, gdy coś się psuje, i sam naprawia rutynowe problemy, z kopią i cofnięciem jedną komendą. Zanim zrobi coś, czego nie da się cofnąć, pyta. Open source, MIT.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pipe">
 <meta property="og:url" content="https://kvmyk.github.io/Pipe/pl/">
 <meta property="og:title" content="Pipe: agent AI na Twoim serwerze Linux">
-<meta property="og:description" content="Pipe działa na Twoim serwerze, pilnuje go, pisze, gdy coś się psuje, i zmienia cokolwiek dopiero po Twoim potwierdzeniu, z kopią i możliwością cofnięcia. Open source, MIT.">
+<meta property="og:description" content="Pipe mieszka na Twoim serwerze Linux, pilnuje go, pisze, gdy coś się psuje, i sam naprawia rutynowe problemy, z kopią i cofnięciem jedną komendą. Zanim zrobi coś, czego nie da się cofnąć, pyta. Open source, MIT.">
 <meta property="og:image" content="https://kvmyk.github.io/Pipe/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
@@ -39,17 +39,18 @@
 
 <main>
   <div class="wrap intro">
-    <h1>Admin, który nie śpi i niczego nie rusza bez pytania</h1>
+    <h1>Admin, który nie śpi, rutynę robi sam, a&nbsp;o&nbsp;ważne sprawy pyta</h1>
     <p class="lead">Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie
-      na Telegram, szuka przyczyny i proponuje poprawkę. Czyta wszystko, ale zmienia dopiero po Twoim „tak”.
-      Przed zmianą robi kopię, a po niej sprawdza, czy wszystko dalej działa.</p>
+      na Telegram, szuka przyczyny i naprawia. Rutynowe poprawki, jak restart czy zmiana w konfiguracji, robi
+      sam, z kopią i sprawdzeniem przed i po. Zanim zrobi coś, czego nie da się cofnąć, na przykład usunie dane
+      albo ruszy SSH, pyta Ciebie.</p>
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh --lang pl</code></pre>
     <p class="meta">Open source na licencji MIT · działa z Gemini (darmowy limit), OpenAI, Claude, Ollamą i innymi ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.49.0</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.49.1</a></p>
 
     <figure class="shot">
-      <img src="../assets/demo-pl.gif" width="1100" height="647" alt="Okno pipe web: po lewej rozmowa z agentem, który bada błędy 502 i prosi o zgodę na zmianę konfiguracji nginx; po prawej schemat serwera z podświetlonym elementem, na którym agent pracuje">
+      <img src="../assets/demo-pl.gif" width="1100" height="647" alt="Okno pipe web: po lewej rozmowa z agentem, który bada błędy 502 i sam poprawia konfigurację nginx, z kopią; po prawej schemat serwera z podświetlonym elementem, na którym agent pracuje">
       <figcaption>Interfejs w przeglądarce (<code>pipe web</code>). Nagranie z zaplanowanej sesji demonstracyjnej.</figcaption>
     </figure>
   </div>
@@ -59,7 +60,8 @@ sudo bash scripts/install-server.sh --lang pl</code></pre>
       <div class="narrow">
         <h2>Jak wygląda praca z Pipe</h2>
         <p>Piszesz zwykłym językiem. Agent sam dobiera komendy, czyta logi i konfigurację, a gdy czegoś nie wie,
-          szuka w internecie. Zanim cokolwiek zmieni, pokazuje dokładną komendę i plan zabezpieczeń.</p>
+          szuka w internecie. Rutynowe zmiany robi od razu i pokazuje, co zrobił; przed ważnymi pokazuje dokładną
+          komendę z planem zabezpieczeń i czeka na Ciebie.</p>
       </div>
 
       <div class="chat" aria-label="Przykładowa rozmowa">
@@ -73,22 +75,29 @@ sudo bash scripts/install-server.sh --lang pl</code></pre>
           </ul>
         </div></div>
         <div class="turn"><div class="who">pipe</div><div>
-          <div class="ask">
-            <div class="t">Ta zmiana wymaga Twojej zgody</div>
+          <div class="ask auto">
+            <div class="t">Bez pytania: rutynowa zmiana, przez bezpiecznik</div>
             <pre>$ sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' /etc/nginx/sites-enabled/sklep.conf &amp;&amp; systemctl reload nginx</pre>
             <ul>
-              <li>kopia przed zmianą: /etc/nginx/sites-enabled/sklep.conf</li>
-              <li>sprawdzenie przed: nginx -t (błąd = nic nie wykonam)</li>
-              <li>weryfikacja po: nginx działa, strony odpowiadają jak przed zmianą</li>
-              <li>jeśli weryfikacja nie przejdzie: sam przywrócę kopię</li>
+              <li>kopia: /etc/nginx/sites-enabled/sklep.conf</li>
+              <li>przed: nginx -t przeszedł</li>
+              <li>po: nginx działa, strony odpowiadają jak przed zmianą</li>
             </ul>
           </div>
-        </div></div>
-        <div class="turn me"><div class="who">ty</div><div class="msg">tak</div></div>
-        <div class="turn"><div class="who">pipe</div><div>
           <p>Naprawione, sklep.example.com znów odpowiada. Raport PDF generuje się około 75 sekund, a nginx czekał
             na odpowiedź tylko 60 (<code>proxy_read_timeout</code>). Podniosłem limit do 120 sekund. Kopia jest
             w dzienniku, cofniesz to komendą <code>/cofnij</code>.</p>
+        </div></div>
+        <div class="turn me"><div class="who">ty</div><div class="msg">i usuń stare raporty z /srv/sklep/raporty</div></div>
+        <div class="turn"><div class="who">pipe</div><div>
+          <div class="ask">
+            <div class="t">Tu potrzebuję Twojej zgody: danych nie da się skopiować</div>
+            <pre>$ rm -r /srv/sklep/raporty/2025</pre>
+            <ul>
+              <li>2140 plików, 3,8 GB</li>
+              <li>po usunięciu nie będzie kopii do przywrócenia</li>
+            </ul>
+          </div>
         </div></div>
       </div>
     </div>
@@ -103,25 +112,25 @@ sudo bash scripts/install-server.sh --lang pl</code></pre>
       </div>
       <div class="rules">
         <div class="ok">
-          <h3>Od razu</h3>
-          <p class="why">rozpoznane odczyty</p>
+          <h3>Sam</h3>
+          <p class="why">odczyty i rutynowe zmiany z kopią i sprawdzeniem</p>
           <ul>
-            <li>logi, procesy, dyski, pamięć</li>
-            <li>stan kontenerów i usług</li>
-            <li>odczyt plików konfiguracyjnych</li>
-            <li><code>git status</code>, <code>git log</code></li>
-            <li>wyszukiwanie w internecie</li>
+            <li>logi, procesy, dyski, konfiguracja, internet</li>
+            <li>restart i przeładowanie usług i kontenerów</li>
+            <li>edycja konfiguracji (kopia, <code>nginx -t</code> przed, sprawdzenie po)</li>
+            <li>pakiety z repozytorium systemu</li>
+            <li><code>docker compose up</code>, <code>git pull</code> z origin</li>
           </ul>
         </div>
         <div class="ask2">
           <h3>Po Twoim „tak”</h3>
-          <p class="why">wszystko, co zmienia serwer, oraz każda nieznana komenda</p>
+          <p class="why">to, czego nie da się skopiować ani cofnąć, oraz każda nieznana komenda</p>
           <ul>
-            <li>zapis i edycja plików</li>
-            <li>restart usług i kontenerów</li>
-            <li>instalacja i aktualizacja pakietów</li>
-            <li><code>git pull</code>, <code>docker compose up</code></li>
-            <li>odczyt plików z sekretami (<code>.env</code>, klucze)</li>
+            <li>usuwanie danych, wolumenów, pakietów</li>
+            <li>SSH, użytkownicy, zapora, cron, usługi systemd</li>
+            <li>kod aplikacji, Dockerfile, <code>docker run</code></li>
+            <li>pliki z sekretami (<code>.env</code>, klucze)</li>
+            <li>wysyłanie danych poza serwer</li>
           </ul>
         </div>
         <div class="no">
@@ -249,7 +258,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.49.0 · licencja MIT</span>
+    <span>Pipe 0.49.1 · licencja MIT</span>
     <a href="https://github.com/Kvmyk/pipe">Kod na GitHubie</a>
     <a href="docs/">Dokumentacja</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Historia zmian</a>

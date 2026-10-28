@@ -4,7 +4,7 @@
 
 <h1 align="center">Pipe</h1>
 
-<h3 align="center">A sysadmin that never sleeps and never touches anything without asking.</h3>
+<h3 align="center">A sysadmin that never sleeps, does the routine work itself and asks about what matters.</h3>
 
 <p align="center">
   Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on Telegram,<br>
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.49.0-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.49.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent checks the logs, looks up the cause of 502 errors on the web and fixes the nginx config after approval" width="100%">
+  <img src="docs/assets/demo-en.gif" alt="pipe web: the agent checks the logs, looks up the cause of 502 errors on the web and fixes the nginx config by itself, with a backup" width="100%">
   <br>
   <sub><code>pipe web</code> recorded from a scripted session (<a href="scripts/demo">scripts/demo</a>).</sub>
 </p>

@@ -1,10 +1,10 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.49.0
+Pipe v0.49.1
 
-## Wyprobuj bez serwera
+## Wypróbuj bez serwera
 
-Nie masz wolnego serwera albo chcesz najpierw zobaczyc, jak Pipe dziala? Na swoim komputerze z Dockerem:
+Nie masz wolnego serwera albo chcesz najpierw zobaczyć, jak Pipe działa? Na swoim komputerze z Dockerem:
 
 ```bash
 git clone https://github.com/Kvmyk/pipe && cd pipe
@@ -12,28 +12,28 @@ LLM_PROVIDER=gemini LLM_API_KEY=... python3 sandbox/run.py try --scenario nginx-
 pipe --no-tunnel --local-port 7390        # albo: pipe web --no-tunnel --local-port 7390
 ```
 
-Startuje kontener udajacy maly serwer ze sklepem (nginx i aplikacja), a w nim Pipe. Z `--scenario` serwer jest od
-razu zepsuty: `nginx-502` (zly port w nginx), `app-down` (aplikacja nie startuje), `static-403` (zle uprawnienia),
-`disk-hog` (zapomniany duzy log). Popros Pipe o pomoc i zobacz, jak szuka przyczyny, pyta o zgode i robi kopie.
-Bez klucza piaskownica tez wstaje, wtedy Pipe dziala bez modelu. Konczysz przez `docker rm -f pipe-sandbox`.
+Startuje kontener udający mały serwer ze sklepem (nginx i aplikacja), a w nim Pipe. Z `--scenario` serwer jest od
+razu zepsuty: `nginx-502` (zły port w nginx), `app-down` (aplikacja nie startuje), `static-403` (źle uprawnienia),
+`disk-hog` (zapomniany duzy log). Poproś Pipe o pomoc i zobacz, jak szuka przyczyny, pyta o zgodę i robi kopię.
+Bez klucza piaskownica też wstaje, wtedy Pipe działa bez modelu. Kończysz przez `docker rm -f pipe-sandbox`.
 
-Te same scenariusze sluza do oceny modeli: `python3 sandbox/run.py eval` uruchamia kazdy, zgadza sie na kazda
-proponowana zmiane i sprawdza, czy serwer naprawde zostal naprawiony (szczegoly: `sandbox/README.md`).
+Te same scenariusze służą do oceny modeli: `python3 sandbox/run.py eval` uruchamia każdy, zgadza się na każdą
+proponowaną zmianę i sprawdza, czy serwer naprawdę został naprawiony (szczegóły: `sandbox/README.md`).
 
-## Wymagania wstepne
+## Wymagania wstępne
 
 1. **Na serwerze** -- uruchomiony backend agenta
-2. **Na laptopie** -- Python 3.11+ i dostep do SSH
+2. **Na laptopie** -- Python 3.11+ i dostęp do SSH
 
-Krotsza droga: zainstaluj klienta (krok 2, adres serwera mozesz pominac) i wpisz `pipe web`. Strona zapyta, co chcesz
-robic, i sama postawi Pipe na tym komputerze (Docker) albo na Twoim serwerze (adres i haslo albo klucz SSH). Wtedy
-krok 1 i 3 dzieja sie same.
+Krótsza droga: zainstaluj klienta (krok 2, adres serwera możesz pominąć) i wpisz `pipe web`. Strona zapyta, co chcesz
+robić, i sama postawi Pipe na tym komputerze (Docker) albo na Twoim serwerze (adres i hasło albo klucz SSH). Wtedy
+krok 1 i 3 dzieją się same.
 
 ---
 
 ## Krok 1: Uruchom backend na serwerze
 
-Zaloguj sie przez SSH na serwer i wykonaj:
+Zaloguj się przez SSH na serwer i wykonaj:
 
 ```bash
 git clone https://github.com/Kvmyk/pipe
@@ -41,23 +41,23 @@ cd pipe
 sudo bash scripts/install-server.sh --lang pl  # albo z --mode native (bez Dockera)
 ```
 
-Kreator zapyta o providera LLM i klucz API, pobierze aktualna liste modeli, sprawdzi, czy wybrany model
-obsluguje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
-darmowy klucz wygenerujesz na https://aistudio.google.com/apikey (w darmowym tierze Google moze uczyc sie na
-zapytaniach, wiec na produkcji lepiej wlaczyc platnosci). Mozesz tez wybrac **Bez modelu**: Pipe pilnuje serwera,
-wysyla alerty i raporty, a nic nie wychodzi z serwera; rozmowe wlaczysz pozniej
+Kreator zapyta o providera LLM i klucz API, pobierze aktualną listę modeli, sprawdzi, czy wybrany model
+obsługuje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
+darmowy klucz wygenerujesz na https://aistudio.google.com/apikey (w darmowym tierze Google może uczyć się na
+zapytaniach, więc na produkcji lepiej włączyć płatności). Możesz też wybrać **Bez modelu**: Pipe pilnuje serwera,
+wysyła alerty i raporty, a nic nie wychodzi z serwera; rozmowę włączysz później
 ([backend.md](backend.md#bez-modelu-llm_providernone)).
 
-Skrypt zainstaluje Dockera (jesli go nie ma) i uruchomi backend. Recznie to samo:
+Skrypt zainstaluje Dockera (jeśli go nie ma) i uruchomi backend. Ręcznie to samo:
 `python3 -m backend.configure && cd backend && docker compose up -d --build`.
 
-Sprawdz czy dziala:
+Sprawdź czy działa:
 ```bash
 cd backend && docker compose logs vps-agent
 # Powinno pokazac: [VPS Agent] Serwer gotowy.
 ```
 
-Nowy serwer w chmurze mozesz postawic od razu z Pipe -- [cloud-init](../../deploy/cloud-init/user-data.yaml).
+Nowy serwer w chmurze możesz postawić od razu z Pipe -- [cloud-init](../../deploy/cloud-init/user-data.yaml).
 Kubernetes: [deploy/kubernetes](../../deploy/kubernetes/README.md).
 
 ---
@@ -84,29 +84,29 @@ bash install.sh
 ```
 
 Skrypt:
-- zainstaluje zaleznosci Python (`rich`)
-- doda funkcje `pipe` do Twojego profilu terminala
-- od teraz wystarczy wpisac `pipe` w dowolnym terminalu
+- zainstaluje zależności Python (`rich`)
+- doda funkcję `pipe` do Twojego profilu terminala
+- od teraz wystarczy wpisać `pipe` w dowolnym terminalu
 
 ---
 
-## Krok 3: Polacz sie z agentem
+## Krok 3: Połącz się z agentem
 
 ```
 pipe
 ```
 
 CLI automatycznie:
-1. Zestawia tunel SSH (zapyta o haslo jesli potrzeba)
-2. Laczy sie z agentem na serwerze
+1. Zestawia tunel SSH (zapyta o hasło jeśli potrzeba)
+2. Łączy się z agentem na serwerze
 3. Czeka na Twoje polecenia
 
-Na poczatek: `/mapa` (diagram tego, co stoi na serwerze) i `/server` (agent zbada serwer i zapisze,
+Na początek: `/mapa` (diagram tego, co stoi na serwerze) i `/server` (agent zbada serwer i zapisze,
 co wie, w SERVER.md i DIRECTORY).
 
 ---
 
-## Przykladowa sesja
+## Przykładowa sesja
 
 ```
  pipe   Autonomiczny agent AI do zarzadzania serwerem Linux
@@ -147,19 +147,19 @@ nginx zrestartowany, weryfikacja przeszla.
 Do widzenia!
 ```
 
-Komenda w panelu jest dokladnie tym, co zostanie wykonane. Pod nia plan bezpiecznika: co Pipe sprawdzi przed
-zmiana i po niej (szczegoly: [Zmiany z bezpiecznikiem](features.md#zmiany-z-bezpiecznikiem-i-cofnij)).
+Komenda w panelu jest dokładnie tym, co zostanie wykonane. Pod nią plan bezpiecznika: co Pipe sprawdzi przed
+zmiana i po niej (szczegóły: [Zmiany z bezpiecznikiem](features.md#zmiany-z-bezpiecznikiem-i-cofnij)).
 
 ---
 
-## Opcje skrotu `pipe`
+## Opcje skrótu `pipe`
 
-Mozesz tez przekazac dodatkowe opcje:
+Możesz też przekazać dodatkowe opcje:
 
 ```bash
 pipe --ssh-port 2222      # niestandardowy port SSH
 pipe --key ~/.ssh/id_rsa  # konkretny klucz SSH
-pipe --session moja-sesja # zachowaj historie sesji
+pipe --session moja-sesja # zachowaj historię sesji
 pipe --lang pl            # komunikaty CLI po polsku (bez tego CLI bierze jezyk serwera)
 ```
 
@@ -167,10 +167,10 @@ pipe --lang pl            # komunikaty CLI po polsku (bez tego CLI bierze jezyk 
 
 ## Problemy
 
-| Problem | Rozwiazanie |
+| Problem | Rozwiązanie |
 |---------|-------------|
-| Agent nie odpowiada / blad modelu | `python3 -m backend.configure --check` -- sprawdzi klucz, model i tool calling |
-| W logach "Model ... nie wystepuje na liscie" | Model zostal wycofany -- wybierz nowy: `python3 -m backend.configure` |
-| Tunel SSH nie odpowiada | Sprawdz czy backend dziala: `docker logs vps-agent` na serwerze |
+| Agent nie odpowiada / błąd modelu | `python3 -m backend.configure --check` -- sprawdzi klucz, model i tool calling |
+| W logach "Model ... nie wystepuje na liście" | Model został wycofany -- wybierz nowy: `python3 -m backend.configure` |
+| Tunel SSH nie odpowiada | Sprawdź czy backend działa: `docker logs vps-agent` na serwerze |
 | Brak komendy 'ssh' | Windows: zainstaluj OpenSSH Client (Ustawienia -> Aplikacje -> Funkcje opcjonalne) |
-| SSH pyta o haslo przy kazdym uruchomieniu | Dodaj klucz SSH: `ssh-copy-id user@serwer` |
+| SSH pyta o hasło przy każdym uruchomieniu | Dodaj klucz SSH: `ssh-copy-id user@serwer` |

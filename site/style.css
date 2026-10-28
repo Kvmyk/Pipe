@@ -66,7 +66,7 @@ img { max-width: 100%; height: auto; display: block; }
 .top .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 9px; color: var(--ink); text-decoration: none; font-weight: 600; font-size: 17px; }
 .brand img { display: block; flex: none; }
-.top nav { display: flex; gap: 20px; margin-left: auto; font-size: 14.5px; }
+.top nav { display: flex; align-items: center; gap: 20px; margin-left: auto; font-size: 14.5px; }
 .top nav a { color: var(--ink-2); text-decoration: none; white-space: nowrap; }
 .top nav a:hover { color: var(--ink); }
 .lang-pick { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; }
@@ -112,6 +112,7 @@ section > .wrap > p, .narrow > p { max-width: 68ch; color: var(--ink-2); }
 .steps li::before { content: "✓"; color: var(--ok); margin-right: 10px; }
 .ask { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); border-radius: 6px; padding: 12px 14px; background: var(--bg); }
 .ask .t { font-weight: 600; margin-bottom: 6px; }
+.ask.auto { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); margin-bottom: 10px; }
 .ask pre { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
 .ask ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); }
 .chat p { margin: 0 0 8px; }

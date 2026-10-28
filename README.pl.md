@@ -4,7 +4,7 @@
 
 <h1 align="center">Pipe</h1>
 
-<h3 align="center">Admin, który nie śpi i niczego nie rusza bez pytania.</h3>
+<h3 align="center">Admin, który nie śpi, rutynę robi sam, a o ważne sprawy pyta.</h3>
 
 <p align="center">
   Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie na Telegram,<br>
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.49.0-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.49.1-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-pl.gif" alt="pipe web: agent sprawdza logi, szuka przyczyny błędów 502 w sieci i po zatwierdzeniu poprawia konfigurację nginx" width="100%">
+  <img src="docs/assets/demo-pl.gif" alt="pipe web: agent sprawdza logi, szuka przyczyny błędów 502 w sieci i sam poprawia konfigurację nginx, z kopią" width="100%">
   <br>
   <sub>Nagranie <code>pipe web</code> z zaplanowanej sesji (<a href="scripts/demo">scripts/demo</a>).</sub>
 </p>

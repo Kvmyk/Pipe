@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pipe: an AI agent that lives on your Linux server</title>
-<meta name="description" content="Pipe runs on your server, watches it, messages you when something breaks, and changes anything only after you approve, with a backup and a way to undo. Open source, MIT.">
+<meta name="description" content="Pipe lives on your Linux server, watches it, messages you when something breaks and fixes routine problems by itself, with a backup and a one-command undo. It asks before anything it cannot undo. Open source, MIT.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pipe">
 <meta property="og:url" content="https://kvmyk.github.io/Pipe/">
 <meta property="og:title" content="Pipe: an AI agent that lives on your Linux server">
-<meta property="og:description" content="Pipe runs on your server, watches it, messages you when something breaks, and changes anything only after you approve, with a backup and a way to undo. Open source, MIT.">
+<meta property="og:description" content="Pipe lives on your Linux server, watches it, messages you when something breaks and fixes routine problems by itself, with a backup and a one-command undo. It asks before anything it cannot undo. Open source, MIT.">
 <meta property="og:image" content="https://kvmyk.github.io/Pipe/assets/social-preview-en.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
@@ -39,17 +39,18 @@
 
 <main>
   <div class="wrap intro">
-    <h1>A sysadmin that never sleeps and never touches anything without asking</h1>
+    <h1>A sysadmin that never sleeps, does the routine work itself and asks about what matters</h1>
     <p class="lead">Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on
-      Telegram, finds the cause and proposes a fix. It reads everything but changes nothing until you say yes.
-      Before a change it takes a backup, and afterwards it checks that everything still works.</p>
+      Telegram, finds the cause and fixes it. Routine fixes, like a restart or a config tweak, it makes by
+      itself, with a backup and a check before and after. Before anything it cannot undo, like deleting data or
+      touching SSH, it asks you.</p>
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
     <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.49.0</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.49.1</a></p>
 
     <figure class="shot">
-      <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and asks for approval to change the nginx config; on the right a map of the server with the element the agent works on highlighted">
+      <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and fixes the nginx config by itself, with a backup; on the right a map of the server with the element the agent works on highlighted">
       <figcaption>The browser interface (<code>pipe web</code>). Recorded from a scripted demo session.</figcaption>
     </figure>
   </div>
@@ -59,7 +60,8 @@ sudo bash scripts/install-server.sh</code></pre>
       <div class="narrow">
         <h2>What working with Pipe looks like</h2>
         <p>You write in plain language. The agent picks the commands, reads logs and configuration, and searches the
-          web when it doesn't know something. Before it changes anything, it shows the exact command and the safety plan.</p>
+          web when it doesn't know something. Routine changes it makes right away and shows what it did; before anything
+          important it shows the exact command with the safety plan and waits for you.</p>
       </div>
 
       <div class="chat" aria-label="Example conversation">
@@ -73,22 +75,29 @@ sudo bash scripts/install-server.sh</code></pre>
           </ul>
         </div></div>
         <div class="turn"><div class="who">pipe</div><div>
-          <div class="ask">
-            <div class="t">This change needs your approval</div>
+          <div class="ask auto">
+            <div class="t">Without asking: a routine change, through the safety fuse</div>
             <pre>$ sed -i 's/proxy_read_timeout 60s;/proxy_read_timeout 120s;/' /etc/nginx/sites-enabled/shop.conf &amp;&amp; systemctl reload nginx</pre>
             <ul>
-              <li>backup before the change: /etc/nginx/sites-enabled/shop.conf</li>
-              <li>check before: nginx -t (failure = nothing runs)</li>
-              <li>verification after: nginx runs, sites respond as before</li>
-              <li>if verification fails: the backup is restored automatically</li>
+              <li>backup: /etc/nginx/sites-enabled/shop.conf</li>
+              <li>before: nginx -t passed</li>
+              <li>after: nginx runs, sites respond as before</li>
             </ul>
           </div>
-        </div></div>
-        <div class="turn me"><div class="who">you</div><div class="msg">yes</div></div>
-        <div class="turn"><div class="who">pipe</div><div>
           <p>Fixed, shop.example.com responds again. The PDF report takes about 75 seconds to generate, while nginx waited
             only 60 for a response (<code>proxy_read_timeout</code>). I raised the limit to 120 seconds. The backup is in
             the journal; undo it with <code>/undo</code>.</p>
+        </div></div>
+        <div class="turn me"><div class="who">you</div><div class="msg">and delete the old reports from /srv/shop/reports</div></div>
+        <div class="turn"><div class="who">pipe</div><div>
+          <div class="ask">
+            <div class="t">This one needs your approval: data I cannot back up</div>
+            <pre>$ rm -r /srv/shop/reports/2025</pre>
+            <ul>
+              <li>2,140 files, 3.8 GB</li>
+              <li>after deleting there is no copy to restore</li>
+            </ul>
+          </div>
         </div></div>
       </div>
     </div>
@@ -103,25 +112,25 @@ sudo bash scripts/install-server.sh</code></pre>
       </div>
       <div class="rules">
         <div class="ok">
-          <h3>Right away</h3>
-          <p class="why">recognised reads</p>
+          <h3>On its own</h3>
+          <p class="why">reads, and routine changes with a backup and a check</p>
           <ul>
-            <li>logs, processes, disks, memory</li>
-            <li>state of containers and services</li>
-            <li>reading configuration files</li>
-            <li><code>git status</code>, <code>git log</code></li>
-            <li>searching the web</li>
+            <li>logs, processes, disks, configuration, the web</li>
+            <li>restarting and reloading services and containers</li>
+            <li>editing configs (backup, <code>nginx -t</code> before, a check after)</li>
+            <li>packages from the system repository</li>
+            <li><code>docker compose up</code>, <code>git pull</code> from origin</li>
           </ul>
         </div>
         <div class="ask2">
           <h3>After your yes</h3>
-          <p class="why">anything that changes the server, and every unknown command</p>
+          <p class="why">what it cannot back up or undo, and every unknown command</p>
           <ul>
-            <li>writing and editing files</li>
-            <li>restarting services and containers</li>
-            <li>installing and upgrading packages</li>
-            <li><code>git pull</code>, <code>docker compose up</code></li>
-            <li>reading files with secrets (<code>.env</code>, keys)</li>
+            <li>deleting data, volumes, packages</li>
+            <li>SSH, users, firewall, cron, systemd units</li>
+            <li>app code, Dockerfiles, <code>docker run</code></li>
+            <li>files with secrets (<code>.env</code>, keys)</li>
+            <li>sending data outside the server</li>
           </ul>
         </div>
         <div class="no">
@@ -146,8 +155,8 @@ sudo bash scripts/install-server.sh</code></pre>
           the server.</p>
       </div>
       <table class="table">
-        <tr><th>Terminal</th><td>The <code>pipe</code> command on your computer (Windows, macOS, Linux). Confirmations show
-          the command and the safety plan; diagrams are saved as PNG. Attach a file with <code>@path</code>.</td></tr>
+        <tr><th>Terminal</th><td>The <code>pipe</code> command on your computer (Windows, macOS, Linux). You see every command
+          and a few lines of its output; confirmations show the command and the safety plan; diagrams are saved as PNG. Attach a file with <code>@path</code>.</td></tr>
         <tr><th>Browser</th><td><code>pipe web</code> opens the conversation next to a map of the server that shows where
           the agent is working. Every change has a diff preview and an undo button. Paste a screenshot into the
           conversation, or ask by voice with the microphone.</td></tr>
@@ -248,7 +257,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.49.0 · MIT license</span>
+    <span>Pipe 0.49.1 · MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="docs/">Documentation</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>

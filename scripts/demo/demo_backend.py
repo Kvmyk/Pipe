@@ -74,13 +74,6 @@ def infra():
     )
 
 
-def plan_text() -> str:
-    from backend.core.safety import Check, Plan
-    plan = Plan(files=[CONF], pre=[Check("nginx -t")], post=[Check(L("usluga nginx aktywna", "nginx service active"))],
-                sites=True, auto_restore=True, reload_after_restore=["nginx"])
-    return plan.describe()
-
-
 def frame(event) -> dict:
     from backend.server import event_frame
     return event_frame(event)
@@ -129,26 +122,20 @@ async def investigate(writer) -> None:
                [L("Czytam strone: nginx.org/en/docs/http/ngx_http_proxy_module.html",
                   "Reading page: nginx.org/en/docs/http/ngx_http_proxy_module.html")], 1.6)
     await tool(writer, "t4b", "execute_command", {"command": "nginx -T | grep -n proxy_read_timeout"}, [], 0.9)
-    from backend.core import graph
-    from backend.core.events import Activity
-    args = {"command": COMMAND}
-    await send(writer, frame(Activity("t5", "start", "execute_command", graph.describe("execute_command", args),
-                                      tuple(graph.locate("execute_command", args, "/")))))
-    await asyncio.sleep(0.4)
-    await send(writer, frame(L(
-        f"[POTWIERDZ] Operacja wymaga potwierdzenia: `{COMMAND}`\n{plan_text()}",
-        f"[POTWIERDZ] Operation requires confirmation: `{COMMAND}`\n{plan_text()}")))
-    await send(writer, frame(Activity("t5", "wait", "execute_command", graph.describe("execute_command", args),
-                                      tuple(graph.locate("execute_command", args, "/")))))
+    await apply_fix(writer)
 
 
 async def apply_fix(writer) -> None:
+    """Poprawka configu nginx z kopia to rutyna (core/autonomy.py): Pipe robi ja od razu, przez bezpiecznik, bez karty zgody."""
     from backend.core import graph
     from backend.core.events import Activity, Progress
     args = {"command": COMMAND}
     activity = Activity("t5", "start", "execute_command", graph.describe("execute_command", args),
                         tuple(graph.locate("execute_command", args, "/")))
     await send(writer, frame(activity))
+    await asyncio.sleep(0.4)
+    await send(writer, frame(Progress(L(f"Bez pytania (rutyna, przez bezpiecznik): {COMMAND}",
+                                        f"Without asking (routine, through the safety fuse): {COMMAND}"))))
     for text in (L(f"kopia: {CONF}", f"backup: {CONF}"), L("sprawdzam przed zmiana: nginx -t", "checking before the change: nginx -t"),
                  L(f"sprawdzam strony przed zmiana: {DOMAIN}", f"checking sites before the change: {DOMAIN}"),
                  L("weryfikuje: usluga nginx aktywna", "verifying: nginx service active"),
@@ -157,7 +144,7 @@ async def apply_fix(writer) -> None:
         await send(writer, frame(Progress(text)))
     await asyncio.sleep(0.5)
     from dataclasses import replace
-    await send(writer, frame(replace(activity, phase="end", ok=True, entry=ENTRY)))
+    await send(writer, frame(replace(activity, phase="end", ok=True, entry=ENTRY, auto=True)))
     await chunked(writer, L(
         f"Naprawione — **{DOMAIN}** znów odpowiada.\n\n"
         "**Przyczyna:** generowanie raportu PDF w `shop-app` trwa ok. 75 s, a nginx czekał na odpowiedź tylko 60 s "
@@ -219,11 +206,9 @@ class Demo:
         command = request.get("command")
         if "message" in request:
             await investigate(writer)
+            self.fixed = True
             await done(writer)
         elif "confirm" in request:
-            if request.get("confirm"):
-                self.fixed = True
-                await apply_fix(writer)
             await done(writer)
         elif command == "subscribe":
             await send(writer, {"response": "", "status": "ok", "done": False,

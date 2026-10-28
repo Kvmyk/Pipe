@@ -21,9 +21,11 @@ class Backend:
         self.cut_after_first_frame = False
         self._server = None
         self._writers = []
+        self.accepted = asyncio.Event()           # handler przyjal polaczenie (stop() zamknie je na pewno)
 
     async def _handle(self, reader, writer):
         self._writers.append(writer)
+        self.accepted.set()
         while line := await reader.readline():
             request = json.loads(line)
             self.requests.append(request)
@@ -44,7 +46,7 @@ class Backend:
         for writer in self._writers:
             writer.close()
         self._writers = []
-        await self._server.wait_closed()
+        await asyncio.wait_for(self._server.wait_closed(), 5)
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +88,9 @@ def test_gives_up_after_timeout(monkeypatch):
         await backend.start()
         client = cli.RemoteClient(session_id="s", port=backend.port)
         await client.connect()
+        # Bez tego stop() potrafil wyprzedzic przyjecie polaczenia: w WSL takie gniazdo nie jest zrywane,
+        # wiec klient czekal na odpowiedz w nieskonczonosc zamiast dostac blad polaczenia.
+        await asyncio.wait_for(backend.accepted.wait(), 5)
         await backend.stop()
         with pytest.raises(ConnectionError):
             await client.send_message("halo")

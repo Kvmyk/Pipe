@@ -2,6 +2,33 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.49.1 (2026-10-28)
+
+### The description matches what Pipe does
+
+- The tagline is now "A sysadmin that never sleeps, does the routine work itself and asks about what matters" (in
+  Polish: "Admin, który nie śpi, rutynę robi sam, a o ważne sprawy pyta"), in both READMEs, on the website, in the
+  search and link-preview descriptions and on the social preview images. The old "never touches anything without
+  asking" stopped being true in v0.48.0
+- The example conversation on the website shows Pipe fixing the nginx config by itself, with a backup and a check,
+  and asking before deleting old reports. The "on its own / after your yes / never" table lists what Pipe really
+  does without asking
+- The README demo GIFs were recorded again: the nginx fix runs without an approval card, marked "without asking"
+- The `pipe web` welcome and the Telegram `/start` message say that routine fixes happen by themselves and important
+  things wait for your yes; the empty *Changes* tab mentions changes made without asking too
+
+### Polish documentation
+
+- The Polish docs (`docs/pl/`) are written with Polish characters (ą, ę, ł, ó, ś, ż...) instead of plain ASCII,
+  like the Polish README and website
+
+### Fixes
+
+- The language switch on the website and in the docs is vertically aligned with the other links in the top bar
+- `scripts/demo/record.py` works again (it now opens the map tab first), and `scripts/demo/social_preview.py`
+  renders the social preview images
+- A CLI reconnect test no longer hangs now and then (the fake backend could stop before accepting the connection)
+
 ## v0.49.0 (2026-10-28)
 
 ### English first, Polish as a translation

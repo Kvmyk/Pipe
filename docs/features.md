@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.49.0
+Pipe v0.49.1
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -16,7 +16,7 @@ something needs attention, and gives a button that deals with it right away. Eve
 | Message | When | Buttons |
 |---------|------|---------|
 | Alert | the problem is already there: disk, memory, container, site, certificate, vulnerabilities | *Free up space*, *Patch*, *Investigate* |
-| Findings | a critical problem: Pipe checks the cause itself (a worker, reads only) and writes what it found | *Fix it* -- one approval |
+| Findings | a critical problem: Pipe checks the cause itself (a worker, reads only) and writes what it found | *Fix it*: routine fixes run at once, anything important waits for your yes |
 | Suggestion | a problem is coming or something can be improved (table below) | the action, *Later*, *Fewer like this* |
 | Morning report | at `DIGEST_TIME` | -- |
 | Resolved | the problem went away | -- |

@@ -91,6 +91,7 @@ async def record(url: str, lang: str, frames_dir: Path, theme: str, failure: Pat
 
         cdp.on("Page.screencastFrame", lambda params: asyncio.ensure_future(on_frame(params)))
         await page.goto(url)
+        await page.click("#st-map", timeout=15000)                     # pierwsza zakladka to pulpit, nagranie pokazuje schemat
         await page.wait_for_selector("#nodes g", timeout=15000)       # schemat narysowany
         await page.wait_for_timeout(1200)
         await cdp.send("Page.startScreencast", {"format": "png", "everyNthFrame": 1,
@@ -102,11 +103,7 @@ async def record(url: str, lang: str, frames_dir: Path, theme: str, failure: Pat
             await page.keyboard.type(MESSAGE[lang], delay=32)
             await page.wait_for_timeout(500)
             await page.keyboard.press("Enter")
-            await page.wait_for_selector(".confirm .btn.yes", timeout=30000)
-            await page.wait_for_timeout(3000)                           # czas na przeczytanie planu
-            await page.hover(".confirm .btn.yes")
-            await page.wait_for_timeout(500)
-            await page.click(".confirm .btn.yes")
+            # poprawka nginx to rutyna: Pipe robi ja sam (bez karty zgody), z kopia i sprawdzeniem przed i po
             await page.wait_for_selector(f"text={DONE_TEXT[lang]}", timeout=30000)
             await page.wait_for_timeout(1500)
             await page.evaluate("document.getElementById('messages').scrollTo({top: 1e6, behavior: 'smooth'})")
