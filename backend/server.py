@@ -96,7 +96,7 @@ async def handle_client(
 
             # Subskrypcja zdarzen czuwania — polaczenie zostaje otwarte do rozlaczenia klienta
             if request.get("command") == "subscribe":
-                await _subscribe(reader, writer)
+                await _subscribe(reader, writer, request.get("since"))
                 break
 
             # Komendy klientow: /server, /skille, /mapa... i skille jako komendy
@@ -1293,14 +1293,21 @@ async def _send_infra_diagram(writer, title: str) -> None:
     await _send(writer, {"response": "", "status": "ok", "done": True, "data": {"summary": found.summary()}})
 
 
-async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    """Przesyla zdarzenia czuwania (alerty, raporty rutyn) do rozlaczenia klienta."""
+async def _subscribe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, since=None) -> None:
+    """
+    Przesyla zdarzenia czuwania (alerty, raporty rutyn) do rozlaczenia klienta. `since` (czas `ts` ostatniego
+    zdarzenia, ktore klient widzial) — najpierw to, co go ominelo od tamtej chwili (np. podczas restartu backendu).
+    """
     from backend.core import views
 
     notifier = get_watcher().notifier
     queue = notifier.subscribe()
+    missed = notifier.missed(since) if since is not None else []   # bez await miedzy subscribe a historia: bez dubli
     await _send(writer, {"response": "", "status": "ok", "done": False, "event": {"type": "subscribed", "lang": lang(), "lang_chosen": i18n.chosen(),
-                                                                     "view": views.current(), "view_chosen": views.chosen()}})
+                                                                     "view": views.current(), "view_chosen": views.chosen(),
+                                                                     "ts": round(time.time(), 3)}})
+    for event in missed:
+        await _send(writer, {"response": "", "status": "ok", "done": False, "event": event})
     get_watcher().reminders_changed()      # przypomnienia, ktore odpalily, gdy nikt nie sluchal
     closed = asyncio.ensure_future(reader.read(1))
     try:

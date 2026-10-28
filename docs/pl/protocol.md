@@ -1,6 +1,6 @@
 # Protokół komunikacji -- Pipe
 
-Pipe v0.49.1
+Pipe v0.49.2
 
 ## Opis
 
@@ -109,7 +109,7 @@ Komendy "/" klientów (Telegram, CLI) wysyłają `{"command": ...}`:
 | `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `apps`/`aplikacje`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | łata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobę; `freed` -- bajty zwolnione przy sprzątaniu; `report` -- stan po łatce jak `view` z `vulns`). Nic do załatania: `"data": {"nothing": true, "text", ...}`. Komendy składa serwer z bieżącego skanu. Łatanie działa w tle: drugie `patch` w trakcie dostaje ten sam postęp i wynik, a po rozłączeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podgląd sprzed v0.38) są ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofnięcia, gdy brak `id`); z `execute` i `id`: cofnięcie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
-| `subscribe` | -- | połączenie zostaje otwarte; zdarzenia czuwania (poniżej) do rozłączenia klienta |
+| `subscribe` | `since`: `ts` ostatniego widzianego zdarzenia (opcjonalnie) | połączenie zostaje otwarte; najpierw zdarzenia opublikowane po `since`, potem zdarzenia czuwania (poniżej) do rozłączenia klienta |
 
 Treść wiadomości dla agenta (`scan_server`, `run_skill`, `investigate`, akcja `message` ze skrzynki) buduje backend --
 klient wysyła tylko komendę. Wiadomości zbudowane przez backend nie uczą VIBE.
@@ -150,8 +150,8 @@ asyncio (`open_connection(..., limit=32 * 1024 * 1024)`).
 ### Zdarzenia czuwania (`subscribe`)
 
 Po `{"command": "subscribe"}` serwer wysyła `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
-"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- jezyk wybrano komenda `language`, klient powinien go
-przejąć; `view_chosen` -- tak samo dla widoku), a potem, bez `done`:
+"view": "simple|tech", "view_chosen": bool, "ts": 1761679200.5}}` (`lang_chosen` -- język wybrano komendą `language`,
+klient powinien go przejąć; `view_chosen` -- tak samo dla widoku), a potem, bez `done`:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
@@ -314,7 +314,9 @@ async def chat_with_agent(message: str, session_id: str) -> list[dict]:
 - Obsłuż `attachment` (pokaż obraz albo zapisz plik) i `event` typu `progress` (pokaż na bieżąco)
 - Czytaj linie z limitem >= 32 MiB
 - Obsłuż długie odpowiedzi -- podziel na mniejsze wiadomości jeśli platforma ma limit
-- Alerty: osobne, trwałe połączenie z `subscribe` i ponawianiem po rozłączeniu
+- Alerty: osobne, trwałe połączenie z `subscribe` i ponawianiem po rozłączeniu; wyślij `"since"` z `ts` ostatniego
+  zdarzenia, które widziałeś, a serwer najpierw dośle to, co cię ominęło (np. wynik `/aktualizuj`, który przychodzi
+  zaraz po restarcie backendu). `pipe web` robi to przez `id:` / `Last-Event-ID` w SSE
 
 
 ## Webhooki (HTTP)

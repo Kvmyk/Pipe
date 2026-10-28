@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.49.1
+Pipe v0.49.2
 
 Ten dokument opisuje funkcje, które odróżniają Pipe od agentów ogólnego przeznaczenia:
 agent, który sam pilnuje serwera, widzi jego architekturę i zarządza wieloma maszynami naraz.

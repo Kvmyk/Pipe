@@ -105,6 +105,8 @@ class Notifier:
     """
     Prosty pub/sub zdarzen dla podlaczonych klientow. `on_publish(event) -> event` (Watcher: skrzynka,
     core/feed.py) dopisuje do zdarzenia `feed_id`, `push` i `actions` — klienci powiadamiaja tylko o `push`.
+    Kazde zdarzenie ma `ts` (czas publikacji): klient, ktory laczy sie ponownie, podaje `since` i dostaje z historii
+    to, co go ominelo — np. wynik /aktualizuj, publikowany zaraz po restarcie, zanim wroci kazdy kanal.
     """
 
     def __init__(self) -> None:
@@ -117,6 +119,14 @@ class Notifier:
         self._subscribers.add(queue)
         return queue
 
+    def missed(self, since: Any) -> list[dict[str, Any]]:
+        """Zdarzenia z historii opublikowane po `since` (czas z `ts`); zle `since` — nic."""
+        try:
+            since = float(since)
+        except (TypeError, ValueError):
+            return []
+        return [event for event in self.history if float(event.get("ts") or 0) > since]
+
     def unsubscribe(self, queue: asyncio.Queue) -> None:
         self._subscribers.discard(queue)
 
@@ -126,7 +136,7 @@ class Notifier:
 
     def publish(self, event: dict[str, Any], *, transient: bool = False) -> None:
         """`transient` — zdarzenie techniczne (np. zmiana jezyka): trafia do klientow, ale nie do historii."""
-        event = {**event, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
+        event = {**event, "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "ts": round(time.time(), 3)}
         if not transient and self.on_publish is not None:
             try:
                 event = self.on_publish(event) or event

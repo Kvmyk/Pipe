@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.49.1
+Pipe v0.49.2
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -1772,13 +1772,32 @@ def subscription_note() -> str:
               "matches in both .env files.")
 
 
+# Po zerwaniu subskrypcji backend dosyla zdarzenia nowsze niz `since`. Swiezo uruchomiony bot (np. po /aktualizuj,
+# ktora wymienia tez jego kontener) pyta o ostatnie REPLAY_ON_START s, ale z tamtego okresu bierze tylko przypomnienia
+# (wynik aktualizacji) — alertow sprzed startu poprzedni proces mogl juz wyslac.
+REPLAY_ON_START = 180.0
+_BOT_START = time.time()
+_last_event_ts = 0.0
+
+
+def _replayed_before_start(event: dict) -> bool:
+    """Zdarzenie sprzed startu bota, ktore nie jest przypomnieniem — pomijane (mogly juz dojsc)."""
+    try:
+        ts = float(event.get("ts") or 0)
+    except (TypeError, ValueError):
+        return False
+    return 0 < ts < _BOT_START and event.get("type") != "reminder"
+
+
 async def alerts_loop(app: Application) -> None:
     """Trwala subskrypcja zdarzen backendu z ponawianiem polaczenia."""
+    global _last_event_ts
     backoff = 2.0
     while True:
         try:
             reader, writer = await asyncio.open_unix_connection(AGENT_SOCKET, limit=READ_LIMIT)
-            request = {"command": "subscribe", "session_id": "telegram-alerts", "interface": "telegram:alerts"}
+            request = {"command": "subscribe", "session_id": "telegram-alerts", "interface": "telegram:alerts",
+                       "since": _last_event_ts or _BOT_START - REPLAY_ON_START}
             if AGENT_TOKEN:
                 request["token"] = AGENT_TOKEN
             writer.write((json.dumps(request) + "\n").encode("utf-8"))
@@ -1796,6 +1815,12 @@ async def alerts_loop(app: Application) -> None:
                                        + str(frame.get("response", "")))
                     break
                 event = frame.get("event") or {}
+                try:
+                    _last_event_ts = max(_last_event_ts, float(event.get("ts") or 0))
+                except (TypeError, ValueError):
+                    pass
+                if _replayed_before_start(event):
+                    continue
                 if event.get("type") == "subscribed":
                     print("[Pipe Telegram] Subskrypcja alertow aktywna.", flush=True)
                     _subscription.update(connected=True, error="", since=time.time())

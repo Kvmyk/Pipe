@@ -97,6 +97,15 @@ def free_port(preferred: int) -> int:
     raise RuntimeError("no free port")
 
 
+def _since(value) -> float | None:
+    """`ts` zdarzenia / naglowek Last-Event-ID -> liczba dla `since` subskrypcji (zle albo puste -> None)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
 class WebBridge:
     def __init__(self, backend_host: str | None, backend_port: int, token: str, *, lang: str = "en",
                  server_label: str = "", port: int = DEFAULT_PORT, setup=None, public=None) -> None:
@@ -107,6 +116,7 @@ class WebBridge:
         self.setup = setup
         self.public = public
         self._pollers: dict[str, dict] = {}         # token urzadzenia -> subskrypcja w tle dla /api/poll
+        self._poll_since: dict[str, float] = {}     # token urzadzenia -> `ts` ostatniego zdarzenia (do `since`)
         self._setup_lock = asyncio.Lock()
         self.backend_host = backend_host
         self.backend_port = backend_port
@@ -152,9 +162,11 @@ class WebBridge:
             except Exception:
                 pass
         finally:
+            # Bez await: obsluga przerwana anulowaniem (zamkniecie mostu, koniec petli) nie moze tu czekac — wisiala
+            # wtedy do sprzatania przez GC i zamykala deskryptor, ktory dostalo juz inne polaczenie. close() wystarcza,
+            # transport sam domyka gniazdo po wyslaniu bufora.
             try:
                 writer.close()
-                await writer.wait_closed()
             except Exception:
                 pass
 
@@ -256,7 +268,7 @@ class WebBridge:
         elif method == "POST" and path == "/api/request":
             await self._proxy_request(writer, body, who)
         elif method == "GET" and path == "/api/events":
-            await self._events(writer, who)
+            await self._events(writer, who, headers.get("last-event-id", ""))
         elif method == "GET" and path == "/api/poll":
             await self._poll(writer, who)
         elif method == "POST" and path == "/api/logout" and self.public is not None:
@@ -461,8 +473,12 @@ class WebBridge:
         finally:
             backend.close()
 
-    async def _events(self, writer, who: dict | None = None) -> None:
-        """Zdarzenia czuwania (alerty, przypomnienia, raporty) jako SSE; laczy sie ponownie po zerwaniu."""
+    async def _events(self, writer, who: dict | None = None, last_id: str = "") -> None:
+        """
+        Zdarzenia czuwania (alerty, przypomnienia, raporty) jako SSE; laczy sie ponownie po zerwaniu. Kazde zdarzenie
+        ma `id:` = jego `ts`, wiec przegladarka po zerwaniu odsyla Last-Event-ID, a backend (`since`) dosyla to,
+        co ja ominelo — np. wynik /aktualizuj, ktory przychodzi zaraz po restarcie backendu.
+        """
         writer.write((f"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\n"
                       f"X-Accel-Buffering: no\r\nConnection: close\r\n{SECURITY_HEADERS}\r\n").encode())
         await writer.drain()
@@ -474,6 +490,9 @@ class WebBridge:
         request = {"command": "subscribe", "session_id": "web-events", "interface": who["interface"]}
         if who["token"]:
             request["token"] = who["token"]
+        since = _since(last_id)
+        if since is not None:
+            request["since"] = since
         try:
             reader, backend = await self._connect()
         except OSError as exc:
@@ -503,7 +522,8 @@ class WebBridge:
                 payload = frame.get("event") or {"type": "error", "text": frame.get("response", "")}
                 if payload.get("type") == "language" or (payload.get("type") == "subscribed" and payload.get("lang_chosen")):
                     self._adopt_language(payload.get("lang"))
-                writer.write(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
+                event_id = f"id: {payload['ts']}\n" if _since(payload.get("ts")) is not None else ""
+                writer.write(f"{event_id}data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
                 await writer.drain()
         finally:
             backend.close()
@@ -515,6 +535,9 @@ class WebBridge:
         request = {"command": "subscribe", "session_id": "web-events", "interface": who["interface"]}
         if who["token"]:
             request["token"] = who["token"]
+        key = who["token"] or who["interface"]
+        if key in self._poll_since:                   # nowa subskrypcja po zerwaniu: to, co ominelo urzadzenie
+            request["since"] = self._poll_since[key]
         try:
             reader, backend = await self._connect()
         except OSError as exc:
@@ -534,6 +557,8 @@ class WebBridge:
                 payload = frame.get("event") or {"type": "error", "text": frame.get("response", "")}
                 if payload.get("type") == "language" or (payload.get("type") == "subscribed" and payload.get("lang_chosen")):
                     self._adopt_language(payload.get("lang"))
+                if _since(payload.get("ts")) is not None:
+                    self._poll_since[key] = payload["ts"]
                 if queue.full():
                     queue.get_nowait()                # nikt nie odbiera — najstarsze przepada
                 queue.put_nowait(payload)

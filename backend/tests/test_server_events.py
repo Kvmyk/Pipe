@@ -131,3 +131,30 @@ def test_token_required_for_subscribe(env, monkeypatch):
     monkeypatch.setattr(settings, "AGENT_TOKEN", "sekret")
     [frame] = exchange({"command": "subscribe"})
     assert frame["status"] == "error" and frame["done"]
+
+
+def test_resubscribe_gets_what_was_missed(env):
+    # Wynik /aktualizuj przychodzi zaraz po restarcie backendu; kanal, ktory wraca pozniej (pipe web, bot), podaje
+    # `since` i dostaje go mimo to — bez tego wygrywal tylko ten, kto podlaczyl sie pierwszy.
+    async def run():
+        notifier = watch.get_watcher().notifier
+        notifier.publish({"type": "alert", "id": "a0", "title": "stare"})
+        since = notifier.history[-1]["ts"]
+        await asyncio.sleep(0.01)
+        notifier.publish({"type": "reminder", "id": "r1", "text": "Pipe zaktualizowany"})
+        srv, reader, writer = await _open()
+        writer.write((json.dumps({"command": "subscribe", "since": since}) + "\n").encode())
+        await writer.drain()
+        hello = json.loads(await reader.readline())
+        assert hello["event"]["type"] == "subscribed" and hello["event"]["ts"] >= since
+        frame = json.loads(await asyncio.wait_for(reader.readline(), 2))
+        assert frame["event"]["text"] == "Pipe zaktualizowany"        # tylko to, co nowsze niz `since`
+        writer.close()
+        srv.close()
+    asyncio.run(run())
+
+
+def test_missed_ignores_bad_since():
+    notifier = watch.Notifier()
+    notifier.publish({"type": "alert", "id": "a"})
+    assert notifier.missed("nie liczba") == [] and notifier.missed(0) == notifier.history

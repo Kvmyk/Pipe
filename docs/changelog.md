@@ -2,6 +2,25 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.49.2 (2026-10-28)
+
+### The /update result reaches every channel
+
+- After `/update` the result ("Pipe updated to ...") reached only the channel that reconnected to the restarted
+  backend first. It was usually Telegram, and `pipe web` got nothing (the message is not in the dashboard inbox
+  either). It could also happen the other way round
+- Every event now carries the time it was published, and a client that reconnects says what it saw last: the backend
+  first sends what it missed. `pipe web` does it through the browser's standard SSE reconnect (`Last-Event-ID`, and per
+  device in the polling mode of `/web`), so it also gets alerts that came during a dropped connection. The Telegram bot
+  remembers its last event, and after its own restart (an update replaces its container too) it picks up the update
+  result without repeating older alerts
+- Protocol: `subscribe` takes an optional `since`, and events have a `ts` field. Older clients work as before
+
+### Fixes
+
+- The `pipe web` bridge no longer waits in a connection's cleanup after it was interrupted. Such a connection could
+  linger and later close a socket that already belonged to another request, which gave an empty answer now and then
+
 ## v0.49.1 (2026-10-28)
 
 ### The description matches what Pipe does

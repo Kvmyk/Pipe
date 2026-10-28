@@ -250,6 +250,10 @@ class TestWebBridge:
         await writer.drain()
         raw = await asyncio.wait_for(reader.read(-1), 5)
         writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
         head, _, payload = raw.partition(b"\r\n\r\n")
         return int(head.split()[1]), head.decode("latin-1"), payload
 
@@ -263,7 +267,11 @@ class TestWebBridge:
             try:
                 return await scenario(bridge, received)
             finally:
+                # Domknij gniazda w petli tego testu — sprzatane pozniej przez GC zamykaly deskryptor,
+                # ktory dostalo juz polaczenie nastepnego testu (pusta odpowiedz mostu).
                 server.close(); backend.close()
+                await server.wait_closed(); await backend.wait_closed()
+                await asyncio.sleep(0.05)
         return asyncio.run(go())
 
     def test_page_needs_the_key_and_sets_a_cookie(self):
@@ -349,6 +357,28 @@ class TestWebBridge:
         assert status == 200 and "text/event-stream" in head
         assert 'data: {"type": "reminder", "text": "kawa"}' in payload.decode()
         assert received[0]["command"] == "subscribe" and received[0]["token"] == "tok"
+
+    def test_sse_ids_let_the_browser_catch_up_after_a_restart(self):
+        # Kazde zdarzenie ma id = ts; po zerwaniu przegladarka odsyla Last-Event-ID, a most prosi backend o `since`
+        frames = [{"response": "", "status": "ok", "done": False, "event": {"type": "subscribed", "ts": 1700000000.5}},
+                  {"response": "", "status": "ok", "done": False, "event": {"type": "reminder", "text": "kawa", "ts": 1700000001.25}}]
+
+        async def scenario(bridge, received):
+            headers = {"Cookie": f"pipe_key={bridge.key}", "Last-Event-ID": "1700000000.5"}
+            status, head, payload = await self._http(bridge.port, "GET", "/api/events", headers)
+            return payload, received
+        payload, received = self._run(scenario, frames)
+        assert "id: 1700000001.25\ndata: " in payload.decode() and "id: 1700000000.5\n" in payload.decode()
+        assert received[0]["since"] == 1700000000.5
+
+    def test_first_connection_asks_for_no_history(self):
+        frames = [{"response": "", "status": "ok", "done": False, "event": {"type": "subscribed"}}]
+
+        async def scenario(bridge, received):
+            await self._http(bridge.port, "GET", "/api/events", {"Cookie": f"pipe_key={bridge.key}", "Last-Event-ID": "x"})
+            return received
+        (request,) = self._run(scenario, frames)
+        assert "since" not in request
 
     def test_static_files_exist_and_have_no_inline_scripts(self):
         index = (web.STATIC_DIR / "index.html").read_text(encoding="utf-8")

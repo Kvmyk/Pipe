@@ -424,3 +424,13 @@ def test_vulns_report_is_rendered_without_html_from_the_internet(monkeypatch):
     asyncio.run(bot.cmd_podatnosci(update, Context()))
     assert "<b>openssl</b> <code>3.0.1</code>" in sent[0] and "<code>DSA-1</code>" in sent[0]
     assert "<a href" not in sent[0] and "&lt;a href" in sent[0]
+
+
+def test_fresh_bot_takes_only_the_update_result_from_before_its_start(monkeypatch):
+    # Po /aktualizuj bot startuje od nowa i prosi o ostatnie minuty: wynik aktualizacji (przypomnienie) bierze,
+    # alertow sprzed startu nie (poprzedni proces mogl je juz wyslac)
+    monkeypatch.setattr(bot, "_BOT_START", 1000.0)
+    assert not bot._replayed_before_start({"type": "reminder", "ts": 950.0})
+    assert bot._replayed_before_start({"type": "alert", "ts": 950.0})
+    assert not bot._replayed_before_start({"type": "alert", "ts": 1001.0})
+    assert not bot._replayed_before_start({"type": "subscribed"})

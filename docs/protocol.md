@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.49.1
+Pipe v0.49.2
 
 ## Overview
 
@@ -109,7 +109,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `patch` | `scope`: empty / `all` (everything), `images`/`obrazy`, `system`/`serwer`, `servers`/`serwery`, an ssh target name, `urgent`/`pilne` (this server's urgent packages) | patches right away (`core/patching.py`): `progress` frames with the steps, then a new scan and `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- unchanged by the install, not tried again for a day; `freed` -- bytes freed by the cleanup; `report` -- the state after the patch, like `view` from `vulns`). Nothing to patch: `"data": {"nothing": true, "text", ...}`. The server builds the commands from the current scan. Patching runs in the background: a second `patch` meanwhile gets the same progress and result, and after the client disconnects the result arrives as a `message` reminder. The `execute` and `patch_token` fields (the preview before v0.38) are ignored. Refused: viewer, observe mode; this server's packages and images only in native and docker mode (with the helper container). **Without the LLM** |
 | `undo` | optionally `id`; `execute: true` | without `execute`: `"data": {"id", "undoable", "preview"}` (the last entry to undo when there is no `id`); with `execute` and `id`: the undo, `"data": {"id", "text"}`. **Without the LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
-| `subscribe` | -- | the connection stays open; watcher events (below) until the client disconnects |
+| `subscribe` | `since`: `ts` of the last event seen (optional) | the connection stays open; first the events published after `since`, then watcher events (below) until the client disconnects |
 
 The backend builds the message for the agent (`scan_server`, `run_skill`, `investigate`, a `message` action from the
 inbox); the client sends only the command. Messages built by the backend don't teach VIBE.
@@ -152,8 +152,8 @@ Frames with diagrams are hundreds of KB, so the client must read lines with a la
 ### Watcher events (`subscribe`)
 
 After `{"command": "subscribe"}` the server sends `{"event": {"type": "subscribed", "lang": "pl|en", "lang_chosen": bool,
-"view": "simple|tech", "view_chosen": bool}}` (`lang_chosen` -- the language was chosen with the `language` command,
-and the client should adopt it; `view_chosen` -- the same for the view), and then, without `done`:
+"view": "simple|tech", "view_chosen": bool, "ts": 1761679200.5}}` (`lang_chosen` -- the language was chosen with the
+`language` command, and the client should adopt it; `view_chosen` -- the same for the view), and then, without `done`:
 
 ```json
 {"response": "", "status": "ok", "done": false, "event": {"type": "language", "lang": "en", "at": "..."}}
@@ -312,7 +312,9 @@ async def chat_with_agent(message: str, session_id: str) -> list[dict]:
 - Handle `attachment` (show the image or save the file) and `event` of type `progress` (show it live)
 - Read lines with a limit >= 32 MiB
 - Handle long answers: split them into smaller messages if the platform has a limit
-- Alerts: a separate, permanent connection with `subscribe` and reconnecting after a disconnect
+- Alerts: a separate, permanent connection with `subscribe` and reconnecting after a disconnect; send `"since"` with the
+  `ts` of the last event you saw, and the server first sends what you missed (e.g. the `/update` result, which arrives
+  right after the backend restarts). `pipe web` does this with the SSE `id:` / `Last-Event-ID`
 
 ## Webhooks (HTTP)
 
