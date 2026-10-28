@@ -1,7 +1,7 @@
 """
 Agent -- petla LLM z tool calling do zarzadzania serwerami.
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Cykl jednej wiadomosci:
   1. Uzytkownik wysyla wiadomosc
@@ -552,9 +552,10 @@ class VPSAgent:
             yield f"[ODMOWA] {tr(OBSERVE_NOTICE, OBSERVE_NOTICE_EN)}"
             return
 
-        # Interfejs webowy rysuje schemat na zywo: co agent robi i na ktorym elemencie.
+        # Co agent robi i na ktorym elemencie: web rysuje to na schemacie, CLI i Telegram pokazuja komende i wycinek
+        # wyniku (stare klienty pomijaja nieznane zdarzenia).
         activity: Activity | None = None
-        if session.shows_activity and dispatch is None and not viewer:
+        if dispatch is None and not viewer:
             from backend.core import graph
             name = tool_call.function.name
             workers = tuple((str(t.get("name") or t.get("target") or ""), str(t.get("target") or ""))
@@ -563,8 +564,9 @@ class VPSAgent:
                                 tuple(graph.locate(name, args, session.cwd)), workers=workers)
             yield activity
         failed = False
-        # YOLO: pytanie o TAK nie trafia do uzytkownika — operacja wykonuje sie od razu, przez bezpiecznik.
-        yolo = session.yolo_now and dispatch is None
+        # YOLO i samodzielnosc: pytanie o TAK jest wstrzymane, dopoki nie wiadomo, czy operacja wykona sie bez niego
+        # (YOLO — kazda; samodzielnosc — rutynowa wedlug core/autonomy.py). Wykonanie idzie przez bezpiecznik.
+        yolo = (session.yolo_now or session.auto_now) and dispatch is None
         held: list[Event] = []
 
         buffered: list[Event] = []
@@ -604,15 +606,21 @@ class VPSAgent:
         executed = False
         if yolo:
             pending = session.pending_confirmation
+            mode = ""
             if pending is not None and pending.tool_call_id == tool_call.id:
+                mode = "yolo" if session.yolo_now else "" if await self._needs_yes(session, pending) else "auto"
+            if mode:
                 session.pending_confirmation = None
                 pending.activity = activity
                 executed = True
-                shown = visible(" ".join(pending.command.split()))
+                shown = visible(" ".join((pending.inner or pending.command).split()))
                 shown = shown if len(shown) <= 200 else shown[:199] + "…"
-                yield Progress(tr(f"YOLO — wykonuje bez pytania: {shown}", f"YOLO — running without asking: {shown}"))
+                yield Progress(tr(f"YOLO — wykonuje bez pytania: {shown}", f"YOLO — running without asking: {shown}")
+                               if mode == "yolo" else
+                               tr(f"Bez pytania (rutyna, przez bezpiecznik): {shown}",
+                                  f"Without asking (routine, through the safety fuse): {shown}"))
                 try:
-                    async for event in self._execute_tool_confirmed(session, pending, yolo=True):
+                    async for event in self._execute_tool_confirmed(session, pending, mode=mode):
                         yield event
                 finally:
                     if not _answered(session, tool_call.id, before):
@@ -635,10 +643,37 @@ class VPSAgent:
                 pending.activity = activity
                 yield dataclasses.replace(activity, phase="wait")
             else:
-                yield dataclasses.replace(activity, phase="end", ok=not failed and not _refused(session, tool_call.id, before))
+                yield dataclasses.replace(activity, phase="end", ok=not failed and not _refused(session, tool_call.id, before),
+                                          **_shown_output(activity.tool, _result_of(session, tool_call.id, before)))
+
+    async def _needs_yes(self, session: Session, pending: ConfirmationRequest) -> str:
+        """
+        Dlaczego operacja czeka na TAK mimo samodzielnosci ('' — rutyna). Kontekst zbierany tylko w razie potrzeby.
+        Kazdy blad po drodze to pytanie do uzytkownika, nigdy wykonanie.
+        """
+        from backend.core import autonomy
+        try:
+            text = pending.inner or pending.command or ""
+            own_data = runtime.to_host(str(memory.data_dir().resolve()))
+            ctx = autonomy.Context(cwd=session.cwd, remote=pending.remote,
+                                   protected=(own_data,) if own_data and own_data != "/" else ())
+            if pending.action is None and pending.stream is None and "docker" in text:
+                import socket
+                from backend.core import hostexec
+                ctx.own_names = {socket.gethostname()}
+                ctx.own_project = await hostexec.own_project()
+            if pending.action is None and pending.stream is None and "curl" in text:
+                from backend.core import checks
+                try:
+                    ctx.own_hosts = {d.lower() for d in await asyncio.wait_for(checks.discover_domains(), 10)}
+                except Exception:
+                    ctx.own_hosts = set()                # bez listy domen curl do nich po prostu pyta
+            return autonomy.reason(pending, ctx)
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
 
     async def _execute_tool_confirmed(self, session: Session, pending: ConfirmationRequest, *,
-                                      yolo: bool = False) -> AsyncGenerator[Event, None]:
+                                      mode: str = "") -> AsyncGenerator[Event, None]:
         """
         Wykonuje zatwierdzona operacje i dopisuje wynik do historii. Yielduje postep bezpiecznika.
 
@@ -648,10 +683,11 @@ class VPSAgent:
         Zmiany (wszystko poza akcja bez planu, np. odczytem pliku z sekretami) ida
         przez bezpiecznik (core/safety.py): kopia do dziennika, sprawdzenie przed,
         weryfikacja po, automatyczne przywrocenie plikow — wedlug planu z potwierdzenia.
-        `yolo` — wykonanie bez pytania (tryb YOLO); audit log i dziennik zapisuja to przy interfejsie.
+        `mode` — wykonanie bez pytania: "yolo" (tryb YOLO) albo "auto" (rutyna, core/autonomy.py); audit log
+        i dziennik zapisuja to przy interfejsie.
         """
         before = len(session.messages)
-        who = session.interface + (" [yolo]" if yolo else "")
+        who = session.interface + (f" [{mode}]" if mode else "")
         from backend.core import safety
         from backend.core.handlers.common import format_result
 
@@ -725,7 +761,9 @@ class VPSAgent:
         session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id, "content": result})
         _sanitize_new_results(session, before)
         if pending.activity is not None:
-            yield dataclasses.replace(pending.activity, phase="end", ok=exit_code == 0, entry=entry_id)
+            shown = _shown_output(pending.tool_name, _result_of(session, pending.tool_call_id, before))
+            yield dataclasses.replace(pending.activity, phase="end", ok=exit_code == 0, entry=entry_id,
+                                      auto=mode == "auto", **shown)
 
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
@@ -868,6 +906,29 @@ def _refused(session: Session, tool_call_id: str, since: int) -> bool:
 
 def _answered(session: Session, tool_call_id: str, since: int) -> bool:
     return any(m.get("role") == "tool" and m.get("tool_call_id") == tool_call_id for m in session.messages[since:])
+
+
+def _result_of(session: Session, tool_call_id: str, since: int) -> str:
+    """Wynik narzedzia dopisany od `since` (juz po redakcji sekretow) albo ''."""
+    for message in session.messages[since:]:
+        if message.get("role") == "tool" and message.get("tool_call_id") == tool_call_id:
+            return str(message.get("content", ""))
+    return ""
+
+
+# Narzedzia, ktorych wynik to wyjscie komendy (albo plan bezpiecznika po zapisie) — pod nimi interfejs pokazuje wycinek
+SHOWS_OUTPUT = {"execute_command", "remote_exec", "git_command", "cron_manage", "write_file"}
+
+
+def _shown_output(tool_name: str, result: str) -> dict[str, Any]:
+    """Pola Activity z wycinkiem wyniku; w widoku prostym (bez technicznych szczegolow) — nic."""
+    from backend.core import views
+    from backend.core.handlers.common import output_excerpt
+
+    if tool_name not in SHOWS_OUTPUT or not result or views.is_simple():
+        return {}
+    output, full, code = output_excerpt(result)
+    return {"output": output, "full": full if full != output else "", "code": code}
 
 
 def _repair_history(session: Session) -> None:

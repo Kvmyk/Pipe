@@ -24,6 +24,17 @@ def _isolated_env_file(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _ask_about_every_change(monkeypatch):
+    """
+    Testy potwierdzen (TAK/NIE, plan bezpiecznika, viewer, obserwacja) uzywaja rutynowych komend jak `mkdir` czy
+    `systemctl restart`, ktore przy samodzielnosci (domyslnie wlaczonej) wykonalyby sie bez pytania. Tu AUTONOMY=0;
+    samodzielnosc sprawdza test_autonomy.py, wlaczajac ja z powrotem.
+    """
+    from backend.config import settings
+    monkeypatch.setattr(settings, "AUTONOMY", False)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path, monkeypatch):
     """Domyslny DATA_DIR w katalogu tymczasowym (sesje, pamiec) — testy z wlasnym DATA_DIR go nadpisuja."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "default-data"))

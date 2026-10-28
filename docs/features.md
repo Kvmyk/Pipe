@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -63,7 +63,7 @@ logow"*, a Pipe poprowadzi to do konca sam. Projekty leza w jednym katalogu host
 | `inspect` | co to jest i jak to uruchomic -- bez modelu: compose, Dockerfile, Node, Python (Django, FastAPI, Flask, Streamlit), Go, PHP, strona statyczna; porty, potrzebne zmienne, README i AGENTS.md | nie |
 | zapis plikow | `write_file` w katalogu warsztatu (np. Dockerfile, skrypt) | nie |
 | `exec` | komenda w jednorazowym kontenerze: tylko katalog projektu jako `/work`, bez `docker.sock` i uprawnien (`--cap-drop ALL`, `no-new-privileges`), limit pamieci, procesow i czasu | nie* |
-| `run` | usluga na stale: kontener `pipe-<nazwa>` (albo projekt compose `pipe-<nazwa>`), port tylko na `127.0.0.1` | **tak, raz** -- z planem |
+| `run` | usluga na stale: kontener `pipe-<nazwa>` (albo projekt compose `pipe-<nazwa>`), port tylko na `127.0.0.1` | nie -- plan i postep widac w rozmowie |
 | `logs`, `stop`, `start`, `pull` | logi, zatrzymanie, wznowienie, `git pull --ff-only` | nie |
 | `remove` | katalog, kontenery i zbudowany obraz | **tak** |
 
@@ -251,7 +251,7 @@ Rutyna jest cykliczna; przypomnienie odpala sie **raz**, o podanym czasie, i zni
 - Czas wzgledny (`10s`, `15m`, `2h`, `1d`, `1h30m`) albo bezwzgledny (`HH:MM`, `RRRR-MM-DD HH:MM`, czas serwera).
 - **Wiadomosc** (`kind=message`) -- sama tresc, bez LLM i bez potwierdzenia; ustawienie widac jako notke `[PAMIEC]`.
 - **Zadanie** (`kind=task`) -- o czasie worker wykonuje je na wskazanym celu (tylko odczyty) i przysyla raport.
-  Wymaga potwierdzenia, bo wykona sie bez nadzoru.
+  Worker tylko czyta, wiec Pipe zaklada je bez pytania (przy `AUTONOMY=0` po potwierdzeniu).
 - Dostarczenie: Telegram, kanalem zdarzen. Przypomnienie z Telegrama wraca do osoby, ktora je ustawila; z CLI --
   do administratorow. Gdy bot nie jest podlaczony, przypomnienie czeka i dociera po polaczeniu.
 - CLI nie subskrybuje zdarzen, ale czekajac na wpis co 10 s odbiera przypomnienia (takze wynik `/aktualizuj`) i pokazuje
@@ -377,7 +377,13 @@ Kazde zapytanie do providera (rozmowa, workery, rutyny, VIBE) jest liczone w `ba
 
 ## Zmiany z bezpiecznikiem i `/cofnij`
 
-Kazda operacja, ktora zatwierdzasz, dostaje **plan** -- widoczny w potwierdzeniu, zanim nacisniesz TAK:
+Rutynowe zmiany Pipe robi sam: restart i przeladowanie uslug, `docker compose up -d`, edycje konfiguracji, pakiety
+z repozytorium systemu, `git pull`. Przechodza przez ten sam plan co zmiana po TAK, a w rozmowie widac je z dopiskiem
+*bez pytania*. O usuwanie danych, dostep do serwera (SSH, uzytkownicy, zapora), autostart (cron, systemd), kod
+i komendy, ktorych nie rozpoznaje, pyta zawsze -- pelna lista: `docs/security.md` (*Samodzielnosc*). `AUTONOMY=0`
+przywraca pytanie o kazda zmiane.
+
+Kazda zmiana dostaje **plan** -- przy waznych widoczny w potwierdzeniu, zanim nacisniesz TAK:
 
 ```
 Potrzebuje Twojej zgody
@@ -493,8 +499,8 @@ nazwy i wersje pakietow; `VULN_INTERVAL=0` wylacza skan.
 - Jadro ma tysiace rekordow CVE, wiec dla niego Pipe bierze tylko biuletyny dystrybucji (USN, DSA, DLA). Liczy sie
   najnowsze zainstalowane jadro: stare zostaja do autoremove i nie sa juz zglaszane. Pierwszy skan trwa okolo
   minuty, kolejne korzystaja z zapisanych szczegolow.
-- Agent w rozmowie lata tym samym narzedziem (`security_patch`): na "zalataj serwer" dostajesz jedno potwierdzenie
-  z lista tego, co zostanie zalatane, zamiast pytania o kazda komende apt i docker.
+- Agent w rozmowie lata tym samym narzedziem (`security_patch`): na "zalataj serwer" lata od razu, bez pytania
+  o kazda komende apt i docker (przy `AUTONOMY=0` jedno potwierdzenie z lista tego, co zostanie zalatane).
 - **Obrazy kontenerow.** Ten sam skan obejmuje pakiety w obrazach dzialajacych kontenerow (Debian, Ubuntu, Alpine):
   Pipe czyta ich baze pakietow przez `/proc/<pid>/root` kontenera albo z warstw overlay, niczego w kontenerze nie
   uruchamiajac. Jeden wynik na obraz, alert `vuln:images`. Obrazy bez systemu (distroless, scratch) sa wymienione
@@ -711,6 +717,13 @@ panelem rozmowa zajmuje cale okno (tresc w czytelnej kolumnie posrodku), a komen
 zakladke (np. `/alerty`), rozwija panel sam. Szerokosc i stan panelu zostaja w przegladarce. Z klawiatury: fokus na
 krawedzi, strzalki zmieniaja szerokosc, Enter chowa.
 
+**Kroki agenta w rozmowie.** Pod odpowiedzia widac, co agent zrobil: kazda komenda (albo opis, np. *czyta
+/etc/nginx/nginx.conf*) i kilka linii jej wyniku -- przy bledzie linie z bledem, przy sukcesie koniec. *Caly wynik*
+rozwija do 60 linii. W trakcie pracy blok jest otwarty, po odpowiedzi zwija sie do *Kroki: N* (chyba ze cos sie nie
+udalo albo czeka karta zgody). Zmiana wykonana bez pytania ma dopisek *bez pytania*. To ten sam wynik, ktory dostal
+model, z ukrytymi sekretami. W widoku prostym blokow nie ma. CLI pokazuje to samo jako szare linie pod komenda, Telegram
+w wiadomosci postepu.
+
 **Zmiany.** Przed zatwierdzeniem zapisu pliku widac roznice w karcie potwierdzenia. Po wykonaniu roznica "przed -> po"
 pojawia sie w rozmowie i w zakladce *Zmiany* -- takze gdy plik zmienila komenda (np. `sed`), bo bezpiecznik robi kopie.
 Sekrety w roznicach sa redagowane. Kazdy wpis ma przycisk cofniecia. Roznic nie ma dla katalogow i danych w bazach.
@@ -791,7 +804,7 @@ kontenerem), nie w trybie obserwacji ani w Kubernetes (tam Ingress). Szczegoly z
 
 Pipe ma dwa widoki, jak jedna aplikacja do dwoch rzeczy. **Prosty** jest dla osob nietechnicznych: rozmowa zwyklymi
 slowami, przypomnienia, pliki, skille i dodatki do aplikacji zewnetrznych (serwery MCP: GitHub, kalendarz, poczta).
-Agent sam wybiera sposob wykonania zadania, nie kaze wpisywac komend i pyta o zgode prostym pytaniem tak/nie.
+Agent sam wybiera sposob wykonania zadania, nie kaze wpisywac komend, a o wazne sprawy pyta prostym pytaniem tak/nie.
 **Techniczny** ma to samo i do tego serwer: schemat na zywo, dziennik zmian z cofaniem, podatnosci i latanie, kontenery,
 zdalne serwery.
 
@@ -946,8 +959,8 @@ siec prywatna, wstrzymanie YOLO) opisuje `docs/security.md`. `WEB_SEARCH=off` wy
 ## Aktualizacja samego Pipe
 
 Wpisz `/aktualizuj` (po angielsku `/update`) albo napisz agentowi "zaktualizuj sie"; `/aktualizuj sprawdz` tylko
-pokazuje wersje i to, czy jest nowsza. Agent sprawdza zdalne repozytorium, a po Twoim
-potwierdzeniu uruchamia osobny kontener pomocniczy, ktory w katalogu instalacji wykonuje `git pull --ff-only`
+pokazuje wersje i to, czy jest nowsza. Agent sprawdza zdalne repozytorium i uruchamia
+osobny kontener pomocniczy, ktory w katalogu instalacji wykonuje `git pull --ff-only`
 i podmienia uslugi Pipe na podpisany obraz wydania z GHCR (a gdy go nie ma, buduje je: `docker compose up -d --build`). Osobny kontener jest potrzebny, bo agent nie moze
 wymienic kontenera, w ktorym sam dziala -- proces zginalby w polowie.
 

@@ -31,31 +31,37 @@ async def handle_execute_command(
         return
 
     classification = classify_command(command)
-    if classification == "safe" and args.get("requires_confirmation") is True:
+    asked = args.get("requires_confirmation") is True
+    if classification == "safe" and asked:
         classification = "confirm"
     if args.get("host") is True and runtime.kind() != "native":
-        async for event in _on_host(session, tool_call, command, classification):
+        async for event in _on_host(session, tool_call, command, classification, asked):
             yield event
         return
 
     async for event in run_classified(session, tool_call, command, tool_name="execute_command",
-                                      classification=classification):
+                                      classification=classification, always_ask=asked):
         yield event
 
 
-async def _on_host(session: Session, tool_call: Any, command: str, classification: str) -> AsyncGenerator[Event, None]:
+async def _on_host(session: Session, tool_call: Any, command: str, classification: str,
+                   asked: bool = False) -> AsyncGenerator[Event, None]:
     """
-    `host: true` w trybie docker: komenda na hoscie przez kontener pomocniczy (core/hostexec.py). Zawsze po TAK —
-    nawet odczyt, bo uruchamia kontener uprzywilejowany (odczyty i tak robi sie z katalogu hosta). Klasyfikowana
-    i pokazywana jest komenda docelowa; opakowanie sklada kod.
+    `host: true` w trybie docker: komenda na hoscie przez kontener pomocniczy (core/hostexec.py). Zawsze przez
+    potwierdzenie (kontener uprzywilejowany) — rutyne core/autonomy.py wykonuje bez pytania. Klasyfikowana
+    i pokazywana jest komenda docelowa; opakowanie sklada kod. Plan bezpiecznika jak dla komendy lokalnej:
+    kopie plikow czyta z katalogu hosta, sprawdzenia i komendy odwrotne ida tym samym kontenerem pomocniczym.
     """
     reason = await hostexec.blocker()
     if reason:
         reply(session, tool_call, tr(f"Nie wykonam na hoscie: {reason}", f"Cannot run on the host: {reason}"))
         return
-    wrapped = hostexec.wrap(command, await hostexec.image(), session.cwd)
+    image_ref = await hostexec.image()
+    wrapped = hostexec.wrap(command, image_ref, session.cwd)
+    plan = hostexec.host_plan(await safety.plan_for_command(command, session.cwd), image_ref, session.cwd) \
+        if classification != "forbidden" else safety.Plan()
     async for event in run_classified(
             session, tool_call, wrapped, tool_name="execute_command", inner=command, shown=command,
             classification="forbidden" if classification == "forbidden" else "confirm",
-            plan=safety.Plan(notes=[hostexec.note()]), what=tr("Komenda na hoscie", "Host command")):
+            plan=plan, what=tr("Komenda na hoscie", "Host command"), always_ask=asked):
         yield event

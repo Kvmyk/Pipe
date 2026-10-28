@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -65,7 +65,7 @@ logs"*, and Pipe sees it through on its own. Projects live in one host directory
 | `inspect` | what it is and how to run it -- without a model: compose, Dockerfile, Node, Python (Django, FastAPI, Flask, Streamlit), Go, PHP, a static site; ports, needed variables, README and AGENTS.md | no |
 | writing files | `write_file` in the workshop directory (e.g. a Dockerfile, a script) | no |
 | `exec` | a command in a one-off container: only the project directory as `/work`, no `docker.sock` and no privileges (`--cap-drop ALL`, `no-new-privileges`), memory, process and time limits | no* |
-| `run` | a long-running service: container `pipe-<name>` (or compose project `pipe-<name>`), the port on `127.0.0.1` only | **yes, once** -- with the plan |
+| `run` | a long-running service: container `pipe-<name>` (or compose project `pipe-<name>`), the port on `127.0.0.1` only | no -- the plan and progress show in the conversation |
 | `logs`, `stop`, `start`, `pull` | logs, stopping, resuming, `git pull --ff-only` | no |
 | `remove` | the directory, containers and the built image | **yes** |
 
@@ -254,7 +254,7 @@ A routine repeats; a reminder fires **once**, at the given time, and disappears:
 - Relative time (`10s`, `15m`, `2h`, `1d`, `1h30m`) or absolute (`HH:MM`, `YYYY-MM-DD HH:MM`, server time).
 - **Message** (`kind=message`) -- just the text, no LLM and no confirmation; setting it shows up as a `[PAMIEC]` note.
 - **Task** (`kind=task`) -- at the time, a worker runs it on the given target (reads only) and sends a report.
-  Requires confirmation, because it runs unattended.
+  The worker only reads, so Pipe sets it up without asking (after confirmation with `AUTONOMY=0`).
 - Delivery: Telegram, through the event channel. A reminder set on Telegram goes back to the person who set it; one
   from the CLI goes to the admins. When the bot isn't connected, the reminder waits and arrives once it connects.
 - The CLI doesn't subscribe to events, but while waiting for input it picks up reminders every 10 s (including the
@@ -385,7 +385,13 @@ Every request to the provider (conversation, workers, routines, VIBE) is counted
 
 ## Changes with a safety fuse and `/undo`
 
-Every operation you approve gets a **plan**, shown in the confirmation before you press YES:
+Pipe makes routine changes itself: restarting and reloading services, `docker compose up -d`, config edits,
+packages from the system repository, `git pull`. They go through the same plan as a change after YES, and the
+conversation shows them marked *without asking*. It always asks about deleting data, access to the server (SSH,
+users, firewall), autostart (cron, systemd), code and commands it does not recognise -- the full list:
+`docs/en/security.md` (*Autonomy*). `AUTONOMY=0` brings back the question for every change.
+
+Every change gets a **plan** -- for important ones shown in the confirmation before you press YES:
 
 ```
 I need your approval
@@ -504,8 +510,9 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 - The kernel has thousands of CVE records, so for it Pipe only takes distribution advisories (USN, DSA, DLA). The
   newest installed kernel counts: old ones stay until autoremove and are no longer reported. The first scan takes
   about a minute, later ones reuse the saved details.
-- The agent in a conversation patches with the same tool (`security_patch`): "patch the server" gets you one
-  confirmation with a list of what will be patched instead of a question for every apt and docker command.
+- The agent in a conversation patches with the same tool (`security_patch`): "patch the server" patches right
+  away, without a question for every apt and docker command (with `AUTONOMY=0` one confirmation with a list of
+  what will be patched).
 - **Container images.** The same scan covers the packages in the images of running containers (Debian, Ubuntu,
   Alpine): Pipe reads their package database through the container's `/proc/<pid>/root` or from the overlay layers,
   without running anything in the container. One result per image, alert `vuln:images`. Images without a system
@@ -727,6 +734,13 @@ panel hidden the conversation takes the whole window (the content in a readable 
 or a notification that opens a tab (for example `/alerts`) brings the panel back by itself. The width and state of the
 panel are kept in the browser. From the keyboard: focus the edge, the arrows change the width, Enter hides it.
 
+**Agent steps in the conversation.** Under the answer you see what the agent did: every command (or a description,
+e.g. *reads /etc/nginx/nginx.conf*) and a few lines of its output -- on an error the error lines, on success the end.
+*Full output* expands up to 60 lines. While the agent works the block is open; after the answer it collapses to
+*Steps: N* (unless something failed or an approval card is waiting). A change made without asking is marked
+*without asking*. It is the same output the model got, with secrets hidden. The simple view has no such blocks. The
+CLI shows the same as grey lines under the command, Telegram in the progress message.
+
 **Changes.** Before you approve a file write you see the diff in the confirmation card. After it runs, the "before ->
 after" diff appears in the conversation and in the *Changes* tab, also when a command changed the file (for example
 `sed`), because the safety fuse takes a backup. Secrets in diffs are redacted. Every entry has an undo button. There
@@ -810,7 +824,7 @@ panel): if the page does not respond, Pipe says which port to open. Works in doc
 
 Pipe has two views, like one app for two jobs. **Simple** is for non-technical people: chat in plain words, reminders,
 files, skills and add-ons for external apps (MCP servers: GitHub, a calendar, email). The agent picks how to do the
-task itself, doesn't ask you to type commands and asks for approval with a plain yes/no question. **Technical** has
+task itself, doesn't ask you to type commands and asks about important things with a plain yes/no question. **Technical** has
 the same plus the server: the live map, the change journal with undo, vulnerabilities and patching, containers,
 remote servers.
 
@@ -969,7 +983,7 @@ outside the search results, private network, pausing YOLO) are described in [Sec
 ## Updating Pipe itself
 
 Type `/update` (in Polish `/aktualizuj`) or tell the agent "update yourself"; `/update check` only shows the versions
-and whether a newer one exists. The agent checks the remote repository, and after your confirmation starts a separate
+and whether a newer one exists. The agent checks the remote repository and starts a separate
 helper container that runs `git pull --ff-only` in the install directory and swaps Pipe's services for the signed
 release image from GHCR (or, when there is none, rebuilds them: `docker compose up -d --build`). A separate container is needed because the agent can't replace the container it
 runs in; the process would die halfway.

@@ -51,7 +51,7 @@ async def handle_journal(
 
         session.pending_confirmation = ConfirmationRequest(
             tool_call_id=tool_call.id, tool_name="journal", command=tr(f"cofniecie #{entry.id}", f"undo #{entry.id}"),
-            classification="confirm", action=rollback,
+            classification="confirm", action=rollback, auto=True,
         )
         yield tr("[POTWIERDZ] Cofniecie zmiany wymaga potwierdzenia.\n",
                  "[POTWIERDZ] Undoing the change requires confirmation.\n") + journal.preview(entry)

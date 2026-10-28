@@ -1,5 +1,42 @@
 # Historia zmian -- Pipe
 
+## v0.48.0 (2026-10-28)
+
+### Pipe robi rutyne sam, o wazne sprawy pyta
+
+- Restart i przeladowanie uslug i kontenerow, `docker compose up -d`/`pull`, poprawki w plikach konfiguracji,
+  instalacja i aktualizacja pakietow z repozytorium systemu, `git pull` z `origin`, sprzatanie cache i starych logow
+  Pipe wykonuje od razu, bez pytania. Ida przez ten sam bezpiecznik co po TAK: kopia plikow, sprawdzenie przed i po,
+  przywrocenie configu, wpis do `/cofnij`. W rozmowie maja dopisek *bez pytania*, w dzienniku i audit logu `[auto]`
+- Pyta zawsze, z powodem: usuwanie danych, ktorych nie skopiuje (`rm -r`, wolumeny, pliki powyzej 5 MB), dostep do
+  serwera (SSH, uzytkownicy, sudo, zapora), autostart (cron, systemd, `.bashrc`), kod (skrypty, pliki compose
+  i `Dockerfile`, `docker run`, `pip install`), dane wychodzace (`curl` do obcych, `git push`), pliki w katalogach
+  stron i konfiguracja serwera WWW, ktora wystawia katalogi (`root`, `alias`, `autoindex`), wlasny kontener Pipe,
+  zdalne serwery i kazda komenda, ktorej nie rozpoznaje. Lista z przykladami: `docs/security.md` (*Samodzielnosc*)
+- Po przeczytaniu strony z internetu, wyniku serwera MCP albo zalacznika Pipe znow pyta o wszystko do konca tury.
+  Viewer i tryb obserwacji dzialaja jak dotad
+- Bez osobnej komendy: wlaczone domyslnie, `AUTONOMY=0` w `backend/.env` przywraca pytanie o kazda zmiane
+- Latki (`security_patch`), cofniecie zmiany, zadanie jednorazowe, aktualizacja Pipe i uruchomienie projektu
+  z warsztatu ruszaja od razu, z widocznym postepem. Model nie pyta juz w odpowiedzi "czy mam to zrobic?" przed
+  rutynowym krokiem
+- Komenda `host: true` w trybie docker dostaje pelny plan bezpiecznika (kopie plikow z katalogu hosta, sprawdzenia,
+  komendy odwrotne) zamiast samego wpisu w dzienniku
+
+### Wynik komend w kazdym kliencie
+
+- Pod kazda komenda agenta widac kilka linii jej wyniku: przy bledzie linie z bledem i kod wyjscia, przy sukcesie
+  koniec. To ten sam wynik, ktory dostal model, z ukrytymi sekretami
+- `pipe web`: blok krokow pod odpowiedzia, w trakcie otwarty, potem zwiniety do *Kroki: N* (otwarty, gdy cos sie nie
+  udalo); *Caly wynik* rozwija do 60 linii. CLI: szare linie pod komenda. Telegram: w wiadomosci postepu
+- W widoku prostym tych wynikow nie ma
+
+### Wiecej odczytow bez pytania
+
+- `dmesg` (bez czyszczenia), `sed` bez `-i` i bez komend `e`/`w`, `awk` bez `system`, potokow, zapisu i `ENVIRON`,
+  `lsmod`, `modinfo`, `blkid`, `swapon --show`, `systemd-analyze blame`, `docker compose top`
+- `docker exec` / `docker compose exec` z rozpoznanym odczytem w srodku (takze `sh -c '...'`); sekrety, `env`,
+  `--privileged` i zmiany w kontenerze dalej pytaja
+
 ## v0.47.2 (2026-10-27)
 
 ### Ikona Pipe na ekranie glownym telefonu

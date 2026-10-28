@@ -52,7 +52,7 @@ class TestLoop:
             completion("Gotowe"),
         ])
         events = run(agent.chat("s", "uruchom"))
-        assert events == ["Gotowe"]
+        assert [e for e in events if isinstance(e, str)] == ["Gotowe"]
         tool_msg = client.calls[1]["messages"][-1]
         assert tool_msg["role"] == "tool" and "pipe-test" in tool_msg["content"]
 
@@ -106,7 +106,7 @@ class TestLoop:
         ])
         run(agent.chat("s", "zrob"))
         events = run(agent.confirm("s", True))
-        assert events == ["Zrobione"]
+        assert [e for e in events if isinstance(e, str)] == ["Zrobione"]
         assert_history_valid(agent._sessions["s"].messages)
 
     def test_unknown_tool_and_bad_json_are_answered(self):

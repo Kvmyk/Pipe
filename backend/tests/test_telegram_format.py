@@ -356,6 +356,51 @@ class TestProgressSummary:
         assert "Wykonane kroki: 2" in text and "<blockquote expandable>" in text and "a &lt;b&gt;" in text
         assert_valid_telegram_html(text.replace("<blockquote expandable>", "<blockquote>"))
 
+    def test_agent_step_with_output(self):
+        from tg_format import activity_entry, progress_text
+        base = {"type": "activity", "id": "c1", "tool": "execute_command", "label": "systemctl status nginx"}
+        assert activity_entry({**base, "phase": "start"}) == "⏳ $ systemctl status nginx"
+        assert "czeka na Twoja zgode" in activity_entry({**base, "phase": "wait"})
+        done = activity_entry({**base, "phase": "end", "ok": True, "code": 3, "auto": True,
+                               "output": "Active: failed\n<x> & y\nl3\nl4\nl5"})
+        assert done.splitlines()[0] == "✓ $ systemctl status nginx (bez pytania, kod 3)"
+        assert done.splitlines()[1:] == ["  Active: failed", "  <x> & y", "  l3", "  l4"]
+        assert activity_entry({**base, "tool": "load_tools", "phase": "end", "ok": True}) == ""
+        assert activity_entry({**base, "tool": "read_file", "label": "czyta /etc/hosts", "phase": "end",
+                               "ok": False}) == "✗ czyta /etc/hosts"
+        for text in (progress_text([done]), progress_text([done], done=True)):
+            assert "&lt;x&gt; &amp; y" in text
+            assert_valid_telegram_html(text.replace("<blockquote expandable>", "<blockquote>"))
+
+    def test_long_outputs_fit_in_one_message(self):
+        from tg_format import progress_text
+        entries = ["✓ $ cmd\n" + "\n".join("x" * 160 for _ in range(4))] * 30
+        for done in (False, True):
+            text = progress_text(entries, done=done)
+            assert len(text) < 4096
+            assert_valid_telegram_html(text.replace("<blockquote expandable>", "<blockquote>"))
+        assert "wczesniej" in progress_text(entries)
+
+
+def test_cli_and_web_show_agent_steps():
+    from pathlib import Path
+
+    pytest.importorskip("rich")              # CI nie instaluje zaleznosci CLI — jak test_cli_completion.py
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "cli"))
+    import cli
+
+    event = {"type": "activity", "id": "c1", "tool": "execute_command", "label": "df -h [x]", "phase": "end",
+             "ok": True, "output": "/dev/sda1 80%\nl2\nl3\nl4\nl5", "code": 1}
+    lines = cli._activity_lines(event)
+    assert "$ df -h \\[x]" in lines[0] and "kod 1" in lines[0] and len(lines) == 1 + cli.ACTIVITY_LINES
+    assert cli._activity_lines({**event, "phase": "start"}) == [] and cli._activity_lines({**event, "ok": None}) == []
+    static = Path(__file__).resolve().parents[2] / "clients" / "webui" / "static"
+    app = (static / "app.js").read_text(encoding="utf-8")
+    strings = (static / "i18n.js").read_text(encoding="utf-8")
+    assert "function chatStep(event)" in app and "chatStep(event);" in app and "foldSteps();" in app
+    for key in ("stepsRunning:", "stepsDone:", "autoDone:", "exitCode:", "fullOutput:"):
+        assert strings.count(key) == 2, key
+
 
 def test_commands_for_everyone_are_in_both_menus():
     """/aktualizuj, /web, /mcp... sa dla kazdego — nie moga zniknac z menu widoku prostego ani technicznego."""

@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 
@@ -9,8 +9,8 @@ Bot Telegram do zarzadzania serwerem VPS przez agenta AI.
 Bot Telegram to klient agenta. Laczy sie z backendem przez Unix socket i przekazuje wiadomosci z Telegrama do agenta. Odpowiedzi sa formatowane w HTML i wysylane z powrotem do uzytkownika.
 
 Obsluguje potwierdzenia przez przyciski inline (TAK / NIE; decyzja dopisuje sie do tej samej wiadomosci), wysyla
-diagramy jako zdjecia, pokazuje postep w jednej, aktualizowanej wiadomosci (po zakonczeniu zwija sie do linii
-"Wykonane kroki: N", liste rozwijasz dotknieciem) i -- co najwazniejsze -- **sam pisze, gdy cos sie dzieje**:
+diagramy jako zdjecia, pokazuje postep w jednej, aktualizowanej wiadomosci -- kazda komende agenta i kilka linii jej
+wyniku (po zakonczeniu zwija sie do linii "Wykonane kroki: N", liste rozwijasz dotknieciem) i -- co najwazniejsze -- **sam pisze, gdy cos sie dzieje**:
 alerty czuwania, podpowiedzi, ustalenia z samodzielnego badania i raporty rutyn przychodza bez pytania, kazde
 z przyciskami akcji (*Zbadaj*, *Zwolnij miejsce*, *Zalataj*, *Napraw*).
 

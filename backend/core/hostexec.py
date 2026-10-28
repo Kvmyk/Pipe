@@ -121,27 +121,31 @@ def note() -> str:
               "on the host: a helper container from the Pipe image (nsenter into process 1), like root in the server shell")
 
 
-def host_plan(plan, image_ref: str):
+def host_plan(plan, image_ref: str, cwd: str = ""):
     """
     Plan bezpiecznika dla komendy wykonywanej na hoscie: sprawdzenia powloki (`docker compose config -q`,
     `nginx -t`...) i stan projektu compose ida tym samym kontenerem pomocniczym — w kontenerze Pipe nie ma
     `docker compose` ani programow hosta. Komendy odwrotne tez (`/cofnij` wykona je na hoscie).
+    `cwd` — katalog hosta, w ktorym ruszaja (projekt compose bez -f).
     """
     from backend.core.safety import Check
 
     def moved(check: Check) -> Check:
         if check.kind == "shell" and check.command:
-            return Check(check.label, "shell", wrap(check.command, image_ref), check.target, check.retries, check.delay)
+            return Check(check.label, "shell", wrap(check.command, image_ref, cwd), check.target, check.retries, check.delay)
+        if check.kind == "active":                  # w kontenerze Pipe nie ma systemd hosta
+            probe = f"systemctl is-active --quiet {shlex.quote(check.target)}"
+            return Check(check.label, "shell", wrap(probe, image_ref, cwd), "", check.retries, check.delay)
         if check.kind == "compose":
             flags = f" {check.target}" if check.target else ""
             # kazdy kontener projektu: running, a jesli ma healthcheck — healthy
             probe = (f"out=$(docker compose{flags} ps -a --format '{{{{.State}}}} {{{{.Health}}}}') && "
                      "! printf '%s\\n' \"$out\" | grep -Ev '^(running( healthy)?)? *$'")
-            return Check(check.label, "shell", wrap(probe, image_ref), "", check.retries, check.delay)
+            return Check(check.label, "shell", wrap(probe, image_ref, cwd), "", check.retries, check.delay)
         return check
 
     plan.pre = [moved(c) for c in plan.pre]
     plan.post = [moved(c) for c in plan.post]
-    plan.inverse = [wrap(c, image_ref) for c in plan.inverse]
+    plan.inverse = [wrap(c, image_ref, cwd) for c in plan.inverse]
     plan.notes.append(note())
     return plan

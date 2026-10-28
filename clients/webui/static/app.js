@@ -133,9 +133,72 @@
     $("working-text").textContent = text || "";
   }
 
+  // Kroki agenta w rozmowie: co robi (komenda albo opis) i kilka linii wyniku, pelny wynik po kliknieciu.
+  // W trakcie tury bloki sa otwarte; po turze zwijaja sie do "Kroki: N" (chyba ze cos sie nie udalo albo czeka
+  // karta zgody — wtedy to, co agent ustalil, zostaje na wierzchu do decyzji). Widok prosty ich nie pokazuje.
+  let stepsBox = null, turnBoxes = [], waitingRows = [];
+  const stepRows = new Map();
+  const CODE_TOOLS = ["execute_command", "remote_exec", "git_command"];
+  function chatStep(event) {
+    if (view === "simple" || event.tool === "load_tools") return;
+    let row = stepRows.get(event.id);
+    if (!row) {
+      if (event.phase === "end" && event.ok === null) return;           // odrzucone potwierdzenie — karta juz to mowi
+      if (!stepsBox) {
+        stepsBox = el("details", "chat-steps");
+        stepsBox.open = true;
+        stepsBox.appendChild(el("summary", "", t("stepsRunning")));
+        stepsBox.appendChild(el("div", "chat-steps-list"));
+        add("agent steps-msg", stepsBox);
+        turnBoxes.push(stepsBox);
+      }
+      row = el("div", "cstep");
+      row.appendChild(el("span", "mark run"));
+      const what = el("div", "what");
+      what.appendChild(CODE_TOOLS.includes(event.tool) ? el("code", "", event.label) : document.createTextNode(event.label));
+      row.appendChild(what);
+      stepsBox.lastChild.appendChild(row);
+      row.box = stepsBox;
+      stepRows.set(event.id, row);
+    }
+    const failed = event.ok === false;
+    row.firstChild.className = "mark " + (event.phase === "start" ? "run" : event.phase === "wait" ? "wait" : failed ? "fail" : event.ok ? "ok" : "skip");
+    if (event.phase === "wait") { stepRows.delete(event.id); waitingRows.push(row); return; }   // po TAK krok wraca pod karta
+    if (event.phase !== "end") return;
+    stepRows.delete(event.id);
+    if (failed) row.box.dataset.failed = "1";
+    const what = row.children[1];
+    if (event.auto) what.appendChild(el("span", "tag add", t("autoDone")));
+    if (event.code) what.appendChild(el("span", "tag warn", t("exitCode").replace("{n}", event.code)));
+    if (event.output) row.appendChild(el("pre", "out", event.output));
+    if (event.full) {
+      const full = el("pre", "out full", event.full);
+      full.hidden = true;
+      const toggle = el("button", "more-out", t("fullOutput"));
+      toggle.type = "button";
+      toggle.addEventListener("click", () => { full.hidden = !full.hidden; toggle.textContent = full.hidden ? t("fullOutput") : t("hideDetails"); });
+      row.appendChild(toggle);
+      row.appendChild(full);
+    }
+    if (nearBottom()) scrollDown();
+  }
+  function sealSteps() {
+    if (!stepsBox) return;
+    stepsBox.firstChild.textContent = t("stepsDone").replace("{n}", stepsBox.lastChild.children.length);
+    stepsBox = null;
+  }
+  function foldSteps() {
+    sealSteps();
+    if (pendingCard) return;
+    waitingRows.forEach((row) => { row.firstChild.className = "mark skip"; });   // decyzja zapadla — wynik jest nizej
+    turnBoxes.forEach((box) => { if (!box.dataset.failed) box.open = false; });
+    turnBoxes = []; waitingRows = [];
+  }
+
   function showText(text, status) {
     const raw = String(text || "").trim();
     if (!raw) return;
+    sealSteps();                            // dalsze kroki po tej odpowiedzi trafia do nowego bloku, pod nia
     if (raw.startsWith("[PAMIEC]")) { add("note", t("memory") + ": " + stripTags(raw)); return; }
     if (status === "confirm" || raw.includes("[POTWIERDZ]")) { confirmCard(stripTags(raw)); return; }
     if (raw.startsWith("[OSTRZEZENIE]")) { add("note", t("warning") + ": " + stripTags(raw)); return; }
@@ -315,6 +378,7 @@
       $("send").disabled = false;
       setWorking("");
       settleActivities();
+      foldSteps();
       input.focus();
     }
     for (const entry of changed) await showChange(entry);
@@ -710,11 +774,13 @@
   }
 
   async function onActivity(event) {
+    chatStep(event);
     let item = activities.get(event.id);
     if (!item) { item = { event, steps: [], row: null, started: performance.now() }; activities.set(event.id, item); }
     if (event.phase === "start") item.started = performance.now();
     item.event = event;
     if (event.phase === "end") {
+      if (event.output) item.steps.push(...String(event.output).split("\n"));   // wycinek wyniku na osi czasu
       // Szybkie kroki (kilka ms) bylyby niewidoczne — wezel zostaje podswietlony przez chwile, potem blysk wyniku.
       const finish = () => {
         item.lingering = false;

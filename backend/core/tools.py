@@ -1,7 +1,7 @@
 """
 Tools -- definicje narzedzi dla LLM w formacie OpenAI function calling.
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Kazde narzedzie ma handler `handle_<nazwa>` w backend/core/handlers/.
 """
@@ -23,25 +23,26 @@ def _tool(name: str, description: str, properties: dict, required: list[str] | N
 _CONFIRM_FLAG = {
     "type": "boolean",
     "description": (
-        "Opcjonalne. true wymusza pytanie o potwierdzenie nawet dla operacji, ktora klasyfikator uznalby "
-        "za odczyt. Nie musisz go ustawiac: operacje zmieniajace stan i tak wymagaja potwierdzenia."
+        "Opcjonalne. true wymusza pytanie o potwierdzenie, takze dla odczytu albo rutynowej zmiany. Zwykle zbedne: "
+        "o wazne zmiany system pyta sam. Ustaw, gdy zmiana jest ryzykowna w sposob, ktorego regula nie zobaczy."
     ),
 }
 
 TOOLS: list[dict] = [
     _tool(
         "execute_command",
-        "Wykonuje komende shell na serwerze w katalogu roboczym. Odczyty wykonuja sie od razu, komendy "
-        "zmieniajace stan czekaja na potwierdzenie uzytkownika, zakazane sa odrzucane. Ogranicz output "
-        "(tail -n, head, grep). Docker tez tak: docker ps -a, docker logs --tail 200 <kontener>, docker inspect, "
-        "docker images (restart, stop, rm -- z potwierdzeniem). Dla znanych obszarow wolisz specjalizowane narzedzia.",
+        "Wykonuje komende shell na serwerze w katalogu roboczym. Odczyty i rutynowe zmiany (restart, przeladowanie, "
+        "edycja konfiguracji, pakiety) wykonuja sie od razu przez bezpiecznik, o wazne system pyta uzytkownika, "
+        "zakazane sa odrzucane. Ogranicz output (tail -n, head, grep). Docker tez tak: docker ps -a, docker logs "
+        "--tail 200 <kontener>, docker inspect, docker images (restart i stop -- przez bezpiecznik, rm -- z "
+        "potwierdzeniem). Dla znanych obszarow wolisz specjalizowane narzedzia.",
         {
             "command": {"type": "string", "description": "Komenda shell do wykonania na serwerze."},
             "requires_confirmation": _CONFIRM_FLAG,
             "host": {"type": "boolean", "description": (
                 "Tylko w trybie docker: true wykonuje komende na hoscie (jak root w powloce serwera, przez kontener "
                 "pomocniczy, z narzedziami hosta), np. apt-get, systemctl, sed -i w /etc, ufw, docker compose build/pull/up -d "
-                "w katalogu projektu. Zawsze po potwierdzeniu. Odczytow tak "
+                "w katalogu projektu. Rutyna od razu, wazne zmiany po potwierdzeniu. Odczytow tak "
                 "nie rob — czytaj z katalogu hosta.")},
         },
         ["command"],
@@ -56,7 +57,8 @@ TOOLS: list[dict] = [
     _tool(
         "write_file",
         "Zapisuje caly plik na serwerze (tworzy go razem z brakujacymi katalogami albo nadpisuje). Poza warsztatem "
-        "wymaga potwierdzenia; w katalogu warsztatu (projekty, Twoje skrypty) zapisuje od razu. Nie uzywaj dla "
+        "zapis idzie przez bezpiecznik (kopia, walidacja); pliki dostepu, autostartu, kodu i sekretow -- po "
+        "potwierdzeniu. W katalogu warsztatu (projekty, Twoje skrypty) zapisuje od razu. Nie uzywaj dla "
         "plikow, ktore czytales z [ZREDAGOWANO] — zmien je punktowo przez execute_command (sed -i).",
         {
             "path": {"type": "string", "description": "Sciezka do pliku na serwerze."},
@@ -74,7 +76,7 @@ TOOLS: list[dict] = [
     _tool(
         "git_command",
         "Operacja Git w repozytorium: status, log, diff, branch, show (odczyty) albo pull, commit, push, "
-        "checkout, merge, stash pop (wymagaja potwierdzenia).",
+        "checkout, merge (przez bezpiecznik; push, reset --hard i clean po potwierdzeniu).",
         {
             "repo_path": {"type": "string", "description": "Sciezka hosta do repozytorium, np. /srv/shop."},
             "subcommand": {"type": "string",
@@ -217,7 +219,7 @@ TOOLS: list[dict] = [
         "journal",
         "Dziennik zatwierdzonych zmian: przed kazda zmiana Pipe robi kopie plikow, stanu gita i crontaba oraz "
         "zapisuje komendy odwrotne (docker start/stop, systemctl enable/disable). list: ostatnie wpisy. "
-        "undo: cofniecie wpisu (domyslnie ostatniego) — zawsze z potwierdzeniem. Uzyj, gdy uzytkownik mowi "
+        "undo: cofniecie wpisu (domyslnie ostatniego). Uzyj, gdy uzytkownik mowi "
         "'cofnij', 'przywroc jak bylo', albo gdy zmiana okazala sie bledna.",
         {
             "operation": {"type": "string", "enum": ["list", "undo"]},
@@ -359,8 +361,8 @@ TOOLS: list[dict] = [
         "Przypomnienia: JEDNORAZOWA wiadomosc albo zadanie o okreslonym czasie — 'napisz do mnie za 10 sekund', "
         "'przypomnij jutro o 9 o odnowieniu domeny', 'za godzine sprawdz, czy backup sie skonczyl'. To jedyny "
         "sposob, zeby odezwac sie do uzytkownika pozniej: sam nie potrafisz czekac. kind=message wysyla tresc "
-        "(bez potwierdzenia); kind=task uruchamia o czasie workera (tylko odczyty) i przysyla raport (wymaga "
-        "potwierdzenia). Zadania cykliczne zakladaj jako rutyny (routine_manage).",
+        "(bez potwierdzenia); kind=task uruchamia o czasie workera (tylko odczyty) i przysyla raport. Zadania "
+        "cykliczne zakladaj jako rutyny (routine_manage).",
         {
             "operation": {"type": "string", "enum": ["add", "list", "cancel"]},
             "delay": {"type": "string",
@@ -382,7 +384,7 @@ TOOLS: list[dict] = [
         "pipe_update",
         "Aktualizacja samego Pipe (Ciebie): 'zaktualizuj sie', 'pobierz nowa wersje Pipe', 'jaka masz wersje, czy jest "
         "nowsza'. check — wersja, commit i czy na zdalnym repozytorium sa nowsze zmiany (nic nie zmienia). apply — "
-        "po potwierdzeniu osobny kontener pobiera zmiany (git pull --ff-only) i przebudowuje uslugi Pipe; backend "
+        "osobny kontener pobiera zmiany (git pull --ff-only) i przebudowuje uslugi Pipe; backend "
         "restartuje sie, rozmowa zostaje przerwana, a wynik przychodzi sam jako wiadomosc. NIGDY nie aktualizuj samego "
         "Pipe recznie przez git/docker compose (takze z host: true) — przebudowa wlasnego kontenera przerwalaby ja "
         "w polowie. Inne projekty compose na hoscie obslugujesz zwyczajnie: execute_command z host: true.",

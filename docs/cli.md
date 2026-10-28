@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Interaktywny terminal do zarzadzania serwerem VPS przez agenta AI.
 
@@ -56,6 +56,10 @@ python cli.py --host root@1.2.3.4 --key ~/.ssh/id_serwer
 export VPS_HOST=root@serwer.example.com
 python cli.py
 ```
+
+W trakcie pracy agenta pod Twoja wiadomoscia pojawia sie szara linia na kazdy krok -- `✓ $ komenda` (albo opis,
+np. *czyta /etc/hosts*) i do 4 linii wyniku pod nia; przy kodzie wyjscia innym niz 0 dopisek *kod N*, przy zmianie
+wykonanej bez pytania -- *bez pytania*. W widoku prostym tych linii nie ma.
 
 ## Jesli masz juz wlasny tunel SSH
 
@@ -196,7 +200,7 @@ przy polaczeniu (chyba ze podano `--lang`).
 | `/web` | Pipe w przegladarce z telefonu i komputera pod adresem HTTPS: `/web wlacz [port] [domena]`, `/web wylacz`, `/web wpusc <kod>` (wpuszcza urzadzenie), `/web odwolaj <nr>`; bez argumentow stan i urzadzenia (`docs/features.md`) |
 | `/sprzataj` | Zwalnia miejsce bez AI: obrazy Dockera bez tagu, stary cache budowania, pobrane paczki i cache npm/pip; tylko administrator (`/cleanup`) |
 | `/powiadomienia [wszystko\|wazne\|krytyczne] [cisza 22-7\|cisza off] [dziennie 3]` | Kiedy Pipe ma powiadamiac; bez argumentow pokazuje obecne ustawienia (`/notifications`) |
-| `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe na serwerze (po potwierdzeniu); `sprawdz` tylko pokazuje wersje; po restarcie backendu CLI laczy sie ponownie samo (do 3 min), bez uruchamiania od nowa |
+| `/aktualizuj [sprawdz]` | Aktualizacja samego Pipe na serwerze; `sprawdz` tylko pokazuje wersje; po restarcie backendu CLI laczy sie ponownie samo (do 3 min), bez uruchamiania od nowa |
 | `/raport` | Poranny raport na zadanie: stan, alerty, zmiany od wczoraj, certyfikaty, backupy, aktualizacje, koszt LLM + wykres |
 | `/zmiany [24h\|3d]` | Co sie zmienilo na serwerze: pakiety, obrazy kontenerow, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |

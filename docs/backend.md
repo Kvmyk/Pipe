@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Backend agenta. Dziala na serwerze (Docker, natywnie z systemd albo w Kubernetesie -- [deploy.md](./deploy.md))
 i wystawia lokalny Unix socket i port TCP 127.0.0.1:7379 dla klientow.
@@ -357,6 +357,7 @@ systemu, Docker, siec, historia serwera, `project`, `load_tools`). Grupy `memory
 | `MCP_<NAZWA>` (dowolne) | -- | Sekrety dla serwerow MCP, z ktorych korzysta Pipe -- w konfiguracji serwera jako `${MCP_<NAZWA>}` |
 | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`, `STT_LANGUAGE` | wg providera, pl | Transkrypcja glosu (gemini/openai/groq -- automatycznie; `STT_*` ma pierwszenstwo) |
 | `SAFE_AUTO_ROLLBACK` | 1 | Nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii |
+| `AUTONOMY` | 1 | Rutynowe zmiany bez pytania (przez bezpiecznik), o sprawy wazne Pipe pyta (`docs/security.md`, *Samodzielnosc*); 0 = pytanie o kazda zmiane |
 | `DAILY_TOKEN_LIMIT`, `DAILY_COST_LIMIT` | 0 | Dzienny limit tokenow / kosztu w USD (0 = bez limitu) |
 | `TOOLS_MODE` | `lazy` | `lazy` -- narzedzia na zadanie; `all` -- opisy wszystkich narzedzi przy kazdym zapytaniu |
 | `CONTEXT_KEEP_TURNS` | 2 | Wyniki narzedzi starsze niz tyle tur ida do modelu skrocone (0 = zawsze w calosci) |

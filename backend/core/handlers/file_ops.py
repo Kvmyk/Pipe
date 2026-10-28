@@ -207,13 +207,8 @@ def workspace_write(host: str, real_host: str) -> bool:
 
 
 # Pliki uruchamiane automatycznie przy logowaniu/starcie — zapis = trwaly backdoor.
-_STARTUP_PATTERNS = (
-    r"/\.(bashrc|bash_profile|profile|zshrc|zprofile|zshenv|bash_login|bash_logout)$",
-    r"/\.ssh/(authorized_keys|config)$",
-    r"/\.config/systemd/", r"/etc/systemd/", r"/\.gitconfig$", r"/\.git/hooks/",
-    r"/etc/cron", r"/var/spool/cron", r"/etc/profile\.d/", r"/etc/rc\.local$",
-    r"/\.(profile|bashrc)\.d/",
-)
+# Pliki uruchamiane same — ta sama lista, przy ktorej samodzielnosc zawsze pyta (core/autonomy.py)
+from backend.core.autonomy import STARTUP_PATTERNS as _STARTUP_PATTERNS  # noqa: E402
 
 
 def startup_file_warning(host: str) -> str:

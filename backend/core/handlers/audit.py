@@ -127,7 +127,7 @@ async def handle_security_patch(
     shown = tr("/zalataj", "/patch") + ("" if scope == "all" else f" {scope.removeprefix('server:')}")
     session.pending_confirmation = ConfirmationRequest(
         tool_call_id=tool_call.id, tool_name="security_patch", command=f"{shown}: {job.describe()}",
-        classification="confirm", stream=stream)
+        classification="confirm", stream=stream, auto=True)
     what = "\n".join((p.title()[:1].upper() + p.title()[1:]) + ": " + p.what() for p in job.parts)
     fuse = tr("Bezpiecznik:\n"
               "- weryfikacja po: strony, ktore dzialaja teraz, maja dzialac po latce; kontenery projektow compose dzialaja\n"

@@ -282,6 +282,7 @@ class TestAgent:
             return first, before, state
 
         first, before, state = run(talk())
+        first = [e for e in first if isinstance(e, str)]
         assert before == {} and "[POTWIERDZ] Nowy serwer MCP" in first[0] and "kontenerze" in first[0]
         assert state.status == "connected" and state.client.era == "modern"
         results = {m["tool_call_id"]: m["content"] for m in agent._sessions["s"].messages if m.get("role") == "tool"}

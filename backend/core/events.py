@@ -64,11 +64,24 @@ class Activity:
     ok: bool | None = None
     entry: str = ""
     workers: tuple[tuple[str, str], ...] = ()    # (nazwa workera, cel) — dla delegate
+    # Koniec komendy: wycinek wyniku (kilka linii), dluzszy wynik do rozwiniecia i kod wyjscia
+    # (handlers/common.output_excerpt — po redakcji sekretow; w widoku prostym puste).
+    output: str = ""
+    full: str = ""
+    code: int | None = None
+    auto: bool = False                            # zmiana wykonana bez pytania (core/autonomy.py)
 
     def to_wire(self) -> dict:
-        return {"type": "activity", "id": self.id, "phase": self.phase, "tool": self.tool, "label": self.label,
+        wire = {"type": "activity", "id": self.id, "phase": self.phase, "tool": self.tool, "label": self.label,
                 "nodes": list(self.nodes), "ok": self.ok, "entry": self.entry,
                 "workers": {name: target for name, target in self.workers}}
+        if self.output or self.full:
+            wire.update(output=self.output, full=self.full)
+        if self.code is not None:
+            wire["code"] = self.code
+        if self.auto:
+            wire["auto"] = True
+        return wire
 
 
 Event = Union[str, Attachment, Progress, Activity]

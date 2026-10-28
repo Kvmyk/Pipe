@@ -104,6 +104,9 @@ SESSION_KEEP_DAYS: int = _int("SESSION_KEEP_DAYS", 7)
 CONFIRMED_COMMAND_TIMEOUT: int = _int("CONFIRMED_COMMAND_TIMEOUT", 900)
 # Bezpiecznik: nieudana weryfikacja zmiany plikow konfiguracji -> automatyczne przywrocenie kopii.
 SAFE_AUTO_ROLLBACK: bool = os.getenv("SAFE_AUTO_ROLLBACK", "1").strip().lower() not in ("0", "false", "no", "nie")
+# Samodzielnosc (core/autonomy.py): rutynowe zmiany (restart, przeladowanie, edycja konfiguracji z kopia, pakiety)
+# wykonuja sie bez pytania przez bezpiecznik; o sprawy wazne Pipe pyta. AUTONOMY=0 — pytanie o kazda zmiane.
+AUTONOMY: bool = os.getenv("AUTONOMY", "1").strip().lower() not in ("0", "false", "no", "nie")
 # Redakcja sekretow w wynikach narzedzi przed wyslaniem do providera LLM.
 REDACT_SECRETS: bool = os.getenv("REDACT_SECRETS", "1").strip().lower() not in ("0", "false", "no", "nie")
 

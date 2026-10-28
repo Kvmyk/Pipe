@@ -183,7 +183,7 @@ class TestCommandAndAgent:
             completion("zainstalowano")]))
 
         async def talk():
-            first = [e async for e in agent.chat("s", "pobierz skill deploy z a/b", "cli")]
+            first = [e async for e in agent.chat("s", "pobierz skill deploy z a/b", "cli") if isinstance(e, str)]
             before = memory.list_skills()
             tainted = agent._sessions["s"].web_tainted
             [e async for e in agent.confirm("s", True)]

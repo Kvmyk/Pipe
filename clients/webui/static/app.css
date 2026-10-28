@@ -145,6 +145,24 @@ button { cursor: pointer; border: 0; background: none; }
 .msg.note { align-self: stretch; font-size: 13px; color: var(--ink-2); padding: 8px 12px; border-radius: 6px;
   background: var(--panel-2); border: 1px solid var(--line); }
 .msg.error > .body { color: var(--bad); }
+/* kroki agenta w rozmowie: komenda + kilka linii wyniku */
+.chat-steps { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.chat-steps > summary { cursor: pointer; padding: 7px 10px; color: var(--ink-3); font-size: 12.5px; list-style: none;
+  user-select: none; min-height: 32px; display: flex; align-items: center; gap: 6px; }
+.chat-steps > summary::-webkit-details-marker { display: none; }
+.chat-steps > summary::before { content: ""; width: 6px; height: 6px; border: 1.5px solid currentColor; border-left: 0;
+  border-bottom: 0; transform: rotate(45deg); transition: transform .15s var(--ease); margin-right: 2px; }
+.chat-steps[open] > summary::before { transform: rotate(135deg); }
+.chat-steps-list { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.cstep { display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: start; }
+.cstep .what { min-width: 0; line-height: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.cstep .what code { font: 12.3px var(--mono); overflow-wrap: anywhere; }
+.cstep .what .tag { height: 18px; font-size: 11px; }
+.cstep .out { grid-column: 2; margin: 0; font: 11.5px/1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap;
+  overflow-wrap: anywhere; }
+.cstep .out.full { max-height: 22em; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--sunken); }
+.cstep .more-out { grid-column: 2; justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--accent-ink);
+  font: 12px var(--sans); cursor: pointer; }
 .welcome { margin: auto 0; padding: 24px 8px; color: var(--ink-2); max-width: 440px; }
 .welcome .logo { width: 28px; height: 28px; color: var(--ink); margin-bottom: 14px; display: block; }
 .welcome h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: -.015em; color: var(--ink); }

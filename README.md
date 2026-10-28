@@ -8,11 +8,11 @@
 
 <p align="center">
   Pipe to agent AI, który mieszka na Twoim serwerze Linux. Gdy coś się psuje, pisze do Ciebie na Telegram,<br>
-  szuka przyczyny i proponuje poprawkę. Wprowadza ją dopiero po Twoim „tak”, z kopią, którą cofniesz jedną komendą.
+  szuka przyczyny i naprawia. Rutynowe poprawki robi sam, z kopią, którą cofniesz jedną komendą. O ważne rzeczy pyta.
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.47.2-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.48.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -42,9 +42,10 @@ Pipe pisze pierwszy, na Telegram, do przeglądarki albo do terminala. Przy powa�
 i przysyła, co ustalił, z przyciskiem *Napraw*. Uprzedza też, zanim zrobi się problem: „dysk zapełni się za ok.
 4 dni”, „mogę zwolnić 6 GB”. Rano przychodzi krótki raport.
 
-Agent może czytać serwer swobodnie, ale niczego nie zmienia bez pytania. Każda komenda przechodzi przez
-klasyfikator zapisany w kodzie (nie w prompcie): odczyty wykonują się od razu, zmiany czekają na Twoje
-potwierdzenie, a operacje niszczące są odrzucane zawsze.
+Agent czyta serwer swobodnie. Rutynowe zmiany, jak restart usługi, przeładowanie nginx albo poprawka w pliku
+konfiguracji, robi sam, z kopią i sprawdzeniem przed i po. Zanim usunie dane, ruszy dostęp do serwera (SSH,
+użytkownicy, zapora) albo uruchomi komendę, której nie zna, pyta. Decyduje o tym klasyfikator zapisany w kodzie
+(nie w prompcie), a operacje niszczące są odrzucane zawsze. W rozmowie widać każdą komendę i kilka linii jej wyniku.
 
 Pipe działa z dowolnym modelem zgodnym z API OpenAI. Domyślnie z Google Gemini, który ma darmowy limit.
 
@@ -107,7 +108,7 @@ też da się cofnąć.
 Gdy rozmowa trafia do modelu, Pipe wysyła mu tylko te narzędzia, których rozmowa potrzebuje (ok. 2,1 tys. tokenów
 zamiast 6 tys. przy każdym kroku) i skraca stare wyniki komend. `/koszt` pokazuje, ile w ten sposób nie poszło.
 
-**Zmienia ostrożnie.** Przed każdą zatwierdzoną zmianą robi kopię plików. Konfigurację sprawdza przed
+**Zmienia ostrożnie.** Przed każdą zmianą robi kopię plików. Konfigurację sprawdza przed
 przeładowaniem (`nginx -t`, `sshd -t`, `docker compose config`), a po zmianie upewnia się, że usługa działa i strony
 dalej odpowiadają. Jeśli nie odpowiadają, sam przywraca poprzednią wersję. Wszystko trafia do dziennika i można to
 cofnąć komendą `/cofnij`.
@@ -175,13 +176,15 @@ sprawdzania, które modele radzą sobie z naprawami: [sandbox/README.md](./sandb
 
 ## Bezpieczeństwo
 
-- Klasyfikator przepuszcza bez pytania tylko rozpoznane odczyty. Nieznana komenda oznacza pytanie o zgodę.
+- Bez pytania Pipe robi rozpoznane odczyty i rutynowe zmiany, które umie sprawdzić i cofnąć. O usuwanie danych,
+  dostęp, autostart, wysyłanie danych poza serwer i nieznane komendy pyta. `AUTONOMY=0` to pytanie o każdą zmianę.
 - Okno potwierdzenia pokazuje dokładnie tę komendę, która się wykona, razem z planem kopii i weryfikacji.
 - Klucze API, hasła i tokeny z plików są ukrywane, zanim tekst trafi do dostawcy modelu.
 - Workery i rutyny tylko czytają. Każda operacja jest zapisywana w dzienniku audytu.
 
 Ważne ograniczenie: w trybie Docker Pipe ma dostęp do `docker.sock`, czyli w praktyce uprawnienia roota na serwerze.
-Ochroną jest Twoje potwierdzenie przy każdej zmianie. Pełny opis: [docs/security.md](./docs/security.md).
+Ochroną jest to, że bez pytania Pipe robi tylko rutynę z kopią, a reszta czeka na Twoje potwierdzenie. Pełny opis:
+[docs/security.md](./docs/security.md).
 
 Jeśli wolisz zacząć ostrożnie, zainstaluj Pipe z `--profile observe`. Wtedy nie dostaje `docker.sock` (Dockera
 widzi tylko do odczytu), `/root` jest tylko do odczytu, a każda zmiana jest odrzucana bez pytania. Pipe dalej

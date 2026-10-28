@@ -110,7 +110,7 @@ async def handle_reminder(
             tool_call_id=tool_call.id, tool_name="reminder",
             command=tr(f"zadanie jednorazowe {preview.when} na celu {target}: {text[:160]}",
                        f"one-off task {preview.when} on target {target}: {text[:160]}"),
-            classification="confirm", action=create,
+            classification="confirm", action=create, auto=True,
             plan=safety.Plan(local_files=[(str(reminders.reminders_path()), tr("pamiec Pipe: reminders.json",
                                                                                 "Pipe memory: reminders.json"))]),
         )

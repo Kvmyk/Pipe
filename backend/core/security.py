@@ -44,6 +44,7 @@ SAFE_PREFIXES: list[str] = [
     "cat", "head", "tail", "less -f", "grep", "egrep", "fgrep", "zgrep", "zcat", "wc", "sort", "uniq",
     "cut", "column", "jq", "stat", "file", "ls", "tree", "find", "du", "df", "realpath", "readlink",
     "basename", "dirname", "echo", "printf", "true", "which", "whereis", "md5sum", "sha256sum", "diff",
+    "nl", "tac", "rev", "strings", "tr", "paste", "comm", "seq", "sed", "awk", "gawk", "mawk",
     # system
     "free", "uptime", "ps", "pgrep", "top", "hostname", "whoami", "id", "pwd", "date", "uname", "nproc",
     "lsblk", "lscpu", "lsof", "findmnt", "vmstat", "iostat", "mpstat", "sensors", "who", "w", "last",
@@ -51,7 +52,8 @@ SAFE_PREFIXES: list[str] = [
     "apt-cache policy", "apt-cache show", "apt-cache search", "snap list", "crontab -l",
     "systemctl status", "systemctl is-active", "systemctl is-enabled", "systemctl is-failed",
     "systemctl list-units", "systemctl list-unit-files", "systemctl list-timers", "systemctl show",
-    "systemctl cat", "systemctl --failed", "journalctl",
+    "systemctl cat", "systemctl --failed", "journalctl", "dmesg", "lsmod", "modinfo", "blkid", "swapon --show",
+    "systemd-analyze blame", "systemd-analyze time", "systemd-analyze critical-chain",
     # siec
     "netstat", "ss", "ip a", "ip addr", "ip -br", "ip r", "ip route", "ip link show", "ip -4", "ip -6",
     "nslookup", "dig", "host", "ping", "traceroute", "tracepath", "getent", "curl", "openssl x509",
@@ -63,6 +65,9 @@ SAFE_PREFIXES: list[str] = [
     "docker volume ls", "docker volume inspect", "docker container ls", "docker system df",
     "docker compose ps", "docker compose logs", "docker compose config", "docker compose ls",
     "docker compose images", "docker-compose ps", "docker-compose logs", "docker-compose config",
+    "docker compose top", "docker compose version",
+    # docker exec tylko z rozpoznanym odczytem w srodku (_check_docker_exec)
+    "docker exec", "docker container exec", "docker compose exec", "docker-compose exec",
     # git (argumenty sprawdza _check_git)
     "git status", "git log", "git diff", "git branch", "git remote", "git show", "git tag",
     "git rev-parse", "git ls-files", "git blame", "git describe", "git shortlog", "git reflog",
@@ -85,7 +90,7 @@ CONFIRM_PATTERNS: list[str] = [
     r"\bapt(-get)?\s+(install|remove|purge|autoremove|upgrade|dist-upgrade|full-upgrade)",
     r"\bmv\s", r"\bcp\s", r"\brm\s", r"\bkill\s", r"\bpkill\s", r"\bkillall\s", r"\bservice\s",
     r"\bsystemctl\s+(start|stop|restart|reload|enable|disable|mask|unmask|daemon-reload|kill|edit)\b",
-    r"\bdocker\s+(stop|start|restart|rm|rmi|kill|run|exec|system\s+prune|volume\s+rm|network\s+rm|compose\s+(up|down|rm|stop|restart|pull))\b",
+    r"\bdocker\s+(stop|start|restart|rm|rmi|kill|run|system\s+prune|volume\s+rm|network\s+rm|compose\s+(up|down|rm|stop|restart|pull))\b",
     r"\bdocker-compose\s+(up|down|rm|stop|restart|pull)\b",
     r"\bpip3?\s+install\b",
     r"\bgit\s+(push|commit|checkout|switch|merge|rebase|reset|clean|pull|stash\s+(pop|drop|clear)|restore|rm|mv)\b",
@@ -367,8 +372,11 @@ def _url_host(token: str) -> str | None:
     return value.rsplit(":", 1)[0] if ":" in value and not value.count(":") > 1 else value
 
 
-def _check_curl(tokens: list[str]) -> Classification:
-    """curl: pisanie do pliku, metoda inna niz GET albo host zewnetrzny -> confirm (eksfiltracja)."""
+def _check_curl(tokens: list[str], also_local: frozenset[str] | set[str] = frozenset()) -> Classification:
+    """
+    curl: pisanie do pliku, metoda inna niz GET albo host zewnetrzny -> confirm (eksfiltracja).
+    `also_local` — domeny, ktore obsluguje ten serwer (core/autonomy.py: zapytanie do nich nie wynosi danych).
+    """
     method = "GET"
     skip = False
     hosts: list[str] = []
@@ -416,9 +424,103 @@ def _check_curl(tokens: list[str]) -> Classification:
                 hosts.append(host)
     if method.upper() not in ("GET", "HEAD", "OPTIONS"):
         return "confirm"
-    if any(not _host_is_local(host) for host in hosts):
+    if any(not (_host_is_local(host) or host.lower() in also_local) for host in hosts):
         return "confirm"                            # ruch do obcego hosta = mozliwa eksfiltracja
     return "safe"
+
+
+# sed: e wykonuje komende, w/W zapisuje plik (takze jako flaga s///w); -i i -f (skrypt z pliku) — confirm
+_SED_EXEC_OR_WRITE = re.compile(r"(^|[;{}\n/\d$])\s*[eEwW](\s|$|;|})")
+_SED_SAFE_FLAGS = {"-n", "--quiet", "--silent", "-E", "-r", "--regexp-extended", "-s", "--separate", "-z",
+                   "--null-data", "-u", "--unbuffered", "--posix", "--debug"}
+
+
+def _check_sed(tokens: list[str]) -> Classification:
+    """sed bez -i i bez komend e/w — wypisuje tekst, niczego nie zmienia."""
+    scripts: list[str] = []
+    expect_script = True
+    skip = False
+    for token in tokens[1:]:
+        if skip:
+            skip = False
+            scripts.append(token)
+            continue
+        if token in ("-e", "--expression"):
+            skip, expect_script = True, False
+            continue
+        if token.startswith("--expression="):
+            scripts.append(token.split("=", 1)[1])
+            expect_script = False
+            continue
+        if token.startswith("-") and token != "-":
+            if token not in _SED_SAFE_FLAGS and not re.fullmatch(r"-[nErsuz]+", token):
+                return "confirm"
+            continue
+        if expect_script:
+            scripts.append(token)
+            expect_script = False
+    if not scripts or any(_SED_EXEC_OR_WRITE.search(script) for script in scripts):
+        return "confirm"
+    return "safe"
+
+
+# awk: system(), potoki, getline, zapis `print > plik`, zmienne srodowiska (sekrety), rozszerzenia gawk (@load)
+_AWK_UNSAFE = re.compile(r"system|getline|ENVIRON|PROCINFO|@|(?<!\|)\|(?!\|)|\bprintf?\b[^;{}]*>", re.IGNORECASE)
+
+
+def _check_awk(tokens: list[str]) -> Classification:
+    """awk z programem w argumencie, bez wykonywania komend i zapisu plikow."""
+    program = None
+    skip = False
+    for token in tokens[1:]:
+        if skip:
+            skip = False
+            continue
+        if token in ("-F", "-v", "--field-separator", "--assign"):
+            skip = True
+            continue
+        if token.startswith(("-F", "-v", "--field-separator=", "--assign=")):
+            continue
+        if token.startswith("-") and token != "-":
+            return "confirm"                        # -f plik, -i/--include, -l/--load, -E
+        program = token
+        break
+    if program is None or _AWK_UNSAFE.search(program):
+        return "confirm"
+    return "safe"
+
+
+_DMESG_WRITE = ("-c", "-C", "--clear", "--read-clear", "-n", "--console-level", "-D", "--console-off", "-E",
+                "--console-on")
+
+
+def _check_docker_exec(tokens: list[str], depth: int = 0) -> Classification:
+    """
+    `docker [container|compose] exec [opcje] KONTENER komenda...` — odczyt tylko wtedy, gdy komenda w kontenerze
+    jest rozpoznanym odczytem (ta sama klasyfikacja, takze `sh -c '...'`). Opcje: tylko -i/-t/-T/-u/-w/-e.
+    """
+    low = [t.lower() for t in tokens]
+    start = 3 if os.path.basename(low[0]) == "docker" and low[1] in ("container", "compose") else 2
+    rest = tokens[start:]
+    j = 0
+    while j < len(rest) and rest[j].startswith("-"):
+        flag = rest[j]
+        if flag in ("-i", "-t", "-it", "-ti", "--interactive", "--tty", "-T", "--no-TTY"):
+            j += 1
+        elif flag in ("-u", "--user", "-w", "--workdir", "-e", "--env") and j + 1 < len(rest):
+            j += 2
+        elif flag.startswith(("--user=", "--workdir=", "--env=")):
+            j += 1
+        else:
+            return "confirm"                        # --privileged, -d, --index i inne
+    inner = rest[j + 1:]
+    if not inner or depth > 1:
+        return "confirm"
+    if os.path.basename(inner[0]) in ("sh", "bash", "ash", "dash") and len(inner) == 3 and inner[1] == "-c":
+        text = inner[2]
+    else:
+        text = shlex.join(inner)
+    return classify_command(text)
 
 
 _KUBE_SECRET_RESOURCE = re.compile(r"(^|,)secrets?($|[,/.])")
@@ -471,6 +573,14 @@ def _check_arguments(tokens: list[str]) -> Classification:
         return "confirm"
     if program == "openssl" and any(t in ("-out", "-keyout") for t in low):
         return "confirm"
+    if program == "sed":
+        return _check_sed(tokens)
+    if program in ("awk", "gawk", "mawk"):
+        return _check_awk(tokens)
+    if program == "dmesg" and any(t in _DMESG_WRITE or t.startswith("--console-level=") for t in tokens[1:]):
+        return "confirm"
+    if program in ("docker", "docker-compose") and "exec" in low[1:3]:
+        return _check_docker_exec(tokens)
     return "safe"
 
 

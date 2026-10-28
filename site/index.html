@@ -46,7 +46,7 @@
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
     <p class="meta">Open source na licencji MIT · działa z Gemini (darmowy limit), OpenAI, Claude, Ollamą i innymi ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.47.2</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.48.0</a></p>
 
     <figure class="shot">
       <img src="assets/demo-pl.gif" width="1100" height="647" alt="Okno pipe web: po lewej rozmowa z agentem, który bada błędy 502 i prosi o zgodę na zmianę konfiguracji nginx; po prawej schemat serwera z podświetlonym elementem, na którym agent pracuje">
@@ -232,13 +232,14 @@ bash install.sh       <span class="c"># Linux, macOS</span>
         <h2>Co warto wiedzieć przed instalacją</h2>
         <ul class="limits">
           <li>W trybie Docker Pipe ma dostęp do <code>docker.sock</code>, czyli w praktyce uprawnienia
-            roota. Chroni Cię potwierdzenie każdej zmiany, więc czytaj, co zatwierdzasz.</li>
+            roota. Bez pytania Pipe robi tylko rutynę z kopią (restart, przeładowanie, poprawka w konfiguracji).
+            Usunięcie danych, dostęp, autostart i nieznane komendy czekają na Ciebie, więc czytaj, co zatwierdzasz.</li>
           <li>Treść rozmowy trafia do dostawcy modelu. Klucze, hasła i tokeny z plików są ukrywane
             przed wysłaniem, ale logi i konfiguracja już nie. Jeśli to problem, użyj lokalnego modelu przez Ollamę.</li>
           <li>Rozmowy są w pamięci procesu. Restart backendu je kasuje. Pamięć o serwerze, dziennik
             zmian i historia zostają na dysku.</li>
-          <li>Jakość diagnozy zależy od modelu. Słabszy model częściej się myli. Dlatego zmiany zawsze
-            przechodzą przez potwierdzenie i weryfikację.</li>
+          <li>Jakość diagnozy zależy od modelu. Słabszy model częściej się myli. Dlatego każda zmiana
+            przechodzi przez kopię i weryfikację, a ważne czekają na Twoje potwierdzenie.</li>
         </ul>
         <p>Szczegóły: <a href="docs/security.html">Bezpieczeństwo</a>.</p>
       </div>
@@ -248,7 +249,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.47.2 · licencja MIT</span>
+    <span>Pipe 0.48.0 · licencja MIT</span>
     <a href="https://github.com/Kvmyk/pipe">Kod na GitHubie</a>
     <a href="docs/">Dokumentacja</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Historia zmian</a>

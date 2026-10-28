@@ -46,7 +46,7 @@
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh --lang en</code></pre>
     <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.47.2</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.48.0</a></p>
 
     <figure class="shot">
       <img src="../assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and asks for approval to change the nginx config; on the right a map of the server with the element the agent works on highlighted">
@@ -231,13 +231,14 @@ bash install.sh       <span class="c"># Linux, macOS</span>
         <h2>Worth knowing before you install</h2>
         <ul class="limits">
           <li>In Docker mode Pipe has access to <code>docker.sock</code>, which in practice means root.
-            Your protection is the confirmation of every change, so read what you approve.</li>
+            Without asking Pipe does only routine work with a backup (a restart, a reload, a config fix). Deleting
+            data, access, autostart and unknown commands wait for you, so read what you approve.</li>
           <li>The conversation goes to the model provider. Keys, passwords and tokens from files are
             hidden before sending, but logs and configuration are not. If that is a problem, run a local model with Ollama.</li>
           <li>Conversations live in process memory. A backend restart clears them. What Pipe knows about the
             server, the change journal and the history stay on disk.</li>
-          <li>Diagnosis quality depends on the model. A weaker model is wrong more often. That is why
-            changes always go through confirmation and verification.</li>
+          <li>Diagnosis quality depends on the model. A weaker model is wrong more often. That is why every
+            change goes through a backup and verification, and important ones wait for your confirmation.</li>
         </ul>
         <p>Details: <a href="docs/security.html">Security</a>.</p>
       </div>
@@ -247,7 +248,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.47.2 · MIT license</span>
+    <span>Pipe 0.48.0 · MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="docs/">Documentation</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>

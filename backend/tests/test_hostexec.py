@@ -114,7 +114,12 @@ class TestExecuteCommandOnHost:
 
         monkeypatch.setattr(executor, "execute", fake_execute)
         run(agent.confirm("s", True))
-        assert ran == [request.command]
+        # pelny bezpiecznik na hoscie: nginx -t przed, restart, `systemctl is-active` po — wszystko przez pomocnika
+        cwd = agent._sessions["s"].cwd
+        order = [ran.index(hostexec.wrap("nginx -t", IMAGE, cwd)), ran.index(request.command),
+                 ran.index(hostexec.wrap("systemctl is-active --quiet nginx", IMAGE, cwd))]
+        assert order == sorted(order)
+        assert "nginx -t" in confirm and "usluga nginx aktywna" in confirm
         assert_history_valid(agent._sessions["s"].messages)
 
     def test_reads_also_need_yes_and_forbidden_is_refused(self, monkeypatch):

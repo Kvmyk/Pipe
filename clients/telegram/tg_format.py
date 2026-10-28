@@ -721,19 +721,63 @@ def format_directory(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
+PROGRESS_MAX = 3600          # limit wiadomosci Telegrama to 4096 znakow — zapas na naglowek i tagi
+
+
+def _fit(rendered: list[str]) -> tuple[list[str], int]:
+    """Najnowsze wpisy, ktore mieszcza sie w PROGRESS_MAX (wpisy z wynikiem komend bywaja dlugie)."""
+    kept: list[str] = []
+    for entry in reversed(rendered):
+        if kept and sum(len(e) + 1 for e in kept) + len(entry) > PROGRESS_MAX:
+            break
+        kept.insert(0, entry)
+    return kept, len(rendered) - len(kept)
+
+
 def progress_text(lines: list[str], limit: int = 12, done: bool = False) -> str:
     """
     Tresc wiadomosci-statusu aktualizowanej na biezaco. Po zakonczeniu (`done`) ta sama wiadomosc zamienia sie
     w jedna linie "Wykonane kroki: N" z lista w zwinietym cytacie — zamiast "W toku" wiszacego w czacie na zawsze.
+    Wpis moze miec kilka linii (krok agenta z wycinkiem wyniku, activity_entry): kolejne sa wciete.
     """
     if done:
-        steps = "\n".join("· " + html.escape(l[:160]) for l in lines[-30:])
+        rendered = ["· " + "\n   ".join(html.escape(part[:160]) for part in entry.split("\n")) for entry in lines[-30:]]
+        steps, _skipped = _fit(rendered)
         return tr(f"☑️ <b>Wykonane kroki: {len(lines)}</b>", f"☑️ <b>Steps taken: {len(lines)}</b>") \
-            + f"\n<blockquote expandable>{steps}</blockquote>"
-    shown = lines[-limit:]
+            + "\n<blockquote expandable>" + "\n".join(steps) + "</blockquote>"
+    rendered = ["<code>" + "\n".join(html.escape(part[:200]) for part in entry.split("\n")) + "</code>"
+                for entry in lines[-limit:]]
+    shown, _cut = _fit(rendered)
     skipped = len(lines) - len(shown)
     head = tr(f"<i>... i {skipped} wczesniej</i>\n", f"<i>... and {skipped} earlier</i>\n") if skipped else ""
-    return tr("⏳ <b>W toku</b>\n", "⏳ <b>In progress</b>\n") + head + "\n".join(f"<code>{html.escape(l[:200])}</code>" for l in shown)
+    return tr("⏳ <b>W toku</b>\n", "⏳ <b>In progress</b>\n") + head + "\n".join(shown)
+
+
+_COMMAND_TOOLS = {"execute_command", "remote_exec", "git_command"}
+ACTIVITY_LINES = 4
+
+
+def activity_entry(event: dict) -> str:
+    """
+    Krok agenta (zdarzenie `activity`) jako wpis wiadomosci postepu: w trakcie "⏳ $ komenda", po wszystkim
+    "✓ $ komenda" i kilka linii wyniku (wycinek wybrany przez backend, sekrety zamazane). '' — krok bez znaczenia
+    dla uzytkownika (wlaczanie narzedzi).
+    """
+    if event.get("tool") == "load_tools":
+        return ""
+    label = str(event.get("label") or event.get("tool") or "")
+    what = f"$ {label}" if event.get("tool") in _COMMAND_TOOLS else label
+    phase, ok = event.get("phase"), event.get("ok")
+    if phase == "start":
+        return f"⏳ {what}"
+    if phase == "wait":
+        return f"⏸ {what} — " + tr("czeka na Twoja zgode", "waiting for your approval")
+    mark = "✗" if ok is False else "–" if ok is None else "✓"
+    notes = ([tr("bez pytania", "without asking")] if event.get("auto") else []) + \
+        ([tr(f"kod {event['code']}", f"exit {event['code']}")] if event.get("code") else [])
+    head = f"{mark} {what}" + (f" ({', '.join(notes)})" if notes else "")
+    output = [f"  {line}" for line in str(event.get("output") or "").splitlines()[:ACTIVITY_LINES]]
+    return "\n".join([head] + output)
 
 
 def format_digest(event: dict) -> str:

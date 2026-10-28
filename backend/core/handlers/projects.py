@@ -203,7 +203,7 @@ async def handle_project(agent: Any, session: Session, tool_call: Any, args: dic
                                      image_ref=image_ref)
             session.pending_confirmation = ConfirmationRequest(
                 tool_call_id=tool_call.id, tool_name="project", command=f"project run {project.name} ({plan.strategy})",
-                classification="confirm",
+                classification="confirm", auto=cfg.autonomy or None,
                 stream=lambda: projects.run_stream(cfg, project, plan, interface=session.interface))
             main = plan.steps[-1]
             shown = main.shell or " ".join(main.argv)

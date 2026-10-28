@@ -1,6 +1,6 @@
 # Protokol komunikacji -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 ## Opis
 
@@ -181,12 +181,18 @@ tak samo `{"type": "view", "view": "simple"}` po zmianie widoku)
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
   "type": "activity", "id": "<id wywolania narzedzia>", "phase": "start|wait|end", "tool": "execute_command",
-  "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {}}}
+  "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {},
+  "output": "web", "full": "...", "code": 0, "auto": true}}
 ```
 
-Zdarzenia `activity` dostaje tylko klient, ktorego `interface` zaczyna sie od `web` -- mowia, co agent robi i na
+Zdarzenia `activity` dostaje kazdy klient w strumieniu rozmowy (poza rola viewer) -- mowia, co agent robi i na
 ktorych wezlach schematu (`graph`). `wait` = czeka na potwierdzenie; `end` ma `ok` (true/false/null po odmowie)
-i `entry` -- identyfikator wpisu dziennika, gdy zmiana zostala wykonana.
+i `entry` -- identyfikator wpisu dziennika, gdy zmiana zostala wykonana. Przy komendach (`execute_command`,
+`remote_exec`, `git_command`, `cron_manage`, `write_file`) `end` niesie tez wycinek wyniku: `output` (do 3 linii:
+przy bledzie linie z bledem i ostatnia, przy sukcesie koniec, plus alarm bezpiecznika), `full` (do 60 linii / 4000
+znakow, do rozwiniecia) i `code` (kod wyjscia). To ten sam wynik, ktory dostal model, juz po redakcji sekretow;
+w widoku prostym tych pol nie ma. `auto: true` -- zmiana wykonana bez pytania (samodzielnosc, `docs/security.md`).
+Klient, ktory zna tylko `progress`, moze zdarzenia `activity` pominac.
 
 `to` to interfejs, ktory ustawil przypomnienie -- klient decyduje, komu je pokazac. Dla `kind: task`
 pole `report` zawiera raport workera.

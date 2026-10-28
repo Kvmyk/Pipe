@@ -351,6 +351,7 @@ class TestAgentFlow:
             return first, after, undo, done
 
         first, after, undo, done = run(talk())
+        first, undo = [e for e in first if isinstance(e, str)], [e for e in undo if isinstance(e, str)]
         assert "Bezpiecznik:" in first[0] and "poprawny JSON" in first[0]
         tool_result = next(m["content"] for m in agent._sessions["s"].messages if m.get("tool_call_id") == "c1")
         assert "Zweryfikowano: poprawny JSON" in tool_result and "Dziennik zmian: #" in tool_result

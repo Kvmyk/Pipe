@@ -8,11 +8,11 @@
 
 <p align="center">
   Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on Telegram,<br>
-  finds the cause and proposes a fix. It applies the fix only after you say yes, with a backup you can undo in one command.
+  finds the cause and fixes it. It makes routine fixes by itself, with a backup you can undo in one command. It asks about the important ones.
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.47.2-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.48.0-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -43,9 +43,11 @@ failure it checks the cause right away and sends what it found, with a *Fix it* 
 something becomes a problem: "the disk will be full in about 4 days", "I can free up 6 GB". Every morning a short
 report arrives.
 
-The agent can read the server freely, but it changes nothing without asking. Every command goes through a
-classifier written in code (not in the prompt): reads run right away, changes wait for your confirmation, and
-destructive operations are always refused.
+The agent reads the server freely. Routine changes, like restarting a service, reloading nginx or fixing a config
+file, it makes by itself, with a backup and a check before and after. Before it deletes data, touches access to the
+server (SSH, users, firewall) or runs a command it doesn't know, it asks. A classifier written in code (not in the
+prompt) decides that, and destructive operations are always refused. The conversation shows every command and a few
+lines of its output.
 
 Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
 
@@ -105,7 +107,7 @@ before putting something up for good, and that deployment can be undone too.
 a conversation does go to the model, Pipe sends only the tools that conversation needs (about 2.1k tokens instead of
 6k on every step) and shortens old command output. `/cost` shows how much was not sent this way.
 
-**Changes things carefully.** Before every approved change it backs up the files. It validates configuration before
+**Changes things carefully.** Before every change it backs up the files. It validates configuration before
 reloading (`nginx -t`, `sshd -t`, `docker compose config`) and afterwards checks that the service runs and the sites
 still respond. If they don't, it restores the previous version by itself. Everything goes into a journal and can be
 undone with `/undo`.
@@ -174,13 +176,15 @@ used to check which models can handle the fixes: [sandbox/README.md](./sandbox/R
 
 ## Security
 
-- The classifier lets only recognised reads through without asking. An unknown command means a confirmation prompt.
+- Without asking Pipe runs recognised reads and routine changes it can check and undo. It asks about deleting data,
+  access, autostart, sending data outside the server and unknown commands. `AUTONOMY=0` means a question for every change.
 - The confirmation shows exactly the command that will run, together with the backup and verification plan.
 - API keys, passwords and tokens from files are hidden before any text reaches the model provider.
 - Workers and routines only read. Every operation is written to an audit log.
 
 An important limitation: in Docker mode Pipe has access to `docker.sock`, which in practice means root on the server.
-The protection is your confirmation of every change. Full description: [docs/en/security.md](./docs/en/security.md).
+The protection is that without asking Pipe does only routine work with a backup, and everything else waits for your
+confirmation. Full description: [docs/en/security.md](./docs/en/security.md).
 
 If you'd rather start carefully, install Pipe with `--profile observe`. It then gets no `docker.sock` (it sees Docker
 read-only), `/root` is read-only, and every change is refused without asking. Pipe still watches the server, answers

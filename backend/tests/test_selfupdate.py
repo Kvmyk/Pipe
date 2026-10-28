@@ -205,6 +205,7 @@ class TestTool:
             return asked, before, done
 
         asked, before, done = asyncio.run(scenario())
+        asked = [e for e in asked if isinstance(e, str)]
         assert "[POTWIERDZ]" in asked[-1] and "wymaga potwierdzenia" in asked[-1] and "/root/pipe" in asked[-1]
         assert before == [] and any(call[:2] == ("docker", "run") for call in docker.calls)
         session = agent.get_or_create_session("s")

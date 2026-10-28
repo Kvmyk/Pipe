@@ -419,6 +419,8 @@ class RemoteClient:
                 _show_attachment(response["attachment"])
             elif (response.get("event") or {}).get("type") == "progress":
                 console.print(f"[dim]  · {escape(response['event'].get('text', ''))}[/dim]")
+            elif (response.get("event") or {}).get("type") == "activity":
+                _print_activity(response["event"])
             else:
                 responses.append(response)
             if response.get("done"):
@@ -426,6 +428,32 @@ class RemoteClient:
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
+
+_COMMAND_TOOLS = {"execute_command", "remote_exec", "git_command"}
+ACTIVITY_LINES = 4
+
+
+def _activity_lines(event: dict) -> list[str]:
+    """
+    Koniec kroku agenta jako linie dla terminalu (markup rich): co zrobił i kilka linii wyniku — wycinek wybrany
+    przez backend (handlers/common.output_excerpt), sekrety już zamazane. Start, czekanie na zgodę, odrzucone
+    potwierdzenie i widok prosty — nic (tam wystarcza odpowiedź modelu).
+    """
+    if event.get("phase") != "end" or event.get("ok") is None or event.get("tool") == "load_tools" or _view == "simple":
+        return []
+    label = str(event.get("label") or event.get("tool") or "")
+    what = f"$ {label}" if event.get("tool") in _COMMAND_TOOLS else label
+    notes = ([tr("bez pytania", "without asking")] if event.get("auto") else []) + \
+        ([tr(f"kod {event['code']}", f"exit {event['code']}")] if event.get("code") else [])
+    mark = "[red]✗[/red]" if event.get("ok") is False else "[green]✓[/green]"
+    lines = [f"  {mark} [dim]{escape(what)}[/dim]" + (f" [dim]({escape(', '.join(notes))})[/dim]" if notes else "")]
+    lines += [f"[dim]    │ {escape(line)}[/dim]" for line in str(event.get("output") or "").splitlines()[:ACTIVITY_LINES]]
+    return lines
+
+
+def _print_activity(event: dict) -> None:
+    for line in _activity_lines(event):
+        console.print(line, highlight=False)
 
 def _open_file(path: Path) -> None:
     try:
@@ -485,8 +513,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.47.2[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.47.2[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.48.0[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.48.0[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()

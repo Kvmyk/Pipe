@@ -5,26 +5,27 @@ Only descriptions are translated — `english_tools()` copies the schemas from
 core/tools.py (names, types, enums, required fields stay identical) and swaps the
 texts. A missing translation falls back to Polish.
 
-Pipe v0.47.2
+Pipe v0.48.0
 """
 
 from __future__ import annotations
 
 import copy
 
-_CONFIRM = ("Optional. true forces a confirmation prompt even for an operation the classifier would treat as a read. "
-            "You do not need to set it: state-changing operations always require confirmation.")
+_CONFIRM = ("Optional. true forces a confirmation prompt, also for a read or a routine change. Usually unnecessary: "
+            "the system asks about important changes by itself. Set it when a change is risky in a way the rule cannot see.")
 
 TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "execute_command": (
-        "Runs a shell command on the server in the working directory. Reads run immediately, state-changing commands "
-        "wait for the user's confirmation, forbidden ones are rejected. Limit output (tail -n, head, grep). Docker too: "
-        "docker ps -a, docker logs --tail 200 <container>, docker inspect, docker images (restart, stop, rm -- with "
+        "Runs a shell command on the server in the working directory. Reads and routine changes (restart, reload, "
+        "config edits, packages) run immediately through the safety fuse, the system asks the user about important "
+        "ones, forbidden ones are rejected. Limit output (tail -n, head, grep). Docker too: docker ps -a, docker logs "
+        "--tail 200 <container>, docker inspect, docker images (restart and stop -- through the safety fuse, rm -- with "
         "confirmation). Prefer the specialised tools for known areas.",
         {"command": "Shell command to run on the server.", "requires_confirmation": _CONFIRM,
          "host": "Docker mode only: true runs the command on the host (like root in the server shell, through a helper "
                  "container, with the host's tools), e.g. apt-get, systemctl, sed -i in /etc, ufw, docker compose build/pull/up -d "
-                 "in the project directory. Always after confirmation. Do not use it for "
+                 "in the project directory. Routine right away, important changes after confirmation. Do not use it for "
                  "reads — read from the host directory."}),
     "read_file": (
         "Reads a file on the server. Host path (e.g. /etc/nginx/nginx.conf) or relative to the working directory. "
@@ -32,7 +33,8 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         {"path": "Path to the file on the server."}),
     "write_file": (
         "Writes a whole file on the server (creates it together with missing directories, or overwrites). Outside the "
-        "workshop it requires confirmation; in the workshop directory (projects, your scripts) it writes right away. "
+        "workshop the write goes through the safety fuse (backup, validation); access, autostart, code and secret "
+        "files -- after confirmation. In the workshop directory (projects, your scripts) it writes right away. "
         "Do not use it for files you read with [ZREDAGOWANO] — change them surgically with execute_command (sed -i).",
         {"path": "Path to the file on the server.", "content": "New, complete file content."}),
     "change_directory": (
@@ -41,7 +43,7 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         {"path": "Host path or relative, e.g. '/home/user/project'."}),
     "git_command": (
         "A Git operation in a repository: status, log, diff, branch, show (reads) or pull, commit, push, checkout, "
-        "merge, stash pop (require confirmation).",
+        "merge (through the safety fuse; push, reset --hard and clean after confirmation).",
         {"repo_path": "Host path to the repository, e.g. /srv/shop.",
          "subcommand": "Subcommand without 'git', e.g. 'status', 'log --oneline -20', 'pull'.",
          "requires_confirmation": _CONFIRM}),
@@ -100,7 +102,7 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "journal": (
         "Log of confirmed changes: before every change Pipe backs up files, git state and crontab and records "
         "inverse commands (docker start/stop, systemctl enable/disable). list: recent entries. undo: undo an entry "
-        "(the latest by default) — always with confirmation. Use it when the user says 'undo', 'put it back', or when a "
+        "(the latest by default). Use it when the user says 'undo', 'put it back', or when a "
         "change turned out to be wrong.",
         {"id": "For undo: entry id (e.g. 3f2a9c1d); empty = latest."}),
     "server_md": (
@@ -166,7 +168,7 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
         "Reminders: a ONE-OFF message or task at a given time — 'write to me in 10 seconds', 'remind me tomorrow at 9 "
         "to renew the domain', 'in an hour check whether the backup finished'. This is the only way to reach the user "
         "later: you cannot wait by yourself. kind=message sends the text (no confirmation); kind=task starts a worker "
-        "(read-only) at that time and sends a report (requires confirmation). Set recurring tasks up as routines "
+        "(read-only) at that time and sends a report. Set recurring tasks up as routines "
         "(routine_manage).",
         {"delay": "For add: how long from now, e.g. '10s', '15m', '2h', '1d', '1h30m'. Use it when the user gives a "
                   "relative time ('in 10 seconds').",
@@ -248,7 +250,7 @@ TRANSLATIONS: dict[str, tuple[str, dict[str, str]]] = {
     "pipe_update": (
         "Update of Pipe itself (you): 'update yourself', 'get the new Pipe version', 'which version are you, is there a "
         "newer one'. check — version, commit and whether the remote repository has newer changes (changes nothing). "
-        "apply — after confirmation a separate container pulls the changes (git pull --ff-only) and rebuilds the Pipe "
+        "apply — a separate container pulls the changes (git pull --ff-only) and rebuilds the Pipe "
         "services; the backend restarts, the conversation is cut and the result arrives by itself as a message. NEVER "
         "update Pipe itself by hand with git/docker compose (host: true included) — rebuilding its own container would cut "
         "it off halfway. Other compose projects on the host you handle normally: execute_command with host: true.",

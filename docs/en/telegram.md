@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -10,8 +10,8 @@ The Telegram bot is a client of the agent. It connects to the backend over a Uni
 Telegram to the agent. Answers are formatted as HTML and sent back to the user.
 
 It handles confirmations with inline buttons (YES / NO; the decision is added to the same message), sends diagrams
-as photos, shows progress in a single message that keeps updating (when the work is done it collapses to "Steps
-taken: N", tap to expand the list) and, most importantly, **writes by itself when something happens**: watcher alerts and
+as photos, shows progress in a single message that keeps updating -- every agent command and a few lines of its
+output (when the work is done it collapses to "Steps taken: N", tap to expand the list) and, most importantly, **writes by itself when something happens**: watcher alerts and
 watcher alerts, suggestions, findings of its own investigations and
 routine reports arrive without asking, each with action buttons (*Investigate*, *Free up space*, *Patch*, *Fix it*).
 

@@ -4,7 +4,7 @@ Telegram Bot -- interfejs Telegram dla Pipe (agent do zarzadzania serwerami).
 Laczy sie z backendem przez Unix socket.
 Uzywa python-telegram-bot w trybie async.
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 Funkcje:
   - Whitelist uzytkownikow (TELEGRAM_ALLOWED_USER_IDS), osobna sesja per user_id
@@ -117,6 +117,7 @@ from tg_format import (
     format_skill_list,
     parse_command,
     progress_text,
+    activity_entry,
     reminder_recipients,
     response_data,
     split_message,
@@ -351,6 +352,7 @@ async def _collect(bot, chat_id: int, frames: AsyncIterator[dict]) -> list[dict]
     """
     responses: list[dict] = []
     progress_lines: list[str] = []
+    steps: dict[str, int] = {}          # id kroku agenta -> jego wpis w progress_lines (start zamienia sie w wynik)
     progress_message = None
     last_edit = 0.0
 
@@ -375,6 +377,18 @@ async def _collect(bot, chat_id: int, frames: AsyncIterator[dict]) -> list[dict]
         elif (frame.get("event") or {}).get("type") == "progress":
             progress_lines.append(frame["event"].get("text", ""))
             await show_progress()
+        elif (frame.get("event") or {}).get("type") == "activity":
+            # komenda i wycinek jej wyniku; widok prosty — bez technicznych krokow (wystarcza odpowiedz)
+            event = frame["event"]
+            entry = "" if _view_state["view"] == "simple" else activity_entry(event)
+            if entry:
+                index = steps.get(str(event.get("id")))
+                if index is None:
+                    steps[str(event.get("id"))] = len(progress_lines)
+                    progress_lines.append(entry)
+                else:
+                    progress_lines[index] = entry
+                await show_progress(force=event.get("phase") == "end" and event.get("ok") is False)
         else:
             responses.append(frame)
     # ta sama wiadomosc zamienia sie w podsumowanie ze zwinieta lista krokow — "W toku" nie zostaje w czacie

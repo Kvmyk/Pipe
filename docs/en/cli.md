@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 An interactive terminal for managing a VPS through an AI agent.
 
@@ -56,6 +56,10 @@ python cli.py --host root@1.2.3.4 --key ~/.ssh/id_server
 export VPS_HOST=root@server.example.com
 python cli.py
 ```
+
+While the agent works, a grey line appears under your message for every step -- `✓ $ command` (or a description,
+e.g. *reads /etc/hosts*) and up to 4 lines of output under it; an exit code other than 0 adds *exit N*, a change made
+without asking adds *without asking*. The simple view has no such lines.
 
 ## If you already have your own SSH tunnel
 
@@ -195,7 +199,7 @@ Telegram. The choice survives a restart and the CLI adopts it on connect (unless
 | `/web` | Pipe in the browser on your phone and computer at an HTTPS address: `/web on [port] [domain]`, `/web off`, `/web approve <code>` (lets a device in), `/web revoke <no>`; without arguments the state and devices (`docs/features.md`) |
 | `/cleanup` | Frees space without AI: untagged Docker images, old build cache, downloaded packages and npm/pip caches; admins only (`/sprzataj`) |
 | `/notifications [all\|important\|critical] [quiet 22-7\|quiet off] [daily 3]` | When Pipe should notify you; without arguments shows the current settings (`/powiadomienia`) |
-| `/update [check]` | Update Pipe itself on the server (after confirmation); `check` only shows the versions; after the backend restarts the CLI reconnects by itself (up to 3 min), no need to start it again |
+| `/update [check]` | Update Pipe itself on the server; `check` only shows the versions; after the backend restarts the CLI reconnects by itself (up to 3 min), no need to start it again |
 | `/report` | The morning report on demand: health, alerts, changes since yesterday, certificates, backups, updates, LLM cost + chart |
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history (PNG in `~/.pipe/diagrams/`) |

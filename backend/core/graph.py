@@ -412,7 +412,7 @@ def describe(tool: str, args: dict[str, Any]) -> str:
         text = _BLANK.sub(" ", str(value))
         if key == "path" and len(text) > 46:                  # dluga sciezka: zostaje koniec, ktory mowi, co to za plik
             text = "…/" + "/".join(text.rstrip("/").split("/")[-2:])
-        return text[:120]
+        return text if len(text) <= 120 else text[:119] + "…"
 
     fields = _Fields({k: short(k, v) for k, v in args.items() if isinstance(v, (str, int, float))})
     polish, english = _LABELS.get(tool, (tool, tool))

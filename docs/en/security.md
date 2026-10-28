@@ -1,6 +1,6 @@
 # Security -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 ## Model
 
@@ -11,6 +11,7 @@ confirmations, secret redaction and worker limits work regardless of what the mo
 | Layer | What it does |
 |-------|--------------|
 | Command classifier | `safe` / `confirm` / `forbidden`, fail-closed |
+| Autonomy | runs routine work itself through the safety fuse, asks about important things (`core/autonomy.py`) |
 | Confirmation | shows exactly the string that will run |
 | Secret redaction | tool results are cleaned of keys and passwords before they are sent to the LLM |
 | Workers and routines | run only `safe`; everything else comes back as a proposal |
@@ -37,8 +38,10 @@ Order:
 
 Files and text (`cat`, `grep`, `ls`, `find`, `du`, `df`, `jq`...), system (`ps`, `free`, `uptime`,
 `systemctl status`, `journalctl`), network (`ss`, `ip addr`, `ping`, `dig`, `curl` GET), Docker
-(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config`), Git (`status`, `log`, `diff`, `show`, listing
-branches/tags), Kubernetes (`get`, `describe`, `logs`, `top`, `rollout status`), Helm (`list`, `status`, `get`).
+(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config/top`, `exec` with a recognised read inside -- also
+`sh -c '...'`), Git (`status`, `log`, `diff`, `show`, listing branches/tags), Kubernetes (`get`, `describe`, `logs`,
+`top`, `rollout status`), Helm (`list`, `status`, `get`), `dmesg` (without clearing), `sed` without `-i` and without
+the `e`/`w` commands, `awk` without `system()`, pipes, `getline`, `print > file` and `ENVIRON`.
 
 Arguments that change state are checked separately:
 
@@ -60,7 +63,8 @@ The same files read with `read_file` also require approval.
 
 ### CONFIRM -- state changes
 
-`rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
+Not all of them wait for you -- Pipe runs routine work itself (the *Autonomy* section below). The classifier sends
+these to confirmation: `rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
 `docker run/exec/start/stop/restart/rm/compose up/down`, `git push/commit/pull/reset...`, `kubectl apply/delete/scale/exec...`,
 `helm install/upgrade/uninstall`, `ufw`, `iptables` (except listing), `reboot`, `crontab` (except `-l`), and every
 unknown command. Reading files with secrets (`/etc/shadow`, SSH keys, `*.pem`, `*.key`, `.env`) also requires approval.
@@ -118,9 +122,65 @@ message boundary, so a tool call / result pair is never split.
   exactly the plan you were shown is executed. Check commands (`nginx -t`, `sshd -t`, `docker inspect`...) are built
   from templates in code, with parameters through `shlex.quote`.
 
+## Autonomy: what Pipe does without asking
+
+An operation the classifier leaves for confirmation also goes through `backend/core/autonomy.py` before it reaches
+you. Routine work runs right away, through the same safety fuse as after YES: file backup to the journal, a check
+before (`nginx -t`, `sshd -t`, `docker compose config`), verification after (service active, container running,
+sites responding), automatic config restore, an entry that `/undo` reverts. Routine means:
+
+- restart, reload, start, `enable` of services and containers, `nginx -s reload`, `docker compose up -d/pull/build`,
+  `docker compose down` (without `-v`), `docker image prune` (without `-a`), `docker pull`, `kubectl rollout
+  restart/undo`, `kubectl scale`, `helm rollback`,
+- editing config files (`write_file`, `sed -i`, `tee`, `cp`, `mv`, `ln -s`, `> file`), `mkdir`, `chmod`/`chown`
+  without setuid and without world write, `rm` of single files the journal can back up; nginx, Apache and Caddy
+  config too, as long as the change adds no `root`, `alias` or `autoindex` and the content is in the command itself
+  or comes from the same server directory,
+- `apt`/`dnf`/`apk` install/upgrade/update/clean from the system repository, `dpkg --configure -a`,
+  `journalctl --vacuum`, `certbot renew`, `git pull/fetch` from a named remote (`origin`), `git checkout
+  <branch>/commit/merge/stash`,
+- `curl` GET to domains this server serves itself (from the proxy config),
+- patches (`security_patch`), undoing a change (`journal undo`), a one-off task (the worker only reads), the Pipe
+  update, starting a workshop project.
+
+Pipe always asks about important things, with the reason in code:
+
+| Reason | Examples |
+|--------|----------|
+| data it cannot back up | `rm -r`, globs, files larger than the journal backup (5 MB), `docker rm`, volumes, `system prune`, `compose down -v`, `apt remove`, `git reset --hard`, `git clean`, `git checkout -- .`, `kubectl delete` |
+| access to the server | SSH (`/etc/ssh`, `.ssh/`), users and passwords, sudo, PAM, firewall (`ufw`, `iptables`, `nft`), setuid, `chmod 777` |
+| autostart | cron, systemd units, `.bashrc`/`.profile`, `/etc/profile.d`, `rc.local`, `logrotate.d`, git hooks |
+| the system and its sources | `/usr`, `/boot`, `/etc/apt`, `/etc/docker`, `fstab`, `sysctl`, `ld.so.preload`, `systemctl mask` |
+| code | script and program files (`.php`, `.py`, `.sh`, `.js`, `.htaccess`...), compose files and `Dockerfile` (`compose up -d` is routine, so they decide what runs), `pip`/`npm install`, `docker run/exec`, `kubectl apply`, `kubectl set image`, `git pull <url>`, `bash script.sh`, `apt install ./file.deb`, `apt -o Dpkg::Pre-Invoke` |
+| a container with host access | `docker run` with `--privileged`, `docker.sock`, `--cap-add`, `--network host`, a `/` mount |
+| a site directory | files in `/var/www`, `/srv/www`, `public_html`, `public/`, `static/`, `uploads/` -- whatever lands there is visible from the internet |
+| exposing directories | web server config with a new `root`, `alias`, `autoindex`; a config file copied from outside the server directory or content from another file (`cat x > /etc/nginx/...`) |
+| outgoing data | `curl`/`wget` to foreign hosts, `git push`, `scp`, `rsync`, `nc` |
+| cutting access or Pipe | stopping `ssh`, `docker`, the network; Pipe's own container and compose project; `nginx -s stop`; `kill` |
+| machine restart | `reboot`, `shutdown` |
+| secrets and Pipe data | `.env`, keys, `tokens.json`, Pipe's data directory |
+| remote servers | changing files on an ssh/docker/kubectl target -- there is no backup on the Pipe side |
+| unknowns | a command Pipe does not recognise, `$(...)` substitution, variables before the command (`LD_PRELOAD=`) |
+
+The question also comes back for every change in a turn in which the model read a web page, an MCP server result or
+an attachment (as with YOLO), for operations the model asked about itself (`requires_confirmation: true`), for
+writes to Pipe's memory (skills, SERVER.md), new targets, routines and MCP servers, and always for the viewer role
+and in observe mode. A rule error means asking, never running.
+
+Why an unknown command always asks: Pipe reads logs, pages and files in which a stranger can leave text pretending
+to be an instruction. Without asking it runs only what it recognises and what the safety fuse can check or undo --
+so even a manipulated model cannot give itself access, add autostart or send data out. The worst it can do without
+you is a routine change with a backup in the journal.
+
+Every such change is visible: the conversation shows "Without asking (routine, through the safety fuse): ...", the
+command's output appears under it marked *without asking*, and in the journal and audit log the interface has an
+`[auto]` suffix (e.g. `telegram:123 [auto]`). `host: true` commands in docker mode get the full fuse plan (backups
+from the host directory, checks and inverse commands through the helper container). `AUTONOMY=0` in `backend/.env`
+brings back the question for every change.
+
 ## YOLO mode (`/yolo`)
 
-By default every change waits for YES. `/yolo on` (CLI, `pipe web`, Telegram) turns that question off, **only in this
+By default routine work runs by itself and important things wait for YES. `/yolo on` (CLI, `pipe web`, Telegram) turns that question off, **only in this
 conversation (session)**, only for an admin and only until the backend restarts or `/yolo off`. What doesn't change:
 
 - classification: `forbidden` operations are still refused, and `safe` ones work as always;
@@ -391,10 +451,13 @@ instructions" framing is not a guarantee.
   container from its own image: `docker run --rm --privileged --pid=host`, and in it `nsenter -t 1` into the host's
   namespaces -- the command runs like in a root shell on the server. This is not a new permission (see the point
   above), just one predictable path: the model asks for it through `execute_command` with `host: true`, the
-  classifier judges the target command, forbidden ones are refused, and every one (reads too) waits for your YES.
+  classifier judges the target command, forbidden ones are refused, Pipe runs routine work itself (the *Autonomy*
+  section) and the rest waits for your YES.
   The confirmation shows the target command and an *on the host: a helper container...* line; the wrapper is built
   by code and the command goes into it as one argument. Observe mode and the viewer role do not have this path.
-  There are no file backups or automatic restore here (the safety fuse writes a journal entry and checks the sites). If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
+  The safety fuse works as for a local command: it reads file backups from the host directory, checks (`nginx -t`,
+  `systemctl is-active`) and inverse commands go through the same helper container, and a failed config comes back
+  from the backup. If you don't need container management, install Pipe with `--profile observe` (see above) or remove the
   `docker.sock` mount from `docker-compose.yml`.
 - **`/patch` does not ask about every command.** An administrator typing `/patch` (or pressing *Patch*) approves the
   whole patch: Pipe installs this server's package fixes right away, bumps the application dependencies (a package
@@ -406,8 +469,8 @@ instructions" framing is not a guarantee.
   build cache older than a day, downloaded packages, npm/pip/yarn/composer caches, old kernels that apt itself
   considers unneeded). The server builds the commands from the scan result, without the model: package and compose
   project names go through patterns, so content from the package database or from container labels cannot add
-  anything to the shell. The agent in a conversation (the `security_patch` tool) gets the same patch for one YES of
-  yours (no question in YOLO). The viewer role and observe mode do not have it. Pipe does not leave an image that has
+  anything to the shell. The agent in a conversation (the `security_patch` tool) gets the same patch without asking
+  (routine; with `AUTONOMY=0` for one YES of yours). The viewer role and observe mode do not have it. Pipe does not leave an image that has
   no newer version: it installs the fixes from its system's repository inside it (a temporary container from that
   image, `docker commit` under the same tag). The previous image stays under a `pipe-rollback-*` tag and `/undo` goes
   back to it.
@@ -458,10 +521,11 @@ This tool pulls code from the network and runs it with the agent's permissions, 
 - it takes no address, branch, command or path; the model can only choose `check` or `apply`;
 - the only source is the `origin` of the repository Pipe is installed from, through `git pull --ff-only`
   (no rewriting history and no merging);
-- `apply` always requires confirmation, and the viewer role is refused upfront;
+- `apply` runs without asking like other routine work (after confirmation with `AUTONOMY=0`), and the viewer role
+  is refused upfront;
 - the compose project, directory and services come from the Docker labels of its own container and are quoted one by
   one;
 - one update runs at a time; the helper container gets `docker.sock` and the repository directory, nothing more.
 
 Trust moves to the remote repository: whoever can push a commit to the tracked branch will run code on the server
-after your "YES". It is the same boundary as with a manual `git pull`, but worth keeping in mind.
+at the next update. It is the same boundary as with a manual `git pull`, but worth keeping in mind.

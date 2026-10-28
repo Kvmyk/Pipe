@@ -1,6 +1,6 @@
 # Bezpieczenstwo -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 ## Model
 
@@ -12,6 +12,7 @@ klasyfikator, potwierdzenia, redakcja sekretow i limity workerow dzialaja niezal
 | Warstwa | Co robi |
 |---------|---------|
 | Klasyfikator komend | `safe` / `confirm` / `forbidden` -- fail-closed |
+| Samodzielnosc | rutyne wykonuje sam przez bezpiecznik, o sprawy wazne pyta (`core/autonomy.py`) |
 | Potwierdzenie | pokazuje dokladnie ten napis, ktory zostanie wykonany |
 | Redakcja sekretow | wyniki narzedzi sa czyszczone z kluczy i hasel przed wyslaniem do LLM |
 | Workery i rutyny | wykonuja wylacznie `safe`; reszta wraca jako propozycja |
@@ -38,8 +39,10 @@ Kolejnosc:
 
 Pliki i tekst (`cat`, `grep`, `ls`, `find`, `du`, `df`, `jq`...), system (`ps`, `free`, `uptime`,
 `systemctl status`, `journalctl`), siec (`ss`, `ip addr`, `ping`, `dig`, `curl` GET), Docker
-(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config`), Git (`status`, `log`, `diff`, `show`, listowanie
-galezi/tagow), Kubernetes (`get`, `describe`, `logs`, `top`, `rollout status`), Helm (`list`, `status`, `get`).
+(`ps`, `logs`, `inspect`, `stats`, `compose ps/logs/config/top`, `exec` z rozpoznanym odczytem w srodku -- takze
+`sh -c '...'`), Git (`status`, `log`, `diff`, `show`, listowanie galezi/tagow), Kubernetes (`get`, `describe`, `logs`,
+`top`, `rollout status`), Helm (`list`, `status`, `get`), `dmesg` (bez czyszczenia), `sed` bez `-i` i bez komend
+`e`/`w`, `awk` bez `system()`, potokow, `getline`, `print > plik` i `ENVIRON`.
 
 Argumenty, ktore zmieniaja stan, sa sprawdzane osobno:
 
@@ -61,7 +64,8 @@ Te same pliki czytane przez `read_file` tez wymagaja zgody.
 
 ### CONFIRM -- zmiany stanu
 
-`rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
+Nie kazda z nich czeka na Ciebie -- rutyne Pipe wykonuje sam (sekcja *Samodzielnosc* nizej). Do potwierdzenia
+klasyfikator kieruje: `rm`, `mv`, `cp`, `chmod`, `chown`, `kill`, `systemctl start/stop/restart/enable...`, `apt install/upgrade/remove`,
 `docker run/exec/start/stop/restart/rm/compose up/down`, `git push/commit/pull/reset...`, `kubectl apply/delete/scale/exec...`,
 `helm install/upgrade/uninstall`, `ufw`, `iptables` (poza listowaniem), `reboot`, `crontab` (poza `-l`) --
 oraz kazda nieznana komenda. Odczyt plikow z sekretami (`/etc/shadow`, klucze SSH, `*.pem`, `*.key`, `.env`)
@@ -122,9 +126,64 @@ uzytkownika, zeby para wywolanie/wynik narzedzia nigdy nie zostala rozdzielona.
   po TAK wykonywany jest dokladnie pokazany plan. Komendy sprawdzajace (`nginx -t`, `sshd -t`, `docker inspect`...)
   sa skladane z szablonow w kodzie, parametry przez `shlex.quote`.
 
+## Samodzielnosc: co Pipe robi bez pytania
+
+Operacja, ktora klasyfikator zostawia do potwierdzenia, przechodzi jeszcze przez `backend/core/autonomy.py`, zanim
+trafi do Ciebie. Rutyne Pipe wykonuje od razu, przez ten sam bezpiecznik co po TAK: kopia plikow do dziennika,
+sprawdzenie przed (`nginx -t`, `sshd -t`, `docker compose config`), weryfikacja po (usluga aktywna, kontener
+dziala, strony odpowiadaja), automatyczne przywrocenie configu, wpis, ktory `/cofnij` odwraca. Rutyna to:
+
+- restart, przeladowanie, start, `enable` uslug i kontenerow, `nginx -s reload`, `docker compose up -d/pull/build`,
+  `docker compose down` (bez `-v`), `docker image prune` (bez `-a`), `docker pull`, `kubectl rollout restart/undo`,
+  `kubectl scale`, `helm rollback`,
+- edycja plikow konfiguracji (`write_file`, `sed -i`, `tee`, `cp`, `mv`, `ln -s`, `> plik`), `mkdir`, `chmod`/`chown`
+  bez setuid i bez zapisu dla wszystkich, `rm` pojedynczych plikow, ktore dziennik skopiuje; konfiguracja nginx,
+  Apache i Caddy tez, o ile zmiana nie dodaje `root`, `alias` ani `autoindex`, a tresc stoi w samej komendzie
+  albo pochodzi z tego samego katalogu serwera,
+- `apt`/`dnf`/`apk` install/upgrade/update/clean z repozytorium systemu, `dpkg --configure -a`, `journalctl --vacuum`,
+  `certbot renew`, `git pull/fetch` z nazwanego remote (`origin`), `git checkout <galaz>/commit/merge/stash`,
+- `curl` GET do domen, ktore ten serwer sam obsluguje (z konfiguracji proxy),
+- latki (`security_patch`), cofniecie zmiany (`journal undo`), zadanie jednorazowe (worker tylko czyta),
+  aktualizacja Pipe, uruchomienie projektu z warsztatu.
+
+O sprawy wazne Pipe pyta zawsze, z powodem w kodzie:
+
+| Powod | Przyklady |
+|-------|-----------|
+| dane, ktorych nie skopiuje | `rm -r`, globy, pliki wieksze niz kopia dziennika (5 MB), `docker rm`, wolumeny, `system prune`, `compose down -v`, `apt remove`, `git reset --hard`, `git clean`, `git checkout -- .`, `kubectl delete` |
+| dostep do serwera | SSH (`/etc/ssh`, `.ssh/`), uzytkownicy i hasla, sudo, PAM, zapora (`ufw`, `iptables`, `nft`), setuid, `chmod 777` |
+| autostart | cron, jednostki systemd, `.bashrc`/`.profile`, `/etc/profile.d`, `rc.local`, `logrotate.d`, hooki gita |
+| system i jego zrodla | `/usr`, `/boot`, `/etc/apt`, `/etc/docker`, `fstab`, `sysctl`, `ld.so.preload`, `systemctl mask` |
+| kod | pliki skryptow i programow (`.php`, `.py`, `.sh`, `.js`, `.htaccess`...), pliki compose i `Dockerfile` (`compose up -d` jest rutyna, wiec to one mowia, co sie uruchomi), `pip`/`npm install`, `docker run/exec`, `kubectl apply`, `kubectl set image`, `git pull <adres>`, `bash skrypt.sh`, `apt install ./plik.deb`, `apt -o Dpkg::Pre-Invoke` |
+| kontener z dostepem do hosta | `docker run` z `--privileged`, `docker.sock`, `--cap-add`, `--network host`, montowaniem `/` |
+| katalog strony | pliki w `/var/www`, `/srv/www`, `public_html`, `public/`, `static/`, `uploads/` -- to, co tam trafi, widac z internetu |
+| wystawienie katalogow | konfiguracja serwera WWW z nowym `root`, `alias`, `autoindex`; plik konfiguracji skopiowany spoza katalogu serwera albo tresc z innego pliku (`cat x > /etc/nginx/...`) |
+| dane wychodzace | `curl`/`wget` do obcych hostow, `git push`, `scp`, `rsync`, `nc` |
+| odciecie dostepu albo Pipe | zatrzymanie `ssh`, `docker`, sieci; kontener i projekt compose samego Pipe; `nginx -s stop`; `kill` |
+| restart maszyny | `reboot`, `shutdown` |
+| sekrety i dane Pipe | `.env`, klucze, `tokens.json`, katalog danych Pipe |
+| zdalne serwery | zmiana plikow na celu ssh/docker/kubectl -- tam nie ma kopii po stronie Pipe |
+| niewiadome | komenda, ktorej Pipe nie rozpoznaje, podstawienie `$(...)`, zmienne przed komenda (`LD_PRELOAD=`) |
+
+Pytanie wraca tez dla kazdej zmiany w turze, w ktorej model czytal strone z internetu, wynik serwera MCP albo
+zalacznik (jak przy YOLO), dla operacji, o ktore model sam poprosil (`requires_confirmation: true`), dla zapisu
+pamieci Pipe (skille, SERVER.md), nowych celow, rutyn i serwerow MCP oraz zawsze dla roli viewer i w trybie
+obserwacji. Blad reguly oznacza pytanie, nigdy wykonanie.
+
+Dlaczego nieznana komenda zawsze pyta: Pipe czyta logi, strony i pliki, w ktorych obcy moze zostawic tekst
+udajacy polecenie. Bez pytania wykona tylko to, co rozpoznaje i co bezpiecznik umie sprawdzic albo cofnac -- wiec
+nawet zmanipulowany model nie zalozy sobie dostepu, autostartu ani nie wysle danych na zewnatrz. Najgorsze, co moze
+zrobic bez Ciebie, to rutynowa zmiana z kopia w dzienniku.
+
+Kazda taka zmiana jest widoczna: w rozmowie pojawia sie „Bez pytania (rutyna, przez bezpiecznik): ...”, pod
+komenda jej wynik z dopiskiem *bez pytania*, w dzienniku i audit logu interfejs ma dopisek `[auto]`
+(np. `telegram:123 [auto]`). Komendy `host: true` w trybie docker dostaja pelny plan bezpiecznika (kopie z katalogu
+hosta, sprawdzenia i komendy odwrotne przez kontener pomocniczy). `AUTONOMY=0` w `backend/.env` przywraca pytanie
+o kazda zmiane.
+
 ## Tryb YOLO (`/yolo`)
 
-Domyslnie kazda zmiana czeka na TAK. `/yolo on` (CLI, `pipe web`, Telegram) wylacza to pytanie -- **tylko w tej
+Domyslnie rutyna wykonuje sie sama, a sprawy wazne czekaja na TAK. `/yolo on` (CLI, `pipe web`, Telegram) wylacza to pytanie -- **tylko w tej
 rozmowie (sesji)**, tylko dla administratora i tylko do restartu backendu albo `/yolo off`. Co sie nie zmienia:
 
 - klasyfikacja: operacje `forbidden` sa nadal odrzucane, a `safe` dzialaja jak zawsze;
@@ -386,10 +445,12 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
   kontener pomocniczy z wlasnego obrazu: `docker run --rm --privileged --pid=host`, a w nim `nsenter -t 1` do
   przestrzeni nazw hosta -- komenda dziala jak w powloce roota na serwerze. To nie jest nowe uprawnienie (patrz
   punkt wyzej), tylko jedna przewidywalna droga: model prosi o nia przez `execute_command` z `host: true`,
-  klasyfikator ocenia komende docelowa, zakazane sa odrzucane, a kazda (takze odczyt) czeka na Twoje TAK.
+  klasyfikator ocenia komende docelowa, zakazane sa odrzucane, rutyne (sekcja *Samodzielnosc*) Pipe wykonuje sam,
+  a reszta czeka na Twoje TAK.
   W potwierdzeniu widac komende docelowa i linie *na hoscie: kontener pomocniczy...*; opakowanie sklada kod,
-  komenda trafia do niego jako jeden argument. Tryb obserwacji i rola viewer tej drogi nie maja. Kopii plikow
-  i automatycznego przywracania tu nie ma (bezpiecznik zapisuje wpis w dzienniku i sprawdza strony). Jesli nie potrzebujesz zarzadzania kontenerami,
+  komenda trafia do niego jako jeden argument. Tryb obserwacji i rola viewer tej drogi nie maja. Bezpiecznik dziala
+  jak dla komendy lokalnej: kopie plikow czyta z katalogu hosta, sprawdzenia (`nginx -t`, `systemctl is-active`)
+  i komendy odwrotne ida tym samym kontenerem pomocniczym, a nieudany config wraca z kopii. Jesli nie potrzebujesz zarzadzania kontenerami,
   zainstaluj Pipe z `--profile observe` (patrz wyzej) albo usun montowanie `docker.sock` z `docker-compose.yml`.
 - **`/zalataj` nie pyta o kazda komende.** Wpisanie `/zalataj` (albo przycisk *Zalataj*) przez administratora jest
   zgoda na cala latke: Pipe od razu instaluje poprawki pakietow tego serwera, podbija zaleznosci aplikacji (menedzer
@@ -401,7 +462,7 @@ Mimo to przegladaj od czasu do czasu `backend/data/` (`/server`, `/katalogi`, `/
   budowania starszy niz doba, pobrane paczki, cache npm/pip/yarn/composer, stare jadra, ktore apt sam uznaje za
   zbedne). Komendy sklada serwer z wyniku skanu, bez modelu: nazwy pakietow i projektow compose przechodza przez
   wzorce, wiec tresc z bazy pakietow ani z etykiet kontenera nie doklei nic do powloki. Agent w rozmowie (narzedzie
-  `security_patch`) dostaje te sama latke za jednym Twoim TAK (w YOLO bez pytania). Viewer i tryb obserwacji jej
+  `security_patch`) dostaje te sama latke bez pytania (rutyna; przy `AUTONOMY=0` za jednym Twoim TAK). Viewer i tryb obserwacji jej
   nie maja. Obrazu, ktory nie ma nowszej wersji, Pipe nie zostawia: instaluje w nim poprawki z repozytorium jego
   systemu (kontener tymczasowy z tego obrazu, `docker commit` pod tym samym tagiem). Poprzedni obraz zostaje pod tagiem
   `pipe-rollback-*`, a `/cofnij` do niego wraca.
@@ -452,9 +513,10 @@ To narzedzie pobiera kod z sieci i uruchamia go z uprawnieniami agenta, wiec jes
 - nie przyjmuje adresu, galezi, komendy ani sciezki -- model moze tylko wybrac `check` albo `apply`;
 - zrodlem jest wylacznie `origin` repozytorium, w ktorym Pipe jest zainstalowany, przez `git pull --ff-only`
   (bez nadpisywania historii i bez scalania);
-- `apply` zawsze wymaga potwierdzenia, a rola viewer jest odrzucana z gory;
+- `apply` wykonuje sie bez pytania jak inna rutyna (przy `AUTONOMY=0` po potwierdzeniu), a rola viewer jest
+  odrzucana z gory;
 - projekt, katalog i uslugi compose pochodza z etykiet Dockera wlasnego kontenera i sa cytowane pojedynczo;
 - naraz dziala jedna aktualizacja; kontener pomocniczy dostaje `docker.sock` i katalog repozytorium, nic wiecej.
 
-Zaufanie przenosi sie na zdalne repozytorium: kto moze wypchnac commit na sledzona galaz, ten po Twoim "TAK"
+Zaufanie przenosi sie na zdalne repozytorium: kto moze wypchnac commit na sledzona galaz, ten przy nastepnej aktualizacji
 uruchomi kod na serwerze. To ta sama granica co przy recznym `git pull`, ale warto o niej pamietac.

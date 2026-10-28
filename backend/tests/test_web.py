@@ -128,11 +128,30 @@ class TestActivityEvents:
         frame = event_frame(activity[1])
         assert frame["event"]["type"] == "activity" and frame["response"] == "" and frame["event"]["ok"] is True
 
-    def test_other_clients_do_not_get_activity(self):
-        for interface in ("cli:kuba", "telegram:1"):
+    def test_every_client_gets_activity_with_output(self):
+        # CLI i Telegram pokazuja komende i wycinek wyniku; tekst odpowiedzi bez zmian
+        for interface in ("cli:kuba", "telegram:1", "web:kuba"):
             agent = VPSAgent(client=FakeClient([
                 completion(tool_calls=[("c1", "execute_command", {"command": "echo pipe"})]), completion("Gotowe")]))
-            assert run(agent.chat("s", "uruchom", interface)) == ["Gotowe"]
+            events = run(agent.chat("s", "uruchom", interface))
+            assert [e for e in events if isinstance(e, str)] == ["Gotowe"]
+            end = [e for e in events if isinstance(e, Activity)][-1]
+            assert end.phase == "end" and end.output == "pipe" and end.code == 0
+            assert end.to_wire()["output"] == "pipe" and end.to_wire()["code"] == 0
+
+    def test_viewer_gets_no_activity(self):
+        agent = VPSAgent(client=FakeClient([
+            completion(tool_calls=[("c1", "execute_command", {"command": "echo pipe"})]), completion("Gotowe")]))
+        events = run(agent.chat("s", "uruchom", "cli:gosc", owner="gosc", role="viewer"))
+        assert not any(isinstance(e, Activity) for e in events)
+
+    def test_simple_view_shows_no_raw_output(self, monkeypatch):
+        from backend.core import views
+        monkeypatch.setattr(views, "is_simple", lambda: True)
+        agent = VPSAgent(client=FakeClient([
+            completion(tool_calls=[("c1", "execute_command", {"command": "echo pipe"})]), completion("Gotowe")]))
+        end = [e for e in run(agent.chat("s", "uruchom", "web:kuba")) if isinstance(e, Activity)][-1]
+        assert end.output == "" and end.full == "" and "output" not in end.to_wire()
 
     def test_confirmation_goes_wait_then_start_end_with_journal_entry(self, tmp_path):
         target = tmp_path / "host" / "app.conf"

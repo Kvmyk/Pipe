@@ -60,7 +60,7 @@ async def handle_pipe_update(
         tool_call_id=tool_call.id, tool_name="pipe_update",
         command=tr(f"aktualizacja Pipe w {install.root}: git pull --ff-only + przebudowa uslug {services}",
                    f"Pipe update in {install.root}: git pull --ff-only + rebuild of services {services}"),
-        classification="confirm", action=launch,
+        classification="confirm", action=launch, auto=True,
     )
     yield tr(f"[POTWIERDZ] Aktualizacja Pipe wymaga potwierdzenia: {as_code(f'git pull --ff-only w {install.root}')}, "
              f"potem przebudowa i restart uslug {as_code(services)}.\n"

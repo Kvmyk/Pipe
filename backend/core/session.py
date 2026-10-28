@@ -31,6 +31,13 @@ class ConfirmationRequest:
     stream: Callable[[], AsyncIterator[Any]] | None = None
     # Dzialanie na schemacie (events.Activity w fazie "wait") — po TAK interfejs webowy dostaje jego ciag dalszy.
     activity: Any = None
+    # Komenda docelowa, gdy `command` ja opakowuje (ssh/docker exec celu, kontener pomocniczy hosta); `remote` —
+    # wykonuje sie na zdalnym celu (bez kopii plikow po stronie Pipe).
+    inner: str | None = None
+    remote: bool = False
+    # Samodzielnosc (core/autonomy.py): True — rutyna, Pipe wykonuje bez pytania; False — zawsze pyta;
+    # None — o komendzie i zapisie pliku decyduja reguly, operacja narzedzia (`action`/`stream`) pyta.
+    auto: bool | None = None
 
 
 @dataclass
@@ -69,13 +76,19 @@ class Session:
         return self.runs_yolo and not self.web_tainted
 
     @property
-    def is_telegram(self) -> bool:
-        return self.interface.lower().startswith("telegram")
+    def runs_auto(self) -> bool:
+        """Samodzielnosc (core/autonomy.py): rutynowe zmiany bez pytania — admin, AUTONOMY wlaczone (domyslnie)."""
+        from backend.config import settings
+        return settings.AUTONOMY and self.role == "admin"
 
     @property
-    def shows_activity(self) -> bool:
-        """Interfejs webowy rysuje schemat na zywo — tylko on dostaje zdarzenia Activity."""
-        return self.interface.lower().startswith("web")
+    def auto_now(self) -> bool:
+        """Samodzielnosc w tej chwili: wstrzymana jak YOLO, gdy w tej turze model czytal tresc z zewnatrz."""
+        return self.runs_auto and not self.web_tainted
+
+    @property
+    def is_telegram(self) -> bool:
+        return self.interface.lower().startswith("telegram")
 
     @property
     def user_key(self) -> str:
@@ -108,6 +121,7 @@ class Session:
             + (prompt("VIEWER_BLOCK") if self.role == "viewer" else "")
             + (prompt("OBSERVE_BLOCK") if runtime.observe() else "")
             + (prompt("SIMPLE_VIEW_BLOCK") if views.is_simple() else "")
+            + (prompt("AUTONOMY_BLOCK") if self.runs_auto and not self.yolo_now else "")
             + (prompt("YOLO_BLOCK") if self.yolo_now else "")
             + prompt("cwd_block")(self.cwd, telegram=self.is_telegram)
         )

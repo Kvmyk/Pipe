@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.47.2
+Pipe v0.48.0
 
 ## Overview
 
@@ -183,12 +183,18 @@ and the client should adopt it; `view_chosen` -- the same for the view), and the
 ```json
 {"response": "", "status": "ok", "done": false, "event": {
   "type": "activity", "id": "<tool call id>", "phase": "start|wait|end", "tool": "execute_command",
-  "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {}}}
+  "label": "docker restart web", "nodes": ["c:web"], "ok": null, "entry": "", "workers": {},
+  "output": "web", "full": "...", "code": 0, "auto": true}}
 ```
 
-Only a client whose `interface` starts with `web` gets `activity` events; they say what the agent is doing and on
-which nodes of the map (`graph`). `wait` = waiting for confirmation; `end` has `ok` (true/false/null after a refusal)
-and `entry`, the journal entry id when the change was made.
+Every client gets `activity` events in a conversation stream (except the viewer role); they say what the agent is
+doing and on which nodes of the map (`graph`). `wait` = waiting for confirmation; `end` has `ok` (true/false/null
+after a refusal) and `entry`, the journal entry id when the change was made. For commands (`execute_command`,
+`remote_exec`, `git_command`, `cron_manage`, `write_file`) `end` also carries a fragment of the output: `output` (up
+to 3 lines: on an error the error lines and the last one, on success the end, plus a safety fuse alarm), `full` (up
+to 60 lines / 4000 characters, to expand) and `code` (the exit code). It is the same result the model got, already
+with secrets redacted; in the simple view these fields are absent. `auto: true` -- a change made without asking
+(autonomy, `docs/en/security.md`). A client that knows only `progress` can skip `activity` events.
 
 `to` is the interface that set the reminder; the client decides whom to show it to. For `kind: task` the `report`
 field contains the worker's report.
