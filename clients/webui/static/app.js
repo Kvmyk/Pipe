@@ -1035,6 +1035,7 @@
   }
   function openInbox() {
     switchTab("home");
+    home.unfold("inbox");
     requestAnimationFrame(() => { const box = $("home-inbox"); if (box) box.scrollIntoView({ behavior: "smooth", block: "start" }); });
     setTimeout(() => home.markSeen(), 1500);
   }

@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.48.0
+Pipe v0.48.1
 
 Ten dokument opisuje funkcje, ktore odrozniaja Pipe od agentow ogolnego przeznaczenia:
 agent, ktory sam pilnuje serwera, widzi jego architekture i zarzadza wieloma maszynami naraz.
@@ -684,7 +684,9 @@ tunel co CLI.
 slowami (*"Wszystko dziala"* albo *"Wymaga uwagi: ..."*), pierscienie procesora, pamieci i dysku z przebiegiem
 ostatniej doby, skrzynka *Od Pipe* (wiadomosci z przyciskami akcji, nowe oznaczone kropka; dzwonek w gornym pasku
 pokazuje, ile ich jest), karty projektow z warsztatu (logi, zatrzymanie, *Z GitHuba*) i zuzycie modelu dzis (tokeny,
-koszt, cache, ile Pipe zaoszczedzil). Dzwonek przy skrzynce otwiera ustawienia powiadomien. Pusty ekran rozmowy
+koszt, cache, ile Pipe zaoszczedzil). Dzwonek przy skrzynce otwiera ustawienia powiadomien. Zasoby, skrzynke i projekty
+zwijasz klikiem w naglowek sekcji (zwiniete zasoby zostaja jako procenty w jednej linii), a pojedyncza wiadomosc --
+klikiem w jej tytul. Przegladarka to pamieta; dzwonek w gornym pasku i `/nowosci` rozwijaja skrzynke. Pusty ekran rozmowy
 podsuwa zadania zwyklymi slowami (*Czy wszystko dziala?*, *Zwolnij miejsce na dysku*, *Uruchom aplikacje z GitHuba*,
 *Napisz mi skrypt*); te oznaczone *bez AI* dzialaja natychmiast i nic nie kosztuja.
 

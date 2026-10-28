@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.48.0
+Pipe v0.48.1
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -700,7 +700,9 @@ the same tunnel as the CLI.
 (*"Everything works"* or *"Needs attention: ..."*), rings for CPU, memory and disk with the last day's trend, the *From
 Pipe* inbox (messages with action buttons, new ones marked with a dot; the bell in the top bar shows how many), cards of
 the workshop projects (logs, stopping, *From GitHub*) and today's model usage (tokens, cost, cache, how much Pipe
-saved). The bell next to the inbox opens the notification settings. The empty conversation screen suggests tasks in
+saved). The bell next to the inbox opens the notification settings. Resources, the inbox and projects fold with a click
+on the section header (folded resources stay as percentages on one line), and a single message with a click on its
+title. The browser remembers it; the bell in the top bar and `/news` unfold the inbox. The empty conversation screen suggests tasks in
 plain words (*Is everything working?*, *Free up disk space*, *Run an app from GitHub*, *Write me a script*); the ones
 marked *no AI* work instantly and cost nothing.
 

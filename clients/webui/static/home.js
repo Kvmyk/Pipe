@@ -24,7 +24,10 @@
     link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
     coin: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.5 9.5c.5-1 1.5-1.5 2.5-1.5 1.7 0 3 1 3 2.2 0 2.8-5 1.5-5 4.3 0 1.2 1.3 2 3 2 1.1 0 2-.5 2.5-1.5M12 6.5v1.5M12 16v1.5",
     refresh: "M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4",
+    chevron: "M6 9l6 6 6-6",
   };
+  // Zwiniete sekcje i wiadomosci — tylko w tej przegladarce (localStorage), na innym urzadzeniu pulpit jest rozwiniety
+  const FOLD_KEY = "pipe-home-fold";
   const TYPE_ICON = { alert: "alert", insight: "bulb", digest: "sun", welcome: "hand", investigation: "search",
                       routine: "clock", notice: "moon" };
 
@@ -33,6 +36,22 @@
     const root = document.getElementById("home");
     let overview = null, feed = { items: [], unread: 0 }, canEdit = true, loading = false, timer = 0, view = "tech";
     const expanded = new Set();
+    const folded = loadFold();
+    const shown = new Set();          // co juz bylo na ekranie: przy ponownym rysowaniu bez animacji wejscia
+    let drawn = false;
+
+    function loadFold() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(FOLD_KEY) || "{}");
+        return { sections: new Set(saved.sections || []), cards: new Set(saved.cards || []) };
+      } catch (_) { return { sections: new Set(), cards: new Set() }; }
+    }
+    function saveFold() {
+      try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify({ sections: [...folded.sections], cards: [...folded.cards].slice(-200) }));
+      } catch (_) { /* tryb prywatny */ }
+    }
+    function toggle(set, key) { if (set.has(key)) set.delete(key); else set.add(key); saveFold(); }
 
     function icon(name, size, cls) {
       const svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
@@ -101,13 +120,29 @@
     }
 
     // ---------------------------------------------------------------- uklad
-    function section(title, extra) {
-      const box = el("section", "home-sec"), head = el("div", "home-sec-head");
-      head.appendChild(el("h3", "", title));
+    // `key` — sekcja zwijana do samego naglowka (stan w FOLD_KEY); `isFolded(key)` mowi, czy rysowac tresc.
+    function section(title, extra, key) {
+      const shut = Boolean(key) && folded.sections.has(key);
+      const box = el("section", "home-sec" + (shut ? " folded" : "")), head = el("div", "home-sec-head");
+      const h3 = el("h3", "");
+      if (key) {
+        const button = el("button", "home-fold", "");
+        button.type = "button"; button.setAttribute("aria-expanded", String(!shut));
+        button.title = t(shut ? "h_unfold" : "h_fold");
+        button.appendChild(icon("chevron", 14, "chev"));
+        button.appendChild(document.createTextNode(title));
+        button.addEventListener("click", () => { toggle(folded.sections, key); render(); });
+        h3.appendChild(button);
+      } else {
+        h3.textContent = title;
+      }
+      head.appendChild(h3);
       if (extra) head.appendChild(extra);
       box.appendChild(head);
       return box;
     }
+    function isFolded(key) { return folded.sections.has(key); }
+    function unfold(key) { if (folded.sections.delete(key)) { saveFold(); render(); } }
     function hero() {
       const status = overview.status || "ok", box = el("section", "hero st-" + status);
       const mark = el("div", "hero-mark");
@@ -125,12 +160,28 @@
       box.appendChild(again);
       return box;
     }
+    // Zasoby zwiniete: w naglowku male znaczniki z procentem (kolor tylko z poziomem)
+    function resources() {
+      if (!isFolded("gauges")) {
+        const box = section(t("h_resources"), null, "gauges");
+        box.appendChild(gauges());
+        return box;
+      }
+      const chips = el("div", "gauge-chips");
+      (overview.gauges || []).forEach((gauge) => {
+        const chip = el("span", "gauge-chip lvl-" + (gauge.level || "ok"));
+        chip.appendChild(el("i", ""));
+        chip.appendChild(document.createTextNode(gauge.label + " " + Math.round(Number(gauge.pct) || 0) + "%"));
+        chips.appendChild(chip);
+      });
+      return section(t("h_resources"), chips, "gauges");
+    }
     function gauges() {
       const grid = el("div", "gauges");
       const series = overview.series || {};
       let diskShown = false;          // przebieg doby jest dla jednego dysku (glownego) — pierwszego na liscie
       (overview.gauges || []).forEach((gauge) => {
-        const card = el("div", "gauge lvl-" + gauge.level);
+        const card = el("div", "gauge lvl-" + gauge.level + (drawn ? " settled" : ""));
         card.appendChild(ring(gauge.pct, gauge.level, gauge.label));
         const side = el("div", "gauge-side");
         side.appendChild(el("b", "", gauge.label));
@@ -144,14 +195,23 @@
       return grid;
     }
     function feedCard(item) {
-      const card = el("article", "feed-card sev-" + (item.severity || "info") + (item.unread ? " unread" : "") + (item.done ? " done" : ""));
-      const head = el("div", "feed-head");
+      const shut = folded.cards.has(item.id);
+      const card = el("article", "feed-card sev-" + (item.severity || "info") + (item.unread ? " unread" : "") + (item.done ? " done" : "")
+                                 + (shut ? " shut" : "") + (shown.has(item.id) ? " settled" : ""));
+      shown.add(item.id);
+      // Naglowek zwija wiadomosc do jednej linii (ikona, tytul, czas) i rozwija ja z powrotem
+      const head = el("button", "feed-head", "");
+      head.type = "button"; head.setAttribute("aria-expanded", String(!shut));
+      head.title = t(shut ? "h_unfold" : "h_fold");
       const badge = el("span", "feed-ico");
       badge.appendChild(icon(TYPE_ICON[item.type] || "bulb", 15));
       head.appendChild(badge);
       head.appendChild(el("b", "", item.title));
       head.appendChild(el("span", "feed-at", (item.at || "").slice(5)));
+      head.appendChild(icon("chevron", 14, "chev"));
+      head.addEventListener("click", () => { toggle(folded.cards, item.id); card.replaceWith(feedCard(item)); });
       card.appendChild(head);
+      if (shut) return card;
       const text = String(item.text || "").trim();
       if (text) {
         const long = text.length > 320 && !expanded.has(item.id);
@@ -208,15 +268,18 @@
       settings.appendChild(icon("bell", 16));
       settings.addEventListener("click", openSettings);
       tools.appendChild(settings);
-      const box = section(t("h_inbox") + (feed.unread ? " · " + fmt("h_new", { n: feed.unread }) : ""), tools);
+      const all = feed.items || [];
+      const count = feed.unread ? " · " + fmt("h_new", { n: feed.unread }) : isFolded("inbox") && all.length ? " · " + all.length : "";
+      const box = section(t("h_inbox") + count, tools, "inbox");
       box.id = "home-inbox";
-      const items = (feed.items || []).slice(0, 12);
+      if (isFolded("inbox")) return box;
+      const items = all.slice(0, 12);
       if (!items.length) box.appendChild(el("div", "home-empty", t("h_inboxEmpty")));
       items.forEach((item) => box.appendChild(feedCard(item)));
       return box;
     }
     function projectCard(project) {
-      const card = el("div", "project-card st-" + (project.status || "none"));
+      const card = el("div", "project-card st-" + (project.status || "none") + (drawn ? " settled" : ""));
       const head = el("div", "project-head");
       const dot = el("span", "pdot");
       dot.title = t("pst_" + (project.status || "none"));
@@ -251,8 +314,9 @@
       const add = el("button", "btn small no", "");
       add.type = "button"; add.appendChild(icon("plus", 13)); add.appendChild(document.createTextNode(t("p_fromGit")));
       add.addEventListener("click", deps.askRepo);
-      const box = section(t("h_projects"), add);
       const list = overview.projects || [];
+      const box = section(t("h_projects") + (isFolded("projects") && list.length ? " · " + list.length : ""), add, "projects");
+      if (isFolded("projects")) return box;
       if (!list.length) {
         const empty = el("div", "home-empty");
         empty.appendChild(document.createTextNode(t("p_empty")));
@@ -284,12 +348,15 @@
       if (!overview) return;
       const scroll = root.scrollTop;
       root.textContent = "";
-      root.appendChild(hero());
-      if (view !== "simple") root.appendChild(gauges());      // widok prosty: bez wykresow i warsztatu
+      const top = hero();
+      if (drawn) top.classList.add("settled");
+      root.appendChild(top);
+      if (view !== "simple") root.appendChild(resources());   // widok prosty: bez wykresow i warsztatu
       root.appendChild(inbox());
       if (view !== "simple") root.appendChild(projects());
       root.appendChild(usage());
       root.scrollTop = scroll;
+      drawn = true;
     }
 
     // ---------------------------------------------------------------- ustawienia powiadomien
@@ -379,7 +446,7 @@
     function setCanEdit(value) { canEdit = value; }
     function setView(value) { if (value !== view) { view = value; render(); } }
 
-    return { refresh, onEvent, markSeen, openSettings, setCanEdit, setView, get unread() { return feed.unread || 0; } };
+    return { refresh, onEvent, markSeen, openSettings, setCanEdit, setView, unfold, get unread() { return feed.unread || 0; } };
   }
 
   window.PipeHome = { create };

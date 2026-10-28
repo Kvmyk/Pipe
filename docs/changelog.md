@@ -1,5 +1,16 @@
 # Historia zmian -- Pipe
 
+## v0.48.1 (2026-10-28)
+
+### Zwijany pulpit w `pipe web`
+
+- Zasoby, skrzynke *Od Pipe* i projekty zwija sie klikiem w naglowek sekcji. Zwiniete zasoby zostaja jako jedna linia
+  z procentami (kolor kropki dalej ostrzega przy dysku czy pamieci blisko limitu), skrzynka i projekty pokazuja liczbe
+- Pojedyncza wiadomosc zwija sie do jednej linii (ikona, tytul, godzina) klikiem w tytul
+- Przegladarka pamieta, co jest zwiniete. Dzwonek w gornym pasku, `/nowosci` i klikniecie w powiadomienie rozwijaja
+  skrzynke, wiec nowa wiadomosc nie chowa sie w zwinietej sekcji. Na telefonie caly zwiniety pulpit miesci sie
+  na jednym ekranie
+
 ## v0.48.0 (2026-10-28)
 
 ### Pipe robi rutyne sam, o wazne sprawy pyta
