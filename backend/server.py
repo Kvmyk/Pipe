@@ -375,6 +375,8 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             await _undo(writer, request, interface)
         elif command == "patch":
             await _patch(writer, request, interface, role, session_id)
+        elif command == "patch_status":
+            await _patch_status(writer, role)
         elif command == "vulns":
             text, view = await _vulns_report()
             await _send(writer, _data({"text": text, "view": view}))
@@ -971,6 +973,12 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
         await _send(writer, event_frame(Progress(tr("Latanie juz trwa — pokazuje jego postep.",
                                                     "Patching is already running — showing its progress."),
                                                  source=patching.SOURCE)))
+    await _follow_patch(writer, run)
+
+
+async def _follow_patch(writer, run) -> None:
+    from backend.core import patching
+
     async for event in run.follow():
         try:
             if isinstance(event, patching.Done):
@@ -980,6 +988,24 @@ async def _patch(writer, request: dict, interface: str, role: str, session_id: s
                 await _send(writer, event_frame(event))
         except (ConnectionError, OSError):
             return                                  # klient zniknal — latanie trwa, wynik przyjdzie jako wiadomosc
+
+
+async def _patch_status(writer, role: str) -> None:
+    """
+    Klient wraca po zerwanym polaczeniu (odswiezenie pipe-web zrywa strone /web pod koniec latania): postep i wynik
+    trwajacego albo przed chwila zakonczonego latania, `{"lost": true}`, gdy nie ma czego odebrac. Niczego nie uruchamia.
+    """
+    from backend.core import patching
+
+    blocker = await patching.blocker(role)
+    if blocker:
+        await _send(writer, _error(blocker))
+        return
+    run = patching.latest()
+    if run is None:
+        await _send(writer, _data({"lost": True}))
+        return
+    await _follow_patch(writer, run)
 
 
 async def _providers(writer, command: str, request: dict, interface: str, role: str) -> None:

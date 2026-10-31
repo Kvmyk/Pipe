@@ -2,6 +2,18 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.1 (2026-10-31)
+
+### Patching from the /web page shows the real result
+
+- Patching from the public `/web` page could end with "The install failed" and a bare "Error" even though it had
+  worked. Refreshing the `pipe-web` container, the last step, cuts the page's connection, so the result never reached
+  the browser. The page now goes back for the result after the connection drops
+- When the connection does not come back, the card says it lost the connection before the result, instead of claiming
+  that the install failed
+- Protocol: the new read-only `patch_status` command returns the progress and result of the running or just finished
+  patch. It starts nothing
+
 ## v0.50.0 (2026-10-31)
 
 ### /patch bumps compose tags and package.json overrides

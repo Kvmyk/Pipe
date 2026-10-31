@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.50.0
+Pipe v0.50.1
 
 ## Overview
 
@@ -107,6 +107,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- change journal |
 | `vulns` | -- | `"data": {"text", "view"}` -- the vulnerability report in Markdown (`view`: the same as data for `pipe web`, `vulns.report_view`) (packages, remote servers, images, applications) with explanations; the model writes missing ones (at most `EXPLAIN_WAIT` s), without a model the OSV description |
 | `patch` | `scope`: empty / `all` (everything), `images`/`obrazy`, `system`/`serwer`, `servers`/`serwery`, an ssh target name, `urgent`/`pilne` (this server's urgent packages) | patches right away (`core/patching.py`): `progress` frames with the steps, then a new scan and `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- unchanged by the install, not tried again for a day; `freed` -- bytes freed by the cleanup; `report` -- the state after the patch, like `view` from `vulns`). Nothing to patch: `"data": {"nothing": true, "text", ...}`. The server builds the commands from the current scan. Patching runs in the background: a second `patch` meanwhile gets the same progress and result, and after the client disconnects the result arrives as a `message` reminder. The `execute` and `patch_token` fields (the preview before v0.38) are ignored. Refused: viewer, observe mode; this server's packages and images only in native and docker mode (with the helper container). **Without the LLM** |
+| `patch_status` | -- | after a lost connection: the progress and result of the running or just finished `patch`, like `patch` itself; `"data": {"lost": true}` when there is nothing to collect. Starts nothing. **Without the LLM** |
 | `undo` | optionally `id`; `execute: true` | without `execute`: `"data": {"id", "undoable", "preview"}` (the last entry to undo when there is no `id`); with `execute` and `id`: the undo, `"data": {"id", "text"}`. **Without the LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- LLM tokens and cost |
 | `subscribe` | `since`: `ts` of the last event seen (optional) | the connection stays open; first the events published after `since`, then watcher events (below) until the client disconnects |

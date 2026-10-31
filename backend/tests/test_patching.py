@@ -278,6 +278,26 @@ class TestFleet:
 
 class TestRun:
 
+    def test_result_stays_for_a_client_that_lost_the_connection(self, monkeypatch):
+        import time
+
+        from backend.tests.test_server_commands import exchange
+
+        patch_env(monkeypatch, shell=FakeShell([("docker info", ("", "", 1))]))
+        monkeypatch.setattr(patching, "_current", None)
+        assert exchange([{"command": "patch_status"}])[0][-1]["data"] == {"lost": True}
+
+        async def scenario():
+            current = patching.start(self.job(), interface="telegram:5")
+            await current.task
+            return current
+        current = run(scenario())
+        assert patching.latest() is current and patching.current() is None
+        frames = exchange([{"command": "patch_status"}])[0]
+        assert frames[-1]["data"]["scope"] == "all" and "exit_code" in frames[-1]["data"]
+        current.ended = time.time() - patching.RESULT_KEEP - 1
+        assert patching.latest() is None
+
     def job(self):
         item = vulns.PackageVulns("openssl", "3.0.11", ["openssl"], [vulns.Vuln("DSA-1", [], "high", "", "3.0.13")],
                                   ecosystem="Debian:12")

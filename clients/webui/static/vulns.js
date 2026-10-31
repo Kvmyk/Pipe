@@ -225,6 +225,7 @@
     }
 
     // ---- latanie od razu: karta z krokami na zywo, potem wynik i stan po latce
+    const RECONNECT_TRIES = 30, RECONNECT_WAIT = 3000;
     async function patchRun(scope) {
       if (isBusy()) return;
       setBusy(true); setWorking(t("patching"));
@@ -246,13 +247,22 @@
         steps.appendChild(current);
       };
       let data = null, error = "";
-      try {
-        await request({ command: "patch", scope: scope || "" }, (frame) => {
-          if (frame.event && frame.event.type === "progress" && frame.event.text) step(frame.event.text);
-          if (frame.data !== undefined) data = frame.data;
-          if (frame.status === "error" && frame.response) error = frame.response;
-        });
-      } catch (e) { error = e.message; }
+      const follow = async (payload) => {
+        try {
+          await request(payload, (frame) => {
+            if (frame.event && frame.event.type === "progress" && frame.event.text) step(frame.event.text);
+            if (frame.data !== undefined) data = frame.data;
+            if (frame.status === "error" && frame.response) error = frame.response;
+          });
+        } catch (_) { /* polaczenie zerwane: zostaje bez wyniku */ }
+      };
+      await follow({ command: "patch", scope: scope || "" });
+      // latanie dziala w tle, a odswiezenie pipe-web zrywa strone /web: wracam po wynik, nie uruchamiajac niczego od nowa
+      for (let i = 0; !data && !error && i < RECONNECT_TRIES; i++) {
+        await new Promise((resolve) => setTimeout(resolve, RECONNECT_WAIT));
+        steps.textContent = ""; current = null;
+        await follow({ command: "patch_status" });
+      }
       if (current) current.classList.add("done");
       setBusy(false); setWorking("");
       steps.remove();
@@ -264,6 +274,14 @@
       const body = el("div", "body");
       card.appendChild(body);
       card.classList.add("open");
+      if (!error && (!data || data.lost)) {      // wyniku nie ma, ale to nie znaczy, ze latanie sie nie udalo
+        finish(card, label, false, t("vx_lost_title"));
+        const why = el("div", "vx-blocked");
+        why.appendChild(icon("info", 14));
+        why.appendChild(el("span", "", t("vx_lost")));
+        body.appendChild(why);
+        return;
+      }
       if (!data || data.nothing) {
         const ok = Boolean(data);
         finish(card, label, ok, ok ? t("vx_nothing") : t("vx_done_fail"));

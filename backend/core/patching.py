@@ -49,6 +49,7 @@ FUSE_LINES = 12              # linii bezpiecznika na czesc (blad `docker compose
 NOTE_CHARS = 3500            # tyle wyniku trafia do rozmowy jako notatka [PIPE]
 BUILD_CACHE_KEEP = "24h"     # cache budowania uzyty w ostatniej dobie zostaje (szybkie wdrozenia), starszy znika
 DELIVER_AFTER = 3            # s po koncu: nikt nie odebral wyniku (klient sie rozlaczyl) -> wiadomosc
+RESULT_KEEP = 600            # s po koncu: klient, ktoremu zerwalo polaczenie, moze jeszcze odebrac wynik (patch_status)
 DISK_PATHS = ("/", "/var", "/boot")
 NAMES_SHOWN = 6
 
@@ -236,6 +237,7 @@ class Run:
         self.done: Done | None = None
         self.delivered = False
         self.started = time.time()
+        self.ended = 0.0
         self.task: asyncio.Task | None = None
         self._followers: set[asyncio.Queue] = set()
         self._image = ""
@@ -740,7 +742,7 @@ class Run:
             text = tr(f"Latanie przerwal blad: {exc}", f"Patching stopped with an error: {exc}")
             done = Done(text, {"text": text, "exit_code": 1, "scope": self.job.scope, "summary": text,
                                "fixed": [], "unchanged": [], "output": "", "report": None, "entries": []}, 1)
-        self.done = done
+        self.done, self.ended = done, time.time()
         self.emit(done)
         if agent is not None and self.session_id:
             entries, shown = ", ".join(done.data.get("entries") or []) or "-", done.text[:NOTE_CHARS]
@@ -980,6 +982,13 @@ _current: Run | None = None
 def current() -> Run | None:
     """Trwajace latanie (jedno naraz) albo None."""
     return _current if _current is not None and _current.done is None else None
+
+
+def latest() -> Run | None:
+    """Trwajace latanie albo to, ktore skonczylo sie przed chwila (dla klienta, ktoremu zerwalo polaczenie)."""
+    if _current is not None and (_current.done is None or time.time() - _current.ended < RESULT_KEEP):
+        return _current
+    return None
 
 
 def start(job: Job, *, interface: str, session_id: str = "", watcher: Any = None, agent: Any = None) -> Run:

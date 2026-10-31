@@ -1,6 +1,6 @@
 # Protokół komunikacji -- Pipe
 
-Pipe v0.50.0
+Pipe v0.50.1
 
 ## Opis
 
@@ -107,6 +107,7 @@ Komendy "/" klientów (Telegram, CLI) wysyłają `{"command": ...}`:
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
 | `vulns` | -- | `"data": {"text", "view"}` -- raport podatności w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, zdalne serwery, obrazy, aplikacje) z wyjaśnieniami; brakujące pisze model (najwyżej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
 | `patch` | `scope`: puste / `all` (wszystko), `images`/`obrazy`, `system`/`serwer`, `apps`/`aplikacje`, `servers`/`serwery`, nazwa celu ssh, `urgent`/`pilne` (pilne pakiety tego serwera) | łata od razu (`core/patching.py`): ramki `progress` z kolejnymi krokami, potem nowy skan i `"data": {"text", "exit_code", "entry_id", "entries", "scope", "summary", "fixed", "unchanged", "freed", "output", "report", "parts"}` (`unchanged` -- bez zmian po instalacji, nie wraca przez dobę; `freed` -- bajty zwolnione przy sprzątaniu; `report` -- stan po łatce jak `view` z `vulns`). Nic do załatania: `"data": {"nothing": true, "text", ...}`. Komendy składa serwer z bieżącego skanu. Łatanie działa w tle: drugie `patch` w trakcie dostaje ten sam postęp i wynik, a po rozłączeniu klienta wynik przychodzi jako przypomnienie `message`. Pola `execute` i `patch_token` (podgląd sprzed v0.38) są ignorowane. Odrzucane: viewer, tryb obserwacji; pakiety i obrazy tego serwera tylko w trybie native i docker (z kontenerem pomocniczym). **Bez LLM** |
+| `patch_status` | -- | po zerwanym połączeniu: postęp i wynik trwającego albo przed chwilą zakończonego `patch`, tak jak w `patch`; `"data": {"lost": true}`, gdy nie ma czego odebrać. Niczego nie uruchamia. **Bez LLM** |
 | `undo` | opcjonalnie `id`; `execute: true` | bez `execute`: `"data": {"id", "undoable", "preview"}` (ostatni wpis do cofnięcia, gdy brak `id`); z `execute` i `id`: cofnięcie, `"data": {"id", "text"}`. **Bez LLM** |
 | `usage` | -- | `"data": {"today", "history", "month", "text"}` -- tokeny i koszt LLM |
 | `subscribe` | `since`: `ts` ostatniego widzianego zdarzenia (opcjonalnie) | połączenie zostaje otwarte; najpierw zdarzenia opublikowane po `since`, potem zdarzenia czuwania (poniżej) do rozłączenia klienta |
