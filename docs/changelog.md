@@ -2,6 +2,17 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.3 (2026-10-31)
+
+### Clearer pipe diagrams
+
+- The pipe diagram now tells one story: your question goes to the language model, its command stops at the valve and
+  the fuse, reaches the server, and the result comes back past the gauge. Each part lights up as the command passes it
+- The language model moved in front of the valve, so the diagram shows that the model proposes and Pipe decides what
+  runs
+- In the valve scene each command stops at the classifier, which lights up in the color of the route it picks
+- The gauge is called "Czujnik" in the Polish version
+
 ## v0.50.2 (2026-10-31)
 
 ### The website shows what Pipe is

@@ -47,7 +47,7 @@
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
     <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.2</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.3</a></p>
 
     <figure class="shot">
       <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and fixes the nginx config by itself, with a backup; on the right a map of the server with the element the agent works on highlighted">
@@ -64,7 +64,7 @@ sudo bash scripts/install-server.sh</code></pre>
           opened on the server.</p>
       </div>
       <figure class="diagram">
-        <img src="assets/pipe-flow-en.svg" width="960" height="370" loading="lazy" alt="Diagram: you on the left, your server on the right, joined by a pipe. Commands flow to the server, alerts flow back. In the pipe sit a valve, a fuse and a gauge; a language model connects from above.">
+        <img src="assets/pipe-flow-en.svg" width="960" height="370" loading="lazy" alt="Diagram: you on the left, your server on the right, joined by a pipe. Your question goes up to a language model, which proposes a command. The command passes a valve and a fuse on its way to the server, and the result comes back past a gauge.">
       </figure>
       <div class="parts">
         <div class="valve"><h3>Valve</h3><p>Decides what passes. Reads and routine changes go through, important ones wait for your yes, destructive ones never pass.</p></div>
@@ -72,7 +72,8 @@ sudo bash scripts/install-server.sh</code></pre>
         <div class="gauge"><h3>Gauge</h3><p>Reads the server every two minutes, without a language model. When a reading is wrong, Pipe writes to you first.</p></div>
       </div>
       <div class="narrow">
-        <p>The model is a part you can swap: Gemini, Claude, OpenAI or a local Ollama. The rules, the memory and the tools
+        <p>The model comes up with what to do, and Pipe decides what actually runs. That is why the model sits before the
+          valve. It is a part you can swap: Gemini, Claude, OpenAI or a local Ollama. The rules, the memory and the tools
           stay in Pipe. Engineers call this layer around a model a harness.</p>
       </div>
     </div>
@@ -283,7 +284,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.50.2 · MIT license</span>
+    <span>Pipe 0.50.3 · MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="docs/">Documentation</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>

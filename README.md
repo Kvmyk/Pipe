@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.50.2-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.50.3-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -53,7 +53,7 @@ lines of its output.
 
 Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
 
-<p align="center"><img src="docs/assets/pipe-flow-en.svg" alt="Pipe sits between you and your server: commands flow one way, alerts the other, through a valve, a fuse and a gauge" width="100%"></p>
+<p align="center"><img src="docs/assets/pipe-flow-en.svg" alt="Your question goes to a language model, its command passes a valve and a fuse to the server, and the result comes back past a gauge" width="100%"></p>
 
 ## Examples
 

@@ -104,7 +104,7 @@ def lang_switch(current: str, other_href: str) -> str:
 
 
 T = {
-    "pl": {"flow_alt": "Schemat: Ty, rura z zaworem, bezpiecznikiem i manometrem oraz Twój serwer. Polecenia płyną do serwera, alerty wracają.",
+    "pl": {"flow_alt": "Schemat: Twoje pytanie idzie do modelu językowego, jego komenda przechodzi przez zawór i bezpiecznik do serwera, a wynik wraca obok czujnika.",
            "docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
            "edit": "Popraw tę stronę na GitHubie", "changelog": "Historia zmian", "issues": "Zgłoś błąd",
            "source": "Kod na GitHubie", "license": "licencja MIT", "install": "Instalacja",
@@ -112,7 +112,7 @@ T = {
                          "Strony powstają z plików w katalogu docs/ repozytorium, więc opisują aktualną wersję.",
            "index_title": "Dokumentacja Pipe", "start": "Zacznij od szybkiego startu",
            "changelog_note": "Historia zmian jest na GitHubie (od v0.49 po angielsku)."},
-    "en": {"flow_alt": "Diagram: you, a pipe with a valve, a fuse and a gauge, and your server. Commands flow to the server, alerts flow back.",
+    "en": {"flow_alt": "Diagram: your question goes to a language model, its command passes a valve and a fuse to the server, and the result comes back past a gauge.",
            "docs": "Docs", "on_page": "On this page", "all": "All pages",
            "edit": "Edit this page on GitHub", "changelog": "Changelog", "issues": "Report a bug",
            "source": "Source on GitHub", "license": "MIT license", "install": "Installation",

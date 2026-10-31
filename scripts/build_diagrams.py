@@ -1,16 +1,17 @@
 """
 Generuje grafiki koncepcyjne Pipe do docs/assets (strona, dokumentacja i README czytaja te same pliki):
 
-    pipe-flow-<lang>.svg    rura miedzy Toba a serwerem: zawor, bezpiecznik, manometr, wymienny model
+    pipe-flow-<lang>.svg    jedna historia w rurze: pytanie -> model proponuje -> zawor -> bezpiecznik -> serwer -> wynik
     pipe-valve-<lang>.svg   komendy rozchodza sie w klasyfikatorze na trzy drogi
 
     python scripts/build_diagrams.py
 
 Tylko SVG z animacja CSS: GitHub w README nie uruchamia JavaScriptu, a CSS w pliku SVG (w przeciwienstwie
-do SMIL) mozna zatrzymac przez prefers-reduced-motion. Ruch po krzywych to wyliczone klatki translate(), nie
-offset-path, wiec dziala wszedzie tam, gdzie zwykla animacja. Stan bez animacji jest pelnym, statycznym rysunkiem:
-kazdy element ma pozycje koncowa w `style`. Kolory na sztywno z palety site/style.css, tlo wlasne, bo README
-bywa jasne. Tylko biblioteka standardowa.
+do SMIL) mozna zatrzymac przez prefers-reduced-motion. Ruch to wyliczone klatki translate(), nie offset-path,
+wiec dziala wszedzie tam, gdzie zwykla animacja. Wszystko w jednym pliku idzie na jednej osi czasu CYCLE: chwile
+w procentach cyklu sa zapisane raz, a kapsuly i lampki czytaja te same liczby. Stan bez animacji jest pelnym,
+statycznym rysunkiem: kazdy element ma pozycje w `style`. Kolory na sztywno z palety site/style.css, tlo wlasne,
+bo README bywa jasne. Tylko biblioteka standardowa.
 """
 
 from __future__ import annotations
@@ -21,35 +22,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "docs" / "assets"
 LANGS = ("en", "pl")
+CYCLE = 12                            # sekundy, ten sam cykl na obu rysunkach
 
 BG, PANEL, SUNKEN, LINE, STEEL = "#0f1011", "#151618", "#1c1d20", "#2a2b2f", "#3a3b40"
 INK, INK2, INK3 = "#ececea", "#b4b5b8", "#8a8c90"
 BLUE, GREEN, AMBER, RED = "#8fb0ff", "#5cc68a", "#e0a64a", "#f08a86"
+DEEP_BLUE, DEEP_GREEN, DEEP_AMBER, DEEP_RED = "#2049b8", "#1d7f49", "#9a5a08", "#b02b28"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
 
 Point = tuple[float, float]
+Stop = tuple[float, Point]
 
 FLOW = {
     "en": {"title": "Pipe: the pipe between you and your server",
-           "desc": "You and the server are joined by a pipe. Commands flow to the server, alerts flow back. "
-                   "In the pipe sit a valve, a fuse and a gauge; a language model you can swap connects from above.",
+           "desc": "Your question goes up to a language model, which proposes a command. The command goes through "
+                   "the valve and the fuse to the server, and the result comes back past the gauge to you.",
            "you": "You", "you_sub": "CLI · web · Telegram",
            "server": "Your server", "server_sub": "services · containers",
-           "model": "Language model", "model_sub": "Gemini, Claude, Ollama...",
-           "valve": "Valve", "valve_sub": "runs / asks / refuses",
-           "fuse": "Fuse", "fuse_sub": "backup, check, undo",
-           "gauge": "Gauge", "gauge_sub": "watches, writes first",
-           "down": "what you ask for", "up": "what the server tells you first"},
+           "model": "Language model", "model_sub": "proposes commands · swappable",
+           "valve": "Valve", "valve_sub": "runs, asks, refuses",
+           "fuse": "Fuse", "fuse_sub": "backup and undo",
+           "gauge": "Gauge", "gauge_sub": "writes first",
+           "down": "your request", "up": "result or alert"},
     "pl": {"title": "Pipe: rura między Tobą a serwerem",
-           "desc": "Ty i serwer jesteście połączeni rurą. Polecenia płyną do serwera, alerty wracają. "
-                   "W rurze są zawór, bezpiecznik i manometr; od góry podłączony jest wymienny model językowy.",
+           "desc": "Twoje pytanie idzie do modelu językowego, który proponuje komendę. Komenda przechodzi przez zawór "
+                   "i bezpiecznik do serwera, a wynik wraca obok czujnika do Ciebie.",
            "you": "Ty", "you_sub": "CLI · web · Telegram",
            "server": "Twój serwer", "server_sub": "usługi · kontenery",
-           "model": "Model językowy", "model_sub": "Gemini, Claude, Ollama...",
-           "valve": "Zawór", "valve_sub": "sam / po TAK / nigdy",
-           "fuse": "Bezpiecznik", "fuse_sub": "kopia, kontrola, cofnij",
-           "gauge": "Manometr", "gauge_sub": "pilnuje, pisze pierwszy",
-           "down": "o co prosisz", "up": "co serwer mówi Ci pierwszy"},
+           "model": "Model językowy", "model_sub": "proponuje komendy · wymienny",
+           "valve": "Zawór", "valve_sub": "sam, po TAK, nigdy",
+           "fuse": "Bezpiecznik", "fuse_sub": "kopia i cofnięcie",
+           "gauge": "Czujnik", "gauge_sub": "pisze pierwszy",
+           "down": "Twoja prośba", "up": "wynik albo alert"},
 }
 
 VALVE = {
@@ -66,8 +70,9 @@ VALVE = {
 }
 
 
-def text(x: float, y: float, value: str, cls: str = "", anchor: str = "start") -> str:
-    return (f'<text x="{x}" y="{y}" class="{cls}" text-anchor="{anchor}">{html.escape(value)}</text>')
+def text(x: float, y: float, value: str, cls: str = "", anchor: str = "start", color: str = "") -> str:
+    style = f' style="fill:{color}"' if color else ""
+    return f'<text x="{x}" y="{y}" class="{cls}" text-anchor="{anchor}"{style}>{html.escape(value)}</text>'
 
 
 def cubic(a: Point, b: Point, c: Point, d: Point, steps: int = 16) -> list[Point]:
@@ -80,7 +85,7 @@ def cubic(a: Point, b: Point, c: Point, d: Point, steps: int = 16) -> list[Point
     return points
 
 
-def along(points: list[Point], samples: int = 24) -> list[Point]:
+def along(points: list[Point], samples: int = 16) -> list[Point]:
     """Punkty rownomiernie po dlugosci lamanej, z lagodnym startem i hamowaniem."""
     lengths = [0.0]
     for a, b in zip(points, points[1:]):
@@ -100,16 +105,33 @@ def along(points: list[Point], samples: int = 24) -> list[Point]:
     return result
 
 
-def journey(name: str, points: list[Point], start: float, arrive: float, leave: float) -> str:
-    """Klatki kapsuly: niewidoczna do `start`, jedzie do `arrive`, stoi do `leave`, znika."""
-    frames = [(0.0, points[0], 0)]
-    if start > 0:
-        frames.append((start, points[0], 0))
-    for i, p in enumerate(points):
-        frames.append((start + 0.5 + (arrive - start - 0.5) * i / (len(points) - 1), p, 1))
-    frames += [(leave, points[-1], 1), (leave + 3, points[-1], 0), (100.0, points[-1], 0)]
-    body = "".join(f"{pct:.2f}%{{transform:translate({p[0]:.1f}px,{p[1]:.1f}px);opacity:{o}}}" for pct, p, o in frames)
+def spread(start: float, end: float, points: list[Point]) -> list[Stop]:
+    return [(start + (end - start) * i / (len(points) - 1), p) for i, p in enumerate(points)]
+
+
+def track(name: str, stops: list[Stop], ease: bool = True) -> str:
+    """Klatki kapsuly: pojawia sie w pierwszym przystanku, jedzie przez kolejne, znika po ostatnim."""
+    first, last = stops[0], stops[-1]
+    timing = "animation-timing-function:ease-in-out" if ease else "animation-timing-function:linear"
+    frames = [(0.0, first[1], 0), (first[0], first[1], 0), (first[0] + .6, first[1], 1)]
+    frames += [(pct, p, 1) for pct, p in stops[1:]]
+    frames += [(last[0] + 2, last[1], 0), (100.0, last[1], 0)]
+    body = "".join(f"{pct:.2f}%{{transform:translate({p[0]:.1f}px,{p[1]:.1f}px);opacity:{o};{timing}}}"
+                   for pct, p, o in frames)
     return f"@keyframes {name}{{{body}}}"
+
+
+def windows(name: str, prop: str, off: str, items: list[tuple[float, float, str]]) -> str:
+    """Wartosc `prop` w oknach czasu (start, koniec, wartosc); poza nimi `off`."""
+    frames = [(0.0, off)]
+    for start, end, value in items:
+        frames += [(start - 1.5, off), (start, value), (end, value), (end + 2, off)]
+    frames.append((100.0, off))
+    return f"@keyframes {name}{{" + "".join(f"{pct:.2f}%{{{prop}:{value}}}" for pct, value in frames) + "}"
+
+
+def run(cls: str, name: str | None = None, base: str = "") -> str:
+    return f".{cls}{{{base}animation:{name or cls} {CYCLE}s linear infinite}}"
 
 
 def shell(width: int, height: int, title: str, desc: str, css: str, body: str) -> str:
@@ -126,6 +148,10 @@ text{{font-family:{MONO};fill:{INK2};font-size:13px}}
 {css}
 @media (prefers-reduced-motion:reduce){{*{{animation:none!important}}}}
 </style>
+<defs>
+<linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
+<linearGradient id="wallv" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
+</defs>
 <rect width="{width}" height="{height}" rx="14" fill="{BG}"/>
 <g stroke="#ffffff" stroke-opacity=".035">{grid}</g>
 <rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" rx="13.5" fill="none" stroke="{LINE}"/>
@@ -134,10 +160,16 @@ text{{font-family:{MONO};fill:{INK2};font-size:13px}}
 """
 
 
-def box(x: float, y: float, w: float, h: float, name: str, sub: str) -> str:
+def box(x: float, y: float, w: float, h: float, name: str, sub: str, cls: str) -> str:
     cx = x + w / 2
-    return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="{PANEL}" stroke="{STEEL}"/>'
-            + text(cx, y + h / 2 - 2, name, "n", "middle") + text(cx, y + h / 2 + 18, sub, "s", "middle"))
+    return (f'<rect class="{cls}" x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="{PANEL}" stroke="{STEEL}" stroke-width="2"/>'
+            + text(cx, y + h / 2 - 3, name, "n", "middle") + text(cx, y + h / 2 + 17, sub, "s", "middle"))
+
+
+def capsule(cls: str, label: str, fill: str, width: float, at: Point, size: int = 14, height: int = 28) -> str:
+    return (f'<g class="{cls}" style="transform:translate({at[0]:.0f}px,{at[1]:.0f}px)">'
+            f'<rect x="{-width / 2}" y="{-height / 2}" width="{width}" height="{height}" rx="6" fill="{fill}"/>'
+            f'<text y="{size * .36:.1f}" text-anchor="middle" style="fill:#fff;font-size:{size}px">{html.escape(label)}</text></g>')
 
 
 def flow(lang: str) -> str:
@@ -145,71 +177,76 @@ def flow(lang: str) -> str:
     w, h = 960, 370
     left, right = 196, 764            # koniec skrzynki "Ty", poczatek skrzynki serwera
     top, bottom = 170, 230            # scianki rury
-    lane_down, lane_up = 186, 214     # pasy pakietow
-    stations = (260, 445, 630)
-    tap = 715                         # przylacze modelu
-    duration = 6
-
-    css = [f"@keyframes down{{from{{transform:translate({left}px,{lane_down}px)}}to{{transform:translate({right}px,{lane_down}px)}}}}",
-           f"@keyframes up{{from{{transform:translate({right}px,{lane_up}px)}}to{{transform:translate({left}px,{lane_up}px)}}}}",
-           f".d{{animation:down {duration}s linear infinite}}",
-           f".u{{animation:up {duration}s linear infinite}}",
-           # zawor: pol obrotu, chwila, drugie pol
-           "@keyframes turn{0%,35%{transform:rotate(0)}50%,85%{transform:rotate(90deg)}100%{transform:rotate(180deg)}}",
-           f".wheel{{transform-origin:{stations[0]}px 200px;animation:turn 6s ease-in-out infinite}}",
-           "@keyframes glow{0%,100%{opacity:.35}50%{opacity:1}}",
-           ".wire{animation:glow 3s ease-in-out infinite}",
-           "@keyframes needle{0%,100%{transform:rotate(-38deg)}30%{transform:rotate(24deg)}55%{transform:rotate(-8deg)}80%{transform:rotate(44deg)}}",
-           f".needle{{transform-origin:{stations[2]}px 208px;transform:rotate(10deg);animation:needle 7s ease-in-out infinite}}",
-           f"@keyframes tap{{0%,100%{{transform:translate({tap}px,92px)}}50%{{transform:translate({tap}px,{top - 2}px)}}}}",
-           ".m{animation:tap 5s ease-in-out infinite}"]
-
-    packets = []
-    for i in range(3):
-        delay = -duration * i / 3
-        x = left + (right - left) * (i + .5) / 3
-        packets.append(f'<circle class="d" r="5" fill="{BLUE}" style="transform:translate({x:.0f}px,{lane_down}px);animation-delay:{delay:.1f}s"/>')
-        packets.append(f'<circle class="u" r="5" fill="{AMBER}" style="transform:translate({x:.0f}px,{lane_up}px);animation-delay:{delay - 1:.1f}s"/>')
-
-    cx1, cx2, cx3 = stations
+    lane_down, lane_up = 186, 214     # pasy kapsul
+    tap, tap_half = 265, 36           # odgalezienie do modelu, przed zaworem: model proponuje, zawor decyduje
+    model_y = 92                      # dol skrzynki modelu
+    cx1, cx2, cx3 = 390, 540, 690     # zawor, bezpiecznik, czujnik
     y = (top + bottom) / 2
-    body = [text(32, 50, t["title"], "h"),
-            # przylacze modelu pod rura, zeby kropka wchodzila w rure
-            f'<path d="M{tap} 92V{top}" stroke="{INK3}" stroke-width="2" stroke-dasharray="3 6"/>',
-            f'<circle class="m" r="4" fill="{INK}" style="transform:translate({tap}px,130px)"/>',
-            box(tap - 112, 32, 224, 60, t["model"], t["model_sub"]),
-            # rura
-            f'<rect x="{left}" y="{top}" width="{right - left}" height="{bottom - top}" fill="{SUNKEN}"/>',
-            f'<path d="M{left} {top}H{right}M{left} {bottom}H{right}" stroke="{STEEL}" stroke-width="2"/>',
-            f'<path d="M{left} {y}H{right}" stroke="{LINE}" stroke-dasharray="2 8"/>',
-            *packets,
-            box(32, 150, left - 32, 100, t["you"], t["you_sub"]),
-            box(right, 150, w - 32 - right, 100, t["server"], t["server_sub"])]
-    for cx, name, sub in ((cx1, t["valve"], t["valve_sub"]), (cx2, t["fuse"], t["fuse_sub"]), (cx3, t["gauge"], t["gauge_sub"])):
-        body += [f'<circle cx="{cx}" cy="{y}" r="44" fill="{PANEL}" stroke="{STEEL}" stroke-width="2"/>',
-                 text(cx, 136, name, "n", "middle"), text(cx, 272, sub, "s", "middle")]
+    behind_you, behind_server = 150, 810
+
+    # Jedna os czasu (% cyklu). Pytanie -> model -> komenda -> wynik.
+    ask: list[Stop] = [(1, (behind_you, lane_down)), (8, (tap, lane_down)), (16, (tap, model_y - 12))]
+    think = (16, 27)
+    cmd: list[Stop] = [(27, (tap, model_y - 12)), (34, (tap, lane_down)), (40, (cx1, lane_down)), (45, (cx1, lane_down)),
+                       (51, (cx2, lane_down)), (55, (cx2, lane_down)), (63, (behind_server, lane_down))]
+    result: list[Stop] = [(68, (behind_server, lane_up)), (73, (cx3, lane_up)), (77, (cx3, lane_up)),
+                          (85, (cx1, lane_up)), (96, (behind_you, lane_up))]
+
+    css = [track("ask", ask), track("cmd", cmd), track("res", result),
+           run("ask"), run("cmd"), run("res"),
+           windows("lmodel", "stroke", STEEL, [(*think, BLUE)]), run("lmodel"),
+           windows("lvalve", "stroke", STEEL, [(39, 46, GREEN)]), run("lvalve"),
+           windows("lfuse", "stroke", STEEL, [(50, 56, AMBER)]), run("lfuse"),
+           windows("lgauge", "stroke", STEEL, [(72, 78, BLUE)]), run("lgauge"),
+           windows("lserver", "stroke", STEEL, [(62, 69, GREEN)]), run("lserver"),
+           windows("lyou", "stroke", STEEL, [(2, 6, BLUE), (93, 97.5, AMBER)]), run("lyou"),
+           windows("wire", "opacity", ".35", [(50, 56, "1")]), run("wire", base=f"opacity:.35;"),
+           # zawor: cwierc obrotu przy przejsciu komendy (krzyz po obrocie wyglada tak samo, cykl sie nie urywa)
+           "@keyframes turn{0%,39%{transform:rotate(0)}45%,100%{transform:rotate(90deg)}}",
+           f".wheel{{transform-origin:{cx1}px {y}px;animation:turn {CYCLE}s ease-in-out infinite}}",
+           # czujnik: wskazowka drgnie, gdy mija ja wynik
+           "@keyframes needle{0%,71%{transform:rotate(-24deg)}74%{transform:rotate(34deg)}78%{transform:rotate(8deg)}100%{transform:rotate(-24deg)}}",
+           f".needle{{transform-origin:{cx3}px {y + 8}px;transform:rotate(8deg);animation:needle {CYCLE}s ease-in-out infinite}}",
+           # model mysli
+           *(f"@keyframes dot{i}{{0%,{think[0] + i * 2}%,{think[1]}%,100%{{opacity:.15}}{think[0] + 2 + i * 2}%,{think[1] - 2}%{{opacity:1}}}}" for i in range(3))]
+    css += [f".dot{i}{{opacity:.15;animation:dot{i} {CYCLE}s linear infinite}}" for i in range(3)]
+
+    def fitting(x: float) -> str:
+        return f'<rect x="{x - 3}" y="{top - 6}" width="6" height="{bottom - top + 12}" rx="2" fill="{STEEL}"/>'
+
+    tx0, tx1 = tap - tap_half, tap + tap_half
+    body = [text(928, 50, t["title"], "h", "end"),
+            # odgalezienie do modelu i rura
+            f'<rect x="{tx0}" y="{model_y}" width="{tap_half * 2}" height="{top - model_y + 2}" fill="url(#wallv)"/>',
+            f'<rect x="{left}" y="{top}" width="{right - left}" height="{bottom - top}" fill="url(#wall)"/>',
+            f'<path d="M{tx0} {model_y}V{top}H{left}M{tx1} {model_y}V{top}H{right}M{left} {bottom}H{right}" fill="none" stroke="{STEEL}" stroke-width="2"/>',
+            capsule("ask", "502?", DEEP_BLUE, 54, (tap, 132), 12.5, 22),
+            capsule("cmd", "reload", DEEP_BLUE, 64, (465, lane_down), 12.5, 22),
+            capsule("res", "OK", DEEP_AMBER, 42, (615, lane_up), 12.5, 22),
+            *(fitting(x) for x in (cx1 - 46, cx1 + 46, cx2 - 46, cx2 + 46, cx3 - 46, cx3 + 46)),
+            box(tap - 130, 32, 260, 60, t["model"], t["model_sub"], "lmodel"),
+            *(f'<circle class="dot{i}" cx="{tap + 92 + i * 11}" cy="56" r="3" fill="{BLUE}"/>' for i in range(3)),
+            box(32, 150, left - 32, 100, t["you"], t["you_sub"], "lyou"),
+            box(right, 150, w - 32 - right, 100, t["server"], t["server_sub"], "lserver")]
+    for cx, name, sub, cls in ((cx1, t["valve"], t["valve_sub"], "lvalve"), (cx2, t["fuse"], t["fuse_sub"], "lfuse"),
+                               (cx3, t["gauge"], t["gauge_sub"], "lgauge")):
+        body += [f'<circle class="{cls}" cx="{cx}" cy="{y}" r="42" fill="{PANEL}" stroke="{STEEL}" stroke-width="2.5"/>',
+                 text(cx, 142, name, "n", "middle"), text(cx, 270, sub, "s", "middle")]
     # zawor: pokretlo
     body.append(f'<g class="wheel" fill="none" stroke="{GREEN}" stroke-width="4"><circle cx="{cx1}" cy="{y}" r="24"/>'
                 f'<path d="M{cx1 - 24} {y}H{cx1 + 24}M{cx1} {y - 24}V{y + 24}"/></g>')
     # bezpiecznik: wklad z drucikiem
-    body.append(f'<g fill="none" stroke="{AMBER}" stroke-width="3"><rect x="{cx2 - 28}" y="{y - 13}" width="56" height="26" rx="13"/>'
-                f'<path d="M{cx2 - 38} {y}h10M{cx2 + 28} {y}h10"/>'
-                f'<path class="wire" d="M{cx2 - 28} {y}c8 -14 14 14 28 0s20 14 28 0" stroke-width="2.5"/></g>')
-    # manometr: tarcza i wskazowka
-    body.append(f'<g fill="none" stroke="{BLUE}" stroke-width="3"><path d="M{cx3 - 28} {y + 14}a30 30 0 1 1 56 0"/>'
-                f'<path d="M{cx3 - 28} {y + 14}l6 -3M{cx3 + 28} {y + 14}l-6 -3M{cx3} {y - 22}v6"/>'
+    body.append(f'<g fill="none" stroke="{AMBER}" stroke-width="3"><rect x="{cx2 - 26}" y="{y - 13}" width="52" height="26" rx="13"/>'
+                f'<path d="M{cx2 - 36} {y}h10M{cx2 + 26} {y}h10"/>'
+                f'<path class="wire" d="M{cx2 - 26} {y}c8 -14 13 14 26 0s18 14 26 0" stroke-width="2.5"/></g>')
+    # czujnik: tarcza i wskazowka
+    body.append(f'<g fill="none" stroke="{BLUE}" stroke-width="3"><path d="M{cx3 - 26} {y + 14}a30 30 0 1 1 52 0"/>'
                 f'<path class="needle" d="M{cx3} {y + 8}V{y - 18}" stroke="{INK}"/></g>'
                 f'<circle cx="{cx3}" cy="{y + 8}" r="4" fill="{INK}"/>')
     # legenda
-    body += [f'<circle cx="202" cy="324" r="5" fill="{BLUE}"/>', text(216, 329, t["down"], "s"),
-             f'<circle cx="470" cy="324" r="5" fill="{AMBER}"/>', text(484, 329, t["up"], "s")]
+    body += [f'<rect x="196" y="316" width="14" height="14" rx="4" fill="{DEEP_BLUE}"/>', text(218, 327, t["down"], "s"),
+             f'<rect x="430" y="316" width="14" height="14" rx="4" fill="{DEEP_AMBER}"/>', text(452, 327, t["up"], "s")]
     return shell(w, h, t["title"], t["desc"], "\n".join(css), "\n".join(body))
-
-
-def capsule(cls: str, label: str, fill: str, width: float, end: Point) -> str:
-    return (f'<g class="{cls}" style="transform:translate({end[0]:.0f}px,{end[1]:.0f}px)">'
-            f'<rect x="{-width / 2}" y="-14" width="{width}" height="28" rx="6" fill="{fill}"/>'
-            f'<text y="5" text-anchor="middle" style="fill:#fff;font-size:14px">{html.escape(label)}</text></g>')
 
 
 def valve(lang: str) -> str:
@@ -217,41 +254,51 @@ def valve(lang: str) -> str:
     w, h = 960, 340
     node: Point = (330, 186)
     upper, middle, lower = 78, 186, 294
-    pipe_width = 34
+    gate_x, stop_x = 620, 628
 
-    # drogi kapsul
-    trunk = [(-110, node[1]), node]
-    up_end, mid_end, low_end = (770, upper), (514, middle), (540, lower)
-    up = along(trunk + cubic(node, (420, node[1]), (390, upper), (500, upper))[1:] + [up_end])
-    mid = along(trunk + [mid_end])
-    low = along(trunk + cubic(node, (420, node[1]), (390, lower), (500, lower))[1:] + [low_end])
+    start: Point = (-120, node[1])
+    trunk = along([start, node], 10)
+    up_end, mid_end, low_end = (770, upper), (510, middle), (540, lower)
+    up = along(cubic(node, (420, node[1]), (390, upper), (500, upper)) + [up_end])
+    mid = along([node, mid_end], 8)
+    low = along(cubic(node, (420, node[1]), (390, lower), (500, lower)) + [low_end])
 
-    css = [journey("c1", up, 0, 26, 30), journey("c2", mid, 33, 52, 62), journey("c3", low, 66, 86, 92),
-           ".c1{animation:c1 12s linear infinite}", ".c2{animation:c2 12s linear infinite}", ".c3{animation:c3 12s linear infinite}",
-           # lampka klasyfikatora: kolor drogi, ktora wlasnie wybral
-           f"@keyframes lamp{{0%,10%{{stroke:{INK3}}}14%,31%{{stroke:{GREEN}}}34%,43%{{stroke:{INK3}}}47%,64%{{stroke:{AMBER}}}67%,76%{{stroke:{INK3}}}80%,96%{{stroke:{RED}}}100%{{stroke:{INK3}}}}}",
-           f".lamp{{stroke:{INK};animation:lamp 12s linear infinite}}",
-           "@keyframes gate{0%,50%,63%,100%{opacity:.45}54%,60%{opacity:1}}", ".gate{animation:gate 12s linear infinite}",
-           "@keyframes stop{0%,84%,93%,100%{opacity:.45}86%,91%{opacity:1}}", ".stop{animation:stop 12s linear infinite}"]
+    # Trzy tury po 4 s. Kazda kapsula staje w klasyfikatorze, lampka pokazuje droge, potem kapsula rusza.
+    def turn(begin: float, route: list[Point], arrive: float, hold: float) -> tuple[list[Stop], float, float]:
+        at_node, leave = begin + 8, begin + 11
+        return spread(begin, at_node, trunk) + spread(leave, arrive, route) + [(hold, route[-1])], at_node, hold
 
-    pipes = (f'<g fill="none" stroke="{SUNKEN}" stroke-width="{pipe_width}">'
-             f'<path d="M0 {node[1]}H{node[0]}"/>'
-             f'<path d="M{node[0]} {node[1]}C420 {node[1]} 390 {upper} 500 {upper}H960"/>'
-             f'<path d="M{node[0]} {node[1]}H640"/>'
-             f'<path d="M{node[0]} {node[1]}C420 {node[1]} 390 {lower} 500 {lower}H654"/></g>')
+    c1, n1, end1 = turn(1, up, 24, 30)
+    c2, n2, end2 = turn(34, mid, 52, 62)
+    c3, n3, end3 = turn(67, low, 86, 94)
+
+    css = [track("c1", c1, ease=False), track("c2", c2, ease=False), track("c3", c3, ease=False),
+           run("c1"), run("c2"), run("c3"),
+           windows("lamp", "stroke", STEEL, [(n1, end1, GREEN), (n2, end2, AMBER), (n3, end3, RED)]),
+           run("lamp", base=f"stroke:{INK};"),
+           windows("gate", "opacity", ".4", [(52, end2, "1")]), run("gate"),
+           windows("stop", "opacity", ".4", [(86, end3, "1")]), run("stop"),
+           windows("tok", "opacity", ".5", [(24, end1, "1")]), run("tok"),
+           windows("twait", "opacity", ".5", [(52, end2, "1")]), run("twait"),
+           windows("tno", "opacity", ".5", [(86, end3, "1")]), run("tno")]
+
+    routes = (f'M0 {node[1]}H{node[0]}', f'M{node[0]} {node[1]}C420 {node[1]} 390 {upper} 500 {upper}H960',
+              f'M{node[0]} {node[1]}H{gate_x + 10}', f'M{node[0]} {node[1]}C420 {node[1]} 390 {lower} 500 {lower}H{stop_x + 26}')
+    pipes = (f'<g fill="none" stroke="{STEEL}" stroke-width="38">' + "".join(f'<path d="{d}"/>' for d in routes) + "</g>"
+             f'<g fill="none" stroke="{SUNKEN}" stroke-width="34">' + "".join(f'<path d="{d}"/>' for d in routes) + "</g>")
     body = [text(32, 50, t["title"], "h"), pipes,
-            capsule("c1", "systemctl reload nginx", "#1d7f49", 222, up_end),
-            capsule("c2", "rm -r reports/2025", "#9a5a08", 186, mid_end),
-            capsule("c3", "rm -rf /", "#b02b28", 104, low_end),
-            f'<circle cx="{node[0]}" cy="{node[1]}" r="32" fill="{PANEL}" stroke-width="3" class="lamp"/>',
+            capsule("c1", "systemctl reload nginx", DEEP_GREEN, 222, up_end),
+            capsule("c2", "rm -r reports/2025", DEEP_AMBER, 186, mid_end),
+            capsule("c3", "rm -rf /", DEEP_RED, 104, low_end),
+            f'<circle class="lamp" cx="{node[0]}" cy="{node[1]}" r="34" fill="{PANEL}" stroke-width="3"/>',
             f'<path d="M{node[0] - 16} {node[1]}H{node[0] + 16}M{node[0]} {node[1] - 16}V{node[1] + 16}" stroke="{INK}" stroke-width="3"/>',
-            text(node[0] + 10, node[1] + 56, t["classifier"], "n", "end"),
-            text(node[0] + 10, node[1] + 76, t["classifier_sub"], "s", "end"),
-            text(928, upper - 28, t["ok"], "", "end").replace('class=""', f'style="fill:{GREEN}"'),
-            f'<rect class="gate" x="620" y="{middle - 26}" width="10" height="52" rx="3" fill="{AMBER}"/>',
-            text(652, middle + 5, t["wait"]).replace('class=""', f'style="fill:{AMBER}"'),
-            f'<path class="stop" d="M614 {lower - 14}l28 28M642 {lower - 14}l-28 28" stroke="{RED}" stroke-width="5"/>',
-            text(672, lower + 5, t["no"]).replace('class=""', f'style="fill:{RED}"')]
+            text(node[0] + 10, node[1] + 58, t["classifier"], "n", "end"),
+            text(node[0] + 10, node[1] + 78, t["classifier_sub"], "s", "end"),
+            f'<g class="tok">{text(928, upper - 28, t["ok"], "", "end", GREEN)}</g>',
+            f'<rect class="gate" x="{gate_x}" y="{middle - 28}" width="10" height="56" rx="3" fill="{AMBER}"/>',
+            f'<g class="twait">{text(652, middle + 5, t["wait"], "", "start", AMBER)}</g>',
+            f'<path class="stop" d="M{stop_x - 14} {lower - 14}l28 28M{stop_x + 14} {lower - 14}l-28 28" stroke="{RED}" stroke-width="5" stroke-linecap="round"/>',
+            f'<g class="tno">{text(672, lower + 5, t["no"], "", "start", RED)}</g>']
     return shell(w, h, t["title"], t["desc"], "\n".join(css), "\n".join(body))
 
 

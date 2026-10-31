@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.2-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.3-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -51,7 +51,7 @@ użytkownicy, zapora) albo uruchomi komendę, której nie zna, pyta. Decyduje o 
 
 Pipe działa z dowolnym modelem zgodnym z API OpenAI. Domyślnie z Google Gemini, który ma darmowy limit.
 
-<p align="center"><img src="docs/assets/pipe-flow-pl.svg" alt="Pipe jest między Tobą a serwerem: polecenia płyną w jedną stronę, alerty w drugą, przez zawór, bezpiecznik i manometr" width="100%"></p>
+<p align="center"><img src="docs/assets/pipe-flow-pl.svg" alt="Twoje pytanie idzie do modelu językowego, jego komenda przechodzi przez zawór i bezpiecznik do serwera, a wynik wraca obok czujnika" width="100%"></p>
 
 ## Przykłady
 

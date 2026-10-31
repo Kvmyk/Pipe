@@ -1,6 +1,6 @@
 # CLI -- Pipe
 
-Pipe v0.50.2
+Pipe v0.50.3
 
 An interactive terminal for managing a VPS through an AI agent.
 
