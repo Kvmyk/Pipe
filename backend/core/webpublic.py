@@ -64,6 +64,7 @@ LABEL = "pipe.web"
 SOCKET_DIR = "/tmp/pipe-web"
 SOCKET_NAME = "web.sock"
 TUNNEL_IMAGE = "cloudflare/cloudflared:2026.10.4"
+PATCH_LABEL = "pipe.patch.base"     # to samo co vulns.PATCH_LABEL: obraz z warstwa poprawek Pipe
 TUNNEL_PORT = 7402                  # most dla cloudflared: tylko 127.0.0.1 we wspolnej sieci
 MIKRUS_PORTS = (7443, 7444, 7445)   # port strony na IPv6 dla mikrus.cloud (dowolny wolny)
 SELF_CHECK_TIMEOUT = 60
@@ -623,22 +624,33 @@ def _proxy_command(state: State) -> list[str]:
     return caddy_command(state.host, state.port, internal=state.tls == "internal")
 
 
-async def refresh_proxy() -> tuple[bool, str]:
+async def refresh_proxy(*, pull: bool = True) -> tuple[bool | None, str]:
     """Nowszy obraz Caddy / cloudflared i ten sam kontener pipe-web (po /aktualizuj i w /zalataj obrazy).
-    (odtworzony, opis). Kontener, ktory juz dziala na najnowszym obrazie, zostaje."""
+    (True odtworzony / False juz najnowszy / None nie udalo sie, opis). Kontener na najnowszym obrazie zostaje — takze na
+    obrazie z warstwa poprawek Pipe, gdy `pull` przywrocil pod tagiem jego obraz bazowy. `pull=False`: obraz pod tagiem
+    przygotowal /zalataj."""
     state = load_state()
     if not state.on:
-        return False, tr("strona /web jest wylaczona", "the /web page is off")
+        return None, tr("strona /web jest wylaczona, wiec kontenera pipe-web nie odtworze (usun go: docker rm -f pipe-web)",
+                        "the /web page is off, so I will not recreate the pipe-web container (remove it: docker rm -f pipe-web)")
     image = TUNNEL_IMAGE if state.mode == "tunnel" else CADDY_IMAGE
-    await _run("docker", "pull", "-q", image, timeout=300)
+    if pull:
+        output, rc = await _run("docker", "pull", "-q", image, timeout=300)
+        if rc != 0:
+            return None, tr(f"{CONTAINER}: nie pobralem obrazu {image}: {output[:300]}",
+                            f"{CONTAINER}: could not pull {image}: {output[:300]}")
     running, code = await _run("docker", "inspect", "--format", "{{.Image}}", CONTAINER, timeout=20)
     latest, _ = await _run("docker", "image", "inspect", "--format", "{{.Id}}", image, timeout=20)
-    if code == 0 and running.strip() and running.strip() == latest.strip():
+    base = ""
+    if code == 0 and running.strip():
+        base, _ = await _run("docker", "image", "inspect", "--format", '{{index .Config.Labels "' + PATCH_LABEL + '"}}',
+                             running.strip(), timeout=20)
+    if code == 0 and running.strip() and latest.strip() and latest.strip() in (running.strip(), base.strip()):
         return False, tr(f"{CONTAINER}: juz na najnowszym obrazie {image}", f"{CONTAINER}: already on the newest {image}")
     await _run("docker", "rm", "-f", CONTAINER, timeout=60)
     output, rc = await _run(*_proxy_command(state), timeout=120)
     if rc != 0:
-        return False, tr(f"{CONTAINER}: nie odtworzylem kontenera: {output[:300]}",
+        return None, tr(f"{CONTAINER}: nie odtworzylem kontenera: {output[:300]}",
                          f"{CONTAINER}: could not recreate the container: {output[:300]}")
     note = tr(" (tunel dostanie nowy adres — przyjdzie w wiadomosci)", " (the tunnel gets a new address — it comes in a message)") \
         if state.mode == "tunnel" else ""

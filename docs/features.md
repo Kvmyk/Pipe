@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.49.2
+Pipe v0.50.0
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -544,7 +544,7 @@ names and versions are sent to OSV; `VULN_INTERVAL=0` turns the scan off.
 
   | File | What Pipe does |
   |------|----------------|
-  | `package-lock.json` | dependencies from `package.json`: `npm install <package>@<version> --package-lock-only` (an exact pin stays exact); transitive ones: `npm audit fix --package-lock-only` |
+  | `package-lock.json` | dependencies from `package.json`: `npm install <package>@<version> --package-lock-only` (an exact pin stays exact); transitive ones: `npm audit fix --package-lock-only`, and what stays vulnerable gets `overrides` in `package.json` (only when the lockfile holds a single major version of the package) |
   | `yarn.lock` (yarn 2+), `pnpm-lock.yaml` | `yarn up` / `pnpm update` in the lockfile only |
   | `requirements*.txt` | the new version after `==` on the same line (a file with `--hash` stays -- the hashes would not match) |
   | `poetry.lock`, `uv.lock` | `poetry update --lock`, `uv lock --upgrade-package` |

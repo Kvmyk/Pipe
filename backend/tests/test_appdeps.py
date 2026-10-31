@@ -45,6 +45,51 @@ def item(name, version, fixed, eco="npm", severity="high"):
     return vulns.PackageVulns(name, version, [name], [vulns.Vuln(f"GHSA-{name}", [], severity, "", fixed)], ecosystem=eco)
 
 
+NODE = __import__("shutil").which("node")
+
+
+class TestOverrides:
+
+    def plan(self, host, lock="package-lock.json"):
+        target = app(host, files=[lock], items=[item("minimist", "1.2.5", "1.2.6"), item("qs", "6.5.0", "7.0.0")],
+                     contents={"package.json": '{"dependencies": {"express": "^4.0.0"}}', lock: "{}"})
+        return appdeps.plan_target(target).bumps[0]
+
+    def test_only_the_same_major_version_is_forced(self, host):
+        assert self.plan(host).overrides == {"minimist": "1.2.6"}
+        assert not appdeps._compatible("0.1.2", "0.2.0") and appdeps._compatible("0.1.2", "0.1.9")
+
+    def test_step_follows_audit_fix_and_restores_package_json_on_failure(self, host):
+        command, env = appdeps.script(self.plan(host))
+        assert command.index("npm audit fix") < command.index('node -e "$PIPE_NODE"')
+        assert "cp /tmp/package.json.pipe package.json" in command
+        assert json.loads(env["PIPE_OVERRIDES"]) == {"minimist": "1.2.6"}
+
+    @pytest.mark.skipif(not NODE, reason="brak node")
+    @pytest.mark.parametrize("name, lock_text, override", [
+        ("minimist", {"packages": {"node_modules/a/node_modules/minimist": {"version": "1.2.5"}}}, "1.2.6"),
+        ("minimist", {"packages": {"node_modules/minimist": {"version": "1.2.6"}}}, None),      # audit fix wystarczyl
+        ("minimist", {"packages": {"node_modules/minimist": {"version": "1.2.5"},
+                                   "node_modules/a/node_modules/minimist": {"version": "2.0.0"}}}, None),  # dwie linie
+    ])
+    def test_override_only_for_what_stayed_in_one_major_line(self, tmp_path, name, lock_text, override):
+        (tmp_path / "package.json").write_text('{"name": "x"}')
+        (tmp_path / "package-lock.json").write_text(json.dumps(lock_text))
+        done = subprocess.run([NODE, "-e", appdeps._OVERRIDES], cwd=tmp_path, env={
+            **os.environ, "PIPE_OVERRIDES": json.dumps({name: "1.2.6"}), "PIPE_LOCK": "package-lock.json"})
+        assert (done.returncode == 0) is bool(override)
+        assert json.loads((tmp_path / "package.json").read_text()).get("overrides") == ({name: override} if override else None)
+
+    @pytest.mark.skipif(not NODE, reason="brak node")
+    def test_pnpm_lock_versions_are_found(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name": "x"}')
+        (tmp_path / "pnpm-lock.yaml").write_text("packages:\n\n  minimist@1.2.5:\n    resolution: {integrity: x}\n")
+        done = subprocess.run([NODE, "-e", appdeps._OVERRIDES], cwd=tmp_path, env={
+            **os.environ, "PIPE_OVERRIDES": '{"minimist": "1.2.6"}', "PIPE_LOCK": "pnpm-lock.yaml"})
+        assert done.returncode == 0
+        assert json.loads((tmp_path / "package.json").read_text())["pnpm"]["overrides"] == {"minimist": "1.2.6"}
+
+
 def app(host, directory="/srv/shop", files=None, items=None, contents=None):
     for path, text in (contents or {}).items():
         write(host, f"{directory}/{path}", text)

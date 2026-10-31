@@ -212,6 +212,7 @@ class PartResult:
     layered: list[str] = field(default_factory=list)    # obrazy: poprawki zainstalowane w obrazie
     failed: list[str] = field(default_factory=list)     # obrazy: nie udalo sie (powod w tekscie)
     based: list[str] = field(default_factory=list)      # obrazy: podbity FROM ('node:20.11-slim → node:20.18-slim')
+    tagged: list[str] = field(default_factory=list)     # obrazy: podbity tag w pliku compose ('redis:7.2.3 → redis:7.2.5')
     stopped: bool = False        # weryfikacja nie przeszla — dalszych czesci nie robie
     outcome: Any = None          # vulns.PatchOutcome po ponownym skanie
     entries: list[str] = field(default_factory=list)    # aplikacje: wpis dziennika na kazdy katalog
@@ -474,6 +475,62 @@ class Run:
                     found[path] = (baseimages.apply(text, bumps), bumps)
         return found
 
+    async def _tag_bumps(self, patch: vulns.ImagePatch) -> dict[str, tuple[str, str, str]]:
+        """
+        Obrazy z rejestru z nowszym tagiem w tej samej linii, wpisane wprost w pliku compose:
+        nazwa celu -> (plik hosta, stary ref, nowy ref). Podbicie dopiero, gdy `pull` nie dal nowszego obrazu pod tagiem.
+        """
+        from backend.core import baseimages, websearch
+
+        found: dict[str, tuple[str, str, str]] = {}
+        for project in patch.projects:
+            for target in project.targets:
+                ref = str(target.meta.get("image", ""))
+                image = baseimages.parse_ref(ref)
+                if vulns.built_locally(target) or target.name in found or not image:
+                    continue
+                for path in project.files:
+                    try:
+                        with open(runtime.to_local(path), encoding="utf-8") as fh:
+                            text = fh.read(512 * 1024)
+                    except OSError:
+                        continue
+                    if not baseimages.compose_has(text, ref):
+                        continue
+                    tag = await asyncio.to_thread(baseimages.safe_tag, image[0], image[1],
+                                                  lambda url: websearch.get_json(url, timeout=20))
+                    if tag:
+                        found[target.name] = (path, ref, ref[: -len(image[1])] + tag)
+                    break
+        return found
+
+    async def _bump_tag(self, project: vulns.ComposeProject, bump: tuple[str, str, str], result: PartResult) -> bool:
+        """Nowy tag w pliku compose i `pull`; gdy obrazu nie da sie pobrac, plik wraca do poprzedniej tresci."""
+        from backend.core import baseimages
+
+        path, old, new = bump
+        try:
+            with open(runtime.to_local(path), encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as exc:
+            result.warnings.append(tr(f"{path}: nie moge odczytac pliku compose ({exc})",
+                                      f"{path}: cannot read the compose file ({exc})"))
+            return False
+        self.emit(tr(f"podbijam obraz w {path}: {old} → {new}", f"bumping the image in {path}: {old} → {new}"))
+        output, rc = await self._write_host(path, baseimages.compose_apply(text, old, new))
+        if rc != 0:
+            result.warnings.append(tr(f"{path}: nie udalo sie zapisac nowego tagu ({output[:200]})",
+                                      f"{path}: could not write the new tag ({output[:200]})"))
+            return False
+        output, rc = await self.sh(self.host(project.command("pull --ignore-buildable")))
+        if rc != 0:
+            await self._write_host(path, text)
+            result.warnings.append(tr(f"{new}: nie udalo sie pobrac obrazu (kod {rc}), plik compose bez zmian",
+                                      f"{new}: could not pull the image (exit code {rc}), the compose file is unchanged"))
+            return False
+        result.tagged.append(f"{old} → {new}")
+        return True
+
     async def _write_host(self, path: str, text: str) -> tuple[str, int]:
         """
         Plik hosta na nowo (ten sam plik — wlasciciel i prawa zostaja). W trybie docker host poza /root jest w kontenerze
@@ -509,11 +566,13 @@ class Run:
         result = PartResult(part)
         patch: vulns.ImagePatch = part.image_patch
         base = await self._base_bumps(patch)
-        plan = safety.Plan(sites=True, inverse=list(patch.inverse), files=list(base), notes=[tr(
+        tags = await self._tag_bumps(patch)
+        files = list(dict.fromkeys([*base, *(bump[0] for bump in tags.values())]))
+        plan = safety.Plan(sites=True, inverse=list(patch.inverse), files=files, notes=[tr(
             "poprzednie obrazy zostaja pod tagiem pipe-rollback-* — /cofnij do nich wraca"
-            + (" (i do poprzednich Dockerfile)" if base else ""),
+            + (" (i do poprzednich plikow Dockerfile i compose)" if files else ""),
             "the previous images stay under a pipe-rollback-* tag — /undo goes back to them"
-            + (" (and to the previous Dockerfiles)" if base else ""))])
+            + (" (and to the previous Dockerfiles and compose files)" if files else ""))])
         for project in patch.projects:
             flags = " ".join(f"-f {shlex.quote(f)}" for f in project.files) + f" -p {shlex.quote(project.project)}"
             plan.pre.append(safety.Check(tr(f"konfiguracja compose {project.project}", f"compose config {project.project}"),
@@ -556,6 +615,10 @@ class Run:
                     if target.name in done:
                         continue
                     done.add(target.name)
+                    if target.name in tags and await self._unchanged(target) \
+                            and await self._bump_tag(project, tags[target.name], result):
+                        result.refreshed.append(target.name)
+                        continue
                     outputs.append(await self._refresh_or_layer(target, result))
                 self.emit(tr(f"uruchamiam od nowa: {project.project} ({services})",
                              f"restarting: {project.project} ({services})"))
@@ -583,9 +646,22 @@ class Run:
                          "finally refreshing the /web page container (pipe-web) — the page in the browser may "
                          "disappear for a moment, the result also comes as a message"))
             changed, text = await webpublic.refresh_proxy()
+            if changed is False:
+                # nowszego obrazu nie ma: poprawki z repozytorium jego systemu i ten sam kontener na tym obrazie
+                for target in patch.web:
+                    await self._refresh_or_layer(target, result)
+                if any(t.name in result.layered for t in patch.web):
+                    changed, text = await webpublic.refresh_proxy(pull=False)
+            if changed is None:
+                result.warnings.append(text)
             result.output = "\n".join(o for o in (result.output, text) if o)
             if changed:
-                result.refreshed += [t.name for t in patch.web]
+                result.refreshed += [t.name for t in patch.web if t.name not in result.layered]
+
+    async def _unchanged(self, target: Any) -> bool:
+        """`pull` zostawil pod tagiem ten sam obraz."""
+        new = await self._inspect(str(target.meta.get("image", "")), "{{.Id}}")
+        return bool(new) and new[:19] == str(target.meta.get("image_id", ""))[:19]
 
     async def _refresh_or_layer(self, target: Any, result: PartResult) -> str:
         """
@@ -755,6 +831,9 @@ def _fixed_lines(result: PartResult) -> list[str]:
         if result.based:
             lines.append(tr(f"obraz bazowy podbity w Dockerfile: {_names(result.based)}",
                             f"base image bumped in the Dockerfile: {_names(result.based)}"))
+        if result.tagged:
+            lines.append(tr(f"tag podbity w pliku compose: {_names(result.tagged)}",
+                            f"tag bumped in the compose file: {_names(result.tagged)}"))
         if refreshed:
             lines.append(tr(f"nowszy obraz: {_names(refreshed)}", f"newer image: {_names(refreshed)}"))
         if layered:
@@ -762,11 +841,17 @@ def _fixed_lines(result: PartResult) -> list[str]:
                             f"fixes installed inside the image (there was no newer one): {_names(layered)}"))
         if outcome and outcome.unchanged:
             built = {t.name for t in part.items if vulns.built_locally(t)}
-            for names, why in (([n for n in outcome.unchanged if n in built],
+            web = {t.name for t in (part.image_patch.web if part.image_patch else [])}
+            if web & set(outcome.unchanged):
+                names = sorted(web & set(outcome.unchanged))
+                lines.append(tr(f"bez zmian: {_names(names)} (kontener /web) — obraz nie ma jeszcze poprawki, Pipe sprawdzi "
+                                "go przy kazdym /zalataj", f"unchanged: {_names(names)} (the /web container) — the image "
+                                "does not have the fix yet, Pipe checks it on every /patch"))
+            for names, why in (([n for n in outcome.unchanged if n in built and n not in web],
                                 tr("zmien FROM w Dockerfile na nowsza glowna wersje (w tej samej linii nowszej nie ma)",
                                    "change FROM in the Dockerfile to a newer major version (there is no newer one in "
                                    "the same line)")),
-                               ([n for n in outcome.unchanged if n not in built],
+                               ([n for n in outcome.unchanged if n not in built and n not in web],
                                 tr("zmien tag w compose na nowsza wersje", "change the tag in compose to a newer version"))):
                 if names:
                     lines.append(tr(f"bez zmian: {_names(names)} — ani nowszy obraz, ani poprawki z repozytorium nie "

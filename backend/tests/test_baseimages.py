@@ -91,6 +91,68 @@ class TestLines:
             "/srv/shop/docker/Dockerfile.prod", "/srv/shop/api/Dockerfile"]
 
 
+class TestComposeTag:
+
+    @pytest.mark.parametrize("image, tag, tags, new", [
+        ("redis", "7.2.3", ["7.2.5", "7.4.0"], "7.2.5"),
+        ("mysql", "8.0", ["8.0.45", "8.4.1"], "8.0.45"),                  # nigdy nowa linia bazy danych
+        ("caddy", "2.11-alpine", ["2.11.7-alpine", "2.11.7", "2.12.0-alpine"], "2.11.7-alpine"),
+        ("postgres", "15.4", ["15.8", "16.1"], "15.8"),                   # nie ma 15.4.x: rusza sie ostatnia liczba
+        ("redis", "7", ["7.2.5"], ""),                                    # tag plywa
+    ])
+    def test_safe_tag_stays_in_the_release_line(self, image, tag, tags, new):
+        assert baseimages.safe_tag(image, tag, lambda url: {"results": [{"name": n} for n in tags]}) == new
+
+    def test_only_a_literal_image_line_changes(self):
+        text = 'services:\n  a:\n    image: "redis:7.2.3"  # cache\n  b:\n    image: ${REDIS:-redis:7.2.3}\n'
+        assert baseimages.compose_has(text, "redis:7.2.3") and not baseimages.compose_has(text, "redis:7.2")
+        assert baseimages.compose_apply(text, "redis:7.2.3", "redis:7.2.5") == text.replace(
+            '"redis:7.2.3"', '"redis:7.2.5"')
+
+    def test_only_docker_hub_images(self):
+        assert baseimages.parse_ref("docker.io/library/redis:7.2.3") == ("library/redis", "7.2.3")
+        assert baseimages.parse_ref("bitnami/redis:7.2.3") == ("bitnami/redis", "7.2.3")
+        assert baseimages.parse_ref("ghcr.io/org:1.2") is None and baseimages.parse_ref("ghcr.io/org/app:1.2") is None
+
+    def test_tag_is_bumped_when_pull_changes_nothing(self, host, monkeypatch):
+        write(host, "/srv/shop/compose.yml", "services:\n  web:\n    image: redis:7.2.3\n")
+        monkeypatch.setattr(websearch, "get_json", lambda url, timeout=0: {"results": [{"name": "7.2.5"}]})
+        target = image_target(name="redis:7.2.3")
+        shell = FakeShell([("{{.Id}}", (target.meta["image_id"], "", 0))])
+        result = image_run(monkeypatch, shell, target)
+        assert "image: redis:7.2.5" in (host / "srv/shop/compose.yml").read_text()
+        assert result.tagged == ["redis:7.2.3 → redis:7.2.5"] and result.refreshed == ["redis:7.2.3"]
+        assert not shell.having("docker run --name") and len(shell.having("pull --ignore-buildable")) == 2
+        assert [f.label for f in journal.load(result.entry_id).files] == ["/srv/shop/compose.yml"]
+
+    def test_newer_image_under_the_tag_leaves_compose_alone(self, host, monkeypatch):
+        write(host, "/srv/shop/compose.yml", "services:\n  web:\n    image: redis:7.2.3\n")
+        monkeypatch.setattr(websearch, "get_json", lambda url, timeout=0: {"results": [{"name": "7.2.5"}]})
+        shell = FakeShell([("{{.Id}}", ("sha256:" + "f" * 64, "", 0)), ("{{json .Config.Labels}}", ("null", "", 0))])
+        result = image_run(monkeypatch, shell, image_target(name="redis:7.2.3"))
+        assert result.tagged == [] and "image: redis:7.2.3" in (host / "srv/shop/compose.yml").read_text()
+
+    def test_failed_pull_of_the_new_tag_restores_the_file(self, host, monkeypatch):
+        write(host, "/srv/shop/compose.yml", "services:\n  web:\n    image: redis:7.2.3\n")
+        monkeypatch.setattr(websearch, "get_json", lambda url, timeout=0: {"results": [{"name": "7.2.5"}]})
+        target = image_target(name="redis:7.2.3", image_id="sha256:" + "e" * 64)
+        pulls = []
+
+        class Shell(FakeShell):
+            async def __call__(self, cmd, cwd=None, timeout=None):
+                if "pull --ignore-buildable" in cmd:
+                    pulls.append(cmd)
+                    if len(pulls) == 2:
+                        self.ran.append(cmd)
+                        return "", "manifest unknown", 1
+                return await super().__call__(cmd, cwd, timeout)
+        shell = Shell([("{{.Id}}", (target.meta["image_id"], "", 0)), ("{{json .Config.Labels}}", ("null", "", 0)),
+                       ("{{json .Config}}", (json.dumps({"User": "", "Cmd": ["x"]}), "", 0))])
+        result = image_run(monkeypatch, shell, target)
+        assert "image: redis:7.2.3" in (host / "srv/shop/compose.yml").read_text() and result.tagged == []
+        assert shell.having("docker run --name")                          # zostaje warstwa z poprawkami
+
+
 class TestPatch:
 
     def config(self):

@@ -10,6 +10,9 @@ tagu zostaje:
   python:3.11.4-slim-bookworm -> python:3.11.10-slim-bookworm (nie 3.12)
   postgres:15.4              -> postgres:15.8
 
+Obraz z rejestru w pliku compose (`image:` wpisany wprost) dostaje nowszy tag, gdy `pull` nie dal nic nowszego — ostrozniej
+niz FROM, bo to moga byc bazy danych: `safe_tag()` nie zmienia wersji pomocniczej tagu, ktory ma wersje poprawkowe.
+
 Pominiete: tag z jedna liczba albo bez liczby (plywa — wystarczy `build --pull`), obraz przypiety skrotem (`@sha256`),
 `FROM` ze zmienna (`${NODE_VERSION}`), etapy budowania (`FROM builder`), `scratch` i rejestry inne niz Docker Hub
 (lista tagow wymagalaby logowania). Tagi z publicznego API Docker Hub, bez klucza. Bez importu `settings`.
@@ -82,9 +85,13 @@ def newer_tag(image: str, tag: str, fetch: Callable[[str], Any]) -> str:
     if line is None:
         return ""
     prefix, pattern = line
-    current = int(pattern.match(tag).group(1)) if pattern.match(tag) else -1
+    return _newest(image, prefix, pattern, int(pattern.match(tag).group(1)) if pattern.match(tag) else -1, fetch)
+
+
+def _newest(image: str, prefix: str, pattern: re.Pattern, above: int, fetch: Callable[[str], Any]) -> str:
+    """Tag pasujacy do wzorca z najwyzsza liczba wieksza niz `above` ('' — nie ma albo nie da sie sprawdzic)."""
     url: str | None = HUB_TAGS.format(repo=hub_repo(image), name=urllib.parse.quote(prefix))
-    best, best_tag = current, ""
+    best, best_tag = above, ""
     for _ in range(MAX_PAGES):
         if not url:
             break
@@ -101,6 +108,47 @@ def newer_tag(image: str, tag: str, fetch: Callable[[str], Any]) -> str:
         if url and not str(url).startswith("https://hub.docker.com/"):
             break
     return best_tag
+
+
+def parse_ref(ref: str) -> tuple[str, str] | None:
+    """'redis:7.2.3' -> ('redis', '7.2.3'); obraz spoza Docker Hub albo bez tagu -> None."""
+    match = _IMAGE.match(ref)
+    if not match or ("/" in match.group(1) and "." in match.group(1).split("/")[0]):
+        return None
+    return match.group(1), match.group(2)
+
+
+def safe_tag(image: str, tag: str, fetch: Callable[[str], Any]) -> str:
+    """
+    Nowszy tag dla pliku compose ('' — nie ma). Bazy danych nie moga zmienic wersji pomocniczej: `mysql:8.0` -> `8.0.45`,
+    nigdy `8.4`. Tag z dwiema liczbami idzie wiec najpierw glebiej (`caddy:2.11-alpine` -> `2.11.7-alpine`), a ostatnia
+    liczba rusza sie tylko, gdy glebiej nic nie ma (`postgres:15.4` -> `15.8`).
+    """
+    match = _TAG.match(tag)
+    if not match:
+        return ""
+    v, numbers, suffix = match.groups()
+    if numbers.count(".") == 1:
+        prefix = f"{v}{numbers}."
+        pattern = re.compile("^" + re.escape(prefix) + r"(\d+)" + re.escape(suffix) + "$")
+        deeper = _newest(image, prefix, pattern, -1, fetch)
+        if deeper:
+            return deeper
+    return newer_tag(image, tag, fetch)
+
+
+def _compose_line(ref: str) -> re.Pattern:
+    return re.compile(r"^(\s*image:\s*[\"']?)" + re.escape(ref) + r"([\"']?[ \t]*(?:#.*)?\r?)$", re.M)
+
+
+def compose_has(text: str, ref: str) -> bool:
+    """Czy plik compose ma `image:` z tym obrazem wprost (`${TAG}` z .env zostaje bez zmian)."""
+    return bool(_compose_line(ref).search(text))
+
+
+def compose_apply(text: str, old: str, new: str) -> str:
+    """Plik compose z nowym obrazem — zmienia sie tylko wartosc `image:`, komentarze i uklad zostaja."""
+    return _compose_line(old).sub(lambda m: m.group(1) + new + m.group(2), text)
 
 
 def plan(path: str, text: str, fetch: Callable[[str], Any]) -> list[Bump]:

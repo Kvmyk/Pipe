@@ -7,6 +7,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -626,7 +627,7 @@ class TestWebContainerRefresh:
             if args[:3] == ("docker", "inspect", "--format"):
                 return ids["running"], 0
             if args[:3] == ("docker", "image", "inspect"):
-                return ids["latest"], 0
+                return (ids["latest"] if args[4] == "{{.Id}}" else "<no value>"), 0
             return "ok", 0
         monkeypatch.setattr(webpublic, "_run", fake_run)
         changed, text = asyncio.run(webpublic.refresh_proxy())
@@ -636,6 +637,66 @@ class TestWebContainerRefresh:
         ids["running"] = "sha256:new"
         changed, _ = asyncio.run(webpublic.refresh_proxy())
         assert not changed and not any(c[:3] == ["docker", "run", "-d"] for c in calls)
+
+    def test_held_web_image_is_still_tried(self):
+        """Tag caddy:2.11-alpine plywa: po wstrzymaniu moze juz miec poprawke, a pull nic nie kosztuje."""
+        from backend.core import patching, vulns
+        from backend.tests.test_vulns import image_target
+        target = image_target(name="caddy:2.11-alpine", containers=("pipe-web",))
+        target.meta["compose"] = []
+        vulns.update_state(lambda s: s.setdefault("stale_images", {}).update(
+            {target.name: {"ids": vulns.target_fingerprint(target), "at": time.time()}}))
+        scan = vulns.Scan(targets=[target])
+        assert vulns.image_patch(scan).web == [target] and vulns.image_patch(scan).waiting == []
+        assert [p.kind for p in patching.plan(scan, "images").parts] == ["images"]
+
+    def test_refresh_reports_a_failed_pull_and_keeps_the_container(self, monkeypatch):
+        webpublic.save_state(webpublic.State(on=True, host="a.example.com", port=443))
+        calls = []
+
+        async def fake_run(*args, timeout=120):
+            calls.append(list(args))
+            return "denied", 1
+        monkeypatch.setattr(webpublic, "_run", fake_run)
+        changed, text = asyncio.run(webpublic.refresh_proxy())
+        assert changed is None and "denied" in text and calls == [["docker", "pull", "-q", webpublic.CADDY_IMAGE]]
+
+    def test_container_on_a_patched_image_survives_the_pull(self, monkeypatch):
+        """pull przywrocil pod tagiem obraz bazowy — kontener z warstwa poprawek Pipe nie wraca na niego."""
+        from backend.core import vulns
+        assert webpublic.PATCH_LABEL == vulns.PATCH_LABEL
+        webpublic.save_state(webpublic.State(on=True, host="a.example.com", port=443))
+
+        async def fake_run(*args, timeout=120):
+            if args[:3] == ("docker", "inspect", "--format"):
+                return "sha256:layered", 0
+            if args[:3] == ("docker", "image", "inspect"):
+                return "sha256:base", 0
+            return "ok", 0
+        monkeypatch.setattr(webpublic, "_run", fake_run)
+        assert asyncio.run(webpublic.refresh_proxy())[0] is False
+
+    def test_web_image_without_a_newer_version_gets_the_fix_layer(self, monkeypatch):
+        from backend.core import patching, vulns
+        from backend.tests.test_vulns import image_target
+        target = image_target(name="caddy:2.11-alpine", containers=("pipe-web",))
+        target.meta["compose"] = []
+        patch = vulns.image_patch(vulns.Scan(targets=[target]))
+        part = patching.Part("images", "images", [target], image_patch=patch)
+        pulls = []
+
+        async def refresh(*, pull=True):
+            pulls.append(pull)
+            return (False, "juz najnowszy") if pull else (True, "odtworzony")
+
+        async def layer(self, tgt, result):
+            result.layered.append(tgt.name)
+            return ""
+        monkeypatch.setattr(webpublic, "refresh_proxy", refresh)
+        monkeypatch.setattr(patching.Run, "_refresh_or_layer", layer)
+        result = patching.PartResult(part)
+        asyncio.run(patching.Run(patching.Job("images", [part], None), "cli:t")._web_container([result]))
+        assert pulls == [True, False] and result.layered == [target.name] and result.refreshed == []
 
     def test_web_container_is_refreshed_last(self, monkeypatch):
         """Latanie z przegladarki idzie przez pipe-web — jego odtworzenie zrywa strone, wiec dopiero po wszystkim."""

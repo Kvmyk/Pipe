@@ -1509,7 +1509,9 @@ def image_patch(result: Scan, scope: str = "all", skip_projects: frozenset[str] 
             compose = [c for c in compose if c["project"] not in skip_projects]
             if not compose:
                 continue
-        if (waiting.get(target.name) or {}).get("ids") == target_fingerprint(target):
+        # kontenera /web wstrzymanie nie dotyczy: tag plywa, a `docker pull` bez nowego obrazu niczego nie zmienia
+        if (waiting.get(target.name) or {}).get("ids") == target_fingerprint(target) \
+                and WEB_CONTAINER not in (target.meta.get("containers") or []):
             patch.waiting.append(target)
             continue
         patch.targets.append(target)

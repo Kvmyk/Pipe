@@ -2,6 +2,29 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.0 (2026-10-31)
+
+### /patch bumps compose tags and package.json overrides
+
+- `/patch images` now bumps the `image:` tag in the compose file when `pull` brings nothing newer under the current
+  tag: `redis:7.2.3` to `redis:7.2.5`. The file goes into the journal, so `/undo` restores it, and it is put back at
+  once if the new image cannot be pulled. The release line stays: `mysql:8.0` goes to `8.0.x`, never to `8.4`. Images
+  outside Docker Hub and tags that come from a variable (`${TAG}`) are left alone
+- `/patch apps` now writes `overrides` to `package.json` (`pnpm.overrides` with pnpm) for transitive dependencies that
+  are still vulnerable after the update. The package is skipped when the fix needs a new major version or the lockfile
+  holds several major versions of it, because forcing one version would break the packages that need the other
+
+### The /web container is patched again
+
+- A vulnerable `pipe-web` image could stay unpatched for a day: after one attempt that changed nothing it was put on
+  hold, even though its tag (`caddy:2.11-alpine`) moves to new releases, and the report said to change the tag in
+  compose, which this container does not have. Every `/patch` now pulls the image and recreates the container when
+  there is a newer one
+- When there is no newer image, `pipe-web` gets the fixes from its system's repository, like other images, and a later
+  pull no longer moves it back to the unpatched image
+- A failed pull or a `/web` page that is off now shows in the result, and a failed pull leaves the running container
+  in place
+
 ## v0.49.2 (2026-10-28)
 
 ### The /update result reaches every channel

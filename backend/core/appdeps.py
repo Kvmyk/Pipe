@@ -8,10 +8,12 @@ w warsztacie (core/projects.py): widzi tylko katalog aplikacji (/work), bez dock
 katalogu (pliki nie zmieniaja wlasciciela), skrypty instalacyjne pakietow wylaczone.
 
   npm      package-lock.json: zaleznosci z package.json -> `npm install <p>@<wersja> --package-lock-only`,
-           przechodnie -> `npm audit fix --package-lock-only` (w zakresach wersji, bez --force)
+           przechodnie -> `npm audit fix --package-lock-only` (w zakresach wersji, bez --force), a co dalej ma podatna
+           wersje -> `overrides` w package.json (ta sama wersja glowna) i `npm install --package-lock-only`
   yarn     yarn.lock (yarn 2+): `yarn up` / `yarn up -R`, --mode=update-lockfile; yarn 1 nie umie zmienic samego
            pliku blokady — zostaje w raporcie
-  pnpm     pnpm-lock.yaml: `pnpm update --lockfile-only` (bezposrednie z wersja, przechodnie --depth Infinity)
+  pnpm     pnpm-lock.yaml: `pnpm update --lockfile-only` (bezposrednie z wersja, przechodnie --depth Infinity),
+           a co dalej ma podatna wersje -> `pnpm.overrides` w package.json i `pnpm install --lockfile-only`
   pip      requirements*.txt z `==`: nowa wersja w tej samej linii (plik z --hash zostaje — hashe by nie pasowaly)
   poetry   poetry.lock: `poetry update --lock <pakiety>` (w ograniczeniach z pyproject.toml)
   uv       uv.lock: `uv lock --upgrade-package <p>==<wersja>`
@@ -73,6 +75,7 @@ class Bump:
     direct: set[str] = field(default_factory=set)                   # npm/yarn/pnpm: zaleznosci z package.json
     exact: set[str] = field(default_factory=set)                    # ...przypiete dokladnie ("4.17.20") — zostaja dokladne
     files: list[str] = field(default_factory=list)                  # requirements*.txt (pip)
+    overrides: dict[str, str] = field(default_factory=dict)         # npm/pnpm: przechodni pakiet -> wersja z poprawka
 
 
 @dataclass
@@ -108,6 +111,16 @@ def _read(path: str) -> str:
 
 
 _EXACT = re.compile(r"^=?v?\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$")
+
+
+def _numbers(version: str) -> list[int]:
+    return [int(n) for n in re.findall(r"\d+", version.split("-")[0])]
+
+
+def _compatible(old: str, new: str) -> bool:
+    """Ta sama wersja glowna wedlug semver (0.x: ta sama pomocnicza) — `overrides` nie moze zlamac zaleznej paczki."""
+    a, b = old.lstrip("v").split("."), new.lstrip("v").split(".")
+    return a[0] == b[0] and (a[0] != "0" or a[1:2] == b[1:2])
 
 
 def _direct_npm(directory: str) -> dict[str, bool]:
@@ -193,6 +206,8 @@ def plan_target(target: Any, held: dict | set = frozenset()) -> AppBump:
                 entry.direct.add(item.name)
                 if direct[item.name]:
                     entry.exact.add(item.name)
+            elif manager in ("npm", "pnpm") and VERSION.match(item.version) and _compatible(item.version, fixed):
+                entry.overrides[item.name] = max(fixed, entry.overrides.get(item.name, fixed), key=_numbers)
         bump.items.append(item)
     if "pip" in planned:
         planned["pip"].files = [f for f in target.meta.get("files") or []
@@ -226,6 +241,44 @@ def _q(values) -> str:
 def _each(commands: list[str]) -> str:
     """Kazda komenda niezaleznie (jedna nieudana nie zatrzymuje reszty); kod wyjscia != 0, gdy ktoras zawiodla."""
     return "rc=0; " + " ".join(f"{c} || rc=1;" for c in commands) + " exit $rc"
+
+
+# package.json w kontenerze Node: `overrides` dla pakietow, ktore po podbiciu dalej sa w pliku blokady. Klucz to sama nazwa
+# (npm nie wymusza wersji kluczem `nazwa@wersja`), wiec obejmuje wszystkie kopie: pakiet w kilku wersjach glownych zostaje
+# bez zmian, bo inaczej zlamalby paczki, ktore chca innej. Kod 0 = plik sie zmienil.
+_OVERRIDES = r'''
+const fs = require("fs");
+const bumps = JSON.parse(process.env.PIPE_OVERRIDES), pnpm = process.env.PIPE_LOCK === "pnpm-lock.yaml";
+const lock = fs.readFileSync(process.env.PIPE_LOCK, "utf8");
+const numbers = (v) => v.split(/[-+]/)[0].split(".").map(Number);
+const line = (v) => numbers(v)[0] === 0 ? "0." + numbers(v)[1] : String(numbers(v)[0]);
+const older = (a, b) => {
+    const [x, y] = [numbers(a), numbers(b)];
+    for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+    return false;
+};
+const versions = (name) => {
+    if (!pnpm) return Object.entries(JSON.parse(lock).packages || {})
+        .filter(([path]) => path.endsWith("node_modules/" + name)).map(([, entry]) => entry.version).filter(Boolean);
+    const quoted = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    return [...lock.matchAll(new RegExp("(?:^|[\\s/'\"])" + quoted + "[@/](\\d[^:()\\s'\"]*)", "gm"))].map((m) => m[1]);
+};
+const left = Object.entries(bumps).filter(([name, fixed]) => {
+    const found = versions(name);
+    return found.some((v) => older(v, fixed)) && found.every((v) => line(v) === line(fixed));
+});
+if (!left.length) process.exit(1);
+const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+const holder = pnpm ? (manifest.pnpm = manifest.pnpm || {}) : manifest;
+holder.overrides = {...holder.overrides, ...Object.fromEntries(left)};
+fs.writeFileSync("package.json", JSON.stringify(manifest, null, 2) + "\n");
+'''
+
+
+def _override_step(install: str) -> str:
+    """`overrides` w package.json i odswiezenie pliku blokady; po bledzie package.json wraca, a ponowny skan to pokaze."""
+    return ('{ cp package.json /tmp/package.json.pipe; if node -e "$PIPE_NODE"; then ' + install
+            + " || { cp /tmp/package.json.pipe package.json; exit 1; }; fi; }")
 
 
 # Edycja requirements*.txt w kontenerze Pythona: ta sama linia, nowa wersja po `==` (reszta linii bez zmian).
@@ -265,6 +318,9 @@ def script(bump: Bump) -> tuple[str, dict[str, str]]:
         if indirect:
             # audit fix zwraca blad, gdy cos zostalo (np. poza zakresem wersji) — to pokaze ponowny skan
             steps.append("{ npm audit fix --package-lock-only --ignore-scripts --no-fund --loglevel=error || true; }")
+        if bump.overrides:
+            env = {"PIPE_OVERRIDES": json.dumps(bump.overrides), "PIPE_LOCK": "package-lock.json", "PIPE_NODE": _OVERRIDES}
+            steps.append(_override_step("npm install --package-lock-only --ignore-scripts --no-audit --no-fund --loglevel=error"))
         return " && ".join(steps), env
     if bump.manager == "yarn":
         env = {"YARN_ENABLE_SCRIPTS": "0", "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0", "COREPACK_HOME": "/tmp/corepack"}
@@ -282,6 +338,9 @@ def script(bump: Bump) -> tuple[str, dict[str, str]]:
             steps.append("corepack pnpm update --lockfile-only " + _q(f"{n}@{v}" for n, v in direct))
         if indirect:
             steps.append("corepack pnpm update --lockfile-only --depth Infinity " + _q(indirect))
+        if bump.overrides:
+            env.update({"PIPE_OVERRIDES": json.dumps(bump.overrides), "PIPE_LOCK": "pnpm-lock.yaml", "PIPE_NODE": _OVERRIDES})
+            steps.append(_override_step("corepack pnpm install --lockfile-only --ignore-scripts"))
         return _each(steps), env
     if bump.manager == "pip":
         env = {"PIPE_BUMPS": json.dumps(dict(bump.packages)),

@@ -32,6 +32,6 @@ Zostalo, tylko jesli ktos o to poprosi:
 - Nowsze obrazy dla kontenerow bez compose (dzis tylko podpowiedz: `docker run` trzeba powtorzyc z tymi samymi
   opcjami -- odtworzenie przez API Dockera musi zachowac anonimowe wolumeny i nadpisane w `docker run` ustawienia
   obrazu).
-- Zaleznosci aplikacji poza zakresem wersji z manifestu (np. przechodnia przypieta przez inna paczke) -- dzis zostaja
-  w raporcie do zmiany recznej; mozliwe `overrides` (npm) / `resolutions` (yarn).
+- Zaleznosci aplikacji poza zakresem wersji z manifestu: npm i pnpm dostaja `overrides` w ramach wersji glownej; zostaja
+  `resolutions` (yarn) i ograniczenia w `pyproject.toml` / `composer.json`.
 - Obrazy kontenerow na zdalnych serwerach (dzis tylko ich pakiety systemu).
