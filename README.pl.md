@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.1-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.2-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -47,7 +47,11 @@ konfiguracji, robi sam, z kopią i sprawdzeniem przed i po. Zanim usunie dane, r
 użytkownicy, zapora) albo uruchomi komendę, której nie zna, pyta. Decyduje o tym klasyfikator zapisany w kodzie
 (nie w prompcie), a operacje niszczące są odrzucane zawsze. W rozmowie widać każdą komendę i kilka linii jej wyniku.
 
+<p align="center"><img src="docs/assets/pipe-valve-pl.svg" alt="Komendy rozchodzą się w klasyfikatorze: przeładowanie rusza z kopią, usuwanie danych czeka na TAK, rm -rf / dostaje odmowę" width="100%"></p>
+
 Pipe działa z dowolnym modelem zgodnym z API OpenAI. Domyślnie z Google Gemini, który ma darmowy limit.
+
+<p align="center"><img src="docs/assets/pipe-flow-pl.svg" alt="Pipe jest między Tobą a serwerem: polecenia płyną w jedną stronę, alerty w drugą, przez zawór, bezpiecznik i manometr" width="100%"></p>
 
 ## Przykłady
 

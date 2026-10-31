@@ -47,13 +47,36 @@
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh --lang pl</code></pre>
     <p class="meta">Open source na licencji MIT · działa z Gemini (darmowy limit), OpenAI, Claude, Ollamą i innymi ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.50.1</a></p>
+      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">wersja 0.50.2</a></p>
 
     <figure class="shot">
       <img src="../assets/demo-pl.gif" width="1100" height="647" alt="Okno pipe web: po lewej rozmowa z agentem, który bada błędy 502 i sam poprawia konfigurację nginx, z kopią; po prawej schemat serwera z podświetlonym elementem, na którym agent pracuje">
       <figcaption>Interfejs w przeglądarce (<code>pipe web</code>). Nagranie z zaplanowanej sesji demonstracyjnej.</figcaption>
     </figure>
   </div>
+
+  <section id="rura">
+    <div class="wrap">
+      <div class="narrow">
+        <h2>Rura między Tobą a serwerem</h2>
+        <p>Wszystko, o co prosisz, przechodzi przez Pipe, i tą samą drogą wraca to, co serwer ma Ci do powiedzenia.
+          Piszesz z terminala, przeglądarki albo Telegrama. Tam też przychodzą alerty i raporty, a na serwerze nie
+          trzeba otwierać żadnego portu.</p>
+      </div>
+      <figure class="diagram">
+        <img src="../assets/pipe-flow-pl.svg" width="960" height="370" loading="lazy" alt="Schemat: po lewej Ty, po prawej Twój serwer, między wami rura. Polecenia płyną do serwera, alerty wracają. W rurze są zawór, bezpiecznik i manometr, a od góry podłączony jest model językowy.">
+      </figure>
+      <div class="parts">
+        <div class="valve"><h3>Zawór</h3><p>Decyduje, co przejdzie. Odczyty i rutynowe zmiany przechodzą, ważne czekają na Twoje TAK, niszczące nie przejdą nigdy.</p></div>
+        <div class="fuse"><h3>Bezpiecznik</h3><p>Przed zmianą robi kopię, a po niej sprawdza wynik. Gdy kontrola konfiguracji się nie uda, wraca stara wersja. Resztę cofniesz przez <code>/cofnij</code>.</p></div>
+        <div class="gauge"><h3>Manometr</h3><p>Co dwie minuty odczytuje stan serwera, bez modelu językowego. Gdy odczyt jest zły, Pipe pisze do Ciebie pierwszy.</p></div>
+      </div>
+      <div class="narrow">
+        <p>Model to część wymienna: Gemini, Claude, OpenAI albo lokalna Ollama. Zasady, pamięć i narzędzia zostają w Pipe.
+          Taką warstwę wokół modelu inżynierowie nazywają harnessem.</p>
+      </div>
+    </div>
+  </section>
 
   <section id="jak-dziala">
     <div class="wrap">
@@ -110,6 +133,9 @@ sudo bash scripts/install-server.sh --lang pl</code></pre>
         <p>O tym decyduje klasyfikator zapisany w kodzie Pipe, a nie instrukcja dla modelu. Model nie może go
           przekonać ani obejść.</p>
       </div>
+      <figure class="diagram">
+        <img src="../assets/pipe-valve-pl.svg" width="960" height="340" loading="lazy" alt="Animacja: komendy docierają do klasyfikatora. systemctl reload nginx rusza z kopią, rm -r reports/2025 czeka na Twoje TAK, rm -rf / dostaje odmowę.">
+      </figure>
       <div class="rules">
         <div class="ok">
           <h3>Sam</h3>
@@ -245,8 +271,8 @@ bash install.sh       <span class="c"># Linux, macOS</span>
             Usunięcie danych, dostęp, autostart i nieznane komendy czekają na Ciebie, więc czytaj, co zatwierdzasz.</li>
           <li>Treść rozmowy trafia do dostawcy modelu. Klucze, hasła i tokeny z plików są ukrywane
             przed wysłaniem, ale logi i konfiguracja już nie. Jeśli to problem, użyj lokalnego modelu przez Ollamę.</li>
-          <li>Rozmowy są w pamięci procesu. Restart backendu je kasuje. Pamięć o serwerze, dziennik
-            zmian i historia zostają na dysku.</li>
+          <li>Rozmowy są zapisywane na serwerze i przetrwają restart backendu. Potwierdzenie, które wtedy
+            czekało, nie wraca.</li>
           <li>Jakość diagnozy zależy od modelu. Słabszy model częściej się myli. Dlatego każda zmiana
             przechodzi przez kopię i weryfikację, a ważne czekają na Twoje potwierdzenie.</li>
         </ul>
@@ -258,7 +284,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.50.1 · licencja MIT</span>
+    <span>Pipe 0.50.2 · licencja MIT</span>
     <a href="https://github.com/Kvmyk/pipe">Kod na GitHubie</a>
     <a href="docs/">Dokumentacja</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Historia zmian</a>

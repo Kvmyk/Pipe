@@ -58,3 +58,6 @@ _site/
 
 # wyniki `python3 sandbox/run.py eval`
 sandbox/results/
+
+# Makiety z brainstormingu
+.superpowers/

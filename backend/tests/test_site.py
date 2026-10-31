@@ -108,6 +108,24 @@ def test_one_logo_everywhere():
         assert 'fill-rule="evenodd"' not in text, f"{path}: wlasna kopia litery P zamiast pliku logo"
 
 
+def test_diagrams_are_generated_and_stop_for_reduced_motion():
+    spec = importlib.util.spec_from_file_location("build_diagrams", ROOT / "scripts" / "build_diagrams.py")
+    diagrams = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(diagrams)
+    files = diagrams.files()
+    assert len(files) == 4
+    for path, content in files.items():
+        assert path.read_text(encoding="utf-8") == content, f"uruchom scripts/build_diagrams.py: {path.name}"
+        assert "prefers-reduced-motion" in content and "<script" not in content, path.name
+        assert path.name in (ROOT / "README.md").read_text(encoding="utf-8") + (ROOT / "README.pl.md").read_text(encoding="utf-8")
+    assert all(k in diagrams.FLOW["pl"] for k in diagrams.FLOW["en"]) and all(k in diagrams.VALVE["pl"] for k in diagrams.VALVE["en"])
+
+
+def test_every_doc_page_is_in_one_menu_group():
+    names = [name for _, _, group in build_site.DOC_GROUPS for name in group]
+    assert sorted(names) == sorted(d[0] for d in DOCS)
+
+
 def test_english_first_with_flags(tmp_path):
     # Angielski jest podstawowy: README.md, strona pod /, dokumentacja pod /docs/; polski to dodatek (README.pl.md, /pl/)
     assert 'html lang="en"' in (ROOT / "site" / "index.html").read_text(encoding="utf-8")

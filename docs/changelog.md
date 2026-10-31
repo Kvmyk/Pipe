@@ -2,6 +2,20 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.2 (2026-10-31)
+
+### The website shows what Pipe is
+
+- New section "A pipe between you and your server" on the website: an animated diagram of commands going to the
+  server and alerts coming back, through a valve, a fuse and a gauge, with a language model you can swap
+- An animated scene opens "What it does on its own": real commands reach the classifier and split three ways
+- Both diagrams are also in the README, in English and Polish. They are plain SVG files and stop moving when the
+  system asks for reduced motion
+- The website and the documentation are now dark only
+- The documentation menu is split into four groups and marks the current page; quotes and "Experimental" notes have
+  their own colors
+- Corrected the website's limitations: conversations survive a backend restart
+
 ## v0.50.1 (2026-10-31)
 
 ### Patching from the /web page shows the real result

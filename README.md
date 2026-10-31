@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.50.1-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.50.2-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -49,7 +49,11 @@ server (SSH, users, firewall) or runs a command it doesn't know, it asks. A clas
 prompt) decides that, and destructive operations are always refused. The conversation shows every command and a few
 lines of its output.
 
+<p align="center"><img src="docs/assets/pipe-valve-en.svg" alt="Commands split at the classifier: a reload runs with a backup, deleting data waits for your yes, rm -rf / is refused" width="100%"></p>
+
 Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
+
+<p align="center"><img src="docs/assets/pipe-flow-en.svg" alt="Pipe sits between you and your server: commands flow one way, alerts the other, through a valve, a fuse and a gauge" width="100%"></p>
 
 ## Examples
 

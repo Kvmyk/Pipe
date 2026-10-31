@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 370" width="960" height="370" role="img" aria-labelledby="t d">
+<title id="t">Pipe: the pipe between you and your server</title>
+<desc id="d">You and the server are joined by a pipe. Commands flow to the server, alerts flow back. In the pipe sit a valve, a fuse and a gauge; a language model you can swap connects from above.</desc>
+<style>
+text{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace;fill:#b4b5b8;font-size:13px}
+.h{fill:#ececea;font-size:17px;font-weight:600}
+.n{fill:#ececea;font-size:15px;font-weight:600}
+.s{fill:#8a8c90;font-size:12.5px}
+@keyframes down{from{transform:translate(196px,186px)}to{transform:translate(764px,186px)}}
+@keyframes up{from{transform:translate(764px,214px)}to{transform:translate(196px,214px)}}
+.d{animation:down 6s linear infinite}
+.u{animation:up 6s linear infinite}
+@keyframes turn{0%,35%{transform:rotate(0)}50%,85%{transform:rotate(90deg)}100%{transform:rotate(180deg)}}
+.wheel{transform-origin:260px 200px;animation:turn 6s ease-in-out infinite}
+@keyframes glow{0%,100%{opacity:.35}50%{opacity:1}}
+.wire{animation:glow 3s ease-in-out infinite}
+@keyframes needle{0%,100%{transform:rotate(-38deg)}30%{transform:rotate(24deg)}55%{transform:rotate(-8deg)}80%{transform:rotate(44deg)}}
+.needle{transform-origin:630px 208px;transform:rotate(10deg);animation:needle 7s ease-in-out infinite}
+@keyframes tap{0%,100%{transform:translate(715px,92px)}50%{transform:translate(715px,168px)}}
+.m{animation:tap 5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<rect width="960" height="370" rx="14" fill="#0f1011"/>
+<g stroke="#ffffff" stroke-opacity=".035"><path d="M40 0V370"/><path d="M80 0V370"/><path d="M120 0V370"/><path d="M160 0V370"/><path d="M200 0V370"/><path d="M240 0V370"/><path d="M280 0V370"/><path d="M320 0V370"/><path d="M360 0V370"/><path d="M400 0V370"/><path d="M440 0V370"/><path d="M480 0V370"/><path d="M520 0V370"/><path d="M560 0V370"/><path d="M600 0V370"/><path d="M640 0V370"/><path d="M680 0V370"/><path d="M720 0V370"/><path d="M760 0V370"/><path d="M800 0V370"/><path d="M840 0V370"/><path d="M880 0V370"/><path d="M920 0V370"/><path d="M0 40H960"/><path d="M0 80H960"/><path d="M0 120H960"/><path d="M0 160H960"/><path d="M0 200H960"/><path d="M0 240H960"/><path d="M0 280H960"/><path d="M0 320H960"/><path d="M0 360H960"/></g>
+<rect x=".5" y=".5" width="959" height="369" rx="13.5" fill="none" stroke="#2a2b2f"/>
+<text x="32" y="50" class="h" text-anchor="start">Pipe: the pipe between you and your server</text>
+<path d="M715 92V170" stroke="#8a8c90" stroke-width="2" stroke-dasharray="3 6"/>
+<circle class="m" r="4" fill="#ececea" style="transform:translate(715px,130px)"/>
+<rect x="603" y="32" width="224" height="60" rx="10" fill="#151618" stroke="#3a3b40"/><text x="715.0" y="60.0" class="n" text-anchor="middle">Language model</text><text x="715.0" y="80.0" class="s" text-anchor="middle">Gemini, Claude, Ollama...</text>
+<rect x="196" y="170" width="568" height="60" fill="#1c1d20"/>
+<path d="M196 170H764M196 230H764" stroke="#3a3b40" stroke-width="2"/>
+<path d="M196 200.0H764" stroke="#2a2b2f" stroke-dasharray="2 8"/>
+<circle class="d" r="5" fill="#8fb0ff" style="transform:translate(291px,186px);animation-delay:0.0s"/>
+<circle class="u" r="5" fill="#e0a64a" style="transform:translate(291px,214px);animation-delay:-1.0s"/>
+<circle class="d" r="5" fill="#8fb0ff" style="transform:translate(480px,186px);animation-delay:-2.0s"/>
+<circle class="u" r="5" fill="#e0a64a" style="transform:translate(480px,214px);animation-delay:-3.0s"/>
+<circle class="d" r="5" fill="#8fb0ff" style="transform:translate(669px,186px);animation-delay:-4.0s"/>
+<circle class="u" r="5" fill="#e0a64a" style="transform:translate(669px,214px);animation-delay:-5.0s"/>
+<rect x="32" y="150" width="164" height="100" rx="10" fill="#151618" stroke="#3a3b40"/><text x="114.0" y="198.0" class="n" text-anchor="middle">You</text><text x="114.0" y="218.0" class="s" text-anchor="middle">CLI · web · Telegram</text>
+<rect x="764" y="150" width="164" height="100" rx="10" fill="#151618" stroke="#3a3b40"/><text x="846.0" y="198.0" class="n" text-anchor="middle">Your server</text><text x="846.0" y="218.0" class="s" text-anchor="middle">services · containers</text>
+<circle cx="260" cy="200.0" r="44" fill="#151618" stroke="#3a3b40" stroke-width="2"/>
+<text x="260" y="136" class="n" text-anchor="middle">Valve</text>
+<text x="260" y="272" class="s" text-anchor="middle">runs / asks / refuses</text>
+<circle cx="445" cy="200.0" r="44" fill="#151618" stroke="#3a3b40" stroke-width="2"/>
+<text x="445" y="136" class="n" text-anchor="middle">Fuse</text>
+<text x="445" y="272" class="s" text-anchor="middle">backup, check, undo</text>
+<circle cx="630" cy="200.0" r="44" fill="#151618" stroke="#3a3b40" stroke-width="2"/>
+<text x="630" y="136" class="n" text-anchor="middle">Gauge</text>
+<text x="630" y="272" class="s" text-anchor="middle">watches, writes first</text>
+<g class="wheel" fill="none" stroke="#5cc68a" stroke-width="4"><circle cx="260" cy="200.0" r="24"/><path d="M236 200.0H284M260 176.0V224.0"/></g>
+<g fill="none" stroke="#e0a64a" stroke-width="3"><rect x="417" y="187.0" width="56" height="26" rx="13"/><path d="M407 200.0h10M473 200.0h10"/><path class="wire" d="M417 200.0c8 -14 14 14 28 0s20 14 28 0" stroke-width="2.5"/></g>
+<g fill="none" stroke="#8fb0ff" stroke-width="3"><path d="M602 214.0a30 30 0 1 1 56 0"/><path d="M602 214.0l6 -3M658 214.0l-6 -3M630 178.0v6"/><path class="needle" d="M630 208.0V182.0" stroke="#ececea"/></g><circle cx="630" cy="208.0" r="4" fill="#ececea"/>
+<circle cx="202" cy="324" r="5" fill="#8fb0ff"/>
+<text x="216" y="329" class="s" text-anchor="start">what you ask for</text>
+<circle cx="470" cy="324" r="5" fill="#e0a64a"/>
+<text x="484" y="329" class="s" text-anchor="start">what the server tells you first</text>
+</svg>

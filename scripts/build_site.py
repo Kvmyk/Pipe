@@ -25,7 +25,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ["docs/assets/logo.svg", "docs/assets/demo-pl.gif", "docs/assets/demo-en.gif",
-          "docs/assets/social-preview.png", "docs/assets/social-preview-en.png"]
+          "docs/assets/social-preview.png", "docs/assets/social-preview-en.png",
+          *(f"docs/assets/pipe-{kind}-{lang}.svg" for kind in ("flow", "valve") for lang in ("en", "pl"))]
 FONTS = ROOT / "clients" / "webui" / "static" / "fonts"
 REPO = "https://github.com/Kvmyk/pipe"
 # Adres strony: GitHub Pages rozroznia wielkosc liter, repo nazywa sie "Pipe".
@@ -60,6 +61,17 @@ DOCS: list[tuple[str, str, str, str, str]] = [
      "The JSON lines format, client commands, events, webhooks. For client authors."),
 ]
 
+# Grupy w menu dokumentacji (pl, en, strony); kazda strona z DOCS jest dokladnie w jednej grupie.
+DOC_GROUPS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("Start", "Start", ("quickstart", "features")),
+    ("Na co dzień", "Day to day", ("cli", "telegram")),
+    ("Serwer", "Server", ("deploy", "security")),
+    ("Dla twórców", "For developers", ("backend", "protocol")),
+]
+
+# Cytat z ostrzezeniem w dokumentacji dostaje kolor zaworu zamiast koloru przeplywu.
+WARN_QUOTES = ("Experimental:", "Eksperymentalne:")
+
 LANGS = {
     "en": {"src": ROOT / "docs", "out": "docs", "root": "../", "other": "../pl/docs/"},
     "pl": {"src": ROOT / "docs" / "pl", "out": "pl/docs", "root": "../../", "other": "../../docs/"},
@@ -92,14 +104,16 @@ def lang_switch(current: str, other_href: str) -> str:
 
 
 T = {
-    "pl": {"docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
+    "pl": {"flow_alt": "Schemat: Ty, rura z zaworem, bezpiecznikiem i manometrem oraz Twój serwer. Polecenia płyną do serwera, alerty wracają.",
+           "docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
            "edit": "Popraw tę stronę na GitHubie", "changelog": "Historia zmian", "issues": "Zgłoś błąd",
            "source": "Kod na GitHubie", "license": "licencja MIT", "install": "Instalacja",
            "index_lead": "Wszystko o instalacji, codziennej pracy z Pipe i o tym, jak działa w środku. "
                          "Strony powstają z plików w katalogu docs/ repozytorium, więc opisują aktualną wersję.",
            "index_title": "Dokumentacja Pipe", "start": "Zacznij od szybkiego startu",
            "changelog_note": "Historia zmian jest na GitHubie (od v0.49 po angielsku)."},
-    "en": {"docs": "Docs", "on_page": "On this page", "all": "All pages",
+    "en": {"flow_alt": "Diagram: you, a pipe with a valve, a fuse and a gauge, and your server. Commands flow to the server, alerts flow back.",
+           "docs": "Docs", "on_page": "On this page", "all": "All pages",
            "edit": "Edit this page on GitHub", "changelog": "Changelog", "issues": "Report a bug",
            "source": "Source on GitHub", "license": "MIT license", "install": "Installation",
            "index_lead": "Everything about installing Pipe, working with it day to day and how it works inside. "
@@ -261,7 +275,8 @@ def render_markdown(source: str, link=lambda url: url) -> Rendered:
             while i < len(lines) and lines[i].strip().startswith(">"):
                 quote.append(re.sub(r"^\s*>\s?", "", lines[i]))
                 i += 1
-            out.append(f"<blockquote>{render_markdown(chr(10).join(quote), link).body}</blockquote>")
+            warn = ' class="warn"' if quote[0].startswith(WARN_QUOTES) else ""
+            out.append(f"<blockquote{warn}>{render_markdown(chr(10).join(quote), link).body}</blockquote>")
             continue
 
         if _LIST_ITEM.match(line):
@@ -360,11 +375,15 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
     root = conf["root"]
     other = "pl" if lang == "en" else "en"
     other_href = conf["other"] + (f"{current}.html" if current != "index" else "")
-    nav_items = []
-    for name, pl, en, _, _ in DOCS:
-        label = pl if lang == "pl" else en
-        cur = ' aria-current="page"' if name == current else ""
-        nav_items.append(f'<li><a href="{name}.html"{cur}>{html.escape(label)}</a></li>')
+    labels = {name: pl if lang == "pl" else en for name, pl, en, _, _ in DOCS}
+    nav_groups = []
+    for group_pl, group_en, names in DOC_GROUPS:
+        items = []
+        for name in names:
+            cur = ' aria-current="page"' if name == current else ""
+            items.append(f'<li><a href="{name}.html"{cur}>{html.escape(labels[name])}</a></li>')
+        nav_groups.append(f'<p class="side-h">{group_pl if lang == "pl" else group_en}</p>'
+                          f'<ul class="doc-nav">{"".join(items)}</ul>')
     toc = ""
     if headings:
         toc = (f'<div class="toc"><p class="side-h">{t["on_page"]}</p><ul>'
@@ -408,8 +427,7 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 
 <div class="wrap doc-layout">
   <aside class="side">
-    <p class="side-h"><a href="./">{t["docs"]}</a></p>
-    <ul class="doc-nav">{"".join(nav_items)}</ul>
+    {"".join(nav_groups)}
     {toc}
   </aside>
   <main class="doc" id="top">
@@ -439,8 +457,11 @@ def index_article(lang: str) -> str:
     for name, pl, en, dpl, den in DOCS:
         label, desc = (pl, dpl) if lang == "pl" else (en, den)
         cards.append(f'<li><a href="{name}.html">{html.escape(label)}</a><p>{html.escape(desc)}</p></li>')
+    root = LANGS[lang]["root"]
     return (f'<h1>{t["index_title"]}</h1>\n<p class="lead">{t["index_lead"]}</p>\n'
             f'<p><a class="button" href="quickstart.html">{t["start"]} →</a></p>\n'
+            f'<figure class="diagram"><img src="{root}assets/pipe-flow-{lang}.svg" width="960" height="370" '
+            f'alt="{t["flow_alt"]}"></figure>\n'
             f'<ul class="doc-cards">{"".join(cards)}</ul>\n'
             f'<p class="note"><a href="{REPO}/blob/main/docs/changelog.md">{t["changelog"]}</a>: '
             f'{t["changelog_note"]}</p>')
