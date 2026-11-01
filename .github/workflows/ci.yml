@@ -24,9 +24,9 @@ jobs:
         # 3.11 = obraz Dockera, 3.13 = nowsze systemy przy instalacji natywnej
         python: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -57,10 +57,10 @@ jobs:
             context: .
             dockerfile: clients/telegram/Dockerfile
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       # Tylko build — nic nie jest wypychane do rejestru.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -72,7 +72,7 @@ jobs:
     name: Piaskownica (scenariusze awarii)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Kazdy scenariusz: po zepsuciu check pada, po wzorcowej naprawie przechodzi, Pipe w kontenerze odpowiada.
       - name: sandbox/run.py self-test
         run: python3 sandbox/run.py self-test
@@ -81,7 +81,7 @@ jobs:
     name: Manifesty Kubernetes i skrypty
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: kustomize build (base + overlaye)
         run: |
