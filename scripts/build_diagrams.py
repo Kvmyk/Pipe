@@ -24,10 +24,10 @@ ASSETS = ROOT / "docs" / "assets"
 LANGS = ("en", "pl")
 CYCLE = 12                            # sekundy, ten sam cykl na obu rysunkach
 
-BG, PANEL, SUNKEN, LINE, STEEL = "#0f1011", "#151618", "#1c1d20", "#2a2b2f", "#3a3b40"
-INK, INK2, INK3 = "#ececea", "#b4b5b8", "#8a8c90"
-BLUE, GREEN, AMBER, RED = "#8fb0ff", "#5cc68a", "#e0a64a", "#f08a86"
-DEEP_BLUE, DEEP_GREEN, DEEP_AMBER, DEEP_RED = "#2049b8", "#1d7f49", "#9a5a08", "#b02b28"
+BG, PANEL, SUNKEN, LINE, STEEL = "#17181a", "#1e1f22", "#26272b", "#34353a", "#4a4b51"
+INK, INK2, INK3 = "#ececea", "#c4c5c6", "#9a9c9f"
+TEAL, GREEN, AMBER, RED = "#7cc7b6", "#5cc68a", "#e0a64a", "#f08a86"
+DEEP_TEAL, DEEP_GREEN, DEEP_AMBER, DEEP_RED = "#1c6f63", "#1d7f49", "#9a5a08", "#b02b28"
 MONO = "ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
 
 Point = tuple[float, float]
@@ -37,9 +37,9 @@ FLOW = {
     "en": {"title": "Pipe: the pipe between you and your server",
            "desc": "Your question goes up to a language model, which proposes a command. The command goes through "
                    "the valve and the fuse to the server, and the result comes back past the gauge to you.",
-           "you": "You", "you_sub": "CLI · web · Telegram",
-           "server": "Your server", "server_sub": "services · containers",
-           "model": "Language model", "model_sub": "proposes commands · swappable",
+           "you": "You", "you_sub": "CLI, web, Telegram",
+           "server": "Your server", "server_sub": "services, containers",
+           "model": "Language model", "model_sub": "proposes commands, swappable",
            "valve": "Valve", "valve_sub": "runs, asks, refuses",
            "fuse": "Fuse", "fuse_sub": "backup and undo",
            "gauge": "Gauge", "gauge_sub": "writes first",
@@ -47,9 +47,9 @@ FLOW = {
     "pl": {"title": "Pipe: rura między Tobą a serwerem",
            "desc": "Twoje pytanie idzie do modelu językowego, który proponuje komendę. Komenda przechodzi przez zawór "
                    "i bezpiecznik do serwera, a wynik wraca obok czujnika do Ciebie.",
-           "you": "Ty", "you_sub": "CLI · web · Telegram",
-           "server": "Twój serwer", "server_sub": "usługi · kontenery",
-           "model": "Model językowy", "model_sub": "proponuje komendy · wymienny",
+           "you": "Ty", "you_sub": "CLI, web, Telegram",
+           "server": "Twój serwer", "server_sub": "usługi, kontenery",
+           "model": "Model językowy", "model_sub": "proponuje komendy, wymienny",
            "valve": "Zawór", "valve_sub": "sam, po TAK, nigdy",
            "fuse": "Bezpiecznik", "fuse_sub": "kopia i cofnięcie",
            "gauge": "Czujnik", "gauge_sub": "pisze pierwszy",
@@ -135,8 +135,6 @@ def run(cls: str, name: str | None = None, base: str = "") -> str:
 
 
 def shell(width: int, height: int, title: str, desc: str, css: str, body: str) -> str:
-    grid = "".join(f'<path d="M{x} 0V{height}"/>' for x in range(40, width, 40)) + \
-        "".join(f'<path d="M0 {y}H{width}"/>' for y in range(40, height, 40))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="t d">
 <title id="t">{html.escape(title)}</title>
 <desc id="d">{html.escape(desc)}</desc>
@@ -149,12 +147,10 @@ text{{font-family:{MONO};fill:{INK2};font-size:13px}}
 @media (prefers-reduced-motion:reduce){{*{{animation:none!important}}}}
 </style>
 <defs>
-<linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
-<linearGradient id="wallv" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
+<linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#303136"/><stop offset=".5" stop-color="#1e1f22"/><stop offset="1" stop-color="#303136"/></linearGradient>
+<linearGradient id="wallv" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#303136"/><stop offset=".5" stop-color="#1e1f22"/><stop offset="1" stop-color="#303136"/></linearGradient>
 </defs>
-<rect width="{width}" height="{height}" rx="14" fill="{BG}"/>
-<g stroke="#ffffff" stroke-opacity=".035">{grid}</g>
-<rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" rx="13.5" fill="none" stroke="{LINE}"/>
+<rect width="{width}" height="{height}" fill="{BG}"/>
 {body}
 </svg>
 """
@@ -194,12 +190,12 @@ def flow(lang: str) -> str:
 
     css = [track("ask", ask), track("cmd", cmd), track("res", result),
            run("ask"), run("cmd"), run("res"),
-           windows("lmodel", "stroke", STEEL, [(*think, BLUE)]), run("lmodel"),
+           windows("lmodel", "stroke", STEEL, [(*think, TEAL)]), run("lmodel"),
            windows("lvalve", "stroke", STEEL, [(39, 46, GREEN)]), run("lvalve"),
            windows("lfuse", "stroke", STEEL, [(50, 56, AMBER)]), run("lfuse"),
-           windows("lgauge", "stroke", STEEL, [(72, 78, BLUE)]), run("lgauge"),
+           windows("lgauge", "stroke", STEEL, [(72, 78, TEAL)]), run("lgauge"),
            windows("lserver", "stroke", STEEL, [(62, 69, GREEN)]), run("lserver"),
-           windows("lyou", "stroke", STEEL, [(2, 6, BLUE), (93, 97.5, AMBER)]), run("lyou"),
+           windows("lyou", "stroke", STEEL, [(2, 6, TEAL), (93, 97.5, AMBER)]), run("lyou"),
            windows("wire", "opacity", ".35", [(50, 56, "1")]), run("wire", base=f"opacity:.35;"),
            # zawor: cwierc obrotu przy przejsciu komendy (krzyz po obrocie wyglada tak samo, cykl sie nie urywa)
            "@keyframes turn{0%,39%{transform:rotate(0)}45%,100%{transform:rotate(90deg)}}",
@@ -220,12 +216,12 @@ def flow(lang: str) -> str:
             f'<rect x="{tx0}" y="{model_y}" width="{tap_half * 2}" height="{top - model_y + 2}" fill="url(#wallv)"/>',
             f'<rect x="{left}" y="{top}" width="{right - left}" height="{bottom - top}" fill="url(#wall)"/>',
             f'<path d="M{tx0} {model_y}V{top}H{left}M{tx1} {model_y}V{top}H{right}M{left} {bottom}H{right}" fill="none" stroke="{STEEL}" stroke-width="2"/>',
-            capsule("ask", "502?", DEEP_BLUE, 54, (tap, 132), 12.5, 22),
-            capsule("cmd", "reload", DEEP_BLUE, 64, (465, lane_down), 12.5, 22),
+            capsule("ask", "502?", DEEP_TEAL, 54, (tap, 132), 12.5, 22),
+            capsule("cmd", "reload", DEEP_TEAL, 64, (465, lane_down), 12.5, 22),
             capsule("res", "OK", DEEP_AMBER, 42, (615, lane_up), 12.5, 22),
             *(fitting(x) for x in (cx1 - 46, cx1 + 46, cx2 - 46, cx2 + 46, cx3 - 46, cx3 + 46)),
             box(tap - 130, 32, 260, 60, t["model"], t["model_sub"], "lmodel"),
-            *(f'<circle class="dot{i}" cx="{tap + 92 + i * 11}" cy="56" r="3" fill="{BLUE}"/>' for i in range(3)),
+            *(f'<circle class="dot{i}" cx="{tap + 92 + i * 11}" cy="56" r="3" fill="{TEAL}"/>' for i in range(3)),
             box(32, 150, left - 32, 100, t["you"], t["you_sub"], "lyou"),
             box(right, 150, w - 32 - right, 100, t["server"], t["server_sub"], "lserver")]
     for cx, name, sub, cls in ((cx1, t["valve"], t["valve_sub"], "lvalve"), (cx2, t["fuse"], t["fuse_sub"], "lfuse"),
@@ -240,11 +236,11 @@ def flow(lang: str) -> str:
                 f'<path d="M{cx2 - 36} {y}h10M{cx2 + 26} {y}h10"/>'
                 f'<path class="wire" d="M{cx2 - 26} {y}c8 -14 13 14 26 0s18 14 26 0" stroke-width="2.5"/></g>')
     # czujnik: tarcza i wskazowka
-    body.append(f'<g fill="none" stroke="{BLUE}" stroke-width="3"><path d="M{cx3 - 26} {y + 14}a30 30 0 1 1 52 0"/>'
+    body.append(f'<g fill="none" stroke="{TEAL}" stroke-width="3"><path d="M{cx3 - 26} {y + 14}a30 30 0 1 1 52 0"/>'
                 f'<path class="needle" d="M{cx3} {y + 8}V{y - 18}" stroke="{INK}"/></g>'
                 f'<circle cx="{cx3}" cy="{y + 8}" r="4" fill="{INK}"/>')
     # legenda
-    body += [f'<rect x="196" y="316" width="14" height="14" rx="4" fill="{DEEP_BLUE}"/>', text(218, 327, t["down"], "s"),
+    body += [f'<rect x="196" y="316" width="14" height="14" rx="4" fill="{DEEP_TEAL}"/>', text(218, 327, t["down"], "s"),
              f'<rect x="430" y="316" width="14" height="14" rx="4" fill="{DEEP_AMBER}"/>', text(452, 327, t["up"], "s")]
     return shell(w, h, t["title"], t["desc"], "\n".join(css), "\n".join(body))
 

@@ -69,7 +69,7 @@ DOC_GROUPS: list[tuple[str, str, tuple[str, ...]]] = [
     ("Dla twórców", "For developers", ("backend", "protocol")),
 ]
 
-# Cytat z ostrzezeniem w dokumentacji dostaje kolor zaworu zamiast koloru przeplywu.
+# Cytat z ostrzezeniem w dokumentacji dostaje kolor ostrzezenia.
 WARN_QUOTES = ("Experimental:", "Eksperymentalne:")
 
 LANGS = {
@@ -104,22 +104,20 @@ def lang_switch(current: str, other_href: str) -> str:
 
 
 T = {
-    "pl": {"flow_alt": "Schemat: Twoje pytanie idzie do modelu językowego, jego komenda przechodzi przez zawór i bezpiecznik do serwera, a wynik wraca obok czujnika.",
-           "docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
+    "pl": {"docs": "Dokumentacja", "on_page": "Na tej stronie", "all": "Wszystkie strony",
            "edit": "Popraw tę stronę na GitHubie", "changelog": "Historia zmian", "issues": "Zgłoś błąd",
            "source": "Kod na GitHubie", "license": "licencja MIT", "install": "Instalacja",
            "index_lead": "Wszystko o instalacji, codziennej pracy z Pipe i o tym, jak działa w środku. "
                          "Strony powstają z plików w katalogu docs/ repozytorium, więc opisują aktualną wersję.",
            "index_title": "Dokumentacja Pipe", "start": "Zacznij od szybkiego startu",
-           "changelog_note": "Historia zmian jest na GitHubie (od v0.49 po angielsku)."},
-    "en": {"flow_alt": "Diagram: your question goes to a language model, its command passes a valve and a fuse to the server, and the result comes back past a gauge.",
-           "docs": "Docs", "on_page": "On this page", "all": "All pages",
+           "changelog_note": "na GitHubie, od v0.49 po angielsku."},
+    "en": {"docs": "Docs", "on_page": "On this page", "all": "All pages",
            "edit": "Edit this page on GitHub", "changelog": "Changelog", "issues": "Report a bug",
            "source": "Source on GitHub", "license": "MIT license", "install": "Installation",
            "index_lead": "Everything about installing Pipe, working with it day to day and how it works inside. "
                          "The pages are built from the docs/ directory of the repository, so they describe the current version.",
            "index_title": "Pipe documentation", "start": "Start with the quick start",
-           "changelog_note": "The changelog is on GitHub (entries before v0.49 are in Polish)."},
+           "changelog_note": "on GitHub, entries before v0.49 are in Polish."},
 }
 
 COPYABLE = {"bash", "sh", "shell", "powershell", "ps1", "console"}
@@ -438,7 +436,7 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 
 <footer>
   <div class="wrap">
-    <span>Pipe {version} · {t["license"]}</span>
+    <span>Pipe {version}, {t["license"]}</span>
     <a href="{REPO}">{t["source"]}</a>
     <a href="{REPO}/blob/main/docs/changelog.md">{t["changelog"]}</a>
     <a href="{REPO}/issues">{t["issues"]}</a>
@@ -453,17 +451,14 @@ def page(lang: str, *, title: str, description: str, current: str, article: str,
 
 def index_article(lang: str) -> str:
     t = T[lang]
-    cards = []
+    rows = []
     for name, pl, en, dpl, den in DOCS:
         label, desc = (pl, dpl) if lang == "pl" else (en, den)
-        cards.append(f'<li><a href="{name}.html">{html.escape(label)}</a><p>{html.escape(desc)}</p></li>')
-    root = LANGS[lang]["root"]
+        rows.append(f'<dt><a href="{name}.html">{html.escape(label)}</a></dt><dd>{html.escape(desc)}</dd>')
     return (f'<h1>{t["index_title"]}</h1>\n<p class="lead">{t["index_lead"]}</p>\n'
-            f'<p><a class="button" href="quickstart.html">{t["start"]} →</a></p>\n'
-            f'<figure class="diagram"><img src="{root}assets/pipe-flow-{lang}.svg" width="960" height="370" '
-            f'alt="{t["flow_alt"]}"></figure>\n'
-            f'<ul class="doc-cards">{"".join(cards)}</ul>\n'
-            f'<p class="note"><a href="{REPO}/blob/main/docs/changelog.md">{t["changelog"]}</a>: '
+            f'<p><a class="button" href="quickstart.html">{t["start"]}</a></p>\n'
+            f'<dl class="doc-list">{"".join(rows)}</dl>\n'
+            f'<p class="note"><a href="{REPO}/blob/main/docs/changelog.md">{t["changelog"]}</a> '
             f'{t["changelog_note"]}</p>')
 
 

@@ -2,6 +2,21 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.4 (2026-11-01)
+
+### A plainer website
+
+- The website and the documentation changed color: a verdigris green replaced the blue on buttons, links and the
+  diagrams, on a lighter graphite background
+- Removed the decoration: the background grid, the moving light under the header, the pulsing dot in the menu, the
+  all-caps labels, the tinted quotes and the arrow on the button
+- The documentation start page lists its pages in a plain list, without cards and without the pipe animation
+- The home page now shows the valve first, with what Pipe does on its own and what it asks about, and the whole pipe
+  further down, next to where you talk to it. The text around both was rewritten to match
+- New headline, also in both READMEs: "Pipe looks after your Linux server and messages you when something breaks"
+- New link preview images, dark, with the new headline, showing that routine fixes run on their own and important
+  changes wait for your yes
+
 ## v0.50.3 (2026-10-31)
 
 ### Clearer pipe diagrams

@@ -20,9 +20,9 @@ FONTS = ROOT / "clients" / "webui" / "static" / "fonts"
 
 TEXT = {
     "en": {
-        "title": "A sysadmin that never sleeps, does the routine work itself and asks about what matters",
-        "lead": "An AI agent on your Linux server. It messages you on Telegram when something breaks and fixes it, "
-                "with a backup you can undo.",
+        "title": "Pipe looks after your Linux server and messages you when something breaks",
+        "lead": "Routine fixes it makes on its own, with a backup you can undo. Before anything it cannot undo, it asks you.",
+        "foot": "Open source, MIT license. Works with Gemini, OpenAI, Claude and Ollama.",
         "auto": "Without asking: a routine change", "cmd": "$ sed -i 's/60s/120s/' shop.conf\n  && systemctl reload nginx",
         "checks": ["backup in the journal", "nginx -t passed", "sites still respond"],
         "done": "Fixed, the shop responds again. Undo it with", "undo": "/undo",
@@ -30,9 +30,9 @@ TEXT = {
         "ask_why": "data I cannot back up", "ask_cmd": "$ rm -r reports/2025",
     },
     "pl": {
-        "title": "Admin, który nie śpi, rutynę robi sam, a o ważne sprawy pyta",
-        "lead": "Agent AI na Twoim serwerze Linux. Pisze na Telegram, gdy coś się psuje, i naprawia to, "
-                "z kopią, którą cofniesz.",
+        "title": "Pipe pilnuje Twojego serwera Linux i pisze, gdy coś się psuje",
+        "lead": "Rutynowe poprawki robi sam, z kopią, którą cofniesz. Zanim zrobi coś nieodwracalnego, pyta Ciebie.",
+        "foot": "Open source, licencja MIT. Działa z Gemini, OpenAI, Claude i Ollamą.",
         "auto": "Bez pytania: rutynowa zmiana", "cmd": "$ sed -i 's/60s/120s/' sklep.conf\n  && systemctl reload nginx",
         "checks": ["kopia w dzienniku", "nginx -t przeszedł", "strony dalej odpowiadają"],
         "done": "Naprawione, sklep znów odpowiada. Cofniesz to komendą", "undo": "/cofnij",
@@ -54,27 +54,27 @@ def page(lang: str) -> str:
     return f"""<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><style>
 {fonts}
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; width: 1280px; height: 640px; background: #f4f4f1; color: #1a1b1d; font-family: "Plex Sans"; display: flex;
+body {{ margin: 0; width: 1280px; height: 640px; background: #17181a; color: #ececea; font-family: "Plex Sans"; display: flex;
   padding: 72px 80px 0; gap: 64px; position: relative; }}
 .left {{ width: 590px; }}
 .brand {{ display: flex; align-items: center; gap: 16px; font-size: 34px; font-weight: 600; }}
 h1 {{ font-size: 50px; line-height: 1.12; letter-spacing: -.01em; margin: 38px 0 22px; font-weight: 600; }}
-.lead {{ font-size: 22px; line-height: 1.6; color: #4e5055; margin: 0; }}
-.foot {{ position: absolute; left: 80px; bottom: 44px; font: 400 18px "Plex Mono"; color: #75777c; }}
-.card {{ width: 466px; align-self: flex-start; margin-top: 4px; background: #fff; border: 1px solid #e0dfd9; border-radius: 12px; }}
+.lead {{ font-size: 22px; line-height: 1.6; color: #c4c5c6; margin: 0; }}
+.foot {{ position: absolute; left: 80px; bottom: 44px; font-size: 19px; color: #9a9c9f; }}
+.card {{ width: 466px; align-self: flex-start; margin-top: 4px; background: #1e1f22; border: 1px solid #34353a; border-radius: 12px; }}
 .row {{ display: grid; grid-template-columns: 62px 1fr; gap: 0; padding: 18px 22px; font-size: 17px; line-height: 1.45; }}
-.row + .row {{ border-top: 1px solid #e8e7e2; }}
-.who {{ font: 400 14px "Plex Mono"; color: #75777c; padding-top: 3px; }}
-.box {{ border: 1px solid; border-radius: 6px; padding: 12px 14px; background: #f8f8f5; }}
-.box.auto {{ border-color: #8fc3a6; margin-bottom: 12px; }}
-.box.ask {{ border-color: #d9b47c; }}
+.row + .row {{ border-top: 1px solid #34353a; }}
+.who {{ font: 400 14px "Plex Mono"; color: #9a9c9f; padding-top: 3px; }}
+.box {{ border: 1px solid; border-radius: 6px; padding: 12px 14px; background: #17181a; }}
+.box.auto {{ border-color: #5cc68a; margin-bottom: 12px; }}
+.box.ask {{ border-color: #e0a64a; }}
 .box b {{ display: block; font-weight: 600; margin-bottom: 6px; }}
-.box .why {{ color: #75777c; font-weight: 400; }}
+.box .why {{ display: block; color: #9a9c9f; font-weight: 400; }}
 pre {{ margin: 0 0 8px; font: 400 14.5px/1.5 "Plex Mono"; white-space: pre-wrap; }}
 .box.ask pre {{ margin: 0; }}
-ul {{ margin: 0; padding: 0; list-style: none; color: #4e5055; font-size: 15.5px; }}
-li::before {{ content: "✓"; color: #1d7f49; margin-right: 8px; }}
-code {{ font: 400 15px "Plex Mono"; background: #efefeb; border-radius: 4px; padding: 1px 5px; }}
+ul {{ margin: 0; padding: 0; list-style: none; color: #c4c5c6; font-size: 15.5px; }}
+li::before {{ content: "✓"; color: #5cc68a; margin-right: 8px; }}
+code {{ font: 400 15px "Plex Mono"; background: #26272b; border-radius: 4px; padding: 1px 5px; }}
 </style></head><body>
 <div class="left">
   <div class="brand"><img src="{logo}" width="56" height="56" alt="">Pipe</div>
@@ -87,9 +87,9 @@ code {{ font: 400 15px "Plex Mono"; background: #efefeb; border-radius: 4px; pad
     {t["done"]} <code>{t["undo"]}</code>.</div></div>
   <div class="row"><div class="who">{t["me"]}</div><div><b>{t["ask_msg"]}</b></div></div>
   <div class="row"><div class="who">pipe</div><div>
-    <div class="box ask"><b>{t["ask"]} <span class="why">· {t["ask_why"]}</span></b><pre>{t["ask_cmd"]}</pre></div></div></div>
+    <div class="box ask"><b>{t["ask"]} <span class="why">{t["ask_why"]}</span></b><pre>{t["ask_cmd"]}</pre></div></div></div>
 </div>
-<div class="foot">open source · MIT · Gemini, OpenAI, Claude, Ollama</div>
+<div class="foot">{t["foot"]}</div>
 </body></html>"""
 
 

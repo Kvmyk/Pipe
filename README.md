@@ -4,7 +4,7 @@
 
 <h1 align="center">Pipe</h1>
 
-<h3 align="center">A sysadmin that never sleeps, does the routine work itself and asks about what matters.</h3>
+<h3 align="center">Pipe looks after your Linux server and messages you when something breaks.</h3>
 
 <p align="center">
   Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on Telegram,<br>
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.50.3-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.50.4-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>

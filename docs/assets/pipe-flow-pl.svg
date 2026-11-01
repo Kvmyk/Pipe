@@ -2,27 +2,27 @@
 <title id="t">Pipe: rura między Tobą a serwerem</title>
 <desc id="d">Twoje pytanie idzie do modelu językowego, który proponuje komendę. Komenda przechodzi przez zawór i bezpiecznik do serwera, a wynik wraca obok czujnika do Ciebie.</desc>
 <style>
-text{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace;fill:#b4b5b8;font-size:13px}
+text{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace;fill:#c4c5c6;font-size:13px}
 .h{fill:#ececea;font-size:17px;font-weight:600}
 .n{fill:#ececea;font-size:15px;font-weight:600}
-.s{fill:#8a8c90;font-size:12.5px}
+.s{fill:#9a9c9f;font-size:12.5px}
 @keyframes ask{0.00%{transform:translate(150.0px,186.0px);opacity:0;animation-timing-function:ease-in-out}1.00%{transform:translate(150.0px,186.0px);opacity:0;animation-timing-function:ease-in-out}1.60%{transform:translate(150.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}8.00%{transform:translate(265.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}16.00%{transform:translate(265.0px,80.0px);opacity:1;animation-timing-function:ease-in-out}18.00%{transform:translate(265.0px,80.0px);opacity:0;animation-timing-function:ease-in-out}100.00%{transform:translate(265.0px,80.0px);opacity:0;animation-timing-function:ease-in-out}}
 @keyframes cmd{0.00%{transform:translate(265.0px,80.0px);opacity:0;animation-timing-function:ease-in-out}27.00%{transform:translate(265.0px,80.0px);opacity:0;animation-timing-function:ease-in-out}27.60%{transform:translate(265.0px,80.0px);opacity:1;animation-timing-function:ease-in-out}34.00%{transform:translate(265.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}40.00%{transform:translate(390.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}45.00%{transform:translate(390.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}51.00%{transform:translate(540.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}55.00%{transform:translate(540.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}63.00%{transform:translate(810.0px,186.0px);opacity:1;animation-timing-function:ease-in-out}65.00%{transform:translate(810.0px,186.0px);opacity:0;animation-timing-function:ease-in-out}100.00%{transform:translate(810.0px,186.0px);opacity:0;animation-timing-function:ease-in-out}}
 @keyframes res{0.00%{transform:translate(810.0px,214.0px);opacity:0;animation-timing-function:ease-in-out}68.00%{transform:translate(810.0px,214.0px);opacity:0;animation-timing-function:ease-in-out}68.60%{transform:translate(810.0px,214.0px);opacity:1;animation-timing-function:ease-in-out}73.00%{transform:translate(690.0px,214.0px);opacity:1;animation-timing-function:ease-in-out}77.00%{transform:translate(690.0px,214.0px);opacity:1;animation-timing-function:ease-in-out}85.00%{transform:translate(390.0px,214.0px);opacity:1;animation-timing-function:ease-in-out}96.00%{transform:translate(150.0px,214.0px);opacity:1;animation-timing-function:ease-in-out}98.00%{transform:translate(150.0px,214.0px);opacity:0;animation-timing-function:ease-in-out}100.00%{transform:translate(150.0px,214.0px);opacity:0;animation-timing-function:ease-in-out}}
 .ask{animation:ask 12s linear infinite}
 .cmd{animation:cmd 12s linear infinite}
 .res{animation:res 12s linear infinite}
-@keyframes lmodel{0.00%{stroke:#3a3b40}14.50%{stroke:#3a3b40}16.00%{stroke:#8fb0ff}27.00%{stroke:#8fb0ff}29.00%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lmodel{0.00%{stroke:#4a4b51}14.50%{stroke:#4a4b51}16.00%{stroke:#7cc7b6}27.00%{stroke:#7cc7b6}29.00%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lmodel{animation:lmodel 12s linear infinite}
-@keyframes lvalve{0.00%{stroke:#3a3b40}37.50%{stroke:#3a3b40}39.00%{stroke:#5cc68a}46.00%{stroke:#5cc68a}48.00%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lvalve{0.00%{stroke:#4a4b51}37.50%{stroke:#4a4b51}39.00%{stroke:#5cc68a}46.00%{stroke:#5cc68a}48.00%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lvalve{animation:lvalve 12s linear infinite}
-@keyframes lfuse{0.00%{stroke:#3a3b40}48.50%{stroke:#3a3b40}50.00%{stroke:#e0a64a}56.00%{stroke:#e0a64a}58.00%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lfuse{0.00%{stroke:#4a4b51}48.50%{stroke:#4a4b51}50.00%{stroke:#e0a64a}56.00%{stroke:#e0a64a}58.00%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lfuse{animation:lfuse 12s linear infinite}
-@keyframes lgauge{0.00%{stroke:#3a3b40}70.50%{stroke:#3a3b40}72.00%{stroke:#8fb0ff}78.00%{stroke:#8fb0ff}80.00%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lgauge{0.00%{stroke:#4a4b51}70.50%{stroke:#4a4b51}72.00%{stroke:#7cc7b6}78.00%{stroke:#7cc7b6}80.00%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lgauge{animation:lgauge 12s linear infinite}
-@keyframes lserver{0.00%{stroke:#3a3b40}60.50%{stroke:#3a3b40}62.00%{stroke:#5cc68a}69.00%{stroke:#5cc68a}71.00%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lserver{0.00%{stroke:#4a4b51}60.50%{stroke:#4a4b51}62.00%{stroke:#5cc68a}69.00%{stroke:#5cc68a}71.00%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lserver{animation:lserver 12s linear infinite}
-@keyframes lyou{0.00%{stroke:#3a3b40}0.50%{stroke:#3a3b40}2.00%{stroke:#8fb0ff}6.00%{stroke:#8fb0ff}8.00%{stroke:#3a3b40}91.50%{stroke:#3a3b40}93.00%{stroke:#e0a64a}97.50%{stroke:#e0a64a}99.50%{stroke:#3a3b40}100.00%{stroke:#3a3b40}}
+@keyframes lyou{0.00%{stroke:#4a4b51}0.50%{stroke:#4a4b51}2.00%{stroke:#7cc7b6}6.00%{stroke:#7cc7b6}8.00%{stroke:#4a4b51}91.50%{stroke:#4a4b51}93.00%{stroke:#e0a64a}97.50%{stroke:#e0a64a}99.50%{stroke:#4a4b51}100.00%{stroke:#4a4b51}}
 .lyou{animation:lyou 12s linear infinite}
 @keyframes wire{0.00%{opacity:.35}48.50%{opacity:.35}50.00%{opacity:1}56.00%{opacity:1}58.00%{opacity:.35}100.00%{opacity:.35}}
 .wire{opacity:.35;animation:wire 12s linear infinite}
@@ -39,44 +39,42 @@ text{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monosp
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 <defs>
-<linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
-<linearGradient id="wallv" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#26272b"/><stop offset=".5" stop-color="#17181a"/><stop offset="1" stop-color="#26272b"/></linearGradient>
+<linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#303136"/><stop offset=".5" stop-color="#1e1f22"/><stop offset="1" stop-color="#303136"/></linearGradient>
+<linearGradient id="wallv" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#303136"/><stop offset=".5" stop-color="#1e1f22"/><stop offset="1" stop-color="#303136"/></linearGradient>
 </defs>
-<rect width="960" height="370" rx="14" fill="#0f1011"/>
-<g stroke="#ffffff" stroke-opacity=".035"><path d="M40 0V370"/><path d="M80 0V370"/><path d="M120 0V370"/><path d="M160 0V370"/><path d="M200 0V370"/><path d="M240 0V370"/><path d="M280 0V370"/><path d="M320 0V370"/><path d="M360 0V370"/><path d="M400 0V370"/><path d="M440 0V370"/><path d="M480 0V370"/><path d="M520 0V370"/><path d="M560 0V370"/><path d="M600 0V370"/><path d="M640 0V370"/><path d="M680 0V370"/><path d="M720 0V370"/><path d="M760 0V370"/><path d="M800 0V370"/><path d="M840 0V370"/><path d="M880 0V370"/><path d="M920 0V370"/><path d="M0 40H960"/><path d="M0 80H960"/><path d="M0 120H960"/><path d="M0 160H960"/><path d="M0 200H960"/><path d="M0 240H960"/><path d="M0 280H960"/><path d="M0 320H960"/><path d="M0 360H960"/></g>
-<rect x=".5" y=".5" width="959" height="369" rx="13.5" fill="none" stroke="#2a2b2f"/>
+<rect width="960" height="370" fill="#17181a"/>
 <text x="928" y="50" class="h" text-anchor="end">Pipe: rura między Tobą a serwerem</text>
 <rect x="229" y="92" width="72" height="80" fill="url(#wallv)"/>
 <rect x="196" y="170" width="568" height="60" fill="url(#wall)"/>
-<path d="M229 92V170H196M301 92V170H764M196 230H764" fill="none" stroke="#3a3b40" stroke-width="2"/>
-<g class="ask" style="transform:translate(265px,132px)"><rect x="-27.0" y="-11.0" width="54" height="22" rx="6" fill="#2049b8"/><text y="4.5" text-anchor="middle" style="fill:#fff;font-size:12.5px">502?</text></g>
-<g class="cmd" style="transform:translate(465px,186px)"><rect x="-32.0" y="-11.0" width="64" height="22" rx="6" fill="#2049b8"/><text y="4.5" text-anchor="middle" style="fill:#fff;font-size:12.5px">reload</text></g>
+<path d="M229 92V170H196M301 92V170H764M196 230H764" fill="none" stroke="#4a4b51" stroke-width="2"/>
+<g class="ask" style="transform:translate(265px,132px)"><rect x="-27.0" y="-11.0" width="54" height="22" rx="6" fill="#1c6f63"/><text y="4.5" text-anchor="middle" style="fill:#fff;font-size:12.5px">502?</text></g>
+<g class="cmd" style="transform:translate(465px,186px)"><rect x="-32.0" y="-11.0" width="64" height="22" rx="6" fill="#1c6f63"/><text y="4.5" text-anchor="middle" style="fill:#fff;font-size:12.5px">reload</text></g>
 <g class="res" style="transform:translate(615px,214px)"><rect x="-21.0" y="-11.0" width="42" height="22" rx="6" fill="#9a5a08"/><text y="4.5" text-anchor="middle" style="fill:#fff;font-size:12.5px">OK</text></g>
-<rect x="341" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect x="433" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect x="491" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect x="583" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect x="641" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect x="733" y="164" width="6" height="72" rx="2" fill="#3a3b40"/>
-<rect class="lmodel" x="135" y="32" width="260" height="60" rx="10" fill="#151618" stroke="#3a3b40" stroke-width="2"/><text x="265.0" y="59.0" class="n" text-anchor="middle">Model językowy</text><text x="265.0" y="79.0" class="s" text-anchor="middle">proponuje komendy · wymienny</text>
-<circle class="dot0" cx="357" cy="56" r="3" fill="#8fb0ff"/>
-<circle class="dot1" cx="368" cy="56" r="3" fill="#8fb0ff"/>
-<circle class="dot2" cx="379" cy="56" r="3" fill="#8fb0ff"/>
-<rect class="lyou" x="32" y="150" width="164" height="100" rx="10" fill="#151618" stroke="#3a3b40" stroke-width="2"/><text x="114.0" y="197.0" class="n" text-anchor="middle">Ty</text><text x="114.0" y="217.0" class="s" text-anchor="middle">CLI · web · Telegram</text>
-<rect class="lserver" x="764" y="150" width="164" height="100" rx="10" fill="#151618" stroke="#3a3b40" stroke-width="2"/><text x="846.0" y="197.0" class="n" text-anchor="middle">Twój serwer</text><text x="846.0" y="217.0" class="s" text-anchor="middle">usługi · kontenery</text>
-<circle class="lvalve" cx="390" cy="200.0" r="42" fill="#151618" stroke="#3a3b40" stroke-width="2.5"/>
+<rect x="341" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect x="433" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect x="491" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect x="583" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect x="641" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect x="733" y="164" width="6" height="72" rx="2" fill="#4a4b51"/>
+<rect class="lmodel" x="135" y="32" width="260" height="60" rx="10" fill="#1e1f22" stroke="#4a4b51" stroke-width="2"/><text x="265.0" y="59.0" class="n" text-anchor="middle">Model językowy</text><text x="265.0" y="79.0" class="s" text-anchor="middle">proponuje komendy, wymienny</text>
+<circle class="dot0" cx="357" cy="56" r="3" fill="#7cc7b6"/>
+<circle class="dot1" cx="368" cy="56" r="3" fill="#7cc7b6"/>
+<circle class="dot2" cx="379" cy="56" r="3" fill="#7cc7b6"/>
+<rect class="lyou" x="32" y="150" width="164" height="100" rx="10" fill="#1e1f22" stroke="#4a4b51" stroke-width="2"/><text x="114.0" y="197.0" class="n" text-anchor="middle">Ty</text><text x="114.0" y="217.0" class="s" text-anchor="middle">CLI, web, Telegram</text>
+<rect class="lserver" x="764" y="150" width="164" height="100" rx="10" fill="#1e1f22" stroke="#4a4b51" stroke-width="2"/><text x="846.0" y="197.0" class="n" text-anchor="middle">Twój serwer</text><text x="846.0" y="217.0" class="s" text-anchor="middle">usługi, kontenery</text>
+<circle class="lvalve" cx="390" cy="200.0" r="42" fill="#1e1f22" stroke="#4a4b51" stroke-width="2.5"/>
 <text x="390" y="142" class="n" text-anchor="middle">Zawór</text>
 <text x="390" y="270" class="s" text-anchor="middle">sam, po TAK, nigdy</text>
-<circle class="lfuse" cx="540" cy="200.0" r="42" fill="#151618" stroke="#3a3b40" stroke-width="2.5"/>
+<circle class="lfuse" cx="540" cy="200.0" r="42" fill="#1e1f22" stroke="#4a4b51" stroke-width="2.5"/>
 <text x="540" y="142" class="n" text-anchor="middle">Bezpiecznik</text>
 <text x="540" y="270" class="s" text-anchor="middle">kopia i cofnięcie</text>
-<circle class="lgauge" cx="690" cy="200.0" r="42" fill="#151618" stroke="#3a3b40" stroke-width="2.5"/>
+<circle class="lgauge" cx="690" cy="200.0" r="42" fill="#1e1f22" stroke="#4a4b51" stroke-width="2.5"/>
 <text x="690" y="142" class="n" text-anchor="middle">Czujnik</text>
 <text x="690" y="270" class="s" text-anchor="middle">pisze pierwszy</text>
 <g class="wheel" fill="none" stroke="#5cc68a" stroke-width="4"><circle cx="390" cy="200.0" r="24"/><path d="M366 200.0H414M390 176.0V224.0"/></g>
 <g fill="none" stroke="#e0a64a" stroke-width="3"><rect x="514" y="187.0" width="52" height="26" rx="13"/><path d="M504 200.0h10M566 200.0h10"/><path class="wire" d="M514 200.0c8 -14 13 14 26 0s18 14 26 0" stroke-width="2.5"/></g>
-<g fill="none" stroke="#8fb0ff" stroke-width="3"><path d="M664 214.0a30 30 0 1 1 52 0"/><path class="needle" d="M690 208.0V182.0" stroke="#ececea"/></g><circle cx="690" cy="208.0" r="4" fill="#ececea"/>
-<rect x="196" y="316" width="14" height="14" rx="4" fill="#2049b8"/>
+<g fill="none" stroke="#7cc7b6" stroke-width="3"><path d="M664 214.0a30 30 0 1 1 52 0"/><path class="needle" d="M690 208.0V182.0" stroke="#ececea"/></g><circle cx="690" cy="208.0" r="4" fill="#ececea"/>
+<rect x="196" y="316" width="14" height="14" rx="4" fill="#1c6f63"/>
 <text x="218" y="327" class="s" text-anchor="start">Twoja prośba</text>
 <rect x="430" y="316" width="14" height="14" rx="4" fill="#9a5a08"/>
 <text x="452" y="327" class="s" text-anchor="start">wynik albo alert</text>

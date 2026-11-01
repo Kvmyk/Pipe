@@ -39,15 +39,14 @@
 
 <main>
   <div class="wrap intro">
-    <h1>A sysadmin that never sleeps, does the routine work itself and asks about what matters</h1>
-    <p class="lead">Pipe is an AI agent that lives on your Linux server. When something breaks, it messages you on
-      Telegram, finds the cause and fixes it. Routine fixes, like a restart or a config tweak, it makes by
-      itself, with a backup and a check before and after. Before anything it cannot undo, like deleting data or
-      touching SSH, it asks you.</p>
+    <h1>Pipe looks after your Linux server and messages you when something breaks</h1>
+    <p class="lead">It is an AI agent that runs on the server itself. When something goes wrong, it tells you on
+      Telegram, finds the cause and fixes it. A restart or a config change it does on its own, with a backup and a
+      check before and after. Before it deletes data or touches SSH, it asks you.</p>
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
-    <p class="meta">Open source, MIT license · works with Gemini (free tier), OpenAI, Claude, Ollama and others ·
-      <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.3</a></p>
+    <p class="meta">Open source under the MIT license. Works with Gemini (free tier), OpenAI, Claude, Ollama and
+      others. Latest release: <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.4</a>.</p>
 
     <figure class="shot">
       <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and fixes the nginx config by itself, with a backup; on the right a map of the server with the element the agent works on highlighted">
@@ -55,26 +54,49 @@ sudo bash scripts/install-server.sh</code></pre>
     </figure>
   </div>
 
-  <section id="the-pipe">
+  <section>
     <div class="wrap">
       <div class="narrow">
-        <h2>A pipe between you and your server</h2>
-        <p>Everything you ask for goes through Pipe, and everything the server has to tell you comes back the same way.
-          You write from a terminal, a browser or Telegram. Alerts and reports arrive there too, and no port has to be
-          opened on the server.</p>
+        <h2>What it does on its own, and what it asks about</h2>
+        <p>Whatever the model proposes passes a classifier first. The rules sit in Pipe's code, outside the model,
+          so the model cannot talk its way around them.</p>
       </div>
       <figure class="diagram">
-        <img src="assets/pipe-flow-en.svg" width="960" height="370" loading="lazy" alt="Diagram: you on the left, your server on the right, joined by a pipe. Your question goes up to a language model, which proposes a command. The command passes a valve and a fuse on its way to the server, and the result comes back past a gauge.">
+        <img src="assets/pipe-valve-en.svg" width="960" height="340" loading="lazy" alt="Animation: commands reach the classifier. systemctl reload nginx runs with a backup, rm -r reports/2025 waits for your yes, rm -rf / is refused.">
       </figure>
-      <div class="parts">
-        <div class="valve"><h3>Valve</h3><p>Decides what passes. Reads and routine changes go through, important ones wait for your yes, destructive ones never pass.</p></div>
-        <div class="fuse"><h3>Fuse</h3><p>Takes a backup before a change and checks the result after it. If a config check fails, the old version goes back. <code>/undo</code> reverses the rest.</p></div>
-        <div class="gauge"><h3>Gauge</h3><p>Reads the server every two minutes, without a language model. When a reading is wrong, Pipe writes to you first.</p></div>
-      </div>
-      <div class="narrow">
-        <p>The model comes up with what to do, and Pipe decides what actually runs. That is why the model sits before the
-          valve. It is a part you can swap: Gemini, Claude, OpenAI or a local Ollama. The rules, the memory and the tools
-          stay in Pipe. Engineers call this layer around a model a harness.</p>
+      <div class="rules">
+        <div class="ok">
+          <h3>On its own</h3>
+          <p class="why">reads, and routine changes with a backup and a check</p>
+          <ul>
+            <li>logs, processes, disks, configuration, the web</li>
+            <li>restarting and reloading services and containers</li>
+            <li>editing configs (backup, <code>nginx -t</code> before, a check after)</li>
+            <li>packages from the system repository</li>
+            <li><code>docker compose up</code>, <code>git pull</code> from origin</li>
+          </ul>
+        </div>
+        <div class="ask2">
+          <h3>After your yes</h3>
+          <p class="why">what it cannot back up or undo, and every unknown command</p>
+          <ul>
+            <li>deleting data, volumes, packages</li>
+            <li>SSH, users, firewall, cron, systemd units</li>
+            <li>app code, Dockerfiles, <code>docker run</code></li>
+            <li>files with secrets (<code>.env</code>, keys)</li>
+            <li>sending data outside the server</li>
+          </ul>
+        </div>
+        <div class="no">
+          <h3>Never</h3>
+          <p class="why">refused no matter who asks</p>
+          <ul>
+            <li><code>rm -rf /</code> and its variants</li>
+            <li><code>mkfs</code>, <code>dd</code>, <code>wipefs</code> on disks</li>
+            <li>writing to <code>/etc/shadow</code> and <code>/boot</code></li>
+            <li>downloading and running scripts (<code>curl … | sh</code>)</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
@@ -84,8 +106,7 @@ sudo bash scripts/install-server.sh</code></pre>
       <div class="narrow">
         <h2>What working with Pipe looks like</h2>
         <p>You write in plain language. The agent picks the commands, reads logs and configuration, and searches the
-          web when it doesn't know something. Routine changes it makes right away and shows what it did; before anything
-          important it shows the exact command with the safety plan and waits for you.</p>
+          web when it doesn't know something. Below: 502 errors on a shop, then a request it will not carry out alone.</p>
       </div>
 
       <div class="chat" aria-label="Example conversation">
@@ -127,49 +148,25 @@ sudo bash scripts/install-server.sh</code></pre>
     </div>
   </section>
 
-  <section>
+  <section id="the-pipe">
     <div class="wrap">
       <div class="narrow">
-        <h2>What it does on its own, and what it asks about</h2>
-        <p>This is decided by a classifier written in Pipe's code, not by an instruction to the model. The model cannot
-          talk its way around it.</p>
+        <h2>A pipe between you and your server</h2>
+        <p>The valve is one of three fittings on a longer pipe. Everything you ask for goes through it, and everything
+          the server has to tell you comes back the same way, alerts included.</p>
       </div>
       <figure class="diagram">
-        <img src="assets/pipe-valve-en.svg" width="960" height="340" loading="lazy" alt="Animation: commands reach the classifier. systemctl reload nginx runs with a backup, rm -r reports/2025 waits for your yes, rm -rf / is refused.">
+        <img src="assets/pipe-flow-en.svg" width="960" height="370" loading="lazy" alt="Diagram: you on the left, your server on the right, joined by a pipe. Your question goes up to a language model, which proposes a command. The command passes a valve and a fuse on its way to the server, and the result comes back past a gauge.">
       </figure>
-      <div class="rules">
-        <div class="ok">
-          <h3>On its own</h3>
-          <p class="why">reads, and routine changes with a backup and a check</p>
-          <ul>
-            <li>logs, processes, disks, configuration, the web</li>
-            <li>restarting and reloading services and containers</li>
-            <li>editing configs (backup, <code>nginx -t</code> before, a check after)</li>
-            <li>packages from the system repository</li>
-            <li><code>docker compose up</code>, <code>git pull</code> from origin</li>
-          </ul>
-        </div>
-        <div class="ask2">
-          <h3>After your yes</h3>
-          <p class="why">what it cannot back up or undo, and every unknown command</p>
-          <ul>
-            <li>deleting data, volumes, packages</li>
-            <li>SSH, users, firewall, cron, systemd units</li>
-            <li>app code, Dockerfiles, <code>docker run</code></li>
-            <li>files with secrets (<code>.env</code>, keys)</li>
-            <li>sending data outside the server</li>
-          </ul>
-        </div>
-        <div class="no">
-          <h3>Never</h3>
-          <p class="why">refused no matter who asks</p>
-          <ul>
-            <li><code>rm -rf /</code> and its variants</li>
-            <li><code>mkfs</code>, <code>dd</code>, <code>wipefs</code> on disks</li>
-            <li>writing to <code>/etc/shadow</code> and <code>/boot</code></li>
-            <li>downloading and running scripts (<code>curl … | sh</code>)</li>
-          </ul>
-        </div>
+      <table class="table parts">
+        <tr class="valve"><th>Valve</th><td>Decides what passes, by the rules above.</td></tr>
+        <tr class="fuse"><th>Fuse</th><td>Takes a backup before a change and checks the result after it. If a config check fails, the old version goes back. <code>/undo</code> reverses the rest.</td></tr>
+        <tr class="gauge"><th>Gauge</th><td>Reads the server every two minutes, without a language model. When a reading is wrong, Pipe writes to you first.</td></tr>
+      </table>
+      <div class="narrow">
+        <p>The model comes up with what to do, and Pipe decides what actually runs. That is why the model sits before the
+          valve. It is a part you can swap: Gemini, Claude, OpenAI or a local Ollama. The rules, the memory and the tools
+          stay in Pipe. Engineers call this layer around a model a harness.</p>
       </div>
     </div>
   </section>
@@ -284,7 +281,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.50.3 · MIT license</span>
+    <span>Pipe 0.50.4, MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="docs/">Documentation</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>
