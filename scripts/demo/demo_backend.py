@@ -217,8 +217,9 @@ class Demo:
         elif command == "graph":
             await done(writer, graph.build(infra()))
         elif command == "providers":
-            await done(writer, {"providers": [], "chosen": True, "can_edit": True,
-                                "active": {"id": "gemini", "name": "Google Gemini", "model": "gemini-3.8-flash"}})
+            # bez dostawcy: nagrania i reklama nie pokazuja cudzego logo ani nazwy modelu, interfejs chowa pigulke
+            await send(writer, {"response": "providers are not part of the demo", "status": "error", "done": False})
+            await done(writer)
         elif command == "yolo":
             await done(writer, {"yolo": False, "can_edit": True, "text": ""})
         elif command == "journal":

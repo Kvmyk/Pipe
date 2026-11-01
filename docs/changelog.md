@@ -2,6 +2,13 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.5 (2026-11-02)
+
+### Recordings without a model provider
+
+- The demo recordings on the website and in the READMEs, in English and Polish, no longer show a provider logo or a
+  model name
+
 ## v0.50.4 (2026-11-01)
 
 ### A plainer website
