@@ -15,7 +15,9 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY VERSION VERSION
 COPY backend backend
 COPY sandbox /opt/sandbox
-RUN chmod +x /opt/sandbox/start.sh /opt/sandbox/shopctl /opt/sandbox/scenarios/*/*.sh \
+# Klon na Windows ma CRLF: `#!/bin/sh\r` konczy sie bledem "no such file or directory" dla istniejacego pliku.
+RUN find /opt/sandbox -type f -exec sed -i 's/\r$//' {} + \
+    && chmod +x /opt/sandbox/start.sh /opt/sandbox/shopctl /opt/sandbox/scenarios/*/*.sh \
     && ln -s /opt/sandbox/shopctl /usr/local/bin/shopctl
 
 # Bez klucza Pipe startuje bez modelu (czuwanie, raporty, MCP); rozmowa po podaniu LLM_PROVIDER + LLM_API_KEY.

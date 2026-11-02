@@ -2,6 +2,15 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.7 (2026-11-02)
+
+### Sandbox on Windows
+
+- `sandbox/run.py` works from a Windows clone. Git stored the scripts with CRLF line endings, so the container stopped
+  at once with `exec /opt/sandbox/start.sh: no such file or directory`, although the file was there. The image now
+  strips them, and shell scripts always check out with LF
+- `sandbox/run.py` no longer prints a `ConnectionResetError` stack trace on Windows while it waits for Pipe to start
+
 ## v0.50.6 (2026-11-02)
 
 ### Setting Pipe up on a server from `pipe web`

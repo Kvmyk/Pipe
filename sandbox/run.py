@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -244,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--env-file")
     p_eval.add_argument("--keep", action="store_true", help="nie usuwaj kontenerow po scenariuszu")
     args = parser.parse_args(argv)
+    # Docker Desktop przyjmuje polaczenie, zanim Pipe slucha, i je zrywa: to zwykle czekanie, nie blad do pokazania
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
     os.chdir(ROOT)
     return {"try": cmd_try, "self-test": cmd_self_test, "eval": cmd_eval}[args.mode](args)
 

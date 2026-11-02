@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Skrypty uruchamiane w Linuksie: CRLF z klonu na Windows psuje linie #!
+*.sh text eol=lf
+sandbox/shopctl text eol=lf
