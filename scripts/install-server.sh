@@ -161,12 +161,26 @@ compose() {
   else die "$(t 'brak docker compose' 'docker compose not found')"; fi
 }
 
+# RHEL, AlmaLinux, Rocky: dystrybucja nie ma Dockera, jest tylko repozytorium Dockera (wspolne dla tej rodziny).
+docker_ce_rpm() {
+  log "$(t 'Dystrybucja nie ma Dockera — dodaje repozytorium download.docker.com' 'The distribution has no Docker — adding the download.docker.com repository')"
+  cat > /etc/yum.repos.d/docker-ce.repo <<EOF
+[docker-ce-stable]
+name=Docker CE Stable
+baseurl=https://download.docker.com/linux/centos/$(rpm -E %rhel)/\$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://download.docker.com/linux/centos/gpg
+EOF
+  pkg_install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+}
+
 install_docker() {
   command -v docker >/dev/null 2>&1 && return
   log "$(t 'Instaluje Dockera z repozytorium dystrybucji' 'Installing Docker from the distribution repository')"
   case "$PM" in
     apt) pkg_install docker.io; pkg_install docker-compose-v2 2>/dev/null || pkg_install docker-compose ;;
-    dnf|yum) pkg_install docker docker-compose-plugin 2>/dev/null || pkg_install moby-engine docker-compose ;;
+    dnf|yum) pkg_install docker docker-compose-plugin 2>/dev/null || pkg_install moby-engine docker-compose 2>/dev/null || docker_ce_rpm ;;
     apk) pkg_install docker docker-cli-compose ;;
     pacman) pkg_install docker docker-compose ;;
     zypper) pkg_install docker docker-compose ;;
@@ -174,6 +188,15 @@ install_docker() {
   esac
   systemctl enable --now docker 2>/dev/null || rc-update add docker default 2>/dev/null || true
   service docker start 2>/dev/null || true
+}
+
+# docker-compose.yml montuje /etc/localtime. Minimalne obrazy (LXC) go nie maja, a Docker utworzylby w tym miejscu
+# katalog, przez ktory kontener nie wstaje — takze przy kolejnych probach, wiec taki katalog tez usuwamy.
+ensure_localtime() {
+  [ -f /etc/localtime ] && return
+  if [ -d /etc/localtime ]; then rmdir /etc/localtime 2>/dev/null || true; fi
+  [ -f /usr/share/zoneinfo/UTC ] || pkg_install tzdata
+  [ -e /etc/localtime ] || ln -s /usr/share/zoneinfo/UTC /etc/localtime
 }
 
 # Obraz wydania (ghcr.io/kvmyk/pipe:<VERSION>, podpisany w CI) albo, gdy go nie ma lub podano --build,
@@ -185,13 +208,14 @@ start_containers() {  # start_containers [USLUGA...]
   if [ "$BUILD" -eq 0 ] && compose "${files[@]}" pull --quiet "$@"; then
     compose "${files[@]}" up -d --remove-orphans "$@"
   else
-    [ "$BUILD" -eq 1 ] || log "$(t "Brak obrazu wydania $PIPE_VERSION w ghcr.io — buduje lokalnie" "No release image $PIPE_VERSION on ghcr.io — building locally")"
+    [ "$BUILD" -eq 1 ] || log "$(t "Nie udalo sie pobrac obrazu $PIPE_VERSION z ghcr.io — buduje lokalnie" "Could not pull image $PIPE_VERSION from ghcr.io — building locally")"
     compose "${files[@]}" up -d --build --remove-orphans "$@"
   fi
 }
 
 if [ "$MODE" = "docker" ]; then
   install_docker
+  ensure_localtime
   PIPE_VERSION="$(tr -d '[:space:]' < VERSION)"; export PIPE_VERSION
   cd backend
   if [ -f ../clients/telegram/.env ]; then

@@ -18,6 +18,7 @@ Zapis: ~/.pipe/app.json (0600) — rodzaj polaczenia, adres, sciezka klucza, tok
 
 from __future__ import annotations
 
+import getpass
 import importlib.util
 import json
 import os
@@ -62,6 +63,21 @@ def _app_file() -> Path:
     return APP_DIR / "app.json"
 
 
+def _private(path: Path) -> None:
+    """
+    Plik tylko dla wlasciciela. Na Windows chmod niczego nie zmienia: plik dziedziczy prawa katalogu, a OpenSSH ignoruje
+    klucz, ktory moze czytac ktokolwiek inny (np. dodatkowa grupa w profilu) — tunel konczy sie wtedy kodem 255.
+    """
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{getpass.getuser()}:F"],
+                           capture_output=True, timeout=20)
+        else:
+            os.chmod(path, 0o600)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def load() -> dict:
     try:
         data = json.loads(_app_file().read_text(encoding="utf-8"))
@@ -77,6 +93,7 @@ def save(data: dict) -> None:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)
+    _private(tmp)
     os.replace(tmp, path)
 
 
@@ -253,10 +270,19 @@ exec </dev/null
 DIR={q(directory)}
 t() {{ case {lang} in pl) printf '%s' "$1" ;; *) printf '%s' "$2" ;; esac; }}
 configured() {{ [ -f "$DIR/backend/.env" ] && grep -qE '^LLM_(PROVIDER|BASE_URL)=.+' "$DIR/backend/.env"; }}
-if configured && (exec 3<>/dev/tcp/127.0.0.1/{BACKEND_PORT}) 2>/dev/null; then
+# Pipe moze juz stac w innym katalogu (reczna instalacja). Katalog `backend` daje ten sam projekt compose, wiec nowa
+# instalacja podmienilaby jego kontener i odciela dane oraz bota — zostajemy przy tej, ktora jest.
+found="$(docker ps -a --filter label=com.docker.compose.service=vps-agent --format '{{{{.Label "com.docker.compose.project.working_dir"}}}}' 2>/dev/null | head -n1)"
+found="${{found%/backend}}"
+[ -n "$found" ] || found="$(systemctl show -p WorkingDirectory --value pipe 2>/dev/null || true)"
+if [ -n "$found" ] && [ "$found" != "$DIR" ] && [ -f "$found/backend/.env" ]; then
+  echo "[pipe] $(t 'Pipe jest juz zainstalowany w' 'Pipe is already installed in') $found"
+  DIR="$found"
+fi
+if configured &&(exec 3<>/dev/tcp/127.0.0.1/{BACKEND_PORT}) 2>/dev/null; then
   echo "[pipe] $(t 'Pipe juz dziala na tym serwerze - lacze sie.' 'Pipe already runs on this server - connecting.')"
 else
-  if [ ! -d "$DIR/.git" ]; then
+  if [ ! -f "$DIR/scripts/install-server.sh" ]; then
     if ! command -v git >/dev/null 2>&1; then
       echo "[pipe] $(t 'Instaluje git' 'Installing git')"
       if command -v apt-get >/dev/null 2>&1; then
@@ -315,7 +341,7 @@ def _run(client, command: str, *, stdin: str = "", on_line: Progress | None = No
          timeout: float = 120, secret: str = "") -> tuple[int, str]:
     """Komenda przez SSH: (kod, wyjscie). Wyjscie bez kolorow; haslo (gdyby wrocilo w wyjsciu) zamaskowane."""
     channel = client.get_transport().open_session()
-    channel.set_combined_stderr(True)
+    channel.set_combine_stderr(True)
     channel.exec_command(command)
     if stdin:
         channel.sendall(stdin.encode("utf-8"))
@@ -357,11 +383,8 @@ def _own_key(host: str, user: str, port: int):
     else:
         key = paramiko.RSAKey.generate(3072)
         key.write_private_key_file(str(path))
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    return path, f"{key.get_name()} {key.get_base64()} pipe@{socket.gethostname() or 'pipe'}"
+    _private(path)                 # takze klucz sprzed tej poprawki
+    return path,f"{key.get_name()} {key.get_base64()} pipe@{socket.gethostname() or 'pipe'}"
 
 
 def deploy_server(params: dict, progress: Progress, lang: str = "en") -> dict:

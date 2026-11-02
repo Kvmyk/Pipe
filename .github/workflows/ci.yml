@@ -33,12 +33,13 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             clients/telegram/requirements.txt
+            clients/cli/requirements.txt
 
-      # Wymagania Telegrama tez, zeby test_telegram_bot.py nie byl pomijany.
+      # Wymagania Telegrama i CLI tez, zeby test_telegram_bot.py i testy na prawdziwym paramiko nie byly pomijane.
       - name: Instalacja zaleznosci
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt -r clients/telegram/requirements.txt
+          pip install -r backend/requirements.txt -r clients/telegram/requirements.txt -r clients/cli/requirements.txt
 
       - name: pytest
         run: pytest backend/tests/ -q -rs

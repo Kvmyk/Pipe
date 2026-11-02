@@ -36,11 +36,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
 
-import appsetup          # clients/cli/appsetup.py — pierwsze uruchomienie `pipe web` (lokalnie albo na serwerze)
+import appsetup         # clients/cli/appsetup.py — pierwsze uruchomienie `pipe web` (lokalnie albo na serwerze)
 
 
 def _initial_lang() -> str:
@@ -167,6 +168,7 @@ class SSHTunnel:
         self.identity_file = identity_file
         self.batch = batch          # bez pytania o haslo (polaczenie zapisane w `pipe web` — wlasny klucz Pipe)
         self._process: subprocess.Popen | None = None
+        self._stderr = None         # tryb batch: nikt nie widzi terminala, wiec powod bledu trafia do komunikatu
 
     def start(self) -> None:
         """Uruchamia tunel SSH w tle."""
@@ -197,13 +199,24 @@ class SSHTunnel:
 
         cmd.append(self.host)
 
+        if self.batch:
+            self._stderr = tempfile.TemporaryFile()
+
         # NIE przekierowujemy stdin — SSH może zapytać o hasło w terminalu
         self._process = subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL if BRIDGE_MODE or self.batch else None,   # dziedzicz stdin (haslo), chyba ze most MCP
             stdout=subprocess.DEVNULL,
-            stderr=None,         # dziedzicz stderr (pokazuje prompt hasła)
+            stderr=self._stderr,  # None: dziedzicz stderr (pokazuje prompt hasła)
         )
+
+    def _ssh_error(self) -> str:
+        """Ostatnie linie stderr ssh (tryb batch), np. powod odrzucenia klucza; inaczej ''."""
+        if self._stderr is None:
+            return ""
+        self._stderr.seek(0)
+        lines = [line.strip() for line in self._stderr.read().decode("utf-8", "replace").splitlines() if line.strip()]
+        return "\n" + "\n".join(lines[-3:]) if lines else ""
 
     def wait_ready(self, timeout: float = 10.0) -> bool:
         """
@@ -223,7 +236,7 @@ class SSHTunnel:
                     "Sprawdź adres serwera, port SSH i dane logowania.",
                     f"The SSH tunnel exited with code {self._process.returncode}.\n"
                     "Check the server address, SSH port and credentials."
-                ))
+                ) + self._ssh_error())
             # Sprawdź czy port TCP jest już dostępny
             try:
                 with _socket.create_connection(("127.0.0.1", self.local_port), timeout=1):
@@ -242,6 +255,9 @@ class SSHTunnel:
             except subprocess.TimeoutExpired:
                 self._process.kill()
         self._process = None
+        if self._stderr is not None:
+            self._stderr.close()
+            self._stderr = None
 
     def __enter__(self) -> "SSHTunnel":
         self.start()
@@ -513,8 +529,8 @@ def _print_banner(host: str) -> None:
                                            "/status  /news  /projects  /help  [dim]or just write what I should do[/dim]"))
     console.print()
     console.print("[bold reverse] pipe [/bold reverse]  "
-                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.50.5[/dim]",
-                       "[dim]Autonomous AI agent for managing a Linux server | v0.50.5[/dim]"), highlight=False)
+                  + tr("[dim]Autonomiczny agent AI do zarządzania serwerem Linux | v0.50.6[/dim]",
+                       "[dim]Autonomous AI agent for managing a Linux server | v0.50.6[/dim]"), highlight=False)
     console.print()
     console.print(Padding(grid, (0, 0, 0, 1)), highlight=False)
     console.print()

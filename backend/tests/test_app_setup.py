@@ -7,8 +7,10 @@ import asyncio
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -46,6 +48,52 @@ class TestStore:
         assert appsetup.saved_connection() is None
 
 
+class TestPrivateFiles:
+
+    def test_windows_drops_inherited_rights_because_chmod_does_nothing_there(self, home, monkeypatch):
+        calls = []
+        monkeypatch.setattr(appsetup.platform, "system", lambda: "Windows")
+        monkeypatch.setattr(appsetup.getpass, "getuser", lambda: "kuba")
+        monkeypatch.setattr(appsetup.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
+        appsetup._private(home / "klucz")
+        assert calls == [["icacls", str(home / "klucz"), "/inheritance:r", "/grant:r", "kuba:F"]]
+
+    def test_missing_icacls_does_not_stop_the_setup(self, home, monkeypatch):
+        def missing(*args, **kwargs):
+            raise FileNotFoundError("icacls")
+        monkeypatch.setattr(appsetup.platform, "system", lambda: "Windows")
+        monkeypatch.setattr(appsetup.subprocess, "run", missing)
+        appsetup._private(home / "klucz")
+
+    def test_existing_key_is_tightened_too(self, ssh, home, monkeypatch):
+        ssh()
+        seen = []
+        monkeypatch.setattr(appsetup, "_private", seen.append)
+        appsetup._own_key("vps", "root", 22)
+        appsetup._own_key("vps", "root", 22)
+        assert seen == [home / ".pipe" / "keys" / "root_vps_22"] * 2
+
+
+class TestTunnelError:
+
+    def test_batch_tunnel_says_why_ssh_gave_up(self, monkeypatch):
+        pytest.importorskip("rich")
+        import cli
+        real = subprocess.Popen
+        fail = "import sys; sys.stderr.write('Load key: bad permissions\\nroot@vps: Permission denied\\n'); sys.exit(255)"
+
+        def popen(cmd, **kwargs):
+            return real([sys.executable, "-c", fail], **kwargs)
+        monkeypatch.setattr(cli.subprocess, "Popen", popen)
+        monkeypatch.setattr(cli.shutil, "which", lambda name: "ssh")
+        tunnel = cli.SSHTunnel("root@vps", local_port=1, batch=True)
+        tunnel.start()
+        tunnel._process.wait()
+        with pytest.raises(RuntimeError, match="bad permissions[\\s\\S]*Permission denied"):
+            tunnel.wait_ready(timeout=5)
+        tunnel.stop()
+
+
 class TestValidation:
 
     @pytest.mark.parametrize("params,expected", [
@@ -69,6 +117,32 @@ class TestValidation:
         assert subprocess.run(["bash", "-n", "-c", script]).returncode == 0
         assert "exec </dev/null" in script and "LLM_PROVIDER=none" in script and appsetup.TOKEN_MARK in script
 
+    @pytest.mark.skipif(not shutil.which("bash") or os.name != "posix", reason="bash")
+    @pytest.mark.parametrize("working_dir,own", [(True, False), (False, True)])
+    def test_existing_install_elsewhere_is_kept(self, tmp_path, working_dir, own):
+        """Reczna instalacja w innym katalogu: bez tego kreator stawia druga i przejmuje projekt compose `backend`."""
+        old, new, tools = tmp_path / "root-pipe", tmp_path / "opt-pipe", tmp_path / "bin"
+        tools.mkdir()
+        (old / "backend").mkdir(parents=True)
+        (old / "scripts").mkdir()
+        (old / "backend" / ".env").write_text("LLM_PROVIDER=gemini\nAGENT_TOKEN=stary\n")
+        (old / "scripts" / "install-server.sh").write_text(f"touch {tmp_path}/uruchomiony-stary\n")
+        docker = tools / "docker"
+        docker.write_text(f"#!/bin/sh\necho {old}/backend\n" if working_dir else "#!/bin/sh\n")
+        docker.chmod(0o755)
+        systemctl = tools / "systemctl"
+        systemctl.write_text("#!/bin/sh\necho\n" if working_dir else f"#!/bin/sh\necho {old}\n")
+        systemctl.chmod(0o755)
+        git = tools / "git"
+        git.write_text(f"#!/bin/sh\ntouch {tmp_path}/klon\nexit 1\n")
+        git.chmod(0o755)
+        result = subprocess.run(["bash", "-c", appsetup.remote_script("pl", directory=str(new))], capture_output=True,
+                                text=True, env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}"})
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"Pipe jest juz zainstalowany w {old}" in result.stdout
+        assert appsetup.TOKEN_MARK + "stary" in result.stdout
+        assert (tmp_path / "uruchomiony-stary").exists() and not (tmp_path / "klon").exists() and not new.exists()
+
 
 # --- atrapa paramiko -------------------------------------------------------
 
@@ -79,7 +153,7 @@ class FakeChannel:
         code, output = server.reply(command)
         self.code, self.output = code, output.encode()
 
-    def set_combined_stderr(self, _): pass
+    def set_combine_stderr(self, _): pass
     def exec_command(self, _): pass
     def sendall(self, data): self.stdin += data.decode()
     def shutdown_write(self): pass
@@ -117,7 +191,7 @@ def fake_paramiko(server):
 
     class _Channel:
         def __init__(self): self.inner = None
-        def set_combined_stderr(self, v): pass
+        def set_combine_stderr(self, v): pass
         def exec_command(self, command): self.inner = FakeChannel(server, command)
         def __getattr__(self, name): return getattr(self.inner, name)
 
@@ -160,6 +234,41 @@ def ssh(home, monkeypatch):
         monkeypatch.setattr(appsetup, "has_paramiko", lambda: True)
         return server
     return make
+
+
+class TestRealParamiko:
+    """Atrapa wyzej przepisuje API paramiko i powtorzyla literowke z kodu — tu prawdziwy kanal SSH w tym procesie."""
+
+    def test_run_over_a_real_channel(self):
+        paramiko = pytest.importorskip("paramiko")
+
+        class Server(paramiko.ServerInterface):
+            def check_auth_password(self, username, password): return paramiko.AUTH_SUCCESSFUL
+            def check_channel_request(self, kind, chanid): return paramiko.OPEN_SUCCEEDED
+
+            def check_channel_exec_request(self, channel, command):
+                def answer():
+                    typed = channel.makefile("r").readline()
+                    channel.sendall(f"wyjscie {command.decode()} {typed}".encode())
+                    channel.sendall_stderr(b"blad\n")
+                    channel.send_exit_status(3)
+                    channel.close()
+                threading.Thread(target=answer, daemon=True).start()
+                return True
+
+        left, right = socket.socketpair()
+        server, client = paramiko.Transport(left), paramiko.Transport(right)
+        try:
+            server.add_server_key(paramiko.RSAKey.generate(2048))
+            server.start_server(threading.Event(), server=Server())       # z event: nie blokuje, klient idzie obok
+            client.connect(username="kuba", password="x")
+            code, output = appsetup._run(types.SimpleNamespace(get_transport=lambda: client), "cmd", stdin="tajne\n",
+                                         secret="tajne", timeout=10)
+        finally:
+            client.close()
+            server.close()
+        assert code == 3
+        assert "wyjscie cmd ***" in output and "blad" in output
 
 
 class TestDeploy:

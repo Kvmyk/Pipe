@@ -2,6 +2,27 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.6 (2026-11-02)
+
+### Setting Pipe up on a server from `pipe web`
+
+- Installing on a server from the `pipe web` wizard works. Since v0.43.0 every attempt stopped right after the login
+  because of a wrong method name
+- The wizard no longer takes over a Pipe installed in another directory. It used to install a second copy in
+  `/opt/pipe`, which replaced the running container and cut it off from its data and the Telegram bot; now it finds
+  the existing install, by container or systemd service, and connects to it
+- On Windows, Pipe's SSH key and `app.json` are readable only by their owner. A key readable by anyone else was
+  ignored by OpenSSH, so the tunnel ended with code 255 right after a successful install
+- When the SSH tunnel fails, the message shows what `ssh` said instead of the exit code alone
+
+### Server installer
+
+- AlmaLinux, Rocky and RHEL can be installed: their repositories have no Docker, so the installer adds
+  `download.docker.com`
+- Minimal systems without `/etc/localtime` no longer fail: Docker created a directory in its place and the container
+  would not start, also on later attempts
+- When the image cannot be pulled, the installer says so instead of claiming the release image does not exist
+
 ## v0.50.5 (2026-11-02)
 
 ### Recordings without a model provider

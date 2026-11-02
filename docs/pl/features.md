@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.50.5
+Pipe v0.50.6
 
 Ten dokument opisuje funkcje, które odróżniają Pipe od agentów ogólnego przeznaczenia:
 agent, który sam pilnuje serwera, widzi jego architekturę i zarządza wieloma maszynami naraz.
@@ -831,7 +831,8 @@ nowych z GitHuba (`/pobierz`, `/mcp dodaj`).
 widok, potem miejsce. *Na tym komputerze* uruchamia backend w Dockerze z tego repozytorium (na Linuksie Pipe zarządza
 tym komputerem, na Windows i macOS pracuje we własnym kontenerze Docker Desktop, `backend/docker-compose.desktop.yml`).
 *Na moim serwerze* łączy się przez SSH z adresem i hasłem albo kluczem, klonuje repozytorium do `/opt/pipe`
-i uruchamia `install-server.sh` bez pytań (bez modelu; klucz API dodajesz potem na stronie). Hasło zostaje w procesie
+i uruchamia `install-server.sh` bez pytań (bez modelu; klucz API dodajesz potem na stronie). Jeśli Pipe jest już
+zainstalowany na tym serwerze, w dowolnym katalogu, kreator łączy się z nim zamiast stawiać drugi. Hasło zostaje w procesie
 `pipe web`: nie trafia na dysk, do backendu ani do modelu. Po haśle Pipe dopisuje na serwerze własny klucz
 (`~/.pipe/keys`) i kolejne połączenia idą już nim. Połączenie zapisuje się w `~/.pipe/app.json`, więc następne `pipe web`
 i zwykłe `pipe` łącza się same. Kreator wraca z `pipe web --setup` albo po kliknięciu adresu serwera w nagłówku.

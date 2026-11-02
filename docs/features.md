@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.50.5
+Pipe v0.50.6
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -851,7 +851,9 @@ from GitHub (`/download`, `/mcp add`).
 view, then the place. *On this computer* starts the backend in Docker from this repository (on Linux Pipe manages this
 computer, on Windows and macOS it works in its own Docker Desktop container, `backend/docker-compose.desktop.yml`).
 *On my server* connects over SSH with an address and a password or key, clones the repository into `/opt/pipe` and
-runs `install-server.sh` without questions (without a model; you add the API key on the page afterwards). The
+runs `install-server.sh` without questions (without a model; you add the API key on the page afterwards). If Pipe
+is already installed on that server, in any directory, the wizard connects to it instead of installing a second
+one. The
 password stays in the `pipe web` process: it doesn't go to disk, to the backend or to the model. After a password
 login Pipe adds its own key on the server (`~/.pipe/keys`) and uses it from then on. The connection is saved in
 `~/.pipe/app.json`, so the next `pipe web` and plain `pipe` connect on their own. The wizard comes back with
