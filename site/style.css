@@ -185,6 +185,7 @@ footer a { color: var(--ink-2); }
 .doc pre { background: var(--code-bg); color: var(--code-ink); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; font: 13.5px/1.6 var(--mono); overflow-x: auto; margin: 14px 0; }
 .doc pre.cmd { max-width: none; padding-right: 84px; }
 .doc :is(p, li, td, th, blockquote) code { font-size: .86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.doc td:first-child code { white-space: nowrap; overflow-wrap: normal; }
 .doc h2 code, .doc h3 code { font-size: .85em; background: var(--sunken); padding: 1px 6px; border-radius: 4px; }
 .table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .doc table { width: 100%; border-collapse: collapse; font-size: 14.5px; line-height: 1.5; }

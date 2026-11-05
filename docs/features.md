@@ -1,6 +1,6 @@
 # Workers, targets, routines, watching, diagrams and server history -- Pipe
 
-Pipe v0.50.7
+Pipe v0.50.8
 
 This document describes the features that set Pipe apart from general-purpose agents:
 an agent that watches the server by itself, sees its architecture and manages many machines at once.
@@ -672,7 +672,7 @@ On Telegram just record a message: *"find out why the shop is down"*. The bot re
 text to the agent. In `pipe web` there is a microphone button: the browser turns the recording (up to 5 minutes) into
 16 kHz WAV and sends it for transcription, and the text goes to the agent. Transcription: with `LLM_PROVIDER=gemini`
 the Gemini model itself does it (audio input), with `openai` or `groq` that provider's Whisper endpoint does; in both
-cases without configuration. With other providers set `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (for example the free
+cases without configuration. With other providers set `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (for example
 Groq `whisper-large-v3-turbo` or a local faster-whisper); `STT_*` always takes precedence.
 
 ---

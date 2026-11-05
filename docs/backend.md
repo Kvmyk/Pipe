@@ -1,6 +1,6 @@
 # Backend -- Pipe
 
-Pipe v0.50.7
+Pipe v0.50.8
 
 The agent backend. It runs on the server (Docker, natively with systemd or in Kubernetes -- [deploy.md](./deploy.md))
 and exposes a local Unix socket and TCP port 127.0.0.1:7379 for clients.
@@ -101,11 +101,11 @@ All through an API compatible with OpenAI Chat Completions. Addresses verified i
 
 | `LLM_PROVIDER` | Provider | Default model | Notes |
 |---|---|---|---|
-| `gemini` | Google Gemini | `gemini-3.8-flash` | Default. Free tier for Flash models, but see below (privacy) |
+| `gemini` | Google Gemini | `gemini-3.8-flash` | Default. See below (privacy) |
 | `openai` | OpenAI | `gpt-5.6-terra` | GPT-6 needs the Responses API for tool calling, use GPT-5.6 |
 | `anthropic` | Anthropic Claude | `claude-sonnet-5` | Through the OpenAI SDK compatibility layer |
 | `openrouter` | OpenRouter | `google/gemini-3.8-flash` | One key, hundreds of models (DeepSeek, Qwen, GLM, Kimi...) |
-| `groq` | Groq | `openai/gpt-oss-120b` | Very fast inference |
+| `groq` | Groq | `openai/gpt-oss-120b` | |
 | `deepseek` | DeepSeek | `deepseek-flash` | |
 | `mistral` | Mistral AI | `mistral-large-latest` | EU provider |
 | `xai` | xAI Grok | `grok-4.6` | |
@@ -122,7 +122,7 @@ the provider's list and prints a warning with suggestions if it was retired.
 Privacy: Pipe sends the provider logs, configs and command output from the server (secrets are redacted). On the
 free tier of the Gemini API Google may use prompt content to improve its services and humans may read it. The wizard,
 `pipe web` and the CLI warn about this when you pick Gemini. On a production server enable billing in Google AI
-Studio or choose another provider, for example a local Ollama.
+Studio or choose another provider.
 
 ### No model (`LLM_PROVIDER=none`)
 

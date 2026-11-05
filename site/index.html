@@ -45,8 +45,8 @@
       check before and after. Before it deletes data or touches SSH, it asks you.</p>
     <pre class="cmd"><code>git clone https://github.com/Kvmyk/pipe &amp;&amp; cd pipe
 sudo bash scripts/install-server.sh</code></pre>
-    <p class="meta">Open source under the MIT license. Works with Gemini (free tier), OpenAI, Claude, Ollama and
-      others. Latest release: <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.7</a>.</p>
+    <p class="meta">Open source under the MIT license. Works with any model that speaks the OpenAI API.
+      Latest release: <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">version 0.50.8</a>.</p>
 
     <figure class="shot">
       <img src="assets/demo-en.gif" width="1100" height="647" alt="The pipe web window: on the left a conversation with the agent, which investigates 502 errors and fixes the nginx config by itself, with a backup; on the right a map of the server with the element the agent works on highlighted">
@@ -230,8 +230,7 @@ sudo bash scripts/install-server.sh</code></pre>
     <div class="wrap steps-install">
       <div class="narrow">
         <h2>Installation</h2>
-        <p>You need a Linux server, SSH access and an API key for a language model. If you don't have one, pick Google
-          Gemini and create a free key at <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>.</p>
+        <p>You need a Linux server, SSH access and an API key for a language model.</p>
 
         <h3>On the server</h3>
         <p>The installer sets up Docker (if missing), asks for the model provider and key, checks that the chosen model
@@ -281,7 +280,7 @@ bash install.sh       <span class="c"># Linux, macOS</span>
 
 <footer>
   <div class="wrap">
-    <span>Pipe 0.50.7, MIT license</span>
+    <span>Pipe 0.50.8, MIT license</span>
     <a href="https://github.com/Kvmyk/pipe">Code on GitHub</a>
     <a href="docs/">Documentation</a>
     <a href="https://github.com/Kvmyk/pipe/blob/main/docs/changelog.md">Changelog</a>

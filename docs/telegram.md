@@ -1,6 +1,6 @@
 # Telegram Bot -- Pipe
 
-Pipe v0.50.7
+Pipe v0.50.8
 
 A Telegram bot for managing a VPS through an AI agent.
 
@@ -80,7 +80,7 @@ Logs: `docker compose logs telegram | grep -i "kanal\|subskrypcja"`; when it wor
 
 Record a voice message and the bot replies *I heard: ...* and passes the text to the agent. With the `gemini`
 provider the model itself transcribes the recording, with `openai` or `groq` their Whisper does; it works right away.
-For other providers set `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` in `backend/.env` (for example a free Groq key or a
+For other providers set `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` in `backend/.env` (for example Groq or a
 local faster-whisper).
 
 ## Photos and files

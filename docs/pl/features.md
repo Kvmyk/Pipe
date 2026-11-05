@@ -1,6 +1,6 @@
 # Workery, cele, rutyny, czuwanie, diagramy i historia serwera -- Pipe
 
-Pipe v0.50.7
+Pipe v0.50.8
 
 Ten dokument opisuje funkcje, które odróżniają Pipe od agentów ogólnego przeznaczenia:
 agent, który sam pilnuje serwera, widzi jego architekturę i zarządza wieloma maszynami naraz.
@@ -656,7 +656,7 @@ Na Telegramie wystarczy nagrać wiadomość: *"sprawdź, czemu sklep nie działa
 i przekaże tekst agentowi. W `pipe web` jest przycisk mikrofonu: nagranie (do 5 minut) przeglądarka zamienia na
 WAV 16 kHz i wysyła do transkrypcji, a tekst idzie do agenta. Transkrypcja: przy `LLM_PROVIDER=gemini` robi ją
 sam model Gemini (wejście audio), przy `openai` albo `groq` endpoint Whisper tego providera -- w obu przypadkach
-bez konfiguracji. Przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. darmowy Groq
+bez konfiguracji. Przy innych providerach ustaw `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` (np. Groq
 `whisper-large-v3-turbo` albo lokalny faster-whisper); `STT_*` ma zawsze pierwszeństwo.
 
 ---

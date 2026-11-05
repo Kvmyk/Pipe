@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.50.7-1a1b1d?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.50.8-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -51,7 +51,7 @@ lines of its output.
 
 <p align="center"><img src="docs/assets/pipe-valve-en.svg" alt="Commands split at the classifier: a reload runs with a backup, deleting data waits for your yes, rm -rf / is refused" width="100%"></p>
 
-Pipe works with any model that speaks the OpenAI API. The default is Google Gemini, which has a free tier.
+Pipe works with any model that speaks the OpenAI API.
 
 <p align="center"><img src="docs/assets/pipe-flow-en.svg" alt="Your question goes to a language model, its command passes a valve and a fuse to the server, and the result comes back past a gauge" width="100%"></p>
 
@@ -143,9 +143,6 @@ sudo bash scripts/install-server.sh
 The installer pulls a ready image from ghcr.io, signed at release (with `--build` it builds it on the server from
 source). Without Docker: `sudo bash scripts/install-server.sh --mode native`.
 
-No API key? Pick Google Gemini and create a free key at
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey). On the free plan, though, Google may learn from your
-prompts, and those contain the server's logs and configs, so on production enable billing or pick another provider.
 You can also choose "No model": Pipe watches the server, sends alerts and reports, works as an MCP gateway and
 sends nothing out. You turn chat on later by adding a provider.
 
@@ -167,7 +164,7 @@ The page asks what you want to do and sets Pipe up itself: on this computer (Doc
 password stays on your computer. There are two views: simple (chat, reminders, skills, add-ons for apps) and technical
 (plus the server map, changes, vulnerabilities). Change it any time with `/view`, also in the terminal and on Telegram.
 
-Telegram (recommended, alerts arrive there): fill in `clients/telegram/.env` (bot token and your user id) and run the
+Telegram (alerts arrive there): fill in `clients/telegram/.env` (bot token and your user id) and run the
 installer again. Pipe speaks English by default. For Polish add `--lang pl` to the installer, or type
 `/language pl` at runtime (the CLI and `pipe web` follow the server).
 

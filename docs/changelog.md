@@ -2,6 +2,15 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.8 (2026-11-05)
+
+### Docs and website
+
+- The command table in the protocol docs no longer squeezes the command names into a column a few letters wide;
+  names in the first column of docs tables stay on one line
+- The website, READMEs and docs no longer recommend a particular model or provider: they say Pipe works with any
+  model that speaks the OpenAI API. The provider table in `backend.md` keeps the facts (default model, privacy note)
+
 ## v0.50.7 (2026-11-02)
 
 ### Sandbox on Windows

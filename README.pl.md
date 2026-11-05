@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.7-1a1b1d?style=flat-square">
+  <img alt="wersja" src="https://img.shields.io/badge/version-v0.50.8-1a1b1d?style=flat-square">
   <a href="https://github.com/Kvmyk/pipe/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kvmyk/pipe/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="./LICENSE"><img alt="Licencja MIT" src="https://img.shields.io/badge/license-MIT-1a1b1d?style=flat-square"></a>
 </p>
@@ -49,7 +49,7 @@ użytkownicy, zapora) albo uruchomi komendę, której nie zna, pyta. Decyduje o 
 
 <p align="center"><img src="docs/assets/pipe-valve-pl.svg" alt="Komendy rozchodzą się w klasyfikatorze: przeładowanie rusza z kopią, usuwanie danych czeka na TAK, rm -rf / dostaje odmowę" width="100%"></p>
 
-Pipe działa z dowolnym modelem zgodnym z API OpenAI. Domyślnie z Google Gemini, który ma darmowy limit.
+Pipe działa z dowolnym modelem zgodnym z API OpenAI.
 
 <p align="center"><img src="docs/assets/pipe-flow-pl.svg" alt="Twoje pytanie idzie do modelu językowego, jego komenda przechodzi przez zawór i bezpiecznik do serwera, a wynik wraca obok czujnika" width="100%"></p>
 
@@ -144,10 +144,7 @@ sudo bash scripts/install-server.sh --lang pl
 Instalator pobiera gotowy obraz z ghcr.io, podpisany przy wydaniu (z `--build` zbuduje go na serwerze ze źródeł).
 Bez Dockera: `sudo bash scripts/install-server.sh --mode native --lang pl`.
 
-Nie masz klucza API? Wybierz Google Gemini, darmowy klucz wygenerujesz na
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey). W darmowym planie Google może jednak uczyć się
-na Twoich zapytaniach, a te zawierają logi i konfigurację serwera, więc na produkcji włącz płatności albo wybierz
-innego dostawcę. Możesz też wybrać „Bez modelu”: Pipe pilnuje serwera, wysyła alerty i raporty, działa jako bramka
+Możesz też wybrać „Bez modelu”: Pipe pilnuje serwera, wysyła alerty i raporty, działa jako bramka
 MCP i nic nie wysyła na zewnątrz. Rozmowę włączysz później, dodając dostawcę.
 
 Na swoim komputerze zainstaluj klienta i wpisz `pipe`. Klient łączy się z serwerem przez tunel SSH:
@@ -169,7 +166,7 @@ na Twoim komputerze. Do wyboru są dwa widoki: prosty (rozmowa, przypomnienia, s
 (do tego schemat serwera, zmiany, podatności). Zmienisz go w każdej chwili przez `/widok`, także w terminalu
 i na Telegramie.
 
-Telegram (polecany, bo tam przychodzą alerty): uzupełnij `clients/telegram/.env` (token bota i swój identyfikator)
+Telegram (tam przychodzą alerty): uzupełnij `clients/telegram/.env` (token bota i swój identyfikator)
 i uruchom instalator jeszcze raz. Szczegóły: [docs/pl/telegram.md](./docs/pl/telegram.md). Domyślnym językiem Pipe
 jest angielski; po polsku mówi z `--lang pl` przy instalacji albo po `/jezyk pl` (CLI i `pipe web` biorą język
 z serwera).

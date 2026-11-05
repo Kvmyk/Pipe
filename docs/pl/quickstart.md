@@ -1,6 +1,6 @@
 # Szybki start -- instrukcja krok po kroku
 
-Pipe v0.50.7
+Pipe v0.50.8
 
 ## Wypróbuj bez serwera
 
@@ -42,9 +42,8 @@ sudo bash scripts/install-server.sh --lang pl  # albo z --mode native (bez Docke
 ```
 
 Kreator zapyta o providera LLM i klucz API, pobierze aktualną listę modeli, sprawdzi, czy wybrany model
-obsługuje tool calling, i zapisze `backend/.env`. Nie masz klucza? Wybierz **Google Gemini** --
-darmowy klucz wygenerujesz na https://aistudio.google.com/apikey (w darmowym tierze Google może uczyć się na
-zapytaniach, więc na produkcji lepiej włączyć płatności). Możesz też wybrać **Bez modelu**: Pipe pilnuje serwera,
+obsługuje tool calling, i zapisze `backend/.env`.
+Możesz też wybrać **Bez modelu**: Pipe pilnuje serwera,
 wysyła alerty i raporty, a nic nie wychodzi z serwera; rozmowę włączysz później
 ([backend.md](backend.md#bez-modelu-llm_providernone)).
 
