@@ -107,6 +107,27 @@ def to_host(path: str, cwd: str = "/") -> str:
     return "/" + joined.lstrip("/")
 
 
+def container_id(mountinfo: str = "/proc/self/mountinfo") -> str:
+    """
+    Identyfikator kontenera Dockera, w ktorym dziala Pipe ('' = poza kontenerem albo nie wiadomo). Z montowania
+    /etc/hostname, wiec dziala tez w trybie native w kontenerze (Docker Desktop) i z wlasna nazwa hosta
+    (`hostname: pipe` w compose), gdzie nazwa hosta nie wskazuje kontenera.
+    """
+    try:
+        with open(mountinfo, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        fields = line.split(" ")
+        if len(fields) > 4 and fields[4] == "/etc/hostname":
+            parts = fields[3].split("/")
+            if len(parts) > 2 and parts[-1] == "hostname" and parts[-3] == "containers" \
+                    and len(parts[-2]) == 64 and all(c in "0123456789abcdef" for c in parts[-2]):
+                return parts[-2]
+    return ""
+
+
 def describe() -> str:
     """Opis trybu dla system promptu — model musi wiedziec, co opisuja komendy."""
     runtime = kind()

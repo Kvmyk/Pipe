@@ -226,6 +226,33 @@ class TestPublic:
                 "INF |  https://brave-lion-ab12.trycloudflare.com  |\nINF later https://second-one-cd34.trycloudflare.com")
         assert webpublic.tunnel_host(logs) == "second-one-cd34.trycloudflare.com" and webpublic.tunnel_host("nic") == ""
 
+    def test_container_id_from_the_hostname_mount(self, tmp_path):
+        from backend.core import runtime
+        own, other = "a" * 64, "b" * 64
+        info = tmp_path / "mountinfo"
+        # Docker Desktop (katalog Dockera pod /docker), obok montowanie z innego kontenera w innym miejscu
+        info.write_text(f"1 0 0:1 / / rw - overlay overlay rw\n"
+                        f"2 1 254:1 /docker/containers/{other}/hostname /hostfs/srv/x rw - ext4 /dev/vda1 rw\n"
+                        f"3 1 254:1 /docker/containers/{own}/hostname /etc/hostname rw - ext4 /dev/vda1 rw\n")
+        assert runtime.container_id(str(info)) == own
+        info.write_text(f"3 1 8:1 /var/lib/docker/containers/{own}/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n")
+        assert runtime.container_id(str(info)) == own
+        info.write_text("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n3 1 8:1 /etc/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n")
+        assert runtime.container_id(str(info)) == ""
+        assert runtime.container_id(str(tmp_path / "brak")) == ""
+
+    def test_tunnel_joins_pipes_container_in_every_mode(self, monkeypatch):
+        from backend.core import runtime
+        # Docker Desktop: Pipe w kontenerze w trybie native — siec hosta to maszyna wirtualna, a nie kontener z mostem
+        monkeypatch.setenv("PIPE_RUNTIME", "native")
+        monkeypatch.setattr(runtime, "container_id", lambda: "c" * 64)
+        assert webpublic.tunnel_network() == "container:" + "c" * 64
+        monkeypatch.setattr(runtime, "container_id", lambda: "")
+        assert webpublic.tunnel_network() == "host"
+        monkeypatch.setenv("PIPE_RUNTIME", "docker")
+        monkeypatch.setattr(webpublic.socket, "gethostname", lambda: "3f2a1b")
+        assert webpublic.tunnel_network() == "container:3f2a1b"
+
     def test_local_addresses_from_fib_trie(self, tmp_path):
         net = tmp_path / "1" / "net"
         net.mkdir(parents=True)

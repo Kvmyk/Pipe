@@ -2,6 +2,15 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.50.9 (2026-11-07)
+
+### `/web` on a computer with Docker Desktop
+
+- `/web on` works when Pipe runs on a Windows or macOS computer (`pipe web` → "On this computer"). The tunnel got
+  an address, but the page answered HTTP 502: cloudflared joined the network of Docker's virtual machine instead of
+  Pipe's container, so it could not reach the page (`connection refused`). It now joins Pipe's container whenever Pipe
+  runs in one, also with its own host name set in compose. Servers were not affected
+
 ## v0.50.8 (2026-11-05)
 
 ### Docs and website

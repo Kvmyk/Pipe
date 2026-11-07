@@ -12,7 +12,7 @@ Trzy drogi, wybierane same:
 
 Szybki tunel Cloudflare startuje tylko z jawnym `--url` (z samym `--unix-socket` cloudflared konczy sie bledem,
 pliku konfiguracji szybki tunel nie przyjmuje), dlatego most nasluchuje dla niego takze na 127.0.0.1, a kontener
-cloudflared dzieli siec z kontenerem Pipe (`--network container:<Pipe>`; w trybie native — siec hosta). Kazda droga
+cloudflared dzieli siec z kontenerem Pipe (`--network container:<Pipe>`; Pipe poza kontenerem — siec hosta). Kazda droga
 konczy sie samosprawdzeniem: Pipe otwiera swoj publiczny adres i podaje go dopiero, gdy odpowiada strona prosby
 o dostep; przy bledzie pokazuje koncowke logow kontenera.
 
@@ -201,7 +201,12 @@ def mikrus_caddyfile(host: str, listen: int) -> str:
 
 
 def tunnel_network() -> str:
-    """Siec cloudflared: wspolna z kontenerem Pipe (docker) albo hosta (native) — most slucha tylko na 127.0.0.1."""
+    """Siec cloudflared: wspolna z kontenerem Pipe albo hosta (Pipe poza kontenerem) — most slucha tylko na 127.0.0.1.
+    Kontener rozpoznaje runtime.container_id(), nie tryb: na Docker Desktop Pipe jest w kontenerze w trybie native,
+    a siec hosta to tam maszyna wirtualna Dockera (cloudflared dostawal "connection refused")."""
+    own = runtime.container_id()
+    if own:
+        return f"container:{own}"
     return f"container:{socket.gethostname()}" if runtime.kind() == "docker" else "host"
 
 
