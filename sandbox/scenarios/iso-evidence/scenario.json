@@ -1,0 +1,7 @@
+{
+  "title": {"pl": "dowody ISO 27001 — tylko raport", "en": "ISO 27001 evidence — report only"},
+  "prompt": {"pl": "Przygotuj raport dowodow ISO 27001 dla tego serwera (skill audyt-iso27001). Niczego nie zmieniaj i nie zapisuj raportu.",
+             "en": "Prepare an ISO 27001 evidence report for this server (skill iso27001-evidence). Don't change anything and don't save the report."},
+  "kind": "diagnose",
+  "expect": ["8.13", "shop-db.sql.gz"]
+}
