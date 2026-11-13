@@ -63,3 +63,56 @@ def test_client_prints_hint_once_and_flags_failure(monkeypatch, capsys, token, e
     client, responses = asyncio.run(scenario())
     assert client.auth_failed and responses[0]["status"] == "error"
     assert expected in capsys.readouterr().out
+
+
+# ─── Plik z tokenem: ${PIPE_HOME:-~/.pipe}/token ─────────────────────────────
+
+def test_token_file_location_follows_pipe_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("PIPE_HOME", str(tmp_path))
+    assert cli.token_file() == tmp_path / "token"
+
+
+def test_read_token_file_strips_whitespace_and_ignores_empty_or_missing(tmp_path):
+    path = tmp_path / "token"
+    assert cli.read_token_file(path) == ""                       # brak pliku
+    path.write_text("  \n", encoding="utf-8")
+    assert cli.read_token_file(path) == ""                       # pusty
+    path.write_text("  sekret123 \r\n", encoding="utf-8")
+    path.chmod(0o600)
+    assert cli.read_token_file(path) == "sekret123"
+    path.write_bytes(b"\xff\xfe\x00")
+    assert cli.read_token_file(path) == ""                       # nieczytelny (nie UTF-8)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="prawa POSIX")
+def test_group_readable_token_file_warns(tmp_path, capsys):
+    path = tmp_path / "token"
+    path.write_text("abc\n", encoding="utf-8")
+    path.chmod(0o640)
+    assert cli.read_token_file(path) == "abc"
+    assert "chmod 600" in capsys.readouterr().out
+    path.chmod(0o600)
+    cli.read_token_file(path)
+    assert capsys.readouterr().out == ""
+
+
+def test_token_order_flag_then_env_then_file(monkeypatch, tmp_path):
+    """--token i AGENT_TOKEN dochodza jako `explicit` (default flagi = zmienna srodowiskowa), plik jest ostatni."""
+    monkeypatch.setenv("PIPE_HOME", str(tmp_path))
+    (tmp_path / "token").write_text("z-pliku", encoding="utf-8")
+    (tmp_path / "token").chmod(0o600)
+    assert cli.resolve_token("z-flagi-albo-env") == "z-flagi-albo-env"
+    assert cli.resolve_token("") == "z-pliku"
+    (tmp_path / "token").write_text("", encoding="utf-8")
+    assert cli.resolve_token("") == ""
+
+
+def test_agent_token_env_is_the_default_of_the_flag(monkeypatch):
+    monkeypatch.setenv("AGENT_TOKEN", "z-env")
+    src = Path(cli.__file__).read_text(encoding="utf-8")
+    assert 'default=os.getenv("AGENT_TOKEN", "")' in src and "resolve_token(args.token)" in src
+
+
+def test_hint_mentions_the_token_file(monkeypatch):
+    monkeypatch.setattr(cli, "LANG", "en")
+    assert "~/.pipe/token" in cli.auth_hint(False)

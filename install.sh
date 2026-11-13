@@ -53,17 +53,19 @@ else
 fi
 
 # ─── Token (opcjonalnie) ─────────────────────────────────────────────────────
-# Instalator serwera wygenerowal AGENT_TOKEN (backend/.env). Podany tu trafia do skrotu jako zmienna
-# srodowiskowa AGENT_TOKEN (nie jako argument procesu). Enter = bez tokenu: pipe --token <token> pozniej.
+# Instalator serwera wygenerowal AGENT_TOKEN (backend/.env). Podany tu (albo w PIPE_TOKEN) trafia do pliku
+# ${PIPE_HOME:-~/.pipe}/token (katalog 700, plik 600), z ktorego czyta go CLI — nie do skrotu w profilu powloki.
+# Enter = bez tokenu: pipe --token <token> pozniej.
 AGENT_TOKEN_VALUE="${PIPE_TOKEN:-}"
 if [ -n "$VPS_HOST" ] && [ -z "$AGENT_TOKEN_VALUE" ] && [ -t 0 ]; then
     printf "${CYAN}%s ${NC}" "$(t 'Token serwera (AGENT_TOKEN z backend/.env na serwerze) albo Enter, by pominąć:' 'Server token (AGENT_TOKEN from backend/.env on the server), or Enter to skip:')"
     read -rs AGENT_TOKEN_VALUE
     echo ""
 fi
-TOKEN_ENV=""
 if [ -n "$AGENT_TOKEN_VALUE" ]; then
-    TOKEN_ENV="AGENT_TOKEN=$(printf '%q' "$AGENT_TOKEN_VALUE") "
+    PIPE_DIR="${PIPE_HOME:-$HOME/.pipe}"
+    ( umask 077 && mkdir -p "$PIPE_DIR" && chmod 700 "$PIPE_DIR" && printf '%s\n' "$AGENT_TOKEN_VALUE" > "$PIPE_DIR/token" && chmod 600 "$PIPE_DIR/token" )
+    echo -e "${CYAN}🔑 $(t "Token zapisano w" "Token saved in") $PIPE_DIR/token${NC}"
 fi
 
 # ─── Buduj alias ─────────────────────────────────────────────────────────────
@@ -81,7 +83,7 @@ fi
 ALIAS_BLOCK="
 # ─── VPS Management Agent (Pipe) ───────────────────────────────────────────
 pipe() {
-    ${TOKEN_ENV}\"$PYTHON\" \"$CLI_PATH\" $PIPE_ARGS \"\$@\"
+    \"$PYTHON\" \"$CLI_PATH\" $PIPE_ARGS \"\$@\"
 }
 # ─── end Pipe ───────────────────────────────────────────────────────────────"
 

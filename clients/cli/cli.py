@@ -467,17 +467,49 @@ def _is_auth_error(response: dict) -> bool:
     return response.get("code") == "auth" or any(t in str(response.get("response", "")).lower() for t in AUTH_TEXTS)
 
 
+def token_file() -> Path:
+    """Plik z tokenem zapisany przez install.sh / install.ps1: ${PIPE_HOME:-~/.pipe}/token."""
+    return Path(os.getenv("PIPE_HOME", "") or Path.home() / ".pipe") / "token"
+
+
+def read_token_file(path: Path | None = None) -> str:
+    """
+    Token z pliku (bialy znak obciety); pusty albo nieczytelny plik = ''. Na POSIX raz ostrzega, gdy plik
+    moga czytac grupa lub inni (token to haslo do backendu).
+    """
+    path = path or token_file()
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if text and os.name == "posix":
+        try:
+            if path.stat().st_mode & 0o077:
+                console.print(tr(f"[yellow]Plik z tokenem {escape(str(path))} mogą czytać inni użytkownicy. "
+                                 f"Popraw: chmod 600 {escape(str(path))}[/yellow]",
+                                 f"[yellow]The token file {escape(str(path))} is readable by other users. "
+                                 f"Fix it: chmod 600 {escape(str(path))}[/yellow]"))
+        except OSError:
+            pass
+    return text
+
+
+def resolve_token(explicit: str) -> str:
+    """Kolejnosc: --token, AGENT_TOKEN (obie w `explicit`: default flagi to zmienna), potem plik z tokenem."""
+    return explicit or read_token_file()
+
+
 def auth_hint(token_sent: bool) -> str:
     """Podpowiedz po odrzuceniu tokenu: gdzie go wziac i jak podac."""
     sent = (tr("Wysłany token został odrzucony.", "The token you sent was rejected.") if token_sent
             else tr("Nie wysłano żadnego tokenu.", "No token was sent."))
     return (f"[yellow]{sent}[/yellow] " + tr(
         "Backend wymaga tokenu: podaj go jako [bold]--token <token>[/bold] albo zmienną środowiskową "
-        "[bold]AGENT_TOKEN[/bold] (działa też dla [bold]pipe web[/bold]). Token to AGENT_TOKEN w "
+        "[bold]AGENT_TOKEN[/bold], albo zapisz go w [bold]~/.pipe/token[/bold] (działa też dla [bold]pipe web[/bold]). Token to AGENT_TOKEN w "
         "backend/.env na serwerze, np. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold].",
         "The backend requires a token: pass it as [bold]--token <token>[/bold] or the [bold]AGENT_TOKEN[/bold] "
-        "environment variable (works for [bold]pipe web[/bold] too). The token is AGENT_TOKEN in "
-        "backend/.env on the server, e.g. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold]."))
+        "environment variable, or save it in [bold]~/.pipe/token[/bold] (works for [bold]pipe web[/bold] too). "
+        "The token is AGENT_TOKEN in backend/.env on the server, e.g. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold]."))
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
@@ -2412,7 +2444,7 @@ def _run_saved(args, runner, saved: dict | None, session_id: str) -> None:
             asyncio.run(run_web(None, "", setup=setup))
             return
         host, port, token, label = target
-        client = RemoteClient(session_id=session_id, host=host, port=port, token=args.token or token)
+        client = RemoteClient(session_id=session_id, host=host, port=port, token=args.token_explicit or token or args.token)
         asyncio.run(run_web(client, label, setup=setup) if runner is run_web else runner(client, label))
     except KeyboardInterrupt:
         pass
@@ -2576,6 +2608,11 @@ Examples:
             sys.exit(2)
         print(text)
         return
+
+    # Kolejnosc tokenu: --token, AGENT_TOKEN (default flagi), plik ~/.pipe/token. Lokalny Pipe z `pipe web`
+    # ma wlasny token (appsetup) — plik go nie przykrywa.
+    args.token_explicit = args.token
+    args.token = resolve_token(args.token)
 
     session_id = args.session or str(uuid.uuid4())
     global OPEN_IMAGES, BRIDGE_MODE, console, WEB_PORT, WEB_OPEN_BROWSER

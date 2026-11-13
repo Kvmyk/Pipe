@@ -37,19 +37,22 @@ Write-Host (T "Instaluje zaleznosci CLI..." "Installing the CLI dependencies..."
 $RequirementsPath = Join-Path $ScriptDir "clients\cli\requirements.txt"
 python -m pip install -r $RequirementsPath --quiet
 
-# Token serwera (opcjonalnie): AGENT_TOKEN z backend/.env na serwerze. Trafia do skrotu jako zmienna srodowiskowa
-# AGENT_TOKEN (nie jako argument procesu). Enter = bez tokenu: pipe --token <token> pozniej. PIPE_TOKEN w srodowisku tez dziala.
+# Token serwera (opcjonalnie): AGENT_TOKEN z backend/.env na serwerze. Trafia do pliku
+# (PIPE_HOME lub profil uzytkownika)\.pipe\token, z ktorego czyta go CLI - nie do skrotu w profilu PowerShell.
+# Plik dostaje prawa tylko dla biezacego uzytkownika (icacls, jak klucz w appsetup.py). Enter = bez tokenu:
+# pipe --token <token> pozniej. PIPE_TOKEN w srodowisku tez dziala.
 $AgentToken = "$env:PIPE_TOKEN"
 if ($VpsHost -and -not $AgentToken) {
     $secure = Read-Host (T "Token serwera (AGENT_TOKEN z backend/.env na serwerze) albo Enter, by pominac" "Server token (AGENT_TOKEN from backend/.env on the server), or Enter to skip") -AsSecureString
     $AgentToken = [System.Net.NetworkCredential]::new("", $secure).Password
 }
-$TokenSet = ""
-$TokenRestore = ""
 if ($AgentToken) {
-    $quoted = $AgentToken.Replace("'", "''")
-    $TokenSet = "`$prev = `$env:AGENT_TOKEN; `$env:AGENT_TOKEN = '$quoted'; try { "
-    $TokenRestore = " } finally { `$env:AGENT_TOKEN = `$prev }"
+    $PipeDir = if ($env:PIPE_HOME) { $env:PIPE_HOME } else { Join-Path $env:USERPROFILE ".pipe" }
+    New-Item -ItemType Directory -Path $PipeDir -Force | Out-Null
+    $TokenPath = Join-Path $PipeDir "token"
+    Set-Content -Path $TokenPath -Value $AgentToken -Encoding ASCII
+    icacls $TokenPath /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+    Write-Host ((T "Token zapisano w" "Token saved in") + " $TokenPath") -ForegroundColor Cyan
 }
 
 # Zbuduj argumenty dla funkcji 'pipe'
@@ -84,7 +87,7 @@ $FunctionBlock = @"
 
 $Marker
 function pipe {
-    ${TokenSet}python "$CliPath" $PipeArgs `$args${TokenRestore}
+    python "$CliPath" $PipeArgs `$args
 }
 $MarkerEnd
 "@

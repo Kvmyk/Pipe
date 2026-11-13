@@ -151,7 +151,7 @@ Postęp workerów (`› web-1 $ uptime`) jest wypisywany na bieżąco, zanim age
 | Zmienna | Opis | Domyślnie |
 |---------|------|-----------|
 | `VPS_HOST` | Adres serwera (`user@host`) | -- |
-| `AGENT_TOKEN` | Token autoryzacji backendu (równoważny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN` | -- |
+| `AGENT_TOKEN` | Token autoryzacji backendu (równoważny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN`. Bez `--token` i `AGENT_TOKEN` CLI czyta `~/.pipe/token` (`PIPE_HOME` zmienia katalog) | -- |
 | `VPS_SSH_PORT` | Port SSH | `22` |
 | `VPS_SSH_KEY` | Ścieżka do klucza prywatnego | domyślny klucz |
 | `VPS_LOCAL_PORT` | Lokalny port tunelu; gdy jest zajęty (drugie otwarte CLI, stary tunel), CLI bierze inny wolny | `7379` |

@@ -96,7 +96,7 @@ pipe
 ```
 
 If the server has a token (the installer generates one), add `--token <token>` here: `grep AGENT_TOKEN ~/pipe/backend/.env`
-on the server prints it. `install.sh` also offers to keep it in the shortcut.
+on the server prints it. `install.sh` also offers to save it in `~/.pipe/token`, which the CLI reads when there is no `--token` and no `AGENT_TOKEN`.
 
 The CLI automatically:
 1. Sets up the SSH tunnel (asks for a password if needed)
@@ -177,4 +177,4 @@ pipe --lang pl             # Polish CLI messages
 | No 'ssh' command | Windows: install OpenSSH Client (Settings -> Apps -> Optional features) |
 | SSH asks for a password every time | Add an SSH key: `ssh-copy-id user@server` |
 | `bash install.sh` fails with `externally-managed-environment` | Debian 12+, Ubuntu 23.04+ and Kali protect the system Python (PEP 668). `install.sh` uses its own venv; if it falls back to plain pip, install `python3-venv` (`sudo apt install python3-venv`) and run it again, or `export PIP_BREAK_SYSTEM_PACKAGES=1` first |
-| "invalid authorization token" (`pipe` and `pipe web`) | The backend has a token (`AGENT_TOKEN` in `backend/.env` on the server). Read it with `grep AGENT_TOKEN ~/pipe/backend/.env` and run `pipe --token <token>`, or set the `AGENT_TOKEN` environment variable. `install.sh` can keep it in the shortcut |
+| "invalid authorization token" (`pipe` and `pipe web`) | The backend has a token (`AGENT_TOKEN` in `backend/.env` on the server). Read it with `grep AGENT_TOKEN ~/pipe/backend/.env` and run `pipe --token <token>`, set the `AGENT_TOKEN` environment variable, or save the token in `~/.pipe/token` (one line, readable only by you). `install.sh` can write that file for you |
