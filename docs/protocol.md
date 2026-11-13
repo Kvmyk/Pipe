@@ -1,6 +1,6 @@
 # Communication protocol -- Pipe
 
-Pipe v0.50.9
+Pipe v0.51.0
 
 ## Overview
 
@@ -102,7 +102,7 @@ The clients' "/" commands (Telegram, CLI) send `{"command": ...}`:
 | `approve` | `id`, `decision` (bool) | admin only; approving runs the operation through the safety fuse, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- incident memory (what happened, findings, what helped) |
 | `transcribe` | `audio` (base64, max. 10 MB; OGG, WAV, MP3...), `filename` | `"data": {"text": "..."}` -- voice message transcription (STT) |
-| `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **without the LLM** |
+| `audit` | `args`: empty, or `fix` (`napraw`) | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **without the LLM**; with `fix` (admin, not in observe mode) a chat stream instead: the model fixes the findings one by one, each with its own confirmation, skipped ones listed at the end |
 | `welcome` | -- | a frame with `attachment` (map), then `"data"` like the `welcome` event |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- change journal |
 | `vulns` | -- | `"data": {"text", "view"}` -- the vulnerability report in Markdown (`view`: the same as data for `pipe web`, `vulns.report_view`) (packages, remote servers, images, applications) with explanations; the model writes missing ones (at most `EXPLAIN_WAIT` s), without a model the OSV description |
@@ -254,8 +254,10 @@ The token is checked for **every** request type, including confirmations (`confi
 can't approve an operation pending in someone else's session. With a wrong token the backend answers:
 
 ```json
-{"response": "Error: invalid authorization token.", "status": "error", "done": true}
+{"response": "Error: invalid authorization token.", "status": "error", "done": true, "code": "auth"}
 ```
+
+`code` (from v0.51) lets a client add a hint without matching the text; older backends send the frame without it.
 
 ## Response states
 

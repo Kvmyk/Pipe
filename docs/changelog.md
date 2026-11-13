@@ -2,6 +2,68 @@
 
 Entries from v0.49.0 on are in English; older ones are in Polish.
 
+## v0.51.0 (2026-11-13)
+
+Changes from the first round of tester feedback. Thanks to Brzana, suinama and TracerDS.
+
+### Fixed problems no longer come back in the audit
+
+- `/audit`, the dashboard and `/news` stopped showing vulnerabilities that were already fixed. A fresh audit now
+  closes the alerts its scan no longer confirms, and the inbox item goes with them. Before, they stayed for up to an
+  hour, and the model tried to fix them again.
+- Alerts count only what `/patch` can install now. Packages held after the last patch and fixes that need Ubuntu
+  Pro no longer keep an alert open whose *Patch* button answered "nothing to patch".
+- Package and compose commands that Pipe runs itself (after your yes, without asking, or in YOLO) start a new scan
+  in the background. An audit right after a change waits for a scan newer than the last journal entry.
+- Active alerts survive a restart (`watch_state.json`), so a problem fixed while Pipe was down gets resolved instead
+  of keeping its buttons in the inbox.
+- The "security updates" finding from apt's own counter shows only when there is no vulnerability scan, and the
+  audit refreshes the container list after images were rebuilt.
+
+### Fix all findings one by one
+
+- `/audit fix` (`/audyt napraw`, and a *Fix all, one by one* button on the audit card in `pipe web`) walks the
+  findings from the most serious. Each fix asks for your approval separately; vulnerabilities go through one patch.
+  Findings that cannot be fixed, or that you declined, are listed at the end with the reason, followed by a new
+  audit and the score before and after. Admin only, not in observe mode.
+
+### Links to vulnerabilities
+
+- Every vulnerability in `/vulns`, alerts and `pipe web` links to its record: NVD for CVE numbers, osv.dev for
+  GHSA, USN, DSA, DLA, PYSEC, RUSTSEC and GO ids. The address is built only from a checked id, never from text
+  coming from OSV.
+
+### CLI
+
+- `q` quits (also `:q`, `/q`, `/quit`, `/wyjdz`); the Polish word `wyjdź` works again (it had a typo).
+- A language change made in `pipe web` or Telegram now reaches a running CLI, which also reloads skills in the new
+  language. The model gets a note in the conversation, so it switches language too. `pipe web` reloads by itself
+  after a language change when nothing is running.
+- With a wrong or missing token the CLI and `pipe web` say what to do: pass `--token`, set `AGENT_TOKEN` or save
+  the token in `~/.pipe/token`, and where to find it on the server (`AGENT_TOKEN` in `backend/.env`). The error frame
+  carries `code: "auth"`.
+
+### Installation
+
+- `install.sh` installs the CLI into its own virtual environment (`~/.pipe/venv`). On Debian 12+, Ubuntu 23.04+
+  and Kali the system pip refused with `externally-managed-environment`.
+- `install.sh` and `install.ps1` can take the server token (or `PIPE_TOKEN`) and store it in `~/.pipe/token`,
+  readable only by you, not in the shell profile. The CLI reads it after `--token` and `AGENT_TOKEN`.
+- The server installer ends with the command to read the token and the `pipe --host ... --token <token>` line.
+- New rows in the quick start's problem table for both errors; the README mentions the token.
+
+### ISO/IEC 27001 evidence skill
+
+- New built-in skill `iso27001-evidence` (Polish: `audyt-iso27001`): a read-only snapshot of evidence for the
+  technical controls of ISO/IEC 27001:2022 Annex A (authentication, access rights, vulnerabilities, configuration
+  and change management, backups, logging, monitoring, time sync, network, cryptography). Every control gets met,
+  partial, gap or no evidence. It is not a certification and never says "compliant". New sandbox scenario
+  `iso-evidence`.
+
+### Documentation
+
+- The English README named the Polish command `/zgody`; it now says `/approvals`.
+
 ## v0.50.9 (2026-11-07)
 
 ### `/web` on a computer with Docker Desktop

@@ -1,6 +1,6 @@
 # Protokół komunikacji -- Pipe
 
-Pipe v0.50.9
+Pipe v0.51.0
 
 ## Opis
 
@@ -102,7 +102,7 @@ Komendy "/" klientów (Telegram, CLI) wysyłają `{"command": ...}`:
 | `approve` | `id`, `decision` (bool) | tylko admin; zatwierdzenie wykonuje operację przez bezpiecznik, `"data": {"id", "status", "text"}` |
 | `incidents` | -- | `"data": {"text", "incidents": [...]}` -- pamięć incydentów (co się zdarzało, ustalenia, co pomogło) |
 | `transcribe` | `audio` (base64, maks. 10 MB; OGG, WAV, MP3...), `filename` | `"data": {"text": "..."}` -- transkrypcja wiadomości głosowej (STT) |
-| `audit` | -- | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM** |
+| `audit` | `args`: puste albo `napraw` (`fix`) | `"data": {"score", "grade", "findings": [{"id", "severity", "title", "detail", "fix", "command", "host_only"}], "passed", "unknown", "text"}` -- **bez LLM**; z `napraw` (admin, nie w trybie obserwacji) zamiast tego strumień rozmowy: model naprawia wyniki po kolei, każdy z osobnym potwierdzeniem, pominięte wypisuje na końcu |
 | `welcome` | -- | ramka z `attachment` (mapa), potem `"data"` jak zdarzenie `welcome` |
 | `journal` | -- | `"data": {"entries": [{"id", "summary", "undoable", "status"}], "text": "..."}` -- dziennik zmian |
 | `vulns` | -- | `"data": {"text", "view"}` -- raport podatności w Markdown (`view`: to samo jako dane dla `pipe web`, `vulns.report_view`) (pakiety, zdalne serwery, obrazy, aplikacje) z wyjaśnieniami; brakujące pisze model (najwyżej `EXPLAIN_WAIT` s), bez modelu opis z OSV |
@@ -256,8 +256,10 @@ Token jest sprawdzany dla **każdego** typu żądania -- również dla potwierdz
 oczekującej w cudzej sesji. Przy błędnym tokenie backend odpowiada:
 
 ```json
-{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": true}
+{"response": "Blad: Nieprawidlowy token autoryzacji.", "status": "error", "done": true, "code": "auth"}
 ```
+
+`code` (od v0.51) pozwala klientowi dodać podpowiedź bez dopasowywania tekstu; starsze backendy wysyłają ramkę bez niego.
 
 ## Stany odpowiedzi
 
