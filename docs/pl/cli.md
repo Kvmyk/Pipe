@@ -175,7 +175,7 @@ Postęp workerów (`› web-1 $ uptime`) jest wypisywany na bieżąco, zanim age
 > codziennie o 7 sprawdzaj backupy, pisz tylko jak cos jest nie tak
 ```
 
-Wpisz `exit` lub naciśnij `Ctrl+C` aby wyjść.
+Wpisz `q` lub `exit` albo naciśnij `Ctrl+C`, aby wyjść.
 
 ## Komendy
 
@@ -235,7 +235,7 @@ przy połączeniu (chyba że podano `--lang`).
 | `/historia` | Ostatnie wpisy audit logu (bez podpowiedzi i bez `/pomoc` -- zmiany pokazuje `/dziennik`) |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazówkami |
 | `/pomoc` | Lista komend |
-| `/exit` | Wyjście |
+| `/exit` | Wyjście (samo `q` też działa) |
 
 Tekst zaczynający się od `/`, który nie jest komenda (np. `/var/log jest pelny?`), trafia do agenta jak zwykła wiadomość.
 
