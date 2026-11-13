@@ -385,7 +385,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
             await _providers(writer, command, request, interface, role)
         elif command == "language":
-            await _language(writer, args, interface, role)
+            await _language(writer, args, interface, role, session_id)
         elif command == "view":
             await _view(writer, args, interface, role)
         elif command == "yolo":
@@ -1063,7 +1063,7 @@ async def _providers(writer, command: str, request: dict, interface: str, role: 
         await _send(writer, _error(str(exc)))
 
 
-async def _language(writer, args: str, interface: str, role: str) -> None:
+async def _language(writer, args: str, interface: str, role: str, session_id: str = "") -> None:
     """
     Jezyk Pipe w trakcie pracy (/jezyk w CLI, pipe web i na Telegramie), bez LLM. Bez argumentu — stan;
     z argumentem (pl / en) — przelaczenie: prompty, opisy narzedzi, raporty i komunikaty od nastepnej
@@ -1094,6 +1094,9 @@ async def _language(writer, args: str, interface: str, role: str) -> None:
     await audit.log_file_write(interface, f"{i18n.STORE} (lang={target})", 0)
     print(f"[server] Jezyk: {target} (zmienil {interface})", flush=True)
     get_watcher().notifier.publish({"type": "language", "lang": target}, transient=True)
+    if session_id:      # historia jest w starym jezyku — bez tej notatki model odpowiada jak dotad
+        get_agent().note(session_id, tr("Uzytkownik zmienil jezyk Pipe na polski — odpowiadaj od teraz po polsku.",
+                                  "The user switched Pipe's language to English — answer in English from now on."))
     await _send(writer, _data(state(tr("Od teraz rozmawiamy po polsku — instrukcje agenta, raporty i komunikaty.",
                                        "From now on we speak English — the agent's instructions, reports and messages."))))
 
