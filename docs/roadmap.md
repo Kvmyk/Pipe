@@ -16,6 +16,8 @@ Wyjatki: zmiana, o ktora prosi wiecej niz jedna osoba korzystajaca z Pipe na pra
 z punktu 1 -- dlatego ponizsze lacenie podatnosci wchodzi mimo zamrozenia. Decyzja autora byla tez przebudowa
 z v0.39 (Pipe pisze pierwszy, warsztat, narzedzia na zadanie, pulpit w `pipe web`) oraz widoki prosty i techniczny
 z kreatorem pierwszego uruchomienia w `pipe web` (2026-10-26) i `/web` -- Pipe w przegladarce z telefonu pod publicznym adresem HTTPS z parowaniem urzadzen (2026-10-26) -- kolejne funkcje znow tylko wedlug punktow wyzej.
+Wyjatek zatwierdzony przez autora (2026-11-13, uwagi testera): wbudowany skill `audyt-iso27001` / `iso27001-evidence`
+(raport dowodow ISO/IEC 27001:2022, tylko odczyt, sam tekst bez nowego kodu) ze scenariuszem `iso-evidence` w piaskownicy.
 
 ## Dalej: podatnosci i latki
 

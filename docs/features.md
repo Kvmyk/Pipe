@@ -596,6 +596,7 @@ shows the same on the first connection to a given server. No LLM.
 | `update-container` | pull + up of a compose service with a plan to go back to the previous image |
 | `harden-ssh` | disabling SSH passwords in an order that won't lock you out |
 | `free-disk-space` | what takes up the disk and a safe cleanup, step by step |
+| `iso27001-evidence` | a read-only evidence report for the ISO/IEC 27001:2022 Annex A controls a server can show (logins, accounts, vulnerabilities, changes, backups, logs, network, TLS); a status per control and "no evidence" when data is missing; not a certification |
 
 Installed at startup into `backend/data/skills/` like normal skills, so you have them in `/skills` and as commands
 (`/nginx_vhost`). You can edit and delete them: a new version from a Pipe update replaces only a skill you haven't
@@ -609,8 +610,8 @@ only, scripts are skipped), which MCP servers are added (in an isolated containe
 hooks, agents). Installation only after *Install*. The same name in several plugins gets the plugin's prefix
 (`telegram-access`). In a conversation: *"download the skills from anthropics/skills"*.
 
-With `PIPE_LANG=pl` the Polish versions are installed: `aktualizuj-kontener`, `utwardz-ssh`, `wolne-miejsce` (the
-other four have the same name in both languages).
+With `PIPE_LANG=pl` the Polish versions are installed: `aktualizuj-kontener`, `utwardz-ssh`, `wolne-miejsce`,
+`audyt-iso27001` (the other four have the same name in both languages).
 
 ---
 

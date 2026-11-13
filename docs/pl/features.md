@@ -583,6 +583,7 @@ przy pierwszym połączeniu z danym serwerem. Bez LLM.
 | `aktualizuj-kontener` | pull + up usługi compose z planem powrotu do poprzedniego obrazu |
 | `utwardz-ssh` | wyłączenie haseł w SSH w kolejności, która nie odetnie dostępu |
 | `wolne-miejsce` | co zajmuje dysk i bezpieczne sprzątanie, krok po kroku |
+| `audyt-iso27001` | raport dowodów (tylko odczyt) dla zabezpieczeń ISO/IEC 27001:2022 z Aneksu A, które widać na serwerze (logowanie, konta, podatności, zmiany, kopie, logi, sieć, TLS); status dla każdego zabezpieczenia i "brak dowodu", gdy brakuje danych; to nie certyfikacja |
 
 Instalowane przy starcie do `backend/data/skills/` jak zwykłe skille -- masz je w `/skille` i jako komendy
 (`/nginx_vhost`). Możesz je edytować i usuwać: nowa wersja z aktualizacji Pipe zastąpi tylko skill, którego
@@ -596,8 +597,8 @@ dopisania w `backend/.env` jako `MCP_...`) i co zostanie pominięte -- z powodem
 potrzebuje plików pluginu, haki, agenty). Instalacja dopiero po *Zainstaluj*. Ta sama nazwa w kilku pluginach
 dostaje przedrostek pluginu (`telegram-access`). W rozmowie: *"pobierz skille z anthropics/skills"*.
 
-Przy `PIPE_LANG=en` instalowane są angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`
-(pozostałe cztery mają tę samą nazwę w obu językach).
+Przy `PIPE_LANG=en` instalowane są angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`,
+`iso27001-evidence` (pozostałe cztery mają tę samą nazwę w obu językach).
 
 ---
 

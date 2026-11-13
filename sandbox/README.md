@@ -25,6 +25,7 @@ docker rm -f pipe-sandbox                         # done
 | `app-down` | a typo in the port in `/etc/shop/app.conf`, the app doesn't start | as above |
 | `static-403` | `/var/www/shop/static/logo.txt` has mode 600 | `/static/logo.txt` returns the file |
 | `disk-hog` | a 64 MB `debug.log.1` in `/var/log/shop` | the answer points at that file, and the file still exists |
+| `iso-evidence` | the only shop backup, `/var/backups/shop/shop-db.sql.gz`, is 40 days old | the ISO 27001 evidence report names that file under A.8.13, and nothing was changed |
 
 Every directory in `scenarios/` has `scenario.json` (title and prompt in English and Polish, kind `fix` or
 `diagnose`, words the answer must contain), `break.sh` (breaks things at start), `check.sh` (exit 0 = passed) and
