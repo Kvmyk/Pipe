@@ -296,7 +296,7 @@ class TestWatcher:
         events = w.apply(w.vuln_findings(self.scan()), watch.VULN_SCOPE)
         assert [(e.state, e.severity) for e in events] == [("new", "critical")]
         assert events[0].detail == "openssl 3.0.11-1 → 3.0.13-1"          # jedna linia dla promptu i raportu
-        assert "**openssl** 3.0.11-1 → 3.0.13-1" in events[0].report and "(CVE-2026-0001)" in events[0].report
+        assert "**openssl** 3.0.11-1 → 3.0.13-1" in events[0].report and "[CVE-2026-0001](https://nvd.nist.gov/vuln/detail/CVE-2026-0001)" in events[0].report
         assert "/zalataj serwer" in events[0].report
         assert w.apply(w.vuln_findings(self.scan()), watch.VULN_SCOPE) == []
 
@@ -793,7 +793,7 @@ class TestReadable:
         # najpierw co grozi, numer na koncu; bez kodu i kursywy — czyta sie jak zwykly tekst
         assert lines[2] == ("- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. "
                             "([CVE-2026-0001](https://nvd.nist.gov/vuln/detail/CVE-2026-0001))")
-        assert lines[3] == "- **Krytyczna:** DEBIAN-CVE-2026-0002 summary ([CVE-2026-0002](https://nvd.nist.gov/vuln/detail/CVE-2026-0002))"
+        assert lines[3] == "- **Krytyczna:** DEBIAN-CVE-2026-0002 summary (CVE-2026-0002)"    # DEBIAN-CVE-... is not an id with a known link
         assert not any("`" in line for line in lines)
 
     def test_plain_strips_links_markup_and_length(self):
