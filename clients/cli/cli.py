@@ -862,7 +862,7 @@ COMMANDS = [
     ("widok", "view", "widok: /widok prosty (rozmowa, skille, dodatki) albo /widok techniczny (serwer, schemat)",
      "view: /view simple (chat, skills, add-ons) or /view technical (the server, the diagram)"),
     ("pomoc", "help", "lista komend", "list of commands"),
-    ("exit", "exit", "wyjście", "quit"),
+    ("exit", "exit", "wyjście (też q)", "quit (also q)"),
 ]
 
 # Komendy, ktore dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo daja /status i /nowosci
@@ -873,6 +873,8 @@ HIDDEN_COMMANDS = frozenset({"alerty", "zdrowie", "historia"})
 TECH_COMMANDS = frozenset({"projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj", "sprzataj",
                            "mapa", "mermaid", "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody",
                            "yolo"})
+# Co wpisane samo konczy CLI (q jak w innych programach)
+EXIT_WORDS = frozenset({"/exit", "exit", "quit", "q", "/q", ":q", "/quit", "/wyjdz", "wyjdź", "wyjdz", "koniec"})
 _view: str = "tech"      # widok z backendu (komenda `view`), odczytany po polaczeniu
 
 HELP_TEXT = """Nie musisz znać komend — napisz, co mam zrobić, np. „czemu sklep działa wolno?”, „postaw mi tę aplikację
@@ -919,7 +921,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 
 - `/nowa` — nowa rozmowa od czystej karty (wiedza o serwerze zostaje)
 - `/plik <ścieżka> [pytanie]` albo `@ścieżka` w wiadomości — wyślij plik lub zrzut ekranu
-- `/pomoc` — ta lista, `/exit` — wyjście
+- `/pomoc` — ta lista, `/exit` albo `q` — wyjście
 
 Tab podpowiada komendy i ścieżki. Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
 
@@ -968,7 +970,7 @@ something needs attention.
 
 - `/new` — new conversation from a clean slate (server knowledge stays)
 - `/file <path> [question]` or `@path` in a message — send a file or a screenshot
-- `/help` — this list, `/exit` — quit
+- `/help` — this list, `/exit` or `q` — quit
 
 Tab completes commands and paths. You can add hints to a skill command: `/renew_certificate only for example.com`."""
 
@@ -983,7 +985,7 @@ HELP_SIMPLE = """Nie musisz znać komend — napisz zwykłymi słowami, w czym p
 - `/cofnij` — cofnij ostatnią zmianę
 - `/powiadomienia`, `/providerzy`, `/jezyk`, `/koszt` — ustawienia
 - `/widok techniczny` — więcej o serwerze: schemat, podatności, zdalne serwery
-- `/nowa` — nowa rozmowa, `/exit` — wyjście"""
+- `/nowa` — nowa rozmowa, `/exit` albo `q` — wyjście"""
 
 HELP_SIMPLE_EN = """You don't need the commands — write in plain words what to help with, e.g. "remind me tomorrow at 9 about
 the invoice", "summarise this file" or "connect my calendar". You can also send a file: `/file <path>` or `@path`.
@@ -996,7 +998,7 @@ the invoice", "summarise this file" or "connect my calendar". You can also send 
 - `/undo` — undo the last change
 - `/notifications`, `/providers`, `/language`, `/cost` — settings
 - `/view technical` — more about the server: the diagram, vulnerabilities, remote servers
-- `/new` — new conversation, `/exit` — quit"""
+- `/new` — new conversation, `/exit` or `q` — quit"""
 
 
 def _severity(value) -> str:
@@ -1468,6 +1470,20 @@ async def _sync_language(client: "RemoteClient") -> None:
         _set_lang(data["lang"])
 
 
+async def _follow_language(client: "RemoteClient") -> None:
+    """Jezyk zmieniony w innym kanale (pipe web, Telegram) — CLI idzie za nim przy najblizszym odpytaniu."""
+    if LANG_FORCED:
+        return
+    try:
+        data = _response_data(await client.probe("language"))
+    except Exception:
+        return
+    value = str(data.get("lang") or "")
+    if value and ("pl" if value.lower().startswith("pl") else "en") != LANG:
+        _set_lang(value)
+        await _refresh_skills(client)
+
+
 VIEW_QUESTION = ("Co chcesz robić z Pipe? Opisz w paru słowach albo wybierz:\n"
                  "  [bold]1[/bold] — codzienne sprawy: rozmowa, przypomnienia, skille, dodatki do aplikacji (widok prosty)\n"
                  "  [bold]2[/bold] — serwer: schemat, podatności, kontenery, zdalne serwery (widok techniczny)",
@@ -1552,6 +1568,7 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         data = _response_data(await client.send_command("language", args=args))
         if args and data.get("lang"):
             _set_lang(data["lang"])
+            await _refresh_skills(client)
         console.print(escape(data.get("text", "")))
         return True
 
@@ -1943,6 +1960,7 @@ async def _watch_reminders(client: "RemoteClient", stop: asyncio.Event) -> None:
         except asyncio.TimeoutError:
             await _show_due_reminders(client, quiet=True)
             await _show_new_feed(client)
+            await _follow_language(client)
 
 
 _feed_since: float = 0.0     # znacznik czasu ostatniej pokazanej wiadomosci ze skrzynki (0 = jeszcze nie pobrano)
@@ -2201,7 +2219,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() in ("/exit", "exit", "quit", "wyjðź", "koniec"):
+            if user_input.lower() in EXIT_WORDS:
                 break
 
             # /plik <sciezka> i @sciezka — pliki z tego komputera ida razem z wiadomoscia

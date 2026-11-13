@@ -1076,7 +1076,12 @@
     }
     if (event.type === "error") { setLink(false, event.text); return; }
     if (event.type === "language") {      // jezyk zmieniony z innego kanalu (CLI, Telegram, druga karta)
-      if (event.lang !== window.PipeI18n.lang) toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
+      if (event.lang !== window.PipeI18n.lang) {
+        // nic nie trwa i nic nie jest wpisane — odswiez od razu; w innym razie tylko dymek, zeby nie zgubic pracy
+        const idle = !busy && !pendingCard && !input.value.trim() && !pending.length;
+        if (idle) reloadInLanguage("");
+        else toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
+      }
       return;
     }
     if (event.type === "view") {          // widok zmieniony z innego kanalu albo karty

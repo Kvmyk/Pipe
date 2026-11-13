@@ -30,6 +30,11 @@ def tr(pl, en):
     return en if lang() == "en" else pl
 
 
+# [CVE-2026-0001](https://nvd.nist.gov/...) w raportach podatnosci: jedyny link, ktory przechodzi przy allow_tags=False
+# (adres budowany w backendzie z numeru; nic innego w stylu [tekst](adres) nie staje sie linkiem)
+_VULN_LINK = re.compile(r"\[([^\[\]<>\n]{1,80})\]\((https://(?:nvd\.nist\.gov/vuln/detail/CVE-\d{4}-\d{4,}"
+                        r"|osv\.dev/vulnerability/[A-Za-z0-9-]{1,80}))\)")
+
 # Tagi HTML obslugiwane przez Telegram.
 _ALLOWED_TAG = re.compile(
     r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|a|span|tg-spoiler|tg-emoji|blockquote)"
@@ -91,6 +96,7 @@ def to_telegram_html(text: str, allow_tags: bool = True) -> str:
 
     if not allow_tags:
         text = html.escape(text, quote=False)
+        text = _VULN_LINK.sub(r'<a href="\2">\1</a>', text)
 
     # 2. Resztki Markdowna, ktore LLM moze wygenerowac mimo instrukcji.
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)

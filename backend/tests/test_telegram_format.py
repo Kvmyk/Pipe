@@ -409,3 +409,14 @@ def test_commands_for_everyone_are_in_both_menus():
     assert set(EVERYONE_COMMANDS) <= set(MENU_COMMANDS_SIMPLE)
     assert not set(EVERYONE_COMMANDS) & set(TECH_COMMANDS)
     assert set(MENU_COMMANDS_SIMPLE).isdisjoint(TECH_COMMANDS)
+
+
+def test_vuln_links_only_for_nvd_and_osv():
+    from tg_format import markdown_html
+    ok = markdown_html("- **X:** opis ([CVE-2026-0001](https://nvd.nist.gov/vuln/detail/CVE-2026-0001))")
+    assert '<a href="https://nvd.nist.gov/vuln/detail/CVE-2026-0001">CVE-2026-0001</a>' in ok
+    osv = markdown_html("([GHSA-cfgh-2345-pqrv](https://osv.dev/vulnerability/GHSA-cfgh-2345-pqrv))")
+    assert '<a href="https://osv.dev/vulnerability/GHSA-cfgh-2345-pqrv">' in osv
+    for bad in ("[x](https://evil.test/a)", "[x](https://osv.dev/vulnerability/a\"onclick)",
+                "[x](https://nvd.nist.gov.evil.test/vuln/detail/CVE-2026-0001)"):
+        assert "<a " not in markdown_html(bad)

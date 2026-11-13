@@ -176,7 +176,7 @@ Worker progress (`› web-1 $ uptime`) is printed live, before the agent answers
 > every day at 7 check the backups, only write when something is wrong
 ```
 
-Type `exit` or press `Ctrl+C` to quit.
+Type `q` or `exit` or press `Ctrl+C` to quit.
 
 ## Commands
 
@@ -235,7 +235,7 @@ adopts it on connect (unless `--lang` was given).
 | `/history` | Latest audit-log entries (not suggested or in `/help` -- `/journal` shows changes) |
 | `/<skill>` | Runs a skill, for example `/renew_certificate` or `/renew-certificate`, optionally with hints |
 | `/help` | Command list |
-| `/exit` | Quit |
+| `/exit` | Quit (typing `q` alone works too) |
 
 Text starting with `/` that is not a command (for example `/var/log is full?`) goes to the agent as a normal message.
 
