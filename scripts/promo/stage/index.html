@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pipe promo stage</title>
+<link rel="stylesheet" href="stage.css">
+</head>
+<body>
+<div id="frame">
+  <div id="grain"></div>
+
+  <div id="brand"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1a1b1d"/><rect x=".5" y=".5" width="63" height="63" rx="13.5" fill="none" stroke="#fff" stroke-opacity=".14"/><path fill-rule="evenodd" d="M18 22a8 8 0 0 1 8-8h10a12 12 0 0 1 0 24h-8v14H18zm18-2.6a4.6 4.6 0 1 0 0 9.2 4.6 4.6 0 0 0 0-9.2z" fill="#fff"/></svg><span>Pipe</span></div>
+
+  <div id="captions"></div>
+
+  <!-- hak: domyslna strona bledu nginx w przegladarce -->
+  <div id="hook" class="surface">
+    <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 7V5a3 3 0 0 1 6 0v2h.5A1.5 1.5 0 0 1 13 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5v-5A1.5 1.5 0 0 1 4.5 7H5zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2z" fill="currentColor"/></svg>shop.example.com</span></div>
+    <div class="page"><h1>502 Bad Gateway</h1><hr><p>nginx</p></div>
+  </div>
+
+  <!-- przegladarka: nagrane klatki pipe web -->
+  <div id="window" class="surface">
+    <div id="viewport"><img id="ui" alt=""></div>
+    <div id="cursor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2.5v17.2l4.3-4.1 2.9 6.6 2.7-1.2-2.9-6.5h6z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg><i></i></div>
+  </div>
+
+  <!-- telefon: rozmowa z botem Pipe w Telegramie (tresci z clients/telegram/tg_format.py) -->
+  <div id="phone" class="surface">
+    <div class="screen">
+      <div class="status"><span>03:41</span><span class="icons"><i></i><i></i><b></b></span></div>
+      <div class="head">
+        <svg class="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg class="avatar" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="32" fill="#1a1b1d"/><path fill-rule="evenodd" d="M21 24a7 7 0 0 1 7-7h8a10.5 10.5 0 0 1 0 21h-6v11h-9zm15-2.3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" fill="#fff"/></svg>
+        <div class="who"><b>Pipe</b><span>bot</span></div>
+      </div>
+      <div class="chat"><div class="feed" id="feed"></div></div>
+      <div class="compose"><span>Message</span></div>
+    </div>
+    <div id="touch"></div>
+  </div>
+
+  <!-- terminal: wyjscie prawdziwego CLI (clients/cli/cli.py przez rich) -->
+  <div id="term" class="surface">
+    <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">kuba@laptop: ~</span></div>
+    <pre id="tty"></pre>
+  </div>
+
+  <div id="words" class="surface"></div>
+
+  <div id="end">
+    <div class="lockup"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1a1b1d"/><rect x=".5" y=".5" width="63" height="63" rx="13.5" fill="none" stroke="#fff" stroke-opacity=".16"/><path fill-rule="evenodd" d="M18 22a8 8 0 0 1 8-8h10a12 12 0 0 1 0 24h-8v14H18zm18-2.6a4.6 4.6 0 1 0 0 9.2 4.6 4.6 0 0 0 0-9.2z" fill="#fff"/></svg><span class="word">Pipe</span></div>
+    <div class="line l1"><span>A sysadmin that never sleeps.</span></div>
+    <div class="line l2"><span>Telegram · terminal · browser</span></div>
+    <div class="line l3"><span>github.com/Kvmyk/pipe</span></div>
+    <div class="line l4"><span>Open source · MIT</span></div>
+  </div>
+</div>
+<script src="stage.js"></script>
+</body>
+</html>
