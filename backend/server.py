@@ -76,7 +76,7 @@ async def handle_client(
             # oczekujacej operacji. Token wyznacza tozsamosc i role (admin / viewer).
             auth = _authorize(request)
             if auth is None:
-                await _send(writer, _error(tr("Blad: Nieprawidlowy token autoryzacji.", "Error: invalid authorization token.")))
+                await _send(writer, _error(tr("Blad: Nieprawidlowy token autoryzacji.", "Error: invalid authorization token."), "auth"))
                 continue
             identity, role = auth
             # Sesja nalezy do klienta, ktory ja zalozyl — inny token nie przeczyta jej historii
@@ -189,8 +189,12 @@ def _data(data: dict) -> dict:
     return {"response": "", "status": "ok", "done": True, "data": data}
 
 
-def _error(text: str) -> dict:
-    return {"response": f"[BLAD] {text}", "status": "error", "done": True}
+def _error(text: str, code: str = "") -> dict:
+    """Ramka bledu; `code` (np. "auth") pozwala klientowi dodac podpowiedz bez dopasowywania tekstu."""
+    frame = {"response": f"[BLAD] {text}", "status": "error", "done": True}
+    if code:
+        frame["code"] = code
+    return frame
 
 
 async def _handle_command(writer, agent, request: dict, session_id: str, interface: str,
