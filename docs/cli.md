@@ -40,6 +40,10 @@ above it as boxes -- the same ones Pipe notifies about on Telegram (`/notificati
 pip install -r requirements.txt
 ```
 
+`install.sh` puts these packages in its own venv, `~/.pipe/venv`. On Debian 12+, Ubuntu 23.04+ and Kali a plain
+`pip install` into the system Python fails with `externally-managed-environment` (PEP 668): use a venv or set
+`PIP_BREAK_SYSTEM_PACKAGES=1`.
+
 ## Usage
 
 ```bash

@@ -40,6 +40,10 @@ jako ramki -- te same, o których Pipe powiadamia na Telegramie (`/powiadomienia
 pip install -r requirements.txt
 ```
 
+`install.sh` instaluje te pakiety we własnym venv, `~/.pipe/venv`. Na Debianie 12+, Ubuntu 23.04+ i Kali zwykłe
+`pip install` do systemowego Pythona kończy się błędem `externally-managed-environment` (PEP 668): użyj venv albo
+ustaw `PIP_BREAK_SYSTEM_PACKAGES=1`.
+
 ## Użycie
 
 ```bash

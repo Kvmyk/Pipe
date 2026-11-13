@@ -154,6 +154,10 @@ bash install.sh          # Linux i macOS
 .\install.ps1            # Windows (PowerShell)
 ```
 
+Instalator serwera generuje token dostępu. Jeśli `pipe` zgłasza „Nieprawidłowy token autoryzacji", odczytaj token na
+serwerze (`grep AGENT_TOKEN ~/pipe/backend/.env`) i uruchom `pipe --token <token>` (tak samo działa `pipe web`) albo
+ustaw zmienną środowiskową `AGENT_TOKEN`. `install.sh` może też zapytać o token raz i zapamiętać go w skrócie.
+
 Komenda `pipe web` otwiera wersję w przeglądarce, ze schematem serwera, na którym widać, gdzie agent właśnie
 pracuje. Na serwerze nie otwiera się żaden dodatkowy port.
 

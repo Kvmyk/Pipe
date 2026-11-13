@@ -83,7 +83,7 @@ bash install.sh
 ```
 
 Skrypt:
-- zainstaluje zależności Python (`rich`)
+- zainstaluje zależności Python (`rich`) we własnym środowisku wirtualnym, `~/.pipe/venv`
 - doda funkcję `pipe` do Twojego profilu terminala
 - od teraz wystarczy wpisać `pipe` w dowolnym terminalu
 
@@ -94,6 +94,9 @@ Skrypt:
 ```
 pipe
 ```
+
+Jeśli serwer ma token (instalator go generuje), dodaj tu `--token <token>`; na serwerze wypisze go
+`grep AGENT_TOKEN ~/pipe/backend/.env`. `install.sh` proponuje też zapamiętanie go w skrócie.
 
 CLI automatycznie:
 1. Zestawia tunel SSH (zapyta o hasło jeśli potrzeba)
@@ -173,3 +176,5 @@ pipe --lang pl            # komunikaty CLI po polsku (bez tego CLI bierze jezyk 
 | Tunel SSH nie odpowiada | Sprawdź czy backend działa: `docker logs vps-agent` na serwerze |
 | Brak komendy 'ssh' | Windows: zainstaluj OpenSSH Client (Ustawienia -> Aplikacje -> Funkcje opcjonalne) |
 | SSH pyta o hasło przy każdym uruchomieniu | Dodaj klucz SSH: `ssh-copy-id user@serwer` |
+| `bash install.sh` kończy się błędem `externally-managed-environment` | Debian 12+, Ubuntu 23.04+ i Kali chronią systemowy Python (PEP 668). `install.sh` używa własnego venv; jeśli wróci do zwykłego pip, doinstaluj `python3-venv` (`sudo apt install python3-venv`) i uruchom go jeszcze raz albo najpierw wpisz `export PIP_BREAK_SYSTEM_PACKAGES=1` |
+| „Nieprawidłowy token autoryzacji" (`pipe` i `pipe web`) | Backend ma token (`AGENT_TOKEN` w `backend/.env` na serwerze). Odczytaj go przez `grep AGENT_TOKEN ~/pipe/backend/.env` i uruchom `pipe --token <token>` albo ustaw zmienną środowiskową `AGENT_TOKEN`. `install.sh` może zapamiętać go w skrócie |
