@@ -237,3 +237,91 @@ class TestAuditText:
 
         assert "security_audit jeszcze raz" in audit_handler.AUDIT_HINT_PL
         assert "security_audit again" in audit_handler.AUDIT_HINT_EN
+
+
+class TestFixAll:
+
+    def fake_audit(self, findings=True):
+        audit = posture.Audit(passed=["zapora: ufw"])
+        if findings:
+            audit.findings = [posture.Finding("bruteforce", "medium", "Brak fail2ban", "", "zainstaluj fail2ban",
+                                              "apt-get install -y fail2ban", True),
+                              posture.Finding("reboot", "low", "Restart po aktualizacji jadra")]
+        return audit
+
+    def test_words_and_message(self, monkeypatch):
+        from backend.core.handlers import audit as audit_handler
+
+        assert audit_handler.wants_fix_all("napraw") and audit_handler.wants_fix_all("Fix all")
+        assert not audit_handler.wants_fix_all("") and not audit_handler.wants_fix_all("raport")
+        message = audit_handler.fix_all_message(self.fake_audit())
+        assert "90/100" in message and "apt-get install -y fail2ban" in message
+        assert "security_patch" in message and "Pominiete" in message and "security_audit" in message
+        monkeypatch.setenv("PIPE_LANG", "en")
+        message = audit_handler.fix_all_message(self.fake_audit())
+        assert "one item at a time" in message and "'Skipped'" in message
+
+    def test_prompt_exists_in_both_languages(self):
+        from backend.config import prompts, prompts_en
+
+        for module in (prompts, prompts_en):
+            module.AUDIT_FIX_ALL_MESSAGE.format(score=1, grade="E", audit="x")
+
+    def run_command(self, monkeypatch, audit, args="napraw", token=""):
+        import backend.server as server
+        from backend.core.handlers import audit as audit_handler
+        from backend.tests.test_server_commands import FakeAgent, exchange
+
+        fake = FakeAgent()
+        monkeypatch.setattr(server, "get_agent", lambda: fake)
+
+        async def fake_run(with_vulns=False):
+            return audit, audit.render()
+        monkeypatch.setattr(audit_handler, "run_audit_text", fake_run)
+        [frames] = exchange([{"command": "audit", "args": args, "token": token}])
+        return fake, frames
+
+    def test_runs_the_agent_with_the_server_built_prompt(self, monkeypatch):
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        fake, frames = self.run_command(monkeypatch, self.fake_audit())
+        assert len(fake.messages) == 1 and "apt-get install -y fail2ban" in fake.messages[0][1]
+        assert frames[-1]["done"] and "data" not in frames[-1]
+
+    def test_nothing_to_fix(self, monkeypatch):
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        fake, frames = self.run_command(monkeypatch, self.fake_audit(findings=False), args="fix")
+        assert not fake.messages and "100/100" in frames[-1]["data"]["text"]
+
+    def test_viewer_is_refused(self, monkeypatch):
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "admin-token")
+        monkeypatch.setattr(settings, "AGENT_VIEWER_TOKEN", "viewer-token")
+        fake, frames = self.run_command(monkeypatch, self.fake_audit(), token="viewer-token")
+        assert not fake.messages and frames[-1]["status"] == "error"
+
+    def test_plain_audit_is_unchanged(self, monkeypatch):
+        monkeypatch.setattr(settings, "AGENT_TOKEN", "")
+        fake, frames = self.run_command(monkeypatch, self.fake_audit(), args="")
+        assert not fake.messages and frames[-1]["data"]["score"] == 90
+
+
+class TestClients:
+
+    def test_telegram(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients" / "telegram"))
+        import tg_format
+
+        assert tg_format.wants_audit_fix("napraw") and tg_format.wants_audit_fix("fix")
+        assert not tg_format.wants_audit_fix("")
+        assert "/audyt napraw" in dict(tg_format.BUILTIN_COMMANDS)["audyt"]
+        assert "/audit fix" in dict(tg_format.BUILTIN_COMMANDS_EN)["audit"]
+        text = tg_format.format_audit({"score": 90, "grade": "A", "findings": [{"severity": "low", "title": "x"}]})
+        assert "/audyt napraw" in text
+
+    def test_cli_and_web(self):
+        root = Path(__file__).resolve().parents[2]
+        cli = (root / "clients" / "cli" / "cli.py").read_text(encoding="utf-8")
+        assert "AUDIT_FIX_WORDS" in cli and "/audyt napraw" in cli and "/audit fix" in cli
+        app = (root / "clients" / "webui" / "static" / "app.js").read_text(encoding="utf-8")
+        assert '["audyt", "audit", "c_audit", true]' in app and "auditFixAll(" in app
+        i18n = (root / "clients" / "webui" / "static" / "i18n.js").read_text(encoding="utf-8")
+        assert i18n.count("auditFixAll:") == 2

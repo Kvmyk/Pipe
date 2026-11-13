@@ -334,7 +334,10 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             event.pop("attachment", None)
             await _send(writer, _data(event))
         elif command == "audit":
-            from backend.core.handlers.audit import run_audit_text
+            from backend.core.handlers.audit import run_audit_text, wants_fix_all
+            if wants_fix_all(args):
+                await _audit_fix_all(writer, agent, session_id, interface, identity, role)
+                return
             audit, _ = await run_audit_text()
             await _send(writer, _data(audit.to_data()))
         elif command == "welcome":
@@ -898,6 +901,33 @@ async def _projects(writer, request: dict, interface: str, role: str) -> None:
     text = await projects.set_running(project, op == "start")
     await audit.log_confirmed(interface, f"project {op} {project.name}", 0)
     await _send(writer, _data({"name": project.name, "text": text}))
+
+
+async def _audit_fix_all(writer, agent, session_id: str, interface: str, identity: str, role: str) -> None:
+    """
+    /audyt napraw | /audit fix: swiezy audyt, potem agent naprawia punkty po kolei — kazdy osobnym narzedziem, wiec
+    z osobnym potwierdzeniem i planem bezpiecznika; latki podatnosci jednym security_patch; czego nie da sie zrobic,
+    zostaje na koniec z powodem; na koniec ponowny audyt i ocena przed -> po. Prompt sklada serwer (prompts.py).
+    """
+    from backend.core.handlers.audit import fix_all_message, run_audit_text
+
+    if role != "admin":
+        await _send(writer, _error(tr("Poprawki z audytu uruchamia tylko administrator.",
+                                      "Only an administrator runs the audit fixes.")))
+        return
+    if runtime.observe():
+        await _send(writer, _error(tr("Tryb obserwacji: Pipe niczego nie zmienia na serwerze.",
+                                      "Observe mode: Pipe does not change anything on the server.")))
+        return
+    audit, _ = await run_audit_text()
+    if not audit.findings:
+        data = audit.to_data()
+        data["text"] = tr(f"Nie ma czego naprawiac: ocena {audit.score}/100 ({audit.grade}).",
+                          f"Nothing to fix: the score is {audit.score}/100 ({audit.grade}).") + "\n\n" + data["text"]
+        await _send(writer, _data(data))
+        return
+    await _stream_chat(writer, agent, session_id, fix_all_message(audit), interface, generated=True,
+                       owner=identity, role=role)
 
 
 async def _vulns_report() -> tuple[str, dict]:

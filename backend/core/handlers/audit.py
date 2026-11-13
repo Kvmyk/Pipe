@@ -43,6 +43,22 @@ AUDIT_HINT_EN = (
 )
 
 
+# /audyt napraw | /audit fix (tez "napraw wszystko", "fix all") — wszystkie poprawki po kolei, kazda z osobnym TAK
+FIX_ALL_WORDS = frozenset({"napraw", "popraw", "fix", "repair"})
+
+
+def wants_fix_all(args: str) -> bool:
+    words = str(args or "").lower().split()
+    return bool(words) and words[0] in FIX_ALL_WORDS
+
+
+def fix_all_message(audit: posture.Audit) -> str:
+    """Wiadomosc dla agenta (budowana na serwerze, nie w kliencie): naprawa punktow audytu po kolei."""
+    from backend.core.i18n import prompt
+
+    return prompt("AUDIT_FIX_ALL_MESSAGE").format(score=audit.score, grade=audit.grade, audit=audit.render(for_model=True))
+
+
 async def run_audit_text(with_vulns: bool = False) -> tuple[posture.Audit, str]:
     """
     Audyt z opisami podatnosci (model dopisuje brakujace, najwyzej EXPLAIN_WAIT s). `with_vulns` dokleja
