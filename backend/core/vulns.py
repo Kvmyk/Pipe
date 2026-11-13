@@ -848,6 +848,26 @@ def vuln_ref(vuln: Vuln) -> str:
     return plain(vuln.id, 60)
 
 
+_CVE_ID = re.compile(r"^CVE-\d{4}-\d{4,}$")
+_OSV_ID = re.compile(r"^(GHSA(-[23456789cfghjmpqrvwx]{4}){3}|USN-\d+-\d+|DSA-\d+(-\d+)?|DLA-\d+(-\d+)?|PYSEC-\d+-\d+"
+                     r"|RUSTSEC-\d+-\d+|GO-\d+-\d+)$")
+
+
+def vuln_url(vuln: Vuln) -> str:
+    """
+    Link do opisu podatnosci: NVD dla CVE, osv.dev dla biuletynow (GHSA, USN, DSA, DLA, PYSEC, RUSTSEC, GO).
+    Adres powstaje tylko z numeru, ktory przeszedl scisly regex — nigdy z tekstu z OSV. Inny numer: '' (bez linku).
+    """
+    if _CVE_ID.fullmatch(vuln.id):
+        return f"https://nvd.nist.gov/vuln/detail/{vuln.id}"
+    cves = sorted({c for c in vuln.cves if _CVE_ID.fullmatch(c)})
+    if len(cves) == 1 and len(set(vuln.cves)) == 1:
+        return f"https://nvd.nist.gov/vuln/detail/{cves[0]}"
+    if _OSV_ID.fullmatch(vuln.id):
+        return f"https://osv.dev/vulnerability/{vuln.id}"
+    return ""
+
+
 def description(vuln: Vuln, explain: dict[str, str]) -> str:
     return plain(explain.get(vuln.id) or vuln.summary) \
         or tr("baza OSV nie podaje opisu tej podatnosci", "the OSV database gives no description of this vulnerability")
@@ -856,7 +876,9 @@ def description(vuln: Vuln, explain: dict[str, str]) -> str:
 def vuln_markdown(vuln: Vuln, explain: dict[str, str]) -> str:
     """'- **Krytyczna:** Atakujacy przez siec moze ... (CVE-2026-0001)'."""
     word = severity_word(vuln)
-    return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({vuln_ref(vuln)})"
+    url = vuln_url(vuln)
+    ref = f"[{vuln_ref(vuln)}]({url})" if url else vuln_ref(vuln)
+    return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({ref})"
 
 
 # Pakiety zrodlowe jadra dystrybucji — w raporcie "linux (jadro)", bo sama nazwa "linux" niewiele mowi
@@ -1013,7 +1035,7 @@ def item_view(item: PackageVulns, explain: dict[str, str], held: bool = False) -
     return {"name": plain(item.name, 80), "version": plain(item.version, 80), "fixed": plain(item.fixed_version, 80),
             "level": item.worst or "unknown", "count": len(vulns), "held": held, "pro_only": item.pro_only,
             "vulns": [{"level": "kev" if v.kev else (v.severity or "unknown"), "word": severity_word(v),
-                       "text": description(v, explain), "ref": vuln_ref(v)} for v in vulns[:VIEW_VULNS]]}
+                       "text": description(v, explain), "ref": vuln_ref(v), "url": vuln_url(v)} for v in vulns[:VIEW_VULNS]]}
 
 
 def group_view(kind: str, title: str, subtitle: str, items: list[PackageVulns], explain: dict[str, str], *,

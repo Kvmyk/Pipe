@@ -787,12 +787,13 @@ class TestReadable:
         # domyslnie najpowazniejsza z opisem, reszta jako liczba przy pakiecie
         assert vulns.item_markdown(result.items[0], explain) == [
             "", "**openssl** 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1 · 2 podatnosci",
-            "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. (CVE-2026-0001)"]
+            "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. ([CVE-2026-0001](https://nvd.nist.gov/vuln/detail/CVE-2026-0001))"]
         lines = vulns.item_markdown(result.items[0], explain, 2)
         assert lines[0] == "" and lines[1] == "**openssl** 3.0.11-1~deb12u1 → 3.0.13-1~deb12u1"
         # najpierw co grozi, numer na koncu; bez kodu i kursywy — czyta sie jak zwykly tekst
-        assert lines[2] == "- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. (CVE-2026-0001)"
-        assert lines[3] == "- **Krytyczna:** DEBIAN-CVE-2026-0002 summary (CVE-2026-0002)"
+        assert lines[2] == ("- **Aktywnie wykorzystywana:** Atakujacy moze odczytac pamiec serwera. "
+                            "([CVE-2026-0001](https://nvd.nist.gov/vuln/detail/CVE-2026-0001))")
+        assert lines[3] == "- **Krytyczna:** DEBIAN-CVE-2026-0002 summary ([CVE-2026-0002](https://nvd.nist.gov/vuln/detail/CVE-2026-0002))"
         assert not any("`" in line for line in lines)
 
     def test_plain_strips_links_markup_and_length(self):
@@ -1173,3 +1174,40 @@ class TestReadableForPeople:
         nothing = vulns.nothing_to_patch(scan)
         assert nothing.startswith("Nie ma nic do zainstalowania.") and "512" not in nothing and "Serwer:" not in nothing
         assert vulns.report_view(scan, {})["todo"] == lines
+
+
+class TestVulnLinks:
+    """vuln_url(): link tylko z numeru po scislym regexie — NVD dla CVE, osv.dev dla biuletynow."""
+
+    @pytest.mark.parametrize("vuln_id,cves,url", [
+        ("CVE-2026-0001", [], "https://nvd.nist.gov/vuln/detail/CVE-2026-0001"),
+        ("USN-8101-1", ["CVE-2026-0002"], "https://nvd.nist.gov/vuln/detail/CVE-2026-0002"),
+        ("USN-8101-1", ["CVE-2026-0002", "CVE-2026-0003"], "https://osv.dev/vulnerability/USN-8101-1"),
+        ("GHSA-cfgh-2345-pqrv", [], "https://osv.dev/vulnerability/GHSA-cfgh-2345-pqrv"),
+        ("DSA-5000-1", [], "https://osv.dev/vulnerability/DSA-5000-1"),
+        ("DLA-3000-1", [], "https://osv.dev/vulnerability/DLA-3000-1"),
+        ("PYSEC-2026-12", [], "https://osv.dev/vulnerability/PYSEC-2026-12"),
+        ("RUSTSEC-2026-0001", [], "https://osv.dev/vulnerability/RUSTSEC-2026-0001"),
+        ("GO-2026-0001", [], "https://osv.dev/vulnerability/GO-2026-0001"),
+    ])
+    def test_known_ids(self, vuln_id, cves, url):
+        assert vulns.vuln_url(vulns.Vuln(vuln_id, cves, "high", "x", "1")) == url
+
+    @pytest.mark.parametrize("vuln_id", ["V", "CVE-2026-1", "CVE-2026-0001/../x", "USN-1-1\n", "https://evil.test/x",
+                                         "GHSA-abcd-2345-wxy!", "CVE-2026-0001 [x](http://evil)"])
+    def test_odd_ids_have_no_link(self, vuln_id):
+        assert vulns.vuln_url(vulns.Vuln(vuln_id, [], "high", "x", "1")) == ""
+
+    def test_markdown_links_the_ref_and_never_the_osv_text(self):
+        vuln = vulns.Vuln("USN-8101-1", ["CVE-2026-0002"], "high", "See https://evil.test/x [link](http://evil.test)", "1")
+        line = vulns.vuln_markdown(vuln, {})
+        assert line.endswith("([CVE-2026-0002](https://nvd.nist.gov/vuln/detail/CVE-2026-0002))")
+        assert "evil.test" not in line
+
+    def test_markdown_without_link_keeps_plain_ref(self):
+        line = vulns.vuln_markdown(vulns.Vuln("V", [], "high", "opis", "1"), {})
+        assert line.endswith("(V)") and "](" not in line
+
+    def test_item_view_carries_url(self):
+        item = vulns.PackageVulns("a", "1", ["a"], [vulns.Vuln("GHSA-cfgh-2345-pqrv", [], "high", "x", "2")])
+        assert vulns.item_view(item, {})["vulns"][0]["url"] == "https://osv.dev/vulnerability/GHSA-cfgh-2345-pqrv"

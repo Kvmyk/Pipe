@@ -50,7 +50,11 @@
         const node = el("div", "vx-desc");
         if (index > 0) node.appendChild(el("span", "vx-word s-" + level(vuln.level), sevLabel(vuln.level) + " · "));
         node.appendChild(document.createTextNode(vuln.text));
-        node.appendChild(el("span", "vx-ref", vuln.ref));
+        // link tylko do dwoch znanych baz; adres buduje backend z numeru, tu sprawdzamy jeszcze raz
+        const linked = typeof vuln.url === "string" && (vuln.url.startsWith("https://nvd.nist.gov/vuln/detail/") || vuln.url.startsWith("https://osv.dev/vulnerability/"));
+        const ref = el(linked ? "a" : "span", "vx-ref", vuln.ref);
+        if (linked) { ref.href = vuln.url; ref.target = "_blank"; ref.rel = "noopener noreferrer"; }
+        node.appendChild(ref);
         return node;
       };
       if (vulns.length) row.appendChild(line(vulns[0], 0));
