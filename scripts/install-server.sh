@@ -283,7 +283,10 @@ case "${PIPE_LANG:-en}" in
 
 Gotowe. Na swoim komputerze:
   bash install.sh            # Linux/macOS (albo .\\install.ps1 na Windows)
-  pipe --lang pl --host root@${IP:-TWOJ_SERWER}
+  pipe --lang pl --host root@${IP:-TWOJ_SERWER} --token <token>
+
+Token (AGENT_TOKEN) odczytasz na tym serwerze, nie jest tu wypisany:
+  grep AGENT_TOKEN ${DIR}/backend/.env
 
 Telegram: uzupelnij clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
 i uruchom skrypt ponownie.
@@ -293,7 +296,10 @@ EOF
 
 Done. On your computer:
   bash install.sh            # Linux/macOS (or .\\install.ps1 on Windows)
-  pipe --host root@${IP:-YOUR_SERVER}
+  pipe --host root@${IP:-YOUR_SERVER} --token <token>
+
+The token (AGENT_TOKEN) is not printed here, read it on this server:
+  grep AGENT_TOKEN ${DIR}/backend/.env
 
 Telegram: fill in clients/telegram/.env (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS)
 and run the script again.

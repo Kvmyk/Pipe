@@ -313,6 +313,8 @@ class RemoteClient:
         self.reconnected = False
         self.port = port
         self.token = token
+        self.auth_failed = False
+        self._auth_hinted = False
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
 
@@ -438,9 +440,44 @@ class RemoteClient:
             elif (response.get("event") or {}).get("type") == "activity":
                 _print_activity(response["event"])
             else:
+                if _is_auth_error(response):
+                    self.auth_failed = True
+                    self._hint_auth()
                 responses.append(response)
             if response.get("done"):
                 return
+
+    def _hint_auth(self) -> None:
+        """Raz na polaczenie: jak podac token (po odrzuceniu przez serwer)."""
+        if self._auth_hinted:
+            return
+        self._auth_hinted = True
+        console.print(auth_hint(bool(self.token)))
+
+
+# ─── Odrzucony token ──────────────────────────────────────────────────────────
+
+AUTH_TEXTS = ("nieprawidlowy token autoryzacji", "invalid authorization token")
+
+
+def _is_auth_error(response: dict) -> bool:
+    """Ramka bledu autoryzacji: pole `code` = "auth" (nowy backend) albo tekst (starszy backend)."""
+    if response.get("status") != "error":
+        return False
+    return response.get("code") == "auth" or any(t in str(response.get("response", "")).lower() for t in AUTH_TEXTS)
+
+
+def auth_hint(token_sent: bool) -> str:
+    """Podpowiedz po odrzuceniu tokenu: gdzie go wziac i jak podac."""
+    sent = (tr("Wysłany token został odrzucony.", "The token you sent was rejected.") if token_sent
+            else tr("Nie wysłano żadnego tokenu.", "No token was sent."))
+    return (f"[yellow]{sent}[/yellow] " + tr(
+        "Backend wymaga tokenu: podaj go jako [bold]--token <token>[/bold] albo zmienną środowiskową "
+        "[bold]AGENT_TOKEN[/bold] (działa też dla [bold]pipe web[/bold]). Token to AGENT_TOKEN w "
+        "backend/.env na serwerze, np. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold].",
+        "The backend requires a token: pass it as [bold]--token <token>[/bold] or the [bold]AGENT_TOKEN[/bold] "
+        "environment variable (works for [bold]pipe web[/bold] too). The token is AGENT_TOKEN in "
+        "backend/.env on the server, e.g. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold]."))
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
@@ -2091,10 +2128,14 @@ async def run_web(client: "RemoteClient | None", host: str, setup: AppSetup | No
     try:
         await client.connect()
         await _sync_language(client)
+        if LANG_FORCED:
+            await client.send_command("language")      # bez --lang sprawdzil to juz _sync_language; tu wychodzi odrzucony token
         await client.disconnect()
     except Exception as exc:
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
         return
+    if client.auth_failed:
+        return          # podpowiedz o tokenie juz wypisana przez klienta
     bridge = web_server.WebBridge(client.host, client.port, client.token, lang=LANG, server_label=host,
                                   port=web_server.free_port(WEB_PORT), setup=setup)
     console.print(Panel.fit(
