@@ -220,6 +220,9 @@ Ta sama dokumentacja jest na stronie projektu: [kvmyk.github.io/Pipe/pl/docs](ht
 
 MIT, zobacz [LICENSE](./LICENSE). Zgłoszenia błędów i pull requesty są mile widziane.
 
+Dziękuję testerom, których uwagi trafiły do v0.51: [Brzana](https://github.com/Brzana),
+[suinama](https://github.com/suinama) i [TracerDS](https://github.com/TracerDS).
+
 <sub>Logotypy dostawców modeli w `pipe web` są znakami towarowymi ich właścicieli i wskazują tylko, z czyimi modelami
 łączy się agent; Pipe nie jest z tymi firmami powiązany (`clients/webui/static/providers/NOTICE.md`). Kroje IBM Plex
 Sans i IBM Plex Mono: SIL Open Font License 1.1 (`clients/webui/static/fonts/OFL.txt`).</sub>

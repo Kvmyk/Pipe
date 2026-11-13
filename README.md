@@ -218,6 +218,9 @@ The documentation is also on the website: [kvmyk.github.io/Pipe/docs](https://kv
 
 MIT, see [LICENSE](./LICENSE). Bug reports and pull requests are welcome.
 
+Thanks to the testers whose feedback shaped v0.51: [Brzana](https://github.com/Brzana),
+[suinama](https://github.com/suinama) and [TracerDS](https://github.com/TracerDS).
+
 <sub>LLM provider logos in `pipe web` are trademarks of their owners and only indicate whose models the agent connects
 to; Pipe is not affiliated with these companies (`clients/webui/static/providers/NOTICE.md`). IBM Plex Sans and IBM
 Plex Mono typefaces: SIL Open Font License 1.1 (`clients/webui/static/fonts/OFL.txt`).</sub>
