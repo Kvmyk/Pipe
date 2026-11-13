@@ -205,7 +205,7 @@ adopts it on connect (unless `--lang` was given).
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history (PNG in `~/.pipe/diagrams/`) |
 | `/health` | TLS certificates, site responses, DNS and backup freshness (not suggested or in `/help` -- `/status` shows problems) |
-| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
+| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*); `/audit fix` goes through all of them in turn, each for your approval, skipped ones at the end |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
 | `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Without arguments a framed window (arrows, Enter, Esc): connected servers with details and ready add-ons (Google, Outlook, Microsoft 365, GitHub); keys are entered here in a hidden field. Servers run in an isolated container. Changes admin only |

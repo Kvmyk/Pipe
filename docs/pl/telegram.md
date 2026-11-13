@@ -212,7 +212,7 @@ nazwy działają w obu językach.
 | `/zmiany [24h\|3d]` | Co się zmieniło na serwerze: pakiety, obrazy kontenerów, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania jako zdjęcie |
 | `/zdrowie` | Certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów (nie ma jej w menu ani w `/pomoc` -- problemy pokazuje `/status`) |
-| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*); `/audyt napraw` przechodzi wszystkie po kolei, każdą do zatwierdzenia przyciskami, pominięte na końcu |
 | `/incydenty` | Pamięć incydentów: co się zdarzało, co ustalono, co pomogło |
 | `/zgody` | Operacje zewnętrznych agentów (MCP) czekające na zgodę; przyciski *Zatwierdź*/*Odrzuć* dla administratorów — z planem bezpiecznika |
 | `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Podłączone serwery MCP ze stanem i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub) z przyciskiem *Dodaj* (administratorzy). Kluczy nie wpisuj w czat -- okno `/mcp` w `pipe web` albo w CLI |

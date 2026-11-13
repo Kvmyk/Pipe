@@ -219,7 +219,7 @@ work in both languages.
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history as a photo |
 | `/health` | TLS certificates, site responses, DNS and backup freshness (not in the menu or `/help` -- `/status` shows problems) |
-| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
+| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*); `/audit fix` goes through all of them in turn, each for your approval with buttons, skipped ones at the end |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval; *Approve*/*Reject* buttons for admins, with the safety-fuse plan |
 | `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Connected MCP servers with their state and ready add-ons (Google, Outlook, Microsoft 365, GitHub) with an *Add* button (administrators). Do not type keys in the chat -- the `/mcp` window in `pipe web` or the CLI |

@@ -441,6 +441,19 @@ bezpiecznika (kopia, `sshd -t` przed przeładowaniem, `/cofnij`). Poprawka SSH t
 **nie proponuje** wyłączenia haseł -- najpierw klucz (skill `utwardz-ssh`). W trybie docker komendy są oznaczone
 *w powłoce hosta* (system plików hosta jest tylko do odczytu).
 
+`/audyt napraw` (albo przycisk *Napraw wszystko po kolei* pod audytem w `pipe web`) przechodzi całą listę po
+kolei. Każda poprawka to osobny krok, który zatwierdzasz i widzisz osobno, z planem bezpiecznika; wszystkie łatki
+podatności idą jednym krokiem, jak `/zalataj`. Punkt, którego nie da się teraz naprawić (restart, zapora w panelu
+dostawcy, wyłączenie haseł przed dodaniem klucza), jest pomijany, tak samo jak odrzucony przez ciebie albo
+zakończony błędem. Pominięte punkty są na końcu z powodem. Potem Pipe robi audyt jeszcze raz i pokazuje ocenę
+przed i po.
+
+Po poprawce audyt, alerty na pulpicie i skrzynka same się aktualizują. Komenda, która zmienia pakiety, od razu
+uruchamia skan podatności, a alert, którego poprawka jest już zainstalowana, zamyka się jako rozwiązany. Alert
+o pakietach, których `/zalataj` jeszcze nie zainstaluje (brak nowej wersji w repozytoriach, tylko Ubuntu Pro), też
+się zamyka. Te pakiety zostają w `/podatnosci` i w audycie z powodem. Otwarte alerty przetrwają restart Pipe,
+więc problem naprawiony, gdy Pipe nie działał, i tak dostaje w skrzynce *rozwiązane*.
+
 **Strażnik** (co `WATCH_INTERVAL`, bez LLM) porównuje konta, klucze SSH, programy SUID/SGID i konfiguracje
 uwierzytelniania (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). Nowe konto z uid 0, nowy klucz, nowy
 SUID albo `ld.so.preload` -- alert krytyczny. Zmiany zrobione przez Pipe (są w dzienniku) nie alarmują. Aktualizacje
