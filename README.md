@@ -154,8 +154,9 @@ bash install.sh          # Linux and macOS
 ```
 
 The server installer generates an access token. If `pipe` says "invalid authorization token", read the token on the
-server (`grep AGENT_TOKEN ~/pipe/backend/.env`) and run `pipe --token <token>` (the same works for `pipe web`), or set
-the `AGENT_TOKEN` environment variable. `install.sh` can also ask for the token once and keep it in the shortcut.
+server (`grep AGENT_TOKEN ~/pipe/backend/.env`) and run `pipe --token <token>` (the same works for `pipe web`), set
+the `AGENT_TOKEN` environment variable, or save the token in `~/.pipe/token`. `install.sh` can also ask for the token once and
+save it there (readable only by you; it is not written into the shortcut).
 
 `pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
 is opened on the server.

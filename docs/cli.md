@@ -152,7 +152,7 @@ Worker progress (`› web-1 $ uptime`) is printed live, before the agent answers
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VPS_HOST` | Server address (`user@host`) | -- |
-| `AGENT_TOKEN` | Backend authorization token (same as `--token`); needed only when the backend has `AGENT_TOKEN` set | -- |
+| `AGENT_TOKEN` | Backend authorization token (same as `--token`); needed only when the backend has `AGENT_TOKEN` set. Without `--token` and `AGENT_TOKEN` the CLI reads `~/.pipe/token` (`PIPE_HOME` moves the directory) | -- |
 | `VPS_SSH_PORT` | SSH port | `22` |
 | `VPS_SSH_KEY` | Path to the private key | default key |
 | `VPS_LOCAL_PORT` | Local tunnel port; when it is taken (a second CLI, an old tunnel), the CLI picks another free one | `7379` |
