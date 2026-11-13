@@ -12,7 +12,7 @@ SCENARIOS = sorted(p for p in (SANDBOX / "scenarios").iterdir() if p.is_dir())
 
 
 def test_there_are_scenarios():
-    assert {p.name for p in SCENARIOS} >= {"nginx-502", "app-down", "static-403", "disk-hog"}
+    assert {p.name for p in SCENARIOS} >= {"nginx-502", "app-down", "static-403", "disk-hog", "iso-evidence"}
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda p: p.name)

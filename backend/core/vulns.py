@@ -37,6 +37,7 @@ import shlex
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+import dataclasses
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
@@ -848,6 +849,26 @@ def vuln_ref(vuln: Vuln) -> str:
     return plain(vuln.id, 60)
 
 
+_CVE_ID = re.compile(r"^CVE-\d{4}-\d{4,}$")
+_OSV_ID = re.compile(r"^(GHSA(-[23456789cfghjmpqrvwx]{4}){3}|USN-\d+-\d+|DSA-\d+(-\d+)?|DLA-\d+(-\d+)?|PYSEC-\d+-\d+"
+                     r"|RUSTSEC-\d+-\d+|GO-\d+-\d+)$")
+
+
+def vuln_url(vuln: Vuln) -> str:
+    """
+    Link do opisu podatnosci: NVD dla CVE, osv.dev dla biuletynow (GHSA, USN, DSA, DLA, PYSEC, RUSTSEC, GO).
+    Adres powstaje tylko z numeru, ktory przeszedl scisly regex — nigdy z tekstu z OSV. Inny numer: '' (bez linku).
+    """
+    if _CVE_ID.fullmatch(vuln.id):
+        return f"https://nvd.nist.gov/vuln/detail/{vuln.id}"
+    cves = sorted({c for c in vuln.cves if _CVE_ID.fullmatch(c)})
+    if len(cves) == 1 and len(set(vuln.cves)) == 1:
+        return f"https://nvd.nist.gov/vuln/detail/{cves[0]}"
+    if _OSV_ID.fullmatch(vuln.id):
+        return f"https://osv.dev/vulnerability/{vuln.id}"
+    return ""
+
+
 def description(vuln: Vuln, explain: dict[str, str]) -> str:
     return plain(explain.get(vuln.id) or vuln.summary) \
         or tr("baza OSV nie podaje opisu tej podatnosci", "the OSV database gives no description of this vulnerability")
@@ -856,7 +877,9 @@ def description(vuln: Vuln, explain: dict[str, str]) -> str:
 def vuln_markdown(vuln: Vuln, explain: dict[str, str]) -> str:
     """'- **Krytyczna:** Atakujacy przez siec moze ... (CVE-2026-0001)'."""
     word = severity_word(vuln)
-    return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({vuln_ref(vuln)})"
+    url = vuln_url(vuln)
+    ref = f"[{vuln_ref(vuln)}]({url})" if url else vuln_ref(vuln)
+    return "- " + (f"**{word}:** " if word else "") + description(vuln, explain) + f" ({ref})"
 
 
 # Pakiety zrodlowe jadra dystrybucji — w raporcie "linux (jadro)", bo sama nazwa "linux" niewiele mowi
@@ -1013,7 +1036,7 @@ def item_view(item: PackageVulns, explain: dict[str, str], held: bool = False) -
     return {"name": plain(item.name, 80), "version": plain(item.version, 80), "fixed": plain(item.fixed_version, 80),
             "level": item.worst or "unknown", "count": len(vulns), "held": held, "pro_only": item.pro_only,
             "vulns": [{"level": "kev" if v.kev else (v.severity or "unknown"), "word": severity_word(v),
-                       "text": description(v, explain), "ref": vuln_ref(v)} for v in vulns[:VIEW_VULNS]]}
+                       "text": description(v, explain), "ref": vuln_ref(v), "url": vuln_url(v)} for v in vulns[:VIEW_VULNS]]}
 
 
 def group_view(kind: str, title: str, subtitle: str, items: list[PackageVulns], explain: dict[str, str], *,
@@ -1785,6 +1808,63 @@ def waiting_items(result: Scan, now: float | None = None) -> list[PackageVulns]:
 
 
 held_items = waiting_items
+
+
+# Programy, po ktorych wersje pakietow moga byc inne — po takiej komendzie (np. poprawce z audytu) Pipe skanuje od razu,
+# zeby alerty i pulpit nie czekaly godziny na vulns_once.
+PACKAGE_PROGRAMS = frozenset({"apt", "apt-get", "aptitude", "dpkg", "unattended-upgrade", "dnf", "yum", "microdnf",
+                              "apk", "zypper", "npm", "yarn", "pnpm", "pip", "pip3", "poetry", "uv", "composer",
+                              "bundle", "cargo", "go", "docker-compose"})
+
+
+def touches_packages(command: str, depth: int = 0) -> bool:
+    """Czy komenda uruchamia menedzer pakietow albo `docker compose pull/up/build` / `docker pull` (tez w sh -c)."""
+    from backend.core.security import split_command
+
+    for segment in split_command(command or "")[0]:
+        try:
+            words = shlex.split(segment)
+        except ValueError:
+            words = segment.split()
+        while words and (words[0] in ("sudo", "env", "nice", "nohup", "time", "exec", "command")
+                         or words[0].startswith("-") or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
+            words = words[1:]
+        if not words:
+            continue
+        program = os.path.basename(words[0])
+        if program in PACKAGE_PROGRAMS:
+            return True
+        if program == "docker" and ("pull" in words[1:3] or ("compose" in words
+                                                                and {"pull", "up", "build"} & set(words))):
+            return True
+        if program in ("sh", "bash", "dash") and "-c" in words and depth < 2:
+            index = words.index("-c")
+            if index + 1 < len(words) and touches_packages(words[index + 1], depth + 1):
+                return True
+    return False
+
+
+def patchable_view(result: Scan, now: float | None = None) -> Scan:
+    """
+    Kopia skanu bez tego, czego /zalataj teraz nie zainstaluje: pakiety wstrzymane po ostatniej latce (HOLD_FOR),
+    poprawki tylko z Ubuntu Pro bez subskrypcji, obrazy z tymi samymi podatnosciami co po ostatniej latce. Z niej
+    budowane sa alerty — inaczej alert z przyciskiem Zalataj zostawal po udanej latce, a przycisk odpowiadal
+    "nie ma nic do zalatania". /podatnosci i audyt pokazuja pelny skan i mowia, dlaczego reszta czeka.
+    """
+    held = held_packages(now)
+    stale = stale_images(now)
+    targets = []
+    for target in result.targets:
+        items = target.items
+        if target.kind == "server":
+            items = select_server(target, now)
+        elif target.kind == "app":
+            items = [p for p in items if f"app:{target.name}|{p.key}" not in held]
+        elif target.kind == "image" and (stale.get(target.name) or {}).get("ids") == target_fingerprint(target) \
+                and WEB_CONTAINER not in (target.meta.get("containers") or []):
+            items = []
+        targets.append(dataclasses.replace(target, items=list(items)))
+    return dataclasses.replace(result, items=select(result, "all", now), targets=targets)
 
 
 def server_key(target: TargetResult, item: PackageVulns) -> str:

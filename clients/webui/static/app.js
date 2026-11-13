@@ -634,8 +634,16 @@
     const box = listing(d.text);
     if (d.vulns_view && (d.vulns_view.groups || []).length) box.appendChild(vx.report(d.vulns_view));
     else if (d.vulns) { box.appendChild(el("h3", "", t("vulnsTitle"))); box.appendChild(md(String(d.vulns))); }
+    if ((d.findings || []).length) {
+      // wszystkie poprawki po kolei (/audyt napraw): agent pyta o kazda z osobna, pominiete wypisuje na koncu
+      const foot = el("div", "foot"), fix = el("button", "btn yes small", t("auditFixAll"));
+      foot.appendChild(fix); box.appendChild(foot);
+      fix.addEventListener("click", () => { foot.remove(); auditFixAll("fix"); });
+    }
     return box;
   }
+  const AUDIT_FIX = /^(napraw|popraw|fix|repair)\b/i;      // /audyt napraw | /audit fix (serwer: handlers/audit.FIX_ALL_WORDS)
+  function auditFixAll(args) { return run({ command: "audit", args }, t("working")); }
   // Zestawienie od backendu (zmiany, zdrowie, koszt, audyt...) jako czytelna lista: linia zakonczona ":" to naglowek,
   // "- " to pozycja, wciecie 4+ spacji to szczegol (np. roznica) czcionka o stalej szerokosci, #ab12cd — identyfikator.
   function listing(text, title) {
@@ -1068,7 +1076,12 @@
     }
     if (event.type === "error") { setLink(false, event.text); return; }
     if (event.type === "language") {      // jezyk zmieniony z innego kanalu (CLI, Telegram, druga karta)
-      if (event.lang !== window.PipeI18n.lang) toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
+      if (event.lang !== window.PipeI18n.lang) {
+        // nic nie trwa i nic nie jest wpisane — odswiez od razu; w innym razie tylko dymek, zeby nie zgubic pracy
+        const idle = !busy && !pendingCard && !input.value.trim() && !pending.length;
+        if (idle) reloadInLanguage("");
+        else toast(t("languageChanged"), t("languageReload"), () => reloadInLanguage(""));
+      }
       return;
     }
     if (event.type === "view") {          // widok zmieniony z innego kanalu albo karty
@@ -1537,7 +1550,7 @@
   const COMMANDS = [
     ["status", "status", "c_status"], ["nowosci", "news", "c_news"], ["projekty", "projects", "c_projects"],
     ["raport", "report", "c_report"], ["zmiany", "changes", "c_changes", true],
-    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit"], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
+    ["wykres", "chart", "c_chart", true], ["zdrowie", "health", "c_health"], ["audyt", "audit", "c_audit", true], ["podatnosci", "vulns", "c_vulns"], ["zalataj", "patch", "c_patch", true],
     ["sprzataj", "cleanup", "c_cleanup"], ["web", "web", "c_web", true], ["powiadomienia", "notifications", "c_notify"], ["mcp", "mcp", "c_mcp", true], ["pobierz", "download", "c_download", true],
     ["mapa", "map", "c_map"], ["server", "server", "c_server", true], ["katalogi", "directory", "c_directory"],
     ["skille", "skills", "c_skills"], ["alerty", "alerts", "c_alerts"], ["incydenty", "incidents", "c_incidents"],
@@ -1652,7 +1665,7 @@
     zmiany: (args) => dataMessage({ command: "changes", args }, (d) => listing(d.text)),
     wykres: (args) => dataMessage({ command: "chart", args }, (d) => el("div", "caption", d.summary || "")),
     zdrowie: () => dataMessage({ command: "health" }, (d) => listing(d.text)),
-    audyt: () => dataMessage({ command: "audit" }, auditBody),
+    audyt: (args) => (AUDIT_FIX.test(args.trim()) ? auditFixAll(args.trim()) : dataMessage({ command: "audit" }, auditBody)),
     podatnosci: () => dataMessage({ command: "vulns" }, (d) => vx.vulnsMessage(d, () => { const box = el("div", "body"); box.appendChild(md(d.text || "")); return box; })),
     zalataj: (args) => vx.patchRun(args.trim()),
     incydenty: () => dataMessage({ command: "incidents" }, (d) => listing(d.text)),

@@ -50,6 +50,7 @@ VULN_KEY = "vuln:system"
 VULN_IMAGES_KEY = "vuln:images"
 VULN_SERVERS_KEY = "vuln:servers"
 VULN_APPS_KEY = "vuln:apps"
+VULN_KEYS = (VULN_KEY, VULN_IMAGES_KEY, VULN_SERVERS_KEY, VULN_APPS_KEY)
 # Tyle najwyzej czeka /audyt na skan podatnosci (pierwszy skan pobiera szczegoly setek ID).
 VULN_AUDIT_WAIT = 45
 VULN_FRESH_AGE = 600         # /podatnosci, /audyt, /zalataj: pelne zapytanie do OSV najwyzej co 10 min
@@ -235,6 +236,7 @@ class Watcher:
         self.notifier = Notifier()
         self.active: dict[str, Alert] = {}
         self._tasks: list[asyncio.Task] = []
+        self._rescans: set[asyncio.Task] = set()         # skany po komendach agenta (rescan_vulns_soon)
         self._routines_running: set[str] = set()
         self.checks_report: Any = None          # ostatni checks.Report
         self.vuln_scan: Any = None              # ostatni vulns.Scan
@@ -299,7 +301,38 @@ class Watcher:
                 resolved = self.active.pop(key)
                 resolved.state = "resolved"
                 events.append(resolved)
+        self.save_active()
         return events
+
+    # Aktywne alerty przezywaja restart (watch_state.json, klucz "active"): problem naprawiony, gdy Pipe nie dzialal,
+    # dostaje po starcie "rozwiazane" (skrzynka zamyka jego wiadomosc i przyciski), a wciaz obecny nie przychodzi
+    # drugi raz jako nowy. Przywracane sa tylko zakresy, ktore Pipe sam sprawdza — alert z webhooka bez
+    # "resolved" z zewnatrz wisialby w nieskonczonosc.
+    ACTIVE_KEY = "active"
+
+    def _active_data(self) -> list[dict[str, Any]]:
+        return [{k: v for k, v in asdict(a).items() if k not in ("report", "history")} for a in self.active.values()]
+
+    def save_active(self) -> None:
+        try:
+            state = load_state()
+            state[self.ACTIVE_KEY] = self._active_data()
+            save_state(state)
+        except OSError:
+            pass
+
+    def restore_active(self, scopes: frozenset[str]) -> int:
+        """Alerty sprzed restartu z zakresow `scopes`; zwraca, ile wrocilo. Juz aktywnych nie nadpisuje."""
+        restored = 0
+        for raw in load_state().get(self.ACTIVE_KEY) or []:
+            try:
+                alert = Alert(**{k: str(raw[k]) for k in ("id", "key", "severity", "title", "detail", "since")})
+            except (KeyError, TypeError):
+                continue
+            if alert.key.split(":", 1)[0] in scopes and alert.key not in self.active:
+                self.active[alert.key] = alert
+                restored += 1
+        return restored
 
     async def check_once(self) -> list[Alert]:
         from backend.core import infra
@@ -333,6 +366,7 @@ class Watcher:
         findings += await self._security_findings(state)
 
         try:
+            state[self.ACTIVE_KEY] = self._active_data()     # stan sprzed odczytu nie cofa alertow innych petli
             save_state(state)
         except OSError:
             pass
@@ -510,6 +544,7 @@ class Watcher:
                 resolved = self.active.pop(alert.key)
                 resolved.state = "resolved"
                 events.append(resolved)
+        self.save_active()
         return self._publish(events, investigate=investigate, external=True)
 
     # --- migawki, sprawdzenia bez konfiguracji, raport ---------------------
@@ -565,23 +600,75 @@ class Watcher:
         pytane w OSV od razu, a calosc najwyzej co VULN_FRESH_AGE — pelne zapytanie o tysiace pakietow przy kazdym
         /podatnosci nie miescilo sie w VULN_AUDIT_WAIT i klienci dostawali stary wynik. `fresh=False`: wystarczy
         ostatni wynik, jesli jest swiezy.
+        Przy `fresh` skan musi byc mlodszy niz ostatnia zmiana z dziennika (journal.last_change_at) — trwajacy
+        skan sprzed poprawki widzialby stare pakiety. Swiezy wynik od razu rozwiazuje alerty vuln:*, ktorych juz
+        nie ma (resolve_fixed_vulns) — pulpit, skrzynka i prompt nie czekaja na godzinne vulns_once.
         """
-        from backend.core import vulns
+        from backend.core import journal, vulns
 
         if settings.VULN_INTERVAL <= 0:
             return None, tr("wylaczone: VULN_INTERVAL=0", "off: VULN_INTERVAL=0")
         last = self.vuln_scan or await asyncio.to_thread(vulns.last_scan)
         if not fresh and last is not None and last.ok and time.time() - last.at < 2 * settings.VULN_INTERVAL:
+            self.resolve_fixed_vulns(last)
             return last, ""
         try:
             age = min(VULN_FRESH_AGE, settings.VULN_INTERVAL) if fresh else None
-            return await asyncio.wait_for(self.vuln_scan_now(max_age=age), VULN_AUDIT_WAIT), ""
+            since = await asyncio.to_thread(journal.last_change_at) if fresh else 0
+            result = await asyncio.wait_for(self.vuln_scan_now(max_age=age, since=since), VULN_AUDIT_WAIT)
+            self.resolve_fixed_vulns(result)
+            return result, ""
         except asyncio.TimeoutError:
             if last is None:
                 return None, tr("skan jeszcze trwa, sprawdz za minute", "the scan is still running, check again in a minute")
             when = time.strftime("%H:%M", time.localtime(last.at))
             return last, tr(f"to wynik skanu z {when} — nowy jeszcze trwa, sprawdz za minute",
                             f"this is the scan from {when} — a new one is still running, check again in a minute")
+
+    def rescan_vulns_soon(self) -> bool:
+        """
+        Skan podatnosci w tle zaraz po komendzie, ktora zmienia pakiety (agent: poprawka z audytu, apt, compose pull) —
+        alerty i pulpit nie czekaja godziny na vulns_once. Tylko gdy czuwanie dziala (serwer, nie testy) i skan jest
+        wlaczony. Zwraca, czy skan zaplanowano.
+        """
+        if not self._tasks or settings.VULN_INTERVAL <= 0:
+            return False
+        try:
+            task = asyncio.get_running_loop().create_task(
+                self._safe(self.vulns_once(since=time.time()), "podatnosci po zmianie"))
+        except RuntimeError:
+            return False
+        self._rescans.add(task)
+        task.add_done_callback(self._rescans.discard)
+        return True
+
+    def resolve_fixed_vulns(self, result: Any) -> list[Alert]:
+        """
+        Rozwiazuje aktywne alerty vuln:*, ktorych skan juz nie potwierdza (poprawka zainstalowana, zostalo tylko to,
+        czego /zalataj teraz nie zainstaluje). Bez skutkow ubocznych w znanych ID i bez nowych alertow — nowe
+        podatnosci, z opisami, oglasza vulns_once.
+        """
+        from backend.core import vulns
+
+        if result is None or not getattr(result, "ok", False) or not any(k in self.active for k in VULN_KEYS):
+            return []
+        try:
+            view = vulns.patchable_view(result)
+            still = {VULN_KEY: bool(view.urgent), VULN_IMAGES_KEY: bool(vulns.urgent_images(view)),
+                     VULN_SERVERS_KEY: bool(vulns.urgent_servers(view)), VULN_APPS_KEY: bool(vulns.serious_apps(view))}
+        except Exception as exc:
+            print(tr(f"[Czuwanie] Rozwiazywanie alertow podatnosci: {exc}", f"[Watcher] Resolving vulnerability alerts: {exc}"),
+                  flush=True)
+            return []
+        events: list[Alert] = []
+        for key, present in still.items():
+            if not present and key in self.active:
+                resolved = self.active.pop(key)
+                resolved.state = "resolved"
+                events.append(resolved)
+        if events:
+            self.save_active()
+        return self._publish(events)
 
     def _vuln_alert(self, key: str, ids: set[str], finding: Finding | None) -> list[Finding]:
         """
@@ -611,6 +698,9 @@ class Watcher:
         `report` alertu opisuje kazda podatnosc (wyjasnienie modelu albo opis z OSV) — uzytkownik nie musi
         o nic prosic; `detail` to jedna linia dla promptu, raportu porannego i powiadomien. Tytul to "co: ile"
         (bez odmiany liczebnikow), bo czyta sie go tez jako "ROZWIAZANE — <tytul>".
+        Tresc alertu to tylko to, co /zalataj teraz zainstaluje (vulns.patchable_view): gdy zostaje samo czekajace
+        (wstrzymane po latce, tylko Ubuntu Pro), alert sie rozwiazuje. Znane ID licza sie z pelnego skanu, wiec po
+        HOLD_FOR alert wraca po cichu, bez powiadomienia o tych samych podatnosciach.
         """
         from backend.core import vulns
         from backend.core.i18n import lang
@@ -624,6 +714,7 @@ class Watcher:
             shown = ", ".join(vulns.package_label(p) for p in items[:limit])
             return shown + (tr(f" i {len(items) - limit} innych", f" and {len(items) - limit} more") if len(items) > limit else "")
 
+        full, result = result, vulns.patchable_view(result)
         urgent = vulns.sort_items(result.urgent)
         finding = None
         if urgent:
@@ -633,7 +724,7 @@ class Watcher:
                 title += tr(", w tym aktywnie wykorzystywane", ", including actively exploited ones")
             finding = Finding(VULN_KEY, "critical" if kev else "warning", title, names(urgent),
                               report=vulns.system_alert(result, explain))
-        findings += self._vuln_alert(VULN_KEY, result.urgent_ids, finding)
+        findings += self._vuln_alert(VULN_KEY, full.urgent_ids, finding)
 
         images = vulns.urgent_images(result)
         finding = None
@@ -642,7 +733,7 @@ class Watcher:
             finding = Finding(VULN_IMAGES_KEY, "critical" if any(t.kev for t in images) else "warning", title,
                               ", ".join(t.label() for t in images[:4]),
                               report=vulns.images_alert(result, explain, skip_projects=skip_projects))
-        findings += self._vuln_alert(VULN_IMAGES_KEY, {f"{t.name}|{v.id}" for t in images for p in t.urgent
+        findings += self._vuln_alert(VULN_IMAGES_KEY, {f"{t.name}|{v.id}" for t in vulns.urgent_images(full) for p in t.urgent
                                                       for v in p.fixable if v.urgent}, finding)
 
         servers = vulns.urgent_servers(result)
@@ -655,7 +746,7 @@ class Watcher:
             finding = Finding(VULN_SERVERS_KEY, "critical" if any(t.kev for t in servers) else "warning", title,
                               "; ".join(f"{t.name}: {names(vulns.sort_items(t.urgent), 3)}" for t in servers[:4]),
                               report=vulns.servers_alert(result, explain))
-        findings += self._vuln_alert(VULN_SERVERS_KEY, {f"{t.name}|{v.id}" for t in servers for p in t.urgent
+        findings += self._vuln_alert(VULN_SERVERS_KEY, {f"{t.name}|{v.id}" for t in vulns.urgent_servers(full) for p in t.urgent
                                                        for v in p.fixable if v.urgent}, finding)
 
         apps = vulns.serious_apps(result)
@@ -666,7 +757,7 @@ class Watcher:
             finding = Finding(VULN_APPS_KEY, "critical" if any(p.kev for _, items in apps for p in items) else "warning",
                               title, "; ".join(f"{t.label()}: {names(items, 3)}" for t, items in apps[:4]),
                               report=vulns.apps_alert(result, explain))
-        findings += self._vuln_alert(VULN_APPS_KEY, {f"{t.name}|{v.id}" for t, items in apps for p in items
+        findings += self._vuln_alert(VULN_APPS_KEY, {f"{t.name}|{v.id}" for t, items in vulns.serious_apps(full) for p in items
                                                     for v in p.fixable if v.kev or v.severity == "critical"}, finding)
         return findings
 
@@ -964,6 +1055,7 @@ class Watcher:
         if self._tasks:
             return
         if settings.WATCH_ENABLED:
+            self.restore_active(RESOURCE_SCOPE | CHECKS_SCOPE | (VULN_SCOPE if settings.VULN_INTERVAL > 0 else frozenset()))
             self._tasks.append(asyncio.create_task(self._watch_loop()))
             self._tasks.append(asyncio.create_task(
                 self._periodic("migawka", self.snapshot_once, settings.SNAPSHOT_INTERVAL, 30)))

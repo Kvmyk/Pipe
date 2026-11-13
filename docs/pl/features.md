@@ -441,6 +441,19 @@ bezpiecznika (kopia, `sshd -t` przed przeładowaniem, `/cofnij`). Poprawka SSH t
 **nie proponuje** wyłączenia haseł -- najpierw klucz (skill `utwardz-ssh`). W trybie docker komendy są oznaczone
 *w powłoce hosta* (system plików hosta jest tylko do odczytu).
 
+`/audyt napraw` (albo przycisk *Napraw wszystko po kolei* pod audytem w `pipe web`) przechodzi całą listę po
+kolei. Każda poprawka to osobny krok, który zatwierdzasz i widzisz osobno, z planem bezpiecznika; wszystkie łatki
+podatności idą jednym krokiem, jak `/zalataj`. Punkt, którego nie da się teraz naprawić (restart, zapora w panelu
+dostawcy, wyłączenie haseł przed dodaniem klucza), jest pomijany, tak samo jak odrzucony przez ciebie albo
+zakończony błędem. Pominięte punkty są na końcu z powodem. Potem Pipe robi audyt jeszcze raz i pokazuje ocenę
+przed i po.
+
+Po poprawce audyt, alerty na pulpicie i skrzynka same się aktualizują. Komenda, która zmienia pakiety, od razu
+uruchamia skan podatności, a alert, którego poprawka jest już zainstalowana, zamyka się jako rozwiązany. Alert
+o pakietach, których `/zalataj` jeszcze nie zainstaluje (brak nowej wersji w repozytoriach, tylko Ubuntu Pro), też
+się zamyka. Te pakiety zostają w `/podatnosci` i w audycie z powodem. Otwarte alerty przetrwają restart Pipe,
+więc problem naprawiony, gdy Pipe nie działał, i tak dostaje w skrzynce *rozwiązane*.
+
 **Strażnik** (co `WATCH_INTERVAL`, bez LLM) porównuje konta, klucze SSH, programy SUID/SGID i konfiguracje
 uwierzytelniania (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). Nowe konto z uid 0, nowy klucz, nowy
 SUID albo `ld.so.preload` -- alert krytyczny. Zmiany zrobione przez Pipe (są w dzienniku) nie alarmują. Aktualizacje
@@ -570,6 +583,7 @@ przy pierwszym połączeniu z danym serwerem. Bez LLM.
 | `aktualizuj-kontener` | pull + up usługi compose z planem powrotu do poprzedniego obrazu |
 | `utwardz-ssh` | wyłączenie haseł w SSH w kolejności, która nie odetnie dostępu |
 | `wolne-miejsce` | co zajmuje dysk i bezpieczne sprzątanie, krok po kroku |
+| `audyt-iso27001` | raport dowodów (tylko odczyt) dla zabezpieczeń ISO/IEC 27001:2022 z Aneksu A, które widać na serwerze (logowanie, konta, podatności, zmiany, kopie, logi, sieć, TLS); status dla każdego zabezpieczenia i "brak dowodu", gdy brakuje danych; to nie certyfikacja |
 
 Instalowane przy starcie do `backend/data/skills/` jak zwykłe skille -- masz je w `/skille` i jako komendy
 (`/nginx_vhost`). Możesz je edytować i usuwać: nowa wersja z aktualizacji Pipe zastąpi tylko skill, którego
@@ -583,8 +597,8 @@ dopisania w `backend/.env` jako `MCP_...`) i co zostanie pominięte -- z powodem
 potrzebuje plików pluginu, haki, agenty). Instalacja dopiero po *Zainstaluj*. Ta sama nazwa w kilku pluginach
 dostaje przedrostek pluginu (`telegram-access`). W rozmowie: *"pobierz skille z anthropics/skills"*.
 
-Przy `PIPE_LANG=en` instalowane są angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`
-(pozostałe cztery mają tę samą nazwę w obu językach).
+Przy `PIPE_LANG=en` instalowane są angielskie wersje: `update-container`, `harden-ssh`, `free-disk-space`,
+`iso27001-evidence` (pozostałe cztery mają tę samą nazwę w obu językach).
 
 ---
 

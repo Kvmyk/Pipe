@@ -77,7 +77,7 @@ Pipe works with any model that speaks the OpenAI API.
 If you already work with an agent in the terminal, you don't have to give it SSH to production. Connect it to Pipe
 over MCP. The agent gets a `run_command` tool that goes through the same classifier as a chat with Pipe. Reads run
 right away, forbidden commands are refused, and every change waits for your approval on Telegram (in the CLI:
-`/zgody`). After you approve, Pipe backs up the files, checks the config before the reload and after it, and when
+`/approvals`). After you approve, Pipe backs up the files, checks the config before the reload and after it, and when
 something stops working it restores the previous version. Every change goes to the journal and can be undone.
 
 The agent also gets what Pipe knows about the server: the history of changes, the service map, check and audit
@@ -152,6 +152,11 @@ On your own computer install the client and type `pipe`. It connects to the serv
 bash install.sh          # Linux and macOS
 .\install.ps1            # Windows (PowerShell)
 ```
+
+The server installer generates an access token. If `pipe` says "invalid authorization token", read the token on the
+server (`grep AGENT_TOKEN ~/pipe/backend/.env`) and run `pipe --token <token>` (the same works for `pipe web`), set
+the `AGENT_TOKEN` environment variable, or save the token in `~/.pipe/token`. `install.sh` can also ask for the token once and
+save it there (readable only by you; it is not written into the shortcut).
 
 `pipe web` opens the browser version, with a map of the server that shows where the agent is working. No extra port
 is opened on the server.

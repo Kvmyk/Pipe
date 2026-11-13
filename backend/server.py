@@ -76,7 +76,7 @@ async def handle_client(
             # oczekujacej operacji. Token wyznacza tozsamosc i role (admin / viewer).
             auth = _authorize(request)
             if auth is None:
-                await _send(writer, _error(tr("Blad: Nieprawidlowy token autoryzacji.", "Error: invalid authorization token.")))
+                await _send(writer, _error(tr("Blad: Nieprawidlowy token autoryzacji.", "Error: invalid authorization token."), "auth"))
                 continue
             identity, role = auth
             # Sesja nalezy do klienta, ktory ja zalozyl — inny token nie przeczyta jej historii
@@ -189,8 +189,12 @@ def _data(data: dict) -> dict:
     return {"response": "", "status": "ok", "done": True, "data": data}
 
 
-def _error(text: str) -> dict:
-    return {"response": f"[BLAD] {text}", "status": "error", "done": True}
+def _error(text: str, code: str = "") -> dict:
+    """Ramka bledu; `code` (np. "auth") pozwala klientowi dodac podpowiedz bez dopasowywania tekstu."""
+    frame = {"response": f"[BLAD] {text}", "status": "error", "done": True}
+    if code:
+        frame["code"] = code
+    return frame
 
 
 async def _handle_command(writer, agent, request: dict, session_id: str, interface: str,
@@ -334,7 +338,10 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
             event.pop("attachment", None)
             await _send(writer, _data(event))
         elif command == "audit":
-            from backend.core.handlers.audit import run_audit_text
+            from backend.core.handlers.audit import run_audit_text, wants_fix_all
+            if wants_fix_all(args):
+                await _audit_fix_all(writer, agent, session_id, interface, identity, role)
+                return
             audit, _ = await run_audit_text()
             await _send(writer, _data(audit.to_data()))
         elif command == "welcome":
@@ -385,7 +392,7 @@ async def _handle_command(writer, agent, request: dict, session_id: str, interfa
         elif command in ("providers", "provider_models", "provider_set", "provider_forget"):
             await _providers(writer, command, request, interface, role)
         elif command == "language":
-            await _language(writer, args, interface, role)
+            await _language(writer, args, interface, role, session_id)
         elif command == "view":
             await _view(writer, args, interface, role)
         elif command == "yolo":
@@ -900,6 +907,33 @@ async def _projects(writer, request: dict, interface: str, role: str) -> None:
     await _send(writer, _data({"name": project.name, "text": text}))
 
 
+async def _audit_fix_all(writer, agent, session_id: str, interface: str, identity: str, role: str) -> None:
+    """
+    /audyt napraw | /audit fix: swiezy audyt, potem agent naprawia punkty po kolei — kazdy osobnym narzedziem, wiec
+    z osobnym potwierdzeniem i planem bezpiecznika; latki podatnosci jednym security_patch; czego nie da sie zrobic,
+    zostaje na koniec z powodem; na koniec ponowny audyt i ocena przed -> po. Prompt sklada serwer (prompts.py).
+    """
+    from backend.core.handlers.audit import fix_all_message, run_audit_text
+
+    if role != "admin":
+        await _send(writer, _error(tr("Poprawki z audytu uruchamia tylko administrator.",
+                                      "Only an administrator runs the audit fixes.")))
+        return
+    if runtime.observe():
+        await _send(writer, _error(tr("Tryb obserwacji: Pipe niczego nie zmienia na serwerze.",
+                                      "Observe mode: Pipe does not change anything on the server.")))
+        return
+    audit, _ = await run_audit_text()
+    if not audit.findings:
+        data = audit.to_data()
+        data["text"] = tr(f"Nie ma czego naprawiac: ocena {audit.score}/100 ({audit.grade}).",
+                          f"Nothing to fix: the score is {audit.score}/100 ({audit.grade}).") + "\n\n" + data["text"]
+        await _send(writer, _data(data))
+        return
+    await _stream_chat(writer, agent, session_id, fix_all_message(audit), interface, generated=True,
+                       owner=identity, role=role)
+
+
 async def _vulns_report() -> tuple[str, dict]:
     """
     /podatnosci bez narzedzi: czytelny raport z wyjasnieniami (model pisze brakujace, najwyzej EXPLAIN_WAIT s) —
@@ -1063,7 +1097,7 @@ async def _providers(writer, command: str, request: dict, interface: str, role: 
         await _send(writer, _error(str(exc)))
 
 
-async def _language(writer, args: str, interface: str, role: str) -> None:
+async def _language(writer, args: str, interface: str, role: str, session_id: str = "") -> None:
     """
     Jezyk Pipe w trakcie pracy (/jezyk w CLI, pipe web i na Telegramie), bez LLM. Bez argumentu — stan;
     z argumentem (pl / en) — przelaczenie: prompty, opisy narzedzi, raporty i komunikaty od nastepnej
@@ -1094,6 +1128,9 @@ async def _language(writer, args: str, interface: str, role: str) -> None:
     await audit.log_file_write(interface, f"{i18n.STORE} (lang={target})", 0)
     print(f"[server] Jezyk: {target} (zmienil {interface})", flush=True)
     get_watcher().notifier.publish({"type": "language", "lang": target}, transient=True)
+    if session_id:      # historia jest w starym jezyku — bez tej notatki model odpowiada jak dotad
+        get_agent().note(session_id, tr("Uzytkownik zmienil jezyk Pipe na polski — odpowiadaj od teraz po polsku.",
+                                  "The user switched Pipe's language to English — answer in English from now on."))
     await _send(writer, _data(state(tr("Od teraz rozmawiamy po polsku — instrukcje agenta, raporty i komunikaty.",
                                        "From now on we speak English — the agent's instructions, reports and messages."))))
 

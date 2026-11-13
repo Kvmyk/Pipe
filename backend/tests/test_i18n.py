@@ -237,9 +237,29 @@ class TestBuiltinSkills:
     def test_same_number_of_skills_in_both_languages(self):
         polish = sorted(p.name for p in memory.BUILTIN_SKILLS_DIR.iterdir() if (p / "SKILL.md").is_file())
         english = sorted(p.name for p in memory.BUILTIN_SKILLS_DIR_EN.iterdir() if (p / "SKILL.md").is_file())
-        assert len(polish) == len(english) == 7
+        assert len(polish) == len(english) == 8
         # skille, do ktorych odwoluje sie audyt, maja te sama nazwe w obu jezykach
         assert {"swap", "fail2ban-ssh"} <= set(polish) & set(english)
+
+    @pytest.mark.parametrize("path", sorted(
+        p / "SKILL.md" for d in (memory.BUILTIN_SKILLS_DIR, memory.BUILTIN_SKILLS_DIR_EN)
+        for p in d.iterdir() if (p / "SKILL.md").is_file()), ids=lambda p: f"{p.parent.parent.name}/{p.parent.name}")
+    def test_every_builtin_skill_passes_validation(self, path):
+        # seed_builtin_skills po cichu pomija niepoprawny skill — tu ma to wywrocic CI
+        skill = memory.parse_skill(path.read_text(encoding="utf-8"), path.parent.name)
+        assert skill.name == path.parent.name
+        memory.validate_skill_content(path.parent.name, skill.description, skill.content)
+
+    @pytest.mark.parametrize("name", ["audyt-iso27001", "iso27001-evidence"])
+    def test_iso_skill_is_read_only_evidence(self, name):
+        folder = memory.BUILTIN_SKILLS_DIR if name == "audyt-iso27001" else memory.BUILTIN_SKILLS_DIR_EN
+        content = (folder / name / "SKILL.md").read_text(encoding="utf-8")
+        # zastrzezenie, statusy bez "zgodny", naglowek z data i hostem, zapis tylko przez write_file
+        assert "27001:2022" in content and "write_file" in content and "date -Is" in content and "hostname" in content
+        for control in ("A.8.5", "A.8.8", "A.8.9", "A.8.13", "A.8.15", "A.8.16", "A.8.20", "A.8.24", "A.5.15"):
+            assert control in content
+        assert ("brak dowodu" if name == "audyt-iso27001" else "no evidence") in content
+        assert ("nie certyfikacja" if name == "audyt-iso27001" else "Not a certification") in content
 
     def test_english_skills_are_valid_and_english(self):
         for entry in memory.BUILTIN_SKILLS_DIR_EN.iterdir():

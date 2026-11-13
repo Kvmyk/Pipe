@@ -40,6 +40,10 @@ jako ramki -- te same, o których Pipe powiadamia na Telegramie (`/powiadomienia
 pip install -r requirements.txt
 ```
 
+`install.sh` instaluje te pakiety we własnym venv, `~/.pipe/venv`. Na Debianie 12+, Ubuntu 23.04+ i Kali zwykłe
+`pip install` do systemowego Pythona kończy się błędem `externally-managed-environment` (PEP 668): użyj venv albo
+ustaw `PIP_BREAK_SYSTEM_PACKAGES=1`.
+
 ## Użycie
 
 ```bash
@@ -147,7 +151,7 @@ Postęp workerów (`› web-1 $ uptime`) jest wypisywany na bieżąco, zanim age
 | Zmienna | Opis | Domyślnie |
 |---------|------|-----------|
 | `VPS_HOST` | Adres serwera (`user@host`) | -- |
-| `AGENT_TOKEN` | Token autoryzacji backendu (równoważny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN` | -- |
+| `AGENT_TOKEN` | Token autoryzacji backendu (równoważny `--token`); wymagany tylko gdy backend ma ustawione `AGENT_TOKEN`. Bez `--token` i `AGENT_TOKEN` CLI czyta `~/.pipe/token` (`PIPE_HOME` zmienia katalog) | -- |
 | `VPS_SSH_PORT` | Port SSH | `22` |
 | `VPS_SSH_KEY` | Ścieżka do klucza prywatnego | domyślny klucz |
 | `VPS_LOCAL_PORT` | Lokalny port tunelu; gdy jest zajęty (drugie otwarte CLI, stary tunel), CLI bierze inny wolny | `7379` |
@@ -175,7 +179,7 @@ Postęp workerów (`› web-1 $ uptime`) jest wypisywany na bieżąco, zanim age
 > codziennie o 7 sprawdzaj backupy, pisz tylko jak cos jest nie tak
 ```
 
-Wpisz `exit` lub naciśnij `Ctrl+C` aby wyjść.
+Wpisz `q` lub `exit` albo naciśnij `Ctrl+C`, aby wyjść.
 
 ## Komendy
 
@@ -205,7 +209,7 @@ przy połączeniu (chyba że podano `--lang`).
 | `/zmiany [24h\|3d]` | Co się zmieniło na serwerze: pakiety, obrazy kontenerów, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
 | `/zdrowie` | Certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów (bez podpowiedzi i bez `/pomoc` -- problemy pokazuje `/status`) |
-| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*); `/audyt napraw` przechodzi wszystkie po kolei, każdą do zatwierdzenia, pominięte na końcu |
 | `/incydenty` | Pamięć incydentów: co się zdarzało, co ustalono, co pomogło |
 | `/zgody` | Operacje zewnętrznych agentów (MCP) czekające na zgodę — z planem bezpiecznika |
 | `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Bez argumentów okno w ramce (strzałki, Enter, Esc): podłączone serwery ze szczegółami i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub); klucze wpisuje się tu ukrytym polem. Serwery działają w izolowanym kontenerze. Zmiany tylko administrator |
@@ -235,7 +239,7 @@ przy połączeniu (chyba że podano `--lang`).
 | `/historia` | Ostatnie wpisy audit logu (bez podpowiedzi i bez `/pomoc` -- zmiany pokazuje `/dziennik`) |
 | `/<skill>` | Uruchamia skill, np. `/odnow_certyfikat` albo `/odnow-certyfikat`, opcjonalnie z wskazówkami |
 | `/pomoc` | Lista komend |
-| `/exit` | Wyjście |
+| `/exit` | Wyjście (samo `q` też działa) |
 
 Tekst zaczynający się od `/`, który nie jest komenda (np. `/var/log jest pelny?`), trafia do agenta jak zwykła wiadomość.
 

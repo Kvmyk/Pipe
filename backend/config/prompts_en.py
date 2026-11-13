@@ -283,6 +283,26 @@ INVESTIGATE_ALERT_MESSAGE = (
     "If the fix requires changes -- call the right tool so I can approve it."
 )
 
+# /audit fix — every audit fix in turn; {audit} is audit.render(for_model=True), the score before the fixes
+AUDIT_FIX_ALL_MESSAGE = (
+    "The user wants to fix everything from the security audit, one item after another. Score now: {score}/100 "
+    "({grade}).\n\n"
+    "{audit}\n\n"
+    "Rules:\n"
+    "1. Go through the items in the order of the list, one item at a time. Every fix is a separate tool call "
+    "(execute_command -- with host: true for commands 'on the host' -- or write_file), so the user approves and sees "
+    "each one separately. Never combine the fixes of several items into one command.\n"
+    "2. Patch all items with 'Fix it: the security_patch tool' with ONE security_patch call (scope all) when you reach "
+    "the first of them.\n"
+    "3. For SSH follow the order from the harden-ssh skill.\n"
+    "4. Skip and leave for the end an item that cannot be done now: no command (a manual fix, e.g. a server reboot, a "
+    "firewall in the provider's panel), one that first needs something from the user (e.g. an SSH key before "
+    "passwords are turned off), one the user declined or one that failed. Do not try it again, move to the next.\n"
+    "5. Before every call say in one sentence which item you are fixing and why.\n"
+    "6. At the end call security_audit again and sum up briefly: score before -> after ({score}/100 -> new), what was "
+    "fixed, then a 'Skipped' list: each item with the reason and what the user can do themselves."
+)
+
 WORKER_SYSTEM_PROMPT = """\
 You are a Pipe worker -- a sub-agent sent by the main agent. You do not talk to the user.
 Your task concerns one target:

@@ -313,6 +313,8 @@ class RemoteClient:
         self.reconnected = False
         self.port = port
         self.token = token
+        self.auth_failed = False
+        self._auth_hinted = False
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
 
@@ -438,9 +440,76 @@ class RemoteClient:
             elif (response.get("event") or {}).get("type") == "activity":
                 _print_activity(response["event"])
             else:
+                if _is_auth_error(response):
+                    self.auth_failed = True
+                    self._hint_auth()
                 responses.append(response)
             if response.get("done"):
                 return
+
+    def _hint_auth(self) -> None:
+        """Raz na polaczenie: jak podac token (po odrzuceniu przez serwer)."""
+        if self._auth_hinted:
+            return
+        self._auth_hinted = True
+        console.print(auth_hint(bool(self.token)))
+
+
+# ─── Odrzucony token ──────────────────────────────────────────────────────────
+
+AUTH_TEXTS = ("nieprawidlowy token autoryzacji", "invalid authorization token")
+
+
+def _is_auth_error(response: dict) -> bool:
+    """Ramka bledu autoryzacji: pole `code` = "auth" (nowy backend) albo tekst (starszy backend)."""
+    if response.get("status") != "error":
+        return False
+    return response.get("code") == "auth" or any(t in str(response.get("response", "")).lower() for t in AUTH_TEXTS)
+
+
+def token_file() -> Path:
+    """Plik z tokenem zapisany przez install.sh / install.ps1: ${PIPE_HOME:-~/.pipe}/token."""
+    return Path(os.getenv("PIPE_HOME", "") or Path.home() / ".pipe") / "token"
+
+
+def read_token_file(path: Path | None = None) -> str:
+    """
+    Token z pliku (bialy znak obciety); pusty albo nieczytelny plik = ''. Na POSIX raz ostrzega, gdy plik
+    moga czytac grupa lub inni (token to haslo do backendu).
+    """
+    path = path or token_file()
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if text and os.name == "posix":
+        try:
+            if path.stat().st_mode & 0o077:
+                console.print(tr(f"[yellow]Plik z tokenem {escape(str(path))} mogą czytać inni użytkownicy. "
+                                 f"Popraw: chmod 600 {escape(str(path))}[/yellow]",
+                                 f"[yellow]The token file {escape(str(path))} is readable by other users. "
+                                 f"Fix it: chmod 600 {escape(str(path))}[/yellow]"))
+        except OSError:
+            pass
+    return text
+
+
+def resolve_token(explicit: str) -> str:
+    """Kolejnosc: --token, AGENT_TOKEN (obie w `explicit`: default flagi to zmienna), potem plik z tokenem."""
+    return explicit or read_token_file()
+
+
+def auth_hint(token_sent: bool) -> str:
+    """Podpowiedz po odrzuceniu tokenu: gdzie go wziac i jak podac."""
+    sent = (tr("Wysłany token został odrzucony.", "The token you sent was rejected.") if token_sent
+            else tr("Nie wysłano żadnego tokenu.", "No token was sent."))
+    return (f"[yellow]{sent}[/yellow] " + tr(
+        "Backend wymaga tokenu: podaj go jako [bold]--token <token>[/bold] albo zmienną środowiskową "
+        "[bold]AGENT_TOKEN[/bold], albo zapisz go w [bold]~/.pipe/token[/bold] (działa też dla [bold]pipe web[/bold]). Token to AGENT_TOKEN w "
+        "backend/.env na serwerze, np. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold].",
+        "The backend requires a token: pass it as [bold]--token <token>[/bold] or the [bold]AGENT_TOKEN[/bold] "
+        "environment variable, or save it in [bold]~/.pipe/token[/bold] (works for [bold]pipe web[/bold] too). "
+        "The token is AGENT_TOKEN in backend/.env on the server, e.g. [bold]grep AGENT_TOKEN ~/pipe/backend/.env[/bold]."))
 
 
 # ─── Wyświetlanie ─────────────────────────────────────────────────────────────
@@ -795,6 +864,7 @@ def _prefs_fields(args: str) -> dict:
 
 # ─── Komendy "/" ──────────────────────────────────────────────────────────────
 
+AUDIT_FIX_WORDS = ("napraw", "popraw", "fix", "repair")        # /audyt napraw (server: handlers/audit.FIX_ALL_WORDS)
 SCAN_WORDS = ("aktualizuj", "odswiez", "odśwież", "skanuj", "update", "refresh", "scan")
 
 # Angielskie nazwy komend — dzialaja w obu jezykach obok polskich.
@@ -827,7 +897,8 @@ COMMANDS = [
     ("zmiany", "changes", "co się zmieniło na serwerze (np. /zmiany 3d)", "what changed on the server (e.g. /changes 3d)"),
     ("wykres", "chart", "wykres load / ram / dysk (np. /wykres ram 7d)", "chart of load / ram / disk (e.g. /chart ram 7d)"),
     ("zdrowie", "health", "certyfikaty, strony, DNS, backupy", "certificates, sites, DNS, backups"),
-    ("audyt", "audit", "audyt bezpieczeństwa z poprawkami", "security audit with fixes"),
+    ("audyt", "audit", "audyt bezpieczeństwa z poprawkami; /audyt napraw — wszystkie po kolei",
+     "security audit with fixes; /audit fix — all of them in turn"),
     ("podatnosci", "vulns", "znane podatności z opisami: pakiety, obrazy, serwery, aplikacje",
      "known vulnerabilities with descriptions: packages, images, servers, apps"),
     ("zalataj", "patch", "załataj od razu wszystko; /zalataj obrazy, /zalataj serwer, /zalataj aplikacje, /zalataj serwery",
@@ -860,7 +931,7 @@ COMMANDS = [
     ("widok", "view", "widok: /widok prosty (rozmowa, skille, dodatki) albo /widok techniczny (serwer, schemat)",
      "view: /view simple (chat, skills, add-ons) or /view technical (the server, the diagram)"),
     ("pomoc", "help", "lista komend", "list of commands"),
-    ("exit", "exit", "wyjście", "quit"),
+    ("exit", "exit", "wyjście (też q)", "quit (also q)"),
 ]
 
 # Komendy, ktore dzialaja, ale nie ma ich w podpowiedziach ani w /pomoc — to samo daja /status i /nowosci
@@ -871,6 +942,8 @@ HIDDEN_COMMANDS = frozenset({"alerty", "zdrowie", "historia"})
 TECH_COMMANDS = frozenset({"projekty", "raport", "zmiany", "wykres", "audyt", "podatnosci", "zalataj", "sprzataj",
                            "mapa", "mermaid", "server", "katalogi", "incydenty", "rutyny", "cele", "dziennik", "zgody",
                            "yolo"})
+# Co wpisane samo konczy CLI (q jak w innych programach)
+EXIT_WORDS = frozenset({"/exit", "exit", "quit", "q", "/q", ":q", "/quit", "/wyjdz", "wyjdź", "wyjdz", "koniec"})
 _view: str = "tech"      # widok z backendu (komenda `view`), odczytany po polaczeniu
 
 HELP_TEXT = """Nie musisz znać komend — napisz, co mam zrobić, np. „czemu sklep działa wolno?”, „postaw mi tę aplikację
@@ -888,7 +961,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 
 **Bezpieczeństwo i zmiany**
 
-- `/audyt` — ocena bezpieczeństwa z gotowymi poprawkami („napraw 1”)
+- `/audyt` — ocena bezpieczeństwa z gotowymi poprawkami („napraw 1”); `/audyt napraw` — wszystkie po kolei
 - `/podatnosci` — znane podatności, każda z krótkim opisem
 - `/zalataj [obrazy|serwer|serwery]` — łata od razu: pakiety, obrazy kontenerów, zdalne serwery; sprząta po sobie
 - `/sprzataj` — zwolnij miejsce: obrazy bez tagu, cache budowania, pobrane paczki
@@ -917,7 +990,7 @@ z GitHuba” albo „napisz skrypt, który co noc robi kopię bazy”. Pipe sam 
 
 - `/nowa` — nowa rozmowa od czystej karty (wiedza o serwerze zostaje)
 - `/plik <ścieżka> [pytanie]` albo `@ścieżka` w wiadomości — wyślij plik lub zrzut ekranu
-- `/pomoc` — ta lista, `/exit` — wyjście
+- `/pomoc` — ta lista, `/exit` albo `q` — wyjście
 
 Tab podpowiada komendy i ścieżki. Do komendy skilla możesz dopisać wskazówki: `/odnow_certyfikat tylko dla example.com`."""
 
@@ -937,7 +1010,7 @@ something needs attention.
 
 **Security and changes**
 
-- `/audit` — security score with ready-made fixes ("fix 1")
+- `/audit` — security score with ready-made fixes ("fix 1"); `/audit fix` — all of them in turn
 - `/vulns` — known vulnerabilities, each briefly explained
 - `/patch [images|server|servers]` — patches right away: packages, container images, remote servers; cleans up after itself
 - `/cleanup` — free up space: untagged images, build cache, downloaded packages
@@ -966,7 +1039,7 @@ something needs attention.
 
 - `/new` — new conversation from a clean slate (server knowledge stays)
 - `/file <path> [question]` or `@path` in a message — send a file or a screenshot
-- `/help` — this list, `/exit` — quit
+- `/help` — this list, `/exit` or `q` — quit
 
 Tab completes commands and paths. You can add hints to a skill command: `/renew_certificate only for example.com`."""
 
@@ -981,7 +1054,7 @@ HELP_SIMPLE = """Nie musisz znać komend — napisz zwykłymi słowami, w czym p
 - `/cofnij` — cofnij ostatnią zmianę
 - `/powiadomienia`, `/providerzy`, `/jezyk`, `/koszt` — ustawienia
 - `/widok techniczny` — więcej o serwerze: schemat, podatności, zdalne serwery
-- `/nowa` — nowa rozmowa, `/exit` — wyjście"""
+- `/nowa` — nowa rozmowa, `/exit` albo `q` — wyjście"""
 
 HELP_SIMPLE_EN = """You don't need the commands — write in plain words what to help with, e.g. "remind me tomorrow at 9 about
 the invoice", "summarise this file" or "connect my calendar". You can also send a file: `/file <path>` or `@path`.
@@ -994,7 +1067,7 @@ the invoice", "summarise this file" or "connect my calendar". You can also send 
 - `/undo` — undo the last change
 - `/notifications`, `/providers`, `/language`, `/cost` — settings
 - `/view technical` — more about the server: the diagram, vulnerabilities, remote servers
-- `/new` — new conversation, `/exit` — quit"""
+- `/new` — new conversation, `/exit` or `q` — quit"""
 
 
 def _severity(value) -> str:
@@ -1466,6 +1539,20 @@ async def _sync_language(client: "RemoteClient") -> None:
         _set_lang(data["lang"])
 
 
+async def _follow_language(client: "RemoteClient") -> None:
+    """Jezyk zmieniony w innym kanale (pipe web, Telegram) — CLI idzie za nim przy najblizszym odpytaniu."""
+    if LANG_FORCED:
+        return
+    try:
+        data = _response_data(await client.probe("language"))
+    except Exception:
+        return
+    value = str(data.get("lang") or "")
+    if value and ("pl" if value.lower().startswith("pl") else "en") != LANG:
+        _set_lang(value)
+        await _refresh_skills(client)
+
+
 VIEW_QUESTION = ("Co chcesz robić z Pipe? Opisz w paru słowach albo wybierz:\n"
                  "  [bold]1[/bold] — codzienne sprawy: rozmowa, przypomnienia, skille, dodatki do aplikacji (widok prosty)\n"
                  "  [bold]2[/bold] — serwer: schemat, podatności, kontenery, zdalne serwery (widok techniczny)",
@@ -1550,6 +1637,7 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
         data = _response_data(await client.send_command("language", args=args))
         if args and data.get("lang"):
             _set_lang(data["lang"])
+            await _refresh_skills(client)
         console.print(escape(data.get("text", "")))
         return True
 
@@ -1684,14 +1772,20 @@ async def _handle_slash(user_input: str, client: "RemoteClient") -> bool:
     if name == "audyt":
         console.print(tr("[dim]Sprawdzam konfigurację bezpieczeństwa...[/dim]",
                          "[dim]Checking the security configuration...[/dim]"))
+        if args.split()[:1] and args.split()[0].lower() in AUDIT_FIX_WORDS:
+            # wszystkie poprawki po kolei: agent prosi o zatwierdzenie kazdej z osobna
+            await _handle_responses(await client.send_command("audit", args=args), client)
+            return True
         data = _response_data(await client.send_command("audit"))
         console.print(Text(data.get("text", ""), overflow="fold"), highlight=False)
         if data.get("vulns"):
             console.print(Rule(tr("Podatności", "Vulnerabilities"), style="dim"))
             console.print(Markdown(str(data["vulns"])))
         if data.get("findings"):
-            console.print(tr('[dim]Napisz „napraw 1”, a przygotuję poprawkę do zatwierdzenia.[/dim]',
-                             '[dim]Write "fix 1" and I will prepare the fix for your approval.[/dim]'))
+            console.print(tr('[dim]Napisz „napraw 1”, a przygotuję poprawkę do zatwierdzenia; /audyt napraw — wszystkie '
+                             'po kolei.[/dim]',
+                             '[dim]Write "fix 1" and I will prepare the fix for your approval; /audit fix — all of them '
+                             'in turn.[/dim]'))
         return True
 
     if name == "dziennik":
@@ -1935,6 +2029,7 @@ async def _watch_reminders(client: "RemoteClient", stop: asyncio.Event) -> None:
         except asyncio.TimeoutError:
             await _show_due_reminders(client, quiet=True)
             await _show_new_feed(client)
+            await _follow_language(client)
 
 
 _feed_since: float = 0.0     # znacznik czasu ostatniej pokazanej wiadomosci ze skrzynki (0 = jeszcze nie pobrano)
@@ -2065,10 +2160,14 @@ async def run_web(client: "RemoteClient | None", host: str, setup: AppSetup | No
     try:
         await client.connect()
         await _sync_language(client)
+        if LANG_FORCED:
+            await client.send_command("language")      # bez --lang sprawdzil to juz _sync_language; tu wychodzi odrzucony token
         await client.disconnect()
     except Exception as exc:
         console.print(tr(f"[red]Błąd połączenia: {exc}[/red]", f"[red]Connection error: {exc}[/red]"))
         return
+    if client.auth_failed:
+        return          # podpowiedz o tokenie juz wypisana przez klienta
     bridge = web_server.WebBridge(client.host, client.port, client.token, lang=LANG, server_label=host,
                                   port=web_server.free_port(WEB_PORT), setup=setup)
     console.print(Panel.fit(
@@ -2193,7 +2292,7 @@ async def run_cli(client: RemoteClient, host: str) -> None:
             user_input = user_input.strip()
             if not user_input:
                 continue
-            if user_input.lower() in ("/exit", "exit", "quit", "wyjðź", "koniec"):
+            if user_input.lower() in EXIT_WORDS:
                 break
 
             # /plik <sciezka> i @sciezka — pliki z tego komputera ida razem z wiadomoscia
@@ -2345,7 +2444,7 @@ def _run_saved(args, runner, saved: dict | None, session_id: str) -> None:
             asyncio.run(run_web(None, "", setup=setup))
             return
         host, port, token, label = target
-        client = RemoteClient(session_id=session_id, host=host, port=port, token=args.token or token)
+        client = RemoteClient(session_id=session_id, host=host, port=port, token=args.token_explicit or token or args.token)
         asyncio.run(run_web(client, label, setup=setup) if runner is run_web else runner(client, label))
     except KeyboardInterrupt:
         pass
@@ -2509,6 +2608,11 @@ Examples:
             sys.exit(2)
         print(text)
         return
+
+    # Kolejnosc tokenu: --token, AGENT_TOKEN (default flagi), plik ~/.pipe/token. Lokalny Pipe z `pipe web`
+    # ma wlasny token (appsetup) — plik go nie przykrywa.
+    args.token_explicit = args.token
+    args.token = resolve_token(args.token)
 
     session_id = args.session or str(uuid.uuid4())
     global OPEN_IMAGES, BRIDGE_MODE, console, WEB_PORT, WEB_OPEN_BROWSER

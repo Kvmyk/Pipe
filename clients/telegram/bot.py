@@ -96,6 +96,7 @@ from tg_format import (
     format_approval,
     format_audit,
     format_audit_vulns,
+    wants_audit_fix,
     format_digest,
     format_directory,
     format_help,
@@ -816,9 +817,17 @@ async def cmd_podatnosci(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_audyt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/audyt -- audyt bezpieczenstwa hosta (bez LLM); podatnosci z opisami w drugiej, osobnej wiadomosci."""
+    """
+    /audyt -- audyt bezpieczenstwa hosta (bez LLM); podatnosci z opisami w drugiej, osobnej wiadomosci.
+    /audyt napraw -- agent naprawia punkty po kolei, kazdy z osobnym potwierdzeniem (przyciski jak zwykle).
+    """
     user_id = await _guard(update)
     if not user_id:
+        return
+    args = " ".join(context.args or []).strip()
+    if wants_audit_fix(args):
+        await _backend_call(update, context, _run_and_reply(
+            context, update.effective_chat.id, user_id, get_client(user_id).command("audit", args=args)))
         return
 
     async def go() -> None:

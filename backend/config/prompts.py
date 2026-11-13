@@ -282,6 +282,25 @@ INVESTIGATE_ALERT_MESSAGE = (
     "Jesli naprawa wymaga zmian -- wywolaj odpowiednie narzedzie, zebym mogl ja zatwierdzic."
 )
 
+# /audyt napraw — wszystkie poprawki z audytu po kolei; {audit} to audit.render(for_model=True), ocena przed poprawkami
+AUDIT_FIX_ALL_MESSAGE = (
+    "Uzytkownik chce naprawic po kolei wszystko z audytu bezpieczenstwa. Ocena teraz: {score}/100 ({grade}).\n\n"
+    "{audit}\n\n"
+    "Zasady:\n"
+    "1. Idz po punktach w kolejnosci z listy, jeden punkt naraz. Kazda poprawka to osobne wywolanie narzedzia "
+    "(execute_command -- z host: true dla komend 'na hoscie' -- albo write_file), wiec uzytkownik zatwierdza i widzi "
+    "kazda z osobna. Nigdy nie lacz poprawek kilku punktow w jedna komende.\n"
+    "2. Wszystkie punkty z 'Napraw: narzedzie security_patch' zalataj JEDNYM wywolaniem security_patch (scope all), "
+    "gdy dojdziesz do pierwszego z nich.\n"
+    "3. Przy SSH trzymaj sie kolejnosci ze skilla utwardz-ssh.\n"
+    "4. Pomin i zostaw na koniec punkt, ktorego nie da sie zrobic teraz: bez komendy (poprawka reczna, np. restart "
+    "serwera, zapora w panelu dostawcy), wymagajacy najpierw czegos od uzytkownika (np. klucza SSH przed wylaczeniem "
+    "hasel), odrzucony przez uzytkownika albo zakonczony bledem. Nie probuj go drugi raz, idz do nastepnego.\n"
+    "5. Przed kazdym wywolaniem napisz jednym zdaniem, ktory punkt naprawiasz i po co.\n"
+    "6. Na koniec wywolaj security_audit jeszcze raz i podsumuj krotko: ocena przed -> po ({score}/100 -> nowa), co "
+    "naprawione, a potem lista 'Pominiete': kazdy punkt z powodem i tym, co uzytkownik moze zrobic sam."
+)
+
 
 # ─── Workery ────────────────────────────────────────────────────────────────
 

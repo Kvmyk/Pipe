@@ -26,7 +26,9 @@ AUDIT_HINT_PL = (
     "Przy SSH trzymaj sie kolejnosci ze skilla utwardz-ssh. Przy podatnosciach przy kazdej napisz zwyklymi "
     "slowami, czego dotyczy i co grozi (opisy sa w sekcji PODATNOSCI) — nigdy same numery CVE i wersje. Gdy "
     "uzytkownik chce je zalatac, wywolaj security_patch (jedno potwierdzenie na cala latke) — nie skladaj latek "
-    "z execute_command."
+    "z execute_command. Wczesniejsze wyniki audytu w tej rozmowie sa nieaktualne po kazdej poprawce — zanim powiesz, "
+    "co zostalo, wywolaj security_audit jeszcze raz. Gdy komenda poprawki niczego nie zmienia (np. 'juz najnowsza "
+    "wersja'), powiedz, ze to juz zrobione, i nie probuj ponownie."
 )
 AUDIT_HINT_EN = (
     "\n\nPresent the score and the most important points to the user (numbering as above). When they ask for a fix "
@@ -35,8 +37,26 @@ AUDIT_HINT_EN = (
     "For SSH follow the order from the harden-ssh skill. For vulnerabilities, say in plain words what each one is "
     "about and what it risks (the descriptions are in the VULNERABILITIES section) — never just CVE numbers and versions. "
     "When the user wants them patched, call security_patch (one confirmation for the whole patch) — do not assemble "
-    "patches from execute_command."
+    "patches from execute_command. Earlier audit results in this conversation are outdated after every fix — call "
+    "security_audit again before saying what is left. When a fix command changes nothing (e.g. 'already the newest "
+    "version'), say it is already done and do not retry it."
 )
+
+
+# /audyt napraw | /audit fix (tez "napraw wszystko", "fix all") — wszystkie poprawki po kolei, kazda z osobnym TAK
+FIX_ALL_WORDS = frozenset({"napraw", "popraw", "fix", "repair"})
+
+
+def wants_fix_all(args: str) -> bool:
+    words = str(args or "").lower().split()
+    return bool(words) and words[0] in FIX_ALL_WORDS
+
+
+def fix_all_message(audit: posture.Audit) -> str:
+    """Wiadomosc dla agenta (budowana na serwerze, nie w kliencie): naprawa punktow audytu po kolei."""
+    from backend.core.i18n import prompt
+
+    return prompt("AUDIT_FIX_ALL_MESSAGE").format(score=audit.score, grade=audit.grade, audit=audit.render(for_model=True))
 
 
 async def run_audit_text(with_vulns: bool = False) -> tuple[posture.Audit, str]:
@@ -44,13 +64,16 @@ async def run_audit_text(with_vulns: bool = False) -> tuple[posture.Audit, str]:
     Audyt z opisami podatnosci (model dopisuje brakujace, najwyzej EXPLAIN_WAIT s). `with_vulns` dokleja
     pelny raport podatnosci — kazda z opisem — dla modelu, ktory ma je przedstawic uzytkownikowi.
     """
-    from backend.core import vulns
+    from backend.core import infra, vulns
     from backend.core.i18n import lang
     from backend.core.watch import EXPLAIN_WAIT, get_watcher
 
     watcher = get_watcher()
     scan, note = await watcher.vuln_for_audit()
     if scan is not None:
+        # kontenery z biezacego stanu Dockera — wynik sprzed odtworzenia kontenerow (np. stary skan po czasie) opisuje
+        # obrazy, ktorych juz nie ma; tak samo robia /podatnosci i /zalataj
+        vulns.refresh_containers(scan, await infra.docker_containers())
         try:
             await watcher.explain_vulns(scan, extra=vulns.alert_items(scan) + scan.items[:15], timeout=EXPLAIN_WAIT)
         except Exception:

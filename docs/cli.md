@@ -40,6 +40,10 @@ above it as boxes -- the same ones Pipe notifies about on Telegram (`/notificati
 pip install -r requirements.txt
 ```
 
+`install.sh` puts these packages in its own venv, `~/.pipe/venv`. On Debian 12+, Ubuntu 23.04+ and Kali a plain
+`pip install` into the system Python fails with `externally-managed-environment` (PEP 668): use a venv or set
+`PIP_BREAK_SYSTEM_PACKAGES=1`.
+
 ## Usage
 
 ```bash
@@ -148,7 +152,7 @@ Worker progress (`› web-1 $ uptime`) is printed live, before the agent answers
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VPS_HOST` | Server address (`user@host`) | -- |
-| `AGENT_TOKEN` | Backend authorization token (same as `--token`); needed only when the backend has `AGENT_TOKEN` set | -- |
+| `AGENT_TOKEN` | Backend authorization token (same as `--token`); needed only when the backend has `AGENT_TOKEN` set. Without `--token` and `AGENT_TOKEN` the CLI reads `~/.pipe/token` (`PIPE_HOME` moves the directory) | -- |
 | `VPS_SSH_PORT` | SSH port | `22` |
 | `VPS_SSH_KEY` | Path to the private key | default key |
 | `VPS_LOCAL_PORT` | Local tunnel port; when it is taken (a second CLI, an old tunnel), the CLI picks another free one | `7379` |
@@ -176,7 +180,7 @@ Worker progress (`› web-1 $ uptime`) is printed live, before the agent answers
 > every day at 7 check the backups, only write when something is wrong
 ```
 
-Type `exit` or press `Ctrl+C` to quit.
+Type `q` or `exit` or press `Ctrl+C` to quit.
 
 ## Commands
 
@@ -205,7 +209,7 @@ adopts it on connect (unless `--lang` was given).
 | `/changes [24h\|3d]` | What changed on the server: packages, container images, ports, cron, accounts, SSH keys, configs |
 | `/chart [load\|ram\|disk] [24h\|7d]` | Chart from the watcher's history (PNG in `~/.pipe/diagrams/`) |
 | `/health` | TLS certificates, site responses, DNS and backup freshness (not suggested or in `/help` -- `/status` shows problems) |
-| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*) |
+| `/audit` | Host security score 0-100 with ready fixes (write *"fix 1"*); `/audit fix` goes through all of them in turn, each for your approval, skipped ones at the end |
 | `/incidents` | Incident memory: what happened, what was found, what helped |
 | `/approvals` | Operations of external agents (MCP) waiting for approval, with the safety-fuse plan |
 | `/mcp [add <add-on>\|<name> <npx ...\|uvx ...\|URL> \| remove <name> \| reload]` | Without arguments a framed window (arrows, Enter, Esc): connected servers with details and ready add-ons (Google, Outlook, Microsoft 365, GitHub); keys are entered here in a hidden field. Servers run in an isolated container. Changes admin only |
@@ -235,7 +239,7 @@ adopts it on connect (unless `--lang` was given).
 | `/history` | Latest audit-log entries (not suggested or in `/help` -- `/journal` shows changes) |
 | `/<skill>` | Runs a skill, for example `/renew_certificate` or `/renew-certificate`, optionally with hints |
 | `/help` | Command list |
-| `/exit` | Quit |
+| `/exit` | Quit (typing `q` alone works too) |
 
 Text starting with `/` that is not a command (for example `/var/log is full?`) goes to the agent as a normal message.
 

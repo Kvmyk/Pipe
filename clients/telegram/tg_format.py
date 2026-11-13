@@ -30,6 +30,11 @@ def tr(pl, en):
     return en if lang() == "en" else pl
 
 
+# [CVE-2026-0001](https://nvd.nist.gov/...) w raportach podatnosci: jedyny link, ktory przechodzi przy allow_tags=False
+# (adres budowany w backendzie z numeru; nic innego w stylu [tekst](adres) nie staje sie linkiem)
+_VULN_LINK = re.compile(r"\[([^\[\]<>\n]{1,80})\]\((https://(?:nvd\.nist\.gov/vuln/detail/CVE-\d{4}-\d{4,}"
+                        r"|osv\.dev/vulnerability/[A-Za-z0-9-]{1,80}))\)")
+
 # Tagi HTML obslugiwane przez Telegram.
 _ALLOWED_TAG = re.compile(
     r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|a|span|tg-spoiler|tg-emoji|blockquote)"
@@ -91,6 +96,7 @@ def to_telegram_html(text: str, allow_tags: bool = True) -> str:
 
     if not allow_tags:
         text = html.escape(text, quote=False)
+        text = _VULN_LINK.sub(r'<a href="\2">\1</a>', text)
 
     # 2. Resztki Markdowna, ktore LLM moze wygenerowac mimo instrukcji.
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
@@ -241,7 +247,7 @@ BUILTIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("zmiany", "Co sie zmienilo na serwerze (/zmiany 3d)"),
     ("wykres", "Wykres load/ram/dysk (/wykres ram 7d)"),
     ("zdrowie", "Certyfikaty, strony, DNS i backupy"),
-    ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami"),
+    ("audyt", "Audyt bezpieczenstwa z ocena i poprawkami (/audyt napraw — wszystkie po kolei)"),
     ("podatnosci", "Znane podatnosci z opisami"),
     ("zalataj", "Zalataj od razu (/zalataj obrazy, /zalataj serwer, /zalataj aplikacje, /zalataj serwery)"),
     ("mapa", "Diagram infrastruktury serwera (obraz)"),
@@ -280,7 +286,7 @@ BUILTIN_COMMANDS_EN: tuple[tuple[str, str], ...] = (
     ("changes", "What changed on the server (/changes 3d)"),
     ("chart", "Chart of load/ram/disk (/chart ram 7d)"),
     ("health", "Certificates, sites, DNS and backups"),
-    ("audit", "Security audit with a score and fixes"),
+    ("audit", "Security audit with a score and fixes (/audit fix — all of them in turn)"),
     ("vulns", "Known vulnerabilities with descriptions"),
     ("patch", "Patch right away (/patch images, /patch server, /patch apps, /patch servers)"),
     ("map", "Server infrastructure diagram (image)"),
@@ -849,6 +855,14 @@ AUDIT_SEVERITY = {"high": "WYSOKIE", "medium": "SREDNIE", "low": "NISKIE"}
 AUDIT_SEVERITY_EN = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"}
 
 
+AUDIT_FIX_WORDS = ("napraw", "popraw", "fix", "repair")      # /audyt napraw (serwer: handlers/audit.FIX_ALL_WORDS)
+
+
+def wants_audit_fix(args: str) -> bool:
+    words = str(args or "").lower().split()
+    return bool(words) and words[0] in AUDIT_FIX_WORDS
+
+
 def format_audit(data: dict) -> str:
     """Audyt bezpieczenstwa (/audyt) jako HTML Telegrama."""
     lines = [f"<b>{tr('Bezpieczenstwo', 'Security')}: {int(data.get('score', 0))}/100 "
@@ -874,8 +888,10 @@ def format_audit(data: dict) -> str:
         # np. zdalny serwer bez polaczenia, nieobslugiwany system — bez tego cisza wygladala jak "wszystko dobrze"
         lines.append(tr("\n<b>Nie sprawdzono:</b> ", "\n<b>Not checked:</b> ") + html.escape("; ".join(data["unknown"])))
     if data.get("findings"):
-        lines.append(tr("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia.",
-                        "\nWrite <i>\"fix 1\"</i> — I will prepare the fix for your approval."))
+        lines.append(tr("\nNapisz <i>\"napraw 1\"</i> — przygotuje poprawke do zatwierdzenia; /audyt napraw — "
+                        "wszystkie po kolei, kazda do zatwierdzenia.",
+                        "\nWrite <i>\"fix 1\"</i> — I will prepare the fix for your approval; /audit fix — all of them "
+                        "in turn, each for your approval."))
     return "\n".join(lines)
 
 

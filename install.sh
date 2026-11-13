@@ -38,7 +38,35 @@ PYTHON=$(command -v python3 || command -v python)
 
 # ─── Zainstaluj zależności ───────────────────────────────────────────────────
 echo -e "${CYAN}📦 $(t 'Instaluję zależności CLI...' 'Installing the CLI dependencies...')${NC}"
-$PYTHON -m pip install -r "$SCRIPT_DIR/clients/cli/requirements.txt" --quiet
+# Wlasne venv (~/.pipe/venv): systemowy pip odmawia na Debianie 12+, Ubuntu 23.04+ i Kali (PEP 668,
+# externally-managed-environment). Gdy venv sie nie uda, wracamy do zwyklego pip z podpowiedzia.
+VENV_DIR="${PIPE_HOME:-$HOME/.pipe}/venv"
+REQUIREMENTS="$SCRIPT_DIR/clients/cli/requirements.txt"
+if "$PYTHON" -m venv "$VENV_DIR" >/dev/null 2>&1 && "$VENV_DIR/bin/python" -m pip install -r "$REQUIREMENTS" --quiet; then
+    PYTHON="$VENV_DIR/bin/python"
+else
+    echo -e "${YELLOW}⚠ $(t "Nie udało się założyć venv w $VENV_DIR (brakuje pakietu python3-venv?). Instaluję zależności systemowym pip." "Could not create a venv in $VENV_DIR (is the python3-venv package missing?). Installing the dependencies with the system pip.")${NC}"
+    if ! $PYTHON -m pip install -r "$REQUIREMENTS" --quiet; then
+        echo -e "${RED}❌ $(t 'pip odmówił. Na Debianie/Ubuntu/Kali: sudo apt install python3-venv i uruchom skrypt ponownie, albo: export PIP_BREAK_SYSTEM_PACKAGES=1' 'pip refused. On Debian/Ubuntu/Kali: sudo apt install python3-venv and run the script again, or: export PIP_BREAK_SYSTEM_PACKAGES=1')${NC}"
+        exit 1
+    fi
+fi
+
+# ─── Token (opcjonalnie) ─────────────────────────────────────────────────────
+# Instalator serwera wygenerowal AGENT_TOKEN (backend/.env). Podany tu (albo w PIPE_TOKEN) trafia do pliku
+# ${PIPE_HOME:-~/.pipe}/token (katalog 700, plik 600), z ktorego czyta go CLI — nie do skrotu w profilu powloki.
+# Enter = bez tokenu: pipe --token <token> pozniej.
+AGENT_TOKEN_VALUE="${PIPE_TOKEN:-}"
+if [ -n "$VPS_HOST" ] && [ -z "$AGENT_TOKEN_VALUE" ] && [ -t 0 ]; then
+    printf "${CYAN}%s ${NC}" "$(t 'Token serwera (AGENT_TOKEN z backend/.env na serwerze) albo Enter, by pominąć:' 'Server token (AGENT_TOKEN from backend/.env on the server), or Enter to skip:')"
+    read -rs AGENT_TOKEN_VALUE
+    echo ""
+fi
+if [ -n "$AGENT_TOKEN_VALUE" ]; then
+    PIPE_DIR="${PIPE_HOME:-$HOME/.pipe}"
+    ( umask 077 && mkdir -p "$PIPE_DIR" && chmod 700 "$PIPE_DIR" && printf '%s\n' "$AGENT_TOKEN_VALUE" > "$PIPE_DIR/token" && chmod 600 "$PIPE_DIR/token" )
+    echo -e "${CYAN}🔑 $(t "Token zapisano w" "Token saved in") $PIPE_DIR/token${NC}"
+fi
 
 # ─── Buduj alias ─────────────────────────────────────────────────────────────
 PIPE_ARGS=""
@@ -55,7 +83,7 @@ fi
 ALIAS_BLOCK="
 # ─── VPS Management Agent (Pipe) ───────────────────────────────────────────
 pipe() {
-    $PYTHON \"$CLI_PATH\" $PIPE_ARGS \"\$@\"
+    \"$PYTHON\" \"$CLI_PATH\" $PIPE_ARGS \"\$@\"
 }
 # ─── end Pipe ───────────────────────────────────────────────────────────────"
 

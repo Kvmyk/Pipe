@@ -144,3 +144,36 @@ class TestServerLanguage:
         monkeypatch.setattr(cli, "LANG", "en")
         asyncio.run(cli._sync_language(self.Client("pl", True)))
         assert cli.LANG == "en"
+
+
+@pytest.mark.parametrize("word", ["q", "/q", ":q", "/quit", "/wyjdz", "exit", "/exit", "wyjdź"])
+def test_exit_words(word):
+    assert word in cli.EXIT_WORDS
+
+
+@pytest.mark.parametrize("word", ["1a", "qq", "/nowa", "quote", "ð"])
+def test_exit_words_do_not_catch_other_input(word):
+    assert word not in cli.EXIT_WORDS
+
+
+def test_follow_language_switches_to_server_language(monkeypatch):
+    monkeypatch.setattr(cli, "LANG", "en")
+    monkeypatch.setattr(cli, "LANG_FORCED", False)
+    refreshed = []
+
+    class Client:
+        async def probe(self, command, **fields):
+            return [{"data": {"lang": "pl"}, "done": True}]
+
+    async def refresh(client):
+        refreshed.append(True)
+
+    monkeypatch.setattr(cli, "_response_data", lambda responses: responses[0]["data"])
+    monkeypatch.setattr(cli, "_refresh_skills", refresh)
+    asyncio.run(cli._follow_language(Client()))
+    assert cli.LANG == "pl" and refreshed == [True]
+
+    monkeypatch.setattr(cli, "LANG", "en")
+    monkeypatch.setattr(cli, "LANG_FORCED", True)
+    asyncio.run(cli._follow_language(Client()))
+    assert cli.LANG == "en"
