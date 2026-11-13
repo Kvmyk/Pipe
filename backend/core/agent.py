@@ -757,6 +757,8 @@ class VPSAgent:
                     result, exit_code, entry_id = item.text, item.exit_code, item.entry_id
                 else:
                     yield item
+            if operation is run_command:
+                _rescan_after(self, pending.inner or pending.command)
 
         session.messages.append({"role": "tool", "tool_call_id": pending.tool_call_id, "content": result})
         _sanitize_new_results(session, before)
@@ -767,6 +769,18 @@ class VPSAgent:
 
 
 # ─── Pomocnicze ─────────────────────────────────────────────────────────────
+
+def _rescan_after(agent: Any, command: str) -> None:
+    """Komenda zmienila pakiety (apt, compose pull...) — skan podatnosci w tle, zeby naprawione alerty zniknely."""
+    from backend.core import vulns
+    from backend.core.watch import get_watcher
+
+    try:
+        if vulns.touches_packages(command):
+            get_watcher(agent).rescan_vulns_soon()
+    except Exception as exc:                  # skan to dodatek — nigdy nie psuje wyniku komendy
+        print(tr(f"[Agent] Skan po zmianie pakietow: {exc}", f"[Agent] Scan after a package change: {exc}"), flush=True)
+
 
 def _for_provider(message: dict[str, Any], provider_id: str) -> dict[str, Any]:
     """

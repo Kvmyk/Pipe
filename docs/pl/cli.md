@@ -205,7 +205,7 @@ przy połączeniu (chyba że podano `--lang`).
 | `/zmiany [24h\|3d]` | Co się zmieniło na serwerze: pakiety, obrazy kontenerów, porty, cron, konta, klucze SSH, konfiguracje |
 | `/wykres [load\|ram\|dysk] [24h\|7d]` | Wykres z historii czuwania (PNG w `~/.pipe/diagrams/`) |
 | `/zdrowie` | Certyfikaty TLS, odpowiedź stron, DNS i świeżość backupów (bez podpowiedzi i bez `/pomoc` -- problemy pokazuje `/status`) |
-| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*) |
+| `/audyt` | Ocena bezpieczeństwa hosta 0-100 z gotowymi poprawkami (napisz *"napraw 1"*); `/audyt napraw` przechodzi wszystkie po kolei, każdą do zatwierdzenia, pominięte na końcu |
 | `/incydenty` | Pamięć incydentów: co się zdarzało, co ustalono, co pomogło |
 | `/zgody` | Operacje zewnętrznych agentów (MCP) czekające na zgodę — z planem bezpiecznika |
 | `/mcp [dodaj <dodatek>\|<nazwa> <npx ...\|uvx ...\|URL> \| usun <nazwa> \| odswiez]` | Bez argumentów okno w ramce (strzałki, Enter, Esc): podłączone serwery ze szczegółami i gotowe dodatki (Google, Outlook, Microsoft 365, GitHub); klucze wpisuje się tu ukrytym polem. Serwery działają w izolowanym kontenerze. Zmiany tylko administrator |

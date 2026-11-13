@@ -449,6 +449,18 @@ over cloud-init settings. Without a key in `authorized_keys` Pipe **doesn't prop
 comes first (the `harden-ssh` skill). In docker mode the commands are marked *in the host shell* (the host file
 system is read-only).
 
+`/audit fix` (or the *Fix all, one by one* button under the audit in `pipe web`) goes through the whole list in
+order. Each fix is a separate step that you approve and see on its own, with its safety-fuse plan; all vulnerability
+patches go in one step, like `/patch`. A point that can't be fixed now (a reboot, a firewall in the provider's
+panel, disabling passwords before you add a key) is skipped, and so is one you declined or that failed. Skipped
+points come at the end with the reason. Then Pipe runs the audit again and shows the score before and after.
+
+After a fix the audit, the alerts on the dashboard and the inbox catch up on their own. A command that changes
+packages starts a vulnerability scan right away, and an alert whose fix is installed closes as resolved. An alert
+for packages that `/patch` can't install yet (no new version in the repositories, Ubuntu Pro only) closes too.
+These packages stay listed in `/vulns` and in the audit with the reason. Open alerts survive a Pipe restart, so a
+problem fixed while Pipe was down still gets *resolved* in the inbox.
+
 **The sentinel** (every `WATCH_INTERVAL`, no LLM) compares accounts, SSH keys, SUID/SGID programs and authentication
 configs (sudoers, sshd, PAM, `/etc/passwd`, `ld.so.preload`). A new account with uid 0, a new key, a new SUID or
 `ld.so.preload` raises a critical alert. Changes made by Pipe (they are in the journal) don't alert. Neither do package
