@@ -672,9 +672,11 @@ def _system_vuln_findings(audit: Audit, scan: Any, label: str) -> None:
             finding_id, severity, title, _names(names), fix,
             vulns.upgrade_command(scan.ecosystem, patchable, scan.kernel_meta), _host_only(),
             "system" if patchable else ""))
-    if scan.items:
-        audit.findings = [f for f in audit.findings if f.id != "security-updates"]   # to samo, dokladniej
-    elif not scan.error:
+    if scan.items or not scan.error:
+        # Licznik update-notifier odswieza tylko apt (po latce Pipe bywa nieaktualny) i liczy kazda aktualizacje
+        # z kanalu security — po udanym skanie OSV to samo jest wyzej, dokladniej; licznik zostaje tylko bez skanu.
+        audit.findings = [f for f in audit.findings if f.id != "security-updates"]
+    if not scan.items and not scan.error:
         audit.passed.append(tr(f"pakiety serwera bez podatnosci z poprawka (sprawdzone: {scan.checked})",
                                f"server packages without fixable vulnerabilities ({scan.checked} checked)"))
 

@@ -137,6 +137,20 @@ def entries(limit: int = MAX_ENTRIES) -> list[Entry]:
     return sorted((e for e in found if e), key=lambda e: e.at, reverse=True)[:limit]
 
 
+def last_change_at(limit: int = 5) -> float:
+    """
+    Kiedy ostatnio skonczyla sie zmiana z dziennika (czas zapisu entry.json — finish() zapisuje go po wykonaniu);
+    0, gdy dziennik jest pusty. Skan podatnosci starszy niz to widzi stan sprzed zmiany.
+    """
+    times = []
+    for entry in entries(limit):
+        try:
+            times.append((journal_dir() / entry.id / "entry.json").stat().st_mtime)
+        except OSError:
+            times.append(entry.at)
+    return max(times, default=0.0)
+
+
 def latest_undoable() -> Entry | None:
     return next((e for e in entries() if e.undoable and e.status != "pending"), None)
 

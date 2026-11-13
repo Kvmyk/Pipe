@@ -478,12 +478,15 @@ class TestNotifications:
 
     def test_alert_titles_read_well_for_any_count(self, monkeypatch):
         w = watch.Watcher()
-        titles = {f.key: f.title for f in w.vuln_findings(notification_scan())}
+        titles = {f.key: f.title for f in w.vuln_findings(notification_scan(esm=True))}
         assert titles["vuln:system"] == "Pilne podatnosci w pakietach serwera: 2, w tym aktywnie wykorzystywane"
+        # bez Ubuntu Pro alert liczy tylko to, co /zalataj zainstaluje (poprawka +esm czeka w /podatnosci)
+        titles_free = {f.key: f.title for f in watch.Watcher().vuln_findings(notification_scan())}
+        assert titles_free["vuln:system"] == "Pilne podatnosci w pakietach serwera: 1, w tym aktywnie wykorzystywane"
         assert titles["vuln:servers"] == "Pilne podatnosci na serwerze web2"
         assert titles["vuln:apps"] == "Krytyczne podatnosci w zaleznosciach aplikacji: 1"
         monkeypatch.setenv("PIPE_LANG", "en")
-        titles = {f.key: f.title for f in watch.Watcher().vuln_findings(notification_scan())}
+        titles = {f.key: f.title for f in watch.Watcher().vuln_findings(notification_scan(esm=True))}
         assert titles["vuln:system"] == "Urgent vulnerabilities in server packages: 2, including actively exploited ones"
 
     def test_alerts_do_not_promise_what_patch_cannot_do(self):
